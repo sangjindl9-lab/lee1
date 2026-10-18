@@ -70,6 +70,12 @@ input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid v
 .it input{padding:6px 8px;font-size:13px;background:var(--surface)}
 .it .w2{grid-column:span 2}
 .it .acts{grid-column:span 2;display:flex;justify-content:flex-end;gap:4px;align-items:center}
+.it .amt{margin-right:auto;margin-left:8px;font-size:12px;font-weight:600;font-variant-numeric:tabular-nums}
+.sum-box{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;background:var(--surface-2);border:1px solid var(--line);border-radius:6px;padding:10px 12px;font-variant-numeric:tabular-nums}
+.sum-box div{display:flex;flex-direction:column;gap:2px;min-width:0}
+.sum-box span{font-size:11.5px}
+.sum-box b{font-size:14px;overflow-wrap:anywhere}
+.sum-box .tot b{color:var(--accent);font-size:15px}
 .it .no{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
 .picker{position:relative}
 .results{border:1px solid var(--line);border-radius:6px;margin-top:6px;max-height:260px;overflow:auto;background:var(--surface)}
@@ -115,6 +121,7 @@ table.tbl{width:100%;border-collapse:collapse;font-size:13px}
 table.form{width:675px;border-collapse:collapse;table-layout:fixed;font-size:13.5px}
 table.form td{border:1px solid var(--paper-ink);height:31px;padding:0 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:middle}
 table.form tr.ir td{height:25.6px;font-size:13px}
+table.form tr.tr td{height:30px;border-top:1.6px solid var(--paper-ink)}
 table.form tr.hd td{height:27px;text-align:center;font-weight:700;font-size:14.5px}
 .lb{display:inline-block;width:64px;text-align:justify;text-align-last:justify;margin:0 6px 0 10px}
 .lbr{text-align:justify;text-align-last:justify;padding:0 8px!important;font-size:14px}
@@ -174,7 +181,13 @@ td.stampcell{position:relative;overflow:visible!important}
 <script>
 (function(){
 "use strict";
-const ROWS = 19;               // 양식 1장당 자재 행 수
+const ROWS = 18;               // 양식 1장당 자재 행 수 (마지막 줄은 합계)
+// 합계: 단가가 VAT 별도이면 공급가액=Σ, 부가세=10%; VAT 포함이면 합계=Σ에서 공급가액을 역산
+function totals(items, vat){
+  const sum = items.reduce((a,it)=>a + Math.round(num(it.qty)*num(it.price)), 0);
+  if (vat==="포함"){ const supply=Math.round(sum/1.1); return { supply, tax:sum-supply, total:sum, sum }; }
+  const tax=Math.round(sum*0.1); return { supply:sum, tax, total:sum+tax, sum };
+}
 const CHUNK = 400;             // 자재 저장 묶음 크기
 const INSPECT = ["외관","치수","기타","성적서","입회검사"];
 const $ = s => document.querySelector(s);
@@ -203,7 +216,7 @@ function blankDraft(){
   const b = (S.draft && buyers().find(x => x.id === S.draft.buyerId)) || buyers()[0] || null;
   const p = (S.draft && staffList().find(x => x.id === S.draft.staffId)) || null;
   return { id:null, site:"", date:today(), buyerId:b?.id||"", buyer:b, staffId:p?.id||"", staff:p, vendorId:"", vendor:null, due:"", payment:"", special:"",
-    place:b?.place||"", placeManager:p?staffLabel(p):(b?.placeManager||""), inspect:{}, items:[] };
+    place:b?.place||"", placeManager:p?staffLabel(p):(b?.placeManager||""), inspect:{}, items:[], vat:"별도" };
 }
 function applyStaff(id){
   const p = staffList().find(x => x.id === id) || null;
@@ -324,6 +337,7 @@ function sheetHTML(o, pageItems, pageNo, total){
     <tr><td colspan="2" class="bold" style="font-size:14.5px">아래와 같이 납품바랍니다.</td><td colspan="2" class="lbr">납 기</td><td class="c">${esc(o.due)}</td><td class="lbr">대 금 결 제</td><td class="c" style="font-size:12px">${esc(o.payment)}</td></tr>
     <tr class="hd"><td style="letter-spacing:1.4em;padding-left:1.4em">품명</td><td style="letter-spacing:1.4em;padding-left:1.4em">규격</td><td>단위</td><td>수 량</td><td>단 가</td><td colspan="2" style="letter-spacing:.8em;padding-left:.8em">비고</td></tr>
     ${rows}
+    ${totalRow(o, pageNo, total)}
     <tr><td colspan="7" class="special">특 기 사 항 : ${esc(o.special)}</td></tr>
     <tr><td colspan="3"><span>납 품 장 소 : </span><b>${esc(o.place)}</b></td><td rowspan="2" class="c" style="font-size:14px;line-height:1.3;white-space:normal">검수<br>방법</td><td colspan="3"><div class="chk"><span>:${cb("외관")}외관</span><span>${cb("치수")}치수</span><span>${cb("기타")}기타</span></div></td></tr>
     <tr><td colspan="3">담 &nbsp; 당 &nbsp; 자 : ${esc(o.placeManager)}</td><td colspan="3"><span>:${cb("성적서")}성적서</span><span style="margin-left:14px">${cb("입회검사")}입회검사</span></td></tr>
@@ -333,6 +347,15 @@ function sheetHTML(o, pageItems, pageNo, total){
     <tr class="s"><td>${sig}</td><td></td><td></td></tr>
   </table>
   </div>${total>1?`<div class="pg">${pageNo} / ${total}</div>`:""}</div>`;
+}
+function totalRow(o, pageNo, total){
+  const vat = o.vat==="포함" ? "포함" : "별도";
+  const ck = k => `<span class="cb">${vat===k?"✓":""}</span>`;
+  const vatCell = `<td colspan="2" class="c" style="font-size:12.5px">VAT ${ck("포함")}포함 ${ck("별도")}별도</td>`;
+  if (pageNo!==total) return `<tr class="tr"><td class="c bold" style="letter-spacing:.3em">합 계</td><td colspan="4" class="c">다음 장에 이어집니다</td>${vatCell}</tr>`;
+  const t = totals(paginate(o.items).flat(), vat);
+  const val = t.sum ? `<b style="font-size:15px">${t.total.toLocaleString("ko-KR")}원</b> <span style="font-size:11.5px">(공급가 ${t.supply.toLocaleString("ko-KR")} + 부가세 ${t.tax.toLocaleString("ko-KR")})</span>` : "";
+  return `<tr class="tr"><td class="c bold" style="letter-spacing:.3em">합 계</td><td colspan="4" class="r" style="padding-right:10px">${val}</td>${vatCell}</tr>`;
 }
 function draftOrderObj(){
   const v = suppliers().find(x => x.id === S.draft.vendorId) || S.draft.vendor || null;
@@ -387,6 +410,12 @@ function viewOrder(){
       <label class="f">대금결제<input id="d-pay" data-f="payment" value="${esc(d.payment)}" placeholder="예: 현금 / 익월말"></label></div>
     </div></section>
     <section class="panel"><div class="row" style="justify-content:space-between;margin-bottom:10px"><p class="sec-t" style="margin:0">발주 자재 <span class="pill" id="it-count">${d.items.length}건</span></p><button class="btn sm" data-act="add-blank">빈 줄 추가</button></div>
+      <div class="row" style="justify-content:space-between;margin-bottom:10px;gap:10px">
+        <div class="checks" role="radiogroup" aria-label="단가 기준"><span class="muted" style="font-size:12px;font-weight:600">단가 기준</span>
+          <label><input type="radio" name="vat" id="vat-ex" data-vat="별도" ${d.vat!=="포함"?"checked":""}>VAT 별도</label>
+          <label><input type="radio" name="vat" id="vat-in" data-vat="포함" ${d.vat==="포함"?"checked":""}>VAT 포함</label></div>
+      </div>
+      <div class="sum-box" id="sum-box"></div>
       <div class="picker"><input id="d-search" placeholder="자재 목록에서 품명·규격 검색해서 추가" value="${esc(S.search)}" autocomplete="off"><div id="results"></div></div>
       <div class="items" id="items" style="margin-top:12px"></div>
     </section>
@@ -400,7 +429,15 @@ function viewOrder(){
    <div class="pv-wrap"><div class="pv-bar"><span class="muted" id="pv-info"></span></div><div class="pv" id="preview"></div></div>
   </div>`;
 }
+const lineAmt = it => { const a=Math.round(num(it.qty)*num(it.price)); return a ? a.toLocaleString("ko-KR")+"원" : ""; };
+function renderSum(){
+  const box=$("#sum-box"); if(!box) return;
+  const t=totals(S.draft.items, S.draft.vat);
+  const f=n=>n.toLocaleString("ko-KR");
+  box.innerHTML = `<div><span class="muted">공급가액</span><b>${f(t.supply)}</b></div><div><span class="muted">부가세</span><b>${f(t.tax)}</b></div><div class="tot"><span class="muted">합계금액</span><b>${f(t.total)}원</b></div>`;
+}
 function renderItems(){
+  renderSum();
   const box = $("#items"); if(!box) return;
   const items = S.draft.items;
   $("#it-count").textContent = items.length + "건";
@@ -412,7 +449,7 @@ function renderItems(){
     <input id="it-q-${i}" data-k="qty" value="${esc(it.qty)}" placeholder="수량" inputmode="decimal" aria-label="수량" style="text-align:right">
     <input id="it-p-${i}" data-k="price" value="${esc(it.price)}" placeholder="단가" inputmode="numeric" aria-label="단가" style="text-align:right">
     <input id="it-b-${i}" data-k="note" value="${esc(it.note)}" placeholder="비고" aria-label="비고">
-    <div class="acts w2"><span class="no">${i+1}</span><button class="btn sm" data-act="it-up" title="위로">▲</button><button class="btn sm" data-act="it-down" title="아래로">▼</button><button class="btn sm danger" data-act="it-del">삭제</button></div>
+    <div class="acts w2"><span class="no">${i+1}</span><span class="amt">${lineAmt(it)}</span><button class="btn sm" data-act="it-up" title="위로">▲</button><button class="btn sm" data-act="it-down" title="아래로">▼</button><button class="btn sm danger" data-act="it-del">삭제</button></div>
   </div>`).join("");
 }
 function renderResults(){
@@ -449,7 +486,7 @@ function viewHistory(){
   const list = S.orders;
   return `<div class="head"><div><h2>발주 이력</h2><p class="sub">저장한 발주서 ${list.length}건. 불러와서 수정하거나 복사해서 새로 쓸 수 있습니다.</p></div></div>
   ${list.length? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>청구일자</th><th>현장명</th><th>발주받는 업체</th><th>자재</th><th>첫 품목</th><th></th></tr></thead><tbody>
-  ${list.map(o=>`<tr><td>${esc(o.date)}</td><td style="max-width:280px;overflow:hidden;text-overflow:ellipsis">${esc(o.site)}</td><td>${esc(o.vendor?.name)}<div class="muted" style="font-size:11px">발주: ${esc(o.buyer?.name)}${o.staff?" · "+esc(o.staff.name):""}</div></td><td class="num">${(o.items||[]).length}건</td><td class="muted">${esc(o.items?.[0]?.name)} ${esc(o.items?.[0]?.spec)}</td>
+  ${list.map(o=>`<tr><td>${esc(o.date)}</td><td style="max-width:280px;overflow:hidden;text-overflow:ellipsis">${esc(o.site)}</td><td>${esc(o.vendor?.name)}<div class="muted" style="font-size:11px">발주: ${esc(o.buyer?.name)}${o.staff?" · "+esc(o.staff.name):""}</div></td><td class="num">${(o.items||[]).length}건<div class="muted" style="font-size:11px">${totals(o.items||[],o.vat).total?totals(o.items||[],o.vat).total.toLocaleString("ko-KR")+"원":""}</div></td><td class="muted">${esc(o.items?.[0]?.name)} ${esc(o.items?.[0]?.spec)}</td>
   <td><div class="row" style="flex-wrap:nowrap"><button class="btn sm" data-act="o-load" data-id="${esc(o.id)}">불러오기</button><button class="btn sm" data-act="o-copy" data-id="${esc(o.id)}">복사</button>${S.confirm==="o:"+o.id?`<button class="btn sm pri" data-act="o-del-ok" data-id="${esc(o.id)}">삭제 확인</button>`:`<button class="btn sm danger" data-act="o-del" data-id="${esc(o.id)}">삭제</button>`}</div></td></tr>`).join("")}
   </tbody></table></div>` : `<div class="panel empty">아직 저장한 발주서가 없습니다. 발주서 작성 탭에서 작성한 뒤 ‘발주서 저장’을 누르세요.</div>`}`;
 }
@@ -596,7 +633,7 @@ app.addEventListener("input", e=>{
   const t=e.target;
   if (t.dataset.f==="vendorId"||t.dataset.f==="buyerId"||t.dataset.f==="staffId") return;
   if (t.dataset.f){ S.draft[t.dataset.f]=t.value; saveDraft(); renderPreview(); return; }
-  if (t.dataset.k){ const i=+t.closest(".it").dataset.i; S.draft.items[i][t.dataset.k]=t.value; saveDraft(); renderPreview(); return; }
+  if (t.dataset.k){ const i=+t.closest(".it").dataset.i; S.draft.items[i][t.dataset.k]=t.value; saveDraft(); renderPreview(); renderSum(); const a=t.closest(".it").querySelector(".amt"); if(a) a.textContent=lineAmt(S.draft.items[i]); return; }
   if (t.id==="d-search"){ S.search=t.value; renderResults(); return; }
   if (t.id==="mat-q"){ S.matSearch=t.value; clearTimeout(app._mq); app._mq=setTimeout(()=>{ const pos=t.selectionStart; render(); const n=$("#mat-q"); if(n){ n.focus(); try{n.setSelectionRange(pos,pos);}catch(_){} } },200); }
 });
@@ -605,6 +642,7 @@ app.addEventListener("change", e=>{
   if (t.dataset.f==="vendorId"){ S.draft.vendorId=t.value; S.draft.vendor=suppliers().find(v=>v.id===t.value)||null; saveDraft(); renderPreview(); }
   if (t.dataset.f==="staffId"){ applyStaff(t.value); saveDraft(); const pm=$("#d-pm"); if(pm) pm.value=S.draft.placeManager||""; renderPreview(); }
   if (t.dataset.f==="buyerId"){ applyBuyer(t.value); saveDraft(); const pl=$("#d-place"), pm=$("#d-pm"); if(pl) pl.value=S.draft.place||""; if(pm) pm.value=S.draft.placeManager||""; renderPreview(); }
+  if (t.dataset.vat){ S.draft.vat=t.dataset.vat; saveDraft(); renderSum(); renderPreview(); }
   if (t.dataset.ins){ S.draft.inspect={...S.draft.inspect,[t.dataset.ins]:t.checked}; saveDraft(); renderPreview(); }
   if (t.id==="xl-file"){ handleFile(t.files[0]); t.value=""; }
   if (t.dataset.img){ loadImg(t.files[0], t.dataset.img); t.value=""; }
@@ -675,7 +713,7 @@ app.addEventListener("click", async e=>{
     case "save-order": {
       const o=draftOrderObj(); if(!o.site && !o.items.length){ toast("현장명이나 자재를 먼저 입력해 주세요"); break; }
       const oid=S.draft.id||("o"+uid());
-      const doc={ site:o.site, date:o.date, vendorId:o.vendorId, vendor:o.vendor, due:o.due, payment:o.payment, special:o.special, place:o.place, placeManager:o.placeManager, inspect:o.inspect, items:o.items.filter(it=>it.name||it.spec||it.qty), buyerId:o.buyerId, buyer:{...o.buyer, stamp:"", signature:""}, staffId:o.staffId||"", staff:o.staff?{...o.staff, signature:""}:null, savedAt:new Date().toISOString() };
+      const doc={ site:o.site, date:o.date, vendorId:o.vendorId, vendor:o.vendor, due:o.due, payment:o.payment, special:o.special, place:o.place, placeManager:o.placeManager, inspect:o.inspect, vat:o.vat==="포함"?"포함":"별도", items:o.items.filter(it=>it.name||it.spec||it.qty), buyerId:o.buyerId, buyer:{...o.buyer, stamp:"", signature:""}, staffId:o.staffId||"", staff:o.staff?{...o.staff, signature:""}:null, savedAt:new Date().toISOString() };
       if (await dbSet("orders/"+oid, doc)){ S.draft.id=oid; saveDraft(); render(); toast("발주서를 저장했습니다"); }
       break; }
     case "pdf": makePdf(); break;
