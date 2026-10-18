@@ -1,0 +1,717 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<title>에스에스전력 발주서</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=Noto+Sans+KR:wght@400;500;700&display=swap">
+<style>
+/* Layout: 상단 탭 바 + 작업 패널. 발주서 작성 탭은 입력(좌) / A4 미리보기(우), 좁은 화면에서는 위아래로 쌓임 */
+:root{
+  --bg:#EEF1F4; --surface:#FFFFFF; --surface-2:#F6F8FA; --ink:#1B2430; --muted:#5B6878; --line:#D3DAE2;
+  --accent:#A8281F; --accent-ink:#FFFFFF; --accent-soft:#F7E6E4; --ok:#1F7A4D; --warn:#9A5B00;
+  --paper:#FFFFFF; --paper-ink:#111111;
+  --f-ui:"IBM Plex Sans KR","Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+  --f-sheet:"Noto Sans KR","Malgun Gothic","Apple SD Gothic Neo",sans-serif;
+  --r:8px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#12171D; --surface:#1A2129; --surface-2:#212A34; --ink:#E6EBF0; --muted:#9AA7B5; --line:#2F3A46;
+  --accent:#E0574B; --accent-ink:#1A0B09; --accent-soft:#3A1F1C; --ok:#4FC28A; --warn:#E3A341; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#12171D; --surface:#1A2129; --surface-2:#212A34; --ink:#E6EBF0; --muted:#9AA7B5; --line:#2F3A46;
+  --accent:#E0574B; --accent-ink:#1A0B09; --accent-soft:#3A1F1C; --ok:#4FC28A; --warn:#E3A341; color-scheme:dark}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+img{max-width:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--f-ui);font-size:14px;line-height:1.5}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--surface)}
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--surface);border-bottom:1px solid var(--line)}
+.top-in{max-width:1400px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;align-items:center;gap:20px;flex-wrap:wrap}
+.brand{font-weight:700;font-size:15px;padding-block:12px;display:flex;align-items:center;gap:8px;white-space:nowrap}
+.seal{width:22px;height:22px;border:2px solid var(--accent);border-radius:50%;color:var(--accent);font-size:11px;display:grid;place-items:center;font-weight:700}
+nav{display:flex;gap:2px;overflow-x:auto;flex:1;min-width:0;scrollbar-width:none}
+nav button{border:0;background:none;color:var(--muted);font:inherit;font-weight:500;padding:13px 12px;border-bottom:2px solid transparent;cursor:pointer;white-space:nowrap}
+nav button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--accent)}
+main{max-width:1400px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 48px}
+.banner{background:var(--accent-soft);color:var(--ink);border-radius:var(--r);padding:10px 14px;margin-bottom:16px;font-size:13px}
+h2{font-size:18px;margin:0;text-wrap:balance}
+.sub{color:var(--muted);font-size:13px;margin:2px 0 0}
+.head{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px}
+.grid{display:grid;gap:12px}
+.g2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.g3{grid-template-columns:repeat(3,minmax(0,1fr))}
+@media (max-width:640px){.g2,.g3{grid-template-columns:minmax(0,1fr)}}
+label.f{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted);font-weight:500;min-width:0}
+input,select,textarea{font:inherit;font-size:14px;color:var(--ink);background:var(--surface-2);border:1px solid var(--line);border-radius:6px;padding:8px 10px;width:100%;min-width:0}
+textarea{resize:vertical;min-height:56px}
+input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.btn{font:inherit;font-weight:600;font-size:13px;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:6px;padding:8px 12px;cursor:pointer;white-space:nowrap;display:inline-flex;align-items:center;gap:6px}
+.btn:hover{background:var(--surface-2)}
+.btn.pri{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.pri:hover{filter:brightness(1.07)}
+.btn.sm{padding:4px 8px;font-size:12px}
+.btn.danger{color:var(--accent)}
+.btn:disabled{opacity:.5;cursor:default}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.sec-t{font-size:12px;font-weight:700;letter-spacing:.06em;color:var(--muted);margin:0 0 10px}
+.split{display:grid;grid-template-columns:minmax(0,440px) minmax(0,1fr);gap:20px;align-items:start}
+@media (max-width:980px){.split{grid-template-columns:minmax(0,1fr)}}
+.stack{display:flex;flex-direction:column;gap:14px}
+.checks{display:flex;gap:12px;flex-wrap:wrap;font-size:13px}
+.checks label{display:flex;gap:5px;align-items:center;cursor:pointer}
+.checks input{width:auto}
+/* items editor */
+.items{display:flex;flex-direction:column;gap:8px}
+.it{border:1px solid var(--line);border-radius:6px;padding:8px;display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1.3fr) 56px 64px;gap:6px;background:var(--surface-2)}
+.it input{padding:6px 8px;font-size:13px;background:var(--surface)}
+.it .w2{grid-column:span 2}
+.it .acts{grid-column:span 2;display:flex;justify-content:flex-end;gap:4px;align-items:center}
+.it .no{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
+.picker{position:relative}
+.results{border:1px solid var(--line);border-radius:6px;margin-top:6px;max-height:260px;overflow:auto;background:var(--surface)}
+.results button{display:flex;width:100%;text-align:left;justify-content:space-between;gap:10px;border:0;border-bottom:1px solid var(--line);background:none;color:var(--ink);font:inherit;font-size:13px;padding:8px 10px;cursor:pointer}
+.results button:hover{background:var(--surface-2)}
+.results .m{color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+.empty{color:var(--muted);font-size:13px;padding:14px;text-align:center}
+/* preview */
+.pv-wrap{position:sticky;top:calc(env(safe-area-inset-top,0px) + 64px)}
+.pv{display:flex;flex-direction:column;gap:14px;align-items:center}
+.pv-page{background:var(--paper);box-shadow:0 1px 3px rgba(0,0,0,.18),0 0 0 1px var(--line);overflow:hidden}
+.pv-page>.sheet{transform-origin:top left}
+.pv-bar{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+/* tables */
+.tbl-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--r);background:var(--surface)}
+table.tbl{width:100%;border-collapse:collapse;font-size:13px}
+.tbl th,.tbl td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
+.tbl th{background:var(--surface-2);font-size:12px;color:var(--muted);font-weight:600;position:sticky;top:0}
+.tbl td.num{text-align:right;font-variant-numeric:tabular-nums}
+.tbl tr:last-child td{border-bottom:0}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px;display:flex;flex-direction:column;gap:6px;min-width:0}
+.card .nm{font-weight:700;font-size:15px}
+.kv{display:grid;grid-template-columns:72px minmax(0,1fr);gap:2px 8px;font-size:12.5px}
+.kv dt{color:var(--muted)} .kv dd{margin:0;overflow-wrap:anywhere}
+.pill{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:99px;background:var(--surface-2);color:var(--muted);border:1px solid var(--line)}
+.drop{border:1.5px dashed var(--line);border-radius:var(--r);padding:18px;text-align:center;color:var(--muted);font-size:13px;background:var(--surface-2)}
+.drop.on{border-color:var(--accent);color:var(--ink)}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:8px;font-size:13px;z-index:20;max-width:calc(100% - 32px)}
+.muted{color:var(--muted)}
+.sig-prev{height:60px;border:1px solid var(--line);border-radius:6px;display:grid;place-items:center;background:#fff;max-width:240px}
+.sig-prev img{max-height:54px}
+
+/* ===== 발주서 양식 (종이: 테마와 무관하게 항상 흰 바탕) ===== */
+.sheet{width:794px;height:1123px;background:var(--paper);color:var(--paper-ink);font-family:var(--f-sheet);padding:50px 40px 30px;position:relative}
+.sheet *{color:var(--paper-ink)}
+.frame{border:1.4px solid var(--paper-ink);padding:10px 18px 16px}
+.s-title{text-align:center;font-size:29px;font-weight:500;letter-spacing:.32em;margin:4px 0 6px}
+.s-title span{border-bottom:1.5px solid var(--paper-ink);padding:0 0 1px .32em}
+.s-line{display:flex;justify-content:space-between;align-items:baseline;font-size:17px;margin:0 0 6px;white-space:nowrap}
+.s-line small{font-size:13px}
+.s-line .site{max-width:400px;overflow:hidden;text-overflow:ellipsis;display:inline-block;vertical-align:bottom}
+table.form{width:675px;border-collapse:collapse;table-layout:fixed;font-size:13.5px}
+table.form td{border:1px solid var(--paper-ink);height:31px;padding:0 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:middle}
+table.form tr.ir td{height:25.6px;font-size:13px}
+table.form tr.hd td{height:27px;text-align:center;font-weight:700;font-size:14.5px}
+.lb{display:inline-block;width:64px;text-align:justify;text-align-last:justify;margin:0 6px 0 10px}
+.lbr{text-align:justify;text-align-last:justify;padding:0 8px!important;font-size:14px}
+.vb{text-align:center;font-weight:700;font-size:16px;letter-spacing:.22em}
+.vc{text-align:center}
+.r{text-align:right}
+.c{text-align:center}
+.bold{font-weight:700}
+td.yb{position:relative}
+.yb-row{display:flex;align-items:center;gap:10px;font-size:13.5px;letter-spacing:.9em;justify-content:center}
+.yb-row i{flex:1;border-top:1px dashed var(--paper-ink);height:0}
+.special{height:48px!important;vertical-align:top!important;padding-top:6px!important}
+.cb{display:inline-block;width:15px;height:15px;border:1px solid var(--paper-ink);vertical-align:-3px;margin:0 6px 0 4px;text-align:center;line-height:13px;font-size:12px;font-weight:700}
+.chk{display:flex;justify-content:space-between;padding-right:4px}
+table.appr{border-collapse:collapse;margin:10px 0 0 auto;font-size:14px}
+table.appr td{border:1px solid var(--paper-ink);text-align:center;padding:0}
+table.appr .h td{height:28px;letter-spacing:.5em;padding-left:.5em}
+table.appr .s td{height:54px}
+table.appr img{max-width:84px;max-height:48px;display:block;margin:0 auto}
+td.stampcell{position:relative;overflow:visible!important}
+.stamp{position:absolute;right:2px;top:-16px;width:64px;height:64px;object-fit:contain;mix-blend-mode:multiply;z-index:2}
+.pg{position:absolute;right:44px;bottom:12px;font-size:11px}
+#render-host{position:fixed;left:-12000px;top:0;width:794px;pointer-events:none}
+#print-host{display:none}
+@page{size:A4;margin:0}
+@media print{
+  body{background:#fff!important}
+  body::before,header.top,main,#toast,#render-host{display:none!important}
+  #print-host{display:block}
+  #print-host .sheet{break-after:page;page-break-after:always;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  #print-host .sheet:last-child{break-after:auto;page-break-after:auto}
+}
+.login-wrap{max-width:380px;margin:8vh auto 0}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+
+</head>
+<body>
+<header class="top"><div class="top-in">
+  <div class="brand"><span class="seal">발</span>에스에스전력 발주서</div>
+  <nav role="tablist" id="nav">
+    <button data-tab="order" aria-selected="true">발주서 작성</button>
+    <button data-tab="history">발주 이력</button>
+    <button data-tab="vendors">업체 등록</button>
+    <button data-tab="materials">자재 목록</button>
+  </nav>
+  <button class="btn sm" id="logout" type="button" hidden>로그아웃</button>
+</div></header>
+<main id="app"><div class="empty">불러오는 중…</div></main>
+<div id="render-host" aria-hidden="true"></div>
+<div id="print-host" aria-hidden="true"></div>
+<div id="toast" class="toast" hidden></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script>
+(function(){
+"use strict";
+const ROWS = 19;               // 양식 1장당 자재 행 수
+const CHUNK = 400;             // 자재 저장 묶음 크기
+const INSPECT = ["외관","치수","기타","성적서","입회검사"];
+const $ = s => document.querySelector(s);
+const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const num = v => { const n = Number(String(v ?? "").replace(/[^0-9.\-]/g,"")); return isFinite(n) ? n : 0; };
+const fmt = v => { if (v === "" || v == null) return ""; const n = num(v); return n ? n.toLocaleString("ko-KR") : (String(v).trim()==="0"?"0":""); };
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,7);
+const today = () => { const d = new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); };
+const kDate = s => { if(!s) return "&nbsp;&nbsp;&nbsp;&nbsp;년 &nbsp;&nbsp; 월 &nbsp;&nbsp; 일"; const [y,m,d]=s.split("-"); return `${y}년 ${Number(m)} 월 ${Number(d)} 일`; };
+const toast = (msg) => { const t=$("#toast"); t.textContent=msg; t.hidden=false; clearTimeout(toast._t); toast._t=setTimeout(()=>t.hidden=true, 2600); };
+const ls = { get(k){ try{ return JSON.parse(localStorage.getItem(k)); }catch(e){ return null; } }, set(k,v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} } };
+
+/* ---------- state ---------- */
+const S = {
+  tab: "order", db: null, dl: null, dbState: "loading",
+  company: { name:"", manager:"", phone:"", fax:"", place:"", placeManager:"", signature:"" },
+  vendors: [], materials: [], matChunks: 0, orders: [],
+  draft: null, search: "", matSearch: "", matEdit: null, vendorEdit: null, vendorKind: "buyer", pendingImport: null, confirm: null,
+};
+const buyers = () => S.vendors.filter(v => v.kind === "buyer");
+const suppliers = () => S.vendors.filter(v => !v.kind || v.kind === "supplier");
+const staffList = () => S.vendors.filter(v => v.kind === "staff");
+const byKind = k => k==="buyer"?buyers():k==="staff"?staffList():suppliers();
+const staffLabel = p => p ? `${p.name||""}${p.title||""}${p.phone?"("+p.phone+")":""}` : "";
+function blankDraft(){
+  const b = (S.draft && buyers().find(x => x.id === S.draft.buyerId)) || buyers()[0] || null;
+  const p = (S.draft && staffList().find(x => x.id === S.draft.staffId)) || null;
+  return { id:null, site:"", date:today(), buyerId:b?.id||"", buyer:b, staffId:p?.id||"", staff:p, vendorId:"", vendor:null, due:"", payment:"", special:"",
+    place:b?.place||"", placeManager:p?staffLabel(p):(b?.placeManager||""), inspect:{}, items:[] };
+}
+function applyStaff(id){
+  const p = staffList().find(x => x.id === id) || null;
+  S.draft.staffId = id; S.draft.staff = p;
+  if (p) S.draft.placeManager = staffLabel(p);
+}
+function applyBuyer(id){
+  const b = buyers().find(x => x.id === id) || null;
+  S.draft.buyerId = id; S.draft.buyer = b;
+  if (b){ if (b.place) S.draft.place = b.place; if (b.placeManager && !S.draft.staffId) S.draft.placeManager = b.placeManager; }
+}
+S.draft = ls.get("po-draft") || blankDraft();
+const saveDraft = () => ls.set("po-draft", S.draft);
+
+/* ---------- server ---------- */
+const API = {
+  token: ls.get("po-token"),
+  async call(method, path, body){
+    let r;
+    try { r = await fetch("/api/"+path, { method, headers:{ "content-type":"application/json", authorization:"Bearer "+(API.token||"") }, body: body!==undefined ? JSON.stringify(body) : undefined }); }
+    catch(e){ throw { msg:"인터넷 연결을 확인해 주세요." }; }
+    let data = {}; try { data = await r.json(); } catch(_){}
+    if (r.status===401 && path!=="login"){ logout(true); throw { msg:"다시 로그인해 주세요." }; }
+    if (!r.ok) throw { msg: data.error || "서버 오류가 발생했습니다." };
+    return data;
+  }
+};
+const sortV = l => l.sort((a,b)=>(a.name||"").localeCompare(b.name||"","ko"));
+const sortO = l => l.sort((a,b)=>(b.date||"").localeCompare(a.date||"") || (b.savedAt||"").localeCompare(a.savedAt||""));
+let matSaving = false, matTimer = null;
+function logout(expired){
+  API.token=null; ls.set("po-token",null); S.db=null; S.dbState="login"; render();
+  if (expired) toast("로그인이 만료되었습니다. 다시 로그인해 주세요.");
+}
+async function loadAll(){
+  const d = await API.call("GET","all");
+  S.vendors = sortV(d.vendors||[]);
+  S.orders = sortO(d.orders||[]);
+  if (!matSaving) S.materials = d.materials||[];
+  S.db = API; S.dbState = "ok";
+  if (!S.draft.buyerId && buyers().length && !S.draft.id){ applyBuyer(buyers()[0].id); saveDraft(); }
+  if (!S.draft.staffId && staffList().length===1 && !S.draft.id){ applyStaff(staffList()[0].id); saveDraft(); }
+}
+async function initDb(){
+  if (!API.token){ S.dbState="login"; render(); return; }
+  S.dbState="loading"; render();
+  try { await loadAll(); }
+  catch(e){ if (S.dbState!=="login"){ S.dbState="error"; S.loadErr=e.msg; } }
+  render();
+}
+async function refresh(){
+  if (S.dbState!=="ok" || matSaving) return;
+  try { await loadAll(); rerender("vendors"); rerender("materials"); rerender("orders"); } catch(e){}
+}
+document.addEventListener("visibilitychange", ()=>{ if (!document.hidden) refresh(); });
+setInterval(()=>{ if (!document.hidden) refresh(); }, 60000);
+function saveMaterials(){
+  rerender("materials");
+  clearTimeout(matTimer);
+  matSaving = true;
+  matTimer = setTimeout(async () => {
+    try { const r = await API.call("PUT","materials",{ items:S.materials }); toast(`자재 ${Number(r.count||0).toLocaleString()}건 저장됨`); }
+    catch(e){ toast(e.msg || "자재 저장에 실패했습니다. 다시 시도해 주세요."); }
+    matSaving = false;
+  }, 400);
+}
+async function dbSet(path, data){
+  const [col,id] = path.split("/");
+  try { await API.call("PUT","doc/"+path, data); }
+  catch(e){ toast(e.msg || "저장하지 못했습니다."); return false; }
+  const list = S[col].filter(x=>x.id!==id); list.push({ ...data, id });
+  S[col] = col==="vendors" ? sortV(list) : sortO(list);
+  return true;
+}
+async function dbDel(path){
+  const [col,id] = path.split("/");
+  try { await API.call("DELETE","doc/"+path); }
+  catch(e){ toast(e.msg || "삭제하지 못했습니다."); return false; }
+  S[col] = S[col].filter(x=>x.id!==id);
+  return true;
+}
+
+/* ---------- sheet (양식) ---------- */
+function paginate(items){
+  const filled = items.filter(it => (it.name||it.spec||it.qty||it.price||it.note));
+  const pages = []; for (let i=0;i<Math.max(1,filled.length);i+=ROWS) pages.push(filled.slice(i,i+ROWS));
+  return pages;
+}
+function sheetHTML(o, pageItems, pageNo, total){
+  const c = o.buyer || o.company || {}, v = o.vendor || {};
+  const ins = o.inspect || {};
+  const cb = k => `<span class="cb">${ins[k]?"✓":""}</span>`;
+  let rows = "", placedYb = false;
+  for (let i=0;i<ROWS;i++){
+    const it = pageItems[i];
+    if (it){
+      rows += `<tr class="ir"><td>${esc(it.name)}</td><td>${esc(it.spec)}</td><td class="c">${esc(it.unit)}</td><td class="r">${esc(fmt(it.qty))}</td><td class="r">${esc(fmt(it.price))}</td><td colspan="2" class="c">${esc(it.note)}</td></tr>`;
+    } else if (!placedYb && pageNo===total){
+      placedYb = true;
+      rows += `<tr class="ir"><td colspan="7" class="yb"><div class="yb-row"><i></i>이 하 여 백<i></i></div></td></tr>`;
+    } else {
+      rows += `<tr class="ir"><td></td><td></td><td></td><td></td><td></td><td colspan="2"></td></tr>`;
+    }
+  }
+  const sigSrc = o.staff?.signature || c.signature;
+  const sig = sigSrc ? `<img src="${esc(sigSrc)}" alt="">` : "";
+  const stamp = c.stamp ? `<img class="stamp" src="${esc(c.stamp)}" alt="">` : "";
+  return `<div class="sheet"><div class="frame">
+  <div class="s-title"><span>자재청구및 발주서</span></div>
+  <div class="s-line"><div>현 장 명 : <small class="site">${esc(o.site)}</small></div><div>청구일자 : ${kDate(o.date)}</div></div>
+  <table class="form">
+    <colgroup><col style="width:141px"><col style="width:154px"><col style="width:53px"><col style="width:61px"><col style="width:94px"><col style="width:96px"><col style="width:76px"></colgroup>
+    <tr><td colspan="2"><span class="lb">업 체 명</span>: ${esc(v.name)}</td><td colspan="2" class="lbr">사업자등록번호</td><td colspan="3" class="vb">${esc(c.bizNo)}</td></tr>
+    <tr><td colspan="2"><span class="lb">담 당 자</span>: ${esc(v.manager)}</td><td colspan="2" class="lbr">회 사 명</td><td colspan="3" class="vb stampcell">${esc(c.name)}${stamp}</td></tr>
+    <tr><td colspan="2"><span class="lb">전 화</span>: ${esc(v.phone)}</td><td colspan="2" class="lbr">대 표</td><td colspan="3" class="vb" style="letter-spacing:.7em">${esc(c.ceo)}</td></tr>
+    <tr><td colspan="2"><span class="lb">팩 스</span>: ${esc(v.fax)}</td><td colspan="2" class="lbr">주 소</td><td colspan="3" class="vc">${esc(c.addr)}</td></tr>
+    <tr><td colspan="2"><span class="lb">일 자</span>: <span style="margin-left:18px">${kDate(o.date)}</span></td><td colspan="2" class="lbr">업 태</td><td>${esc(c.bizType)}</td><td class="lbr">종 목</td><td style="font-size:12px">${esc(c.bizItem)}</td></tr>
+    <tr><td colspan="2" class="bold" style="font-size:14.5px">아래와 같이 납품바랍니다.</td><td colspan="2" class="lbr">납 기</td><td class="c">${esc(o.due)}</td><td class="lbr">대 금 결 제</td><td class="c" style="font-size:12px">${esc(o.payment)}</td></tr>
+    <tr class="hd"><td style="letter-spacing:1.4em;padding-left:1.4em">품명</td><td style="letter-spacing:1.4em;padding-left:1.4em">규격</td><td>단위</td><td>수 량</td><td>단 가</td><td colspan="2" style="letter-spacing:.8em;padding-left:.8em">비고</td></tr>
+    ${rows}
+    <tr><td colspan="7" class="special">특 기 사 항 : ${esc(o.special)}</td></tr>
+    <tr><td colspan="3"><span>납 품 장 소 : </span><b>${esc(o.place)}</b></td><td rowspan="2" class="c" style="font-size:14px;line-height:1.3;white-space:normal">검수<br>방법</td><td colspan="3"><div class="chk"><span>:${cb("외관")}외관</span><span>${cb("치수")}치수</span><span>${cb("기타")}기타</span></div></td></tr>
+    <tr><td colspan="3">담 &nbsp; 당 &nbsp; 자 : ${esc(o.placeManager)}</td><td colspan="3"><span>:${cb("성적서")}성적서</span><span style="margin-left:14px">${cb("입회검사")}입회검사</span></td></tr>
+  </table>
+  <table class="appr">
+    <tr class="h"><td rowspan="2" style="width:34px;letter-spacing:0;padding:0;line-height:2.2">본<br><br>사</td><td style="width:90px">작성</td><td style="width:90px">검토</td><td style="width:90px">승인</td></tr>
+    <tr class="s"><td>${sig}</td><td></td><td></td></tr>
+  </table>
+  </div>${total>1?`<div class="pg">${pageNo} / ${total}</div>`:""}</div>`;
+}
+function draftOrderObj(){
+  const v = suppliers().find(x => x.id === S.draft.vendorId) || S.draft.vendor || null;
+  const b = buyers().find(x => x.id === S.draft.buyerId) || S.draft.buyer || S.draft.company || {};
+  const p = staffList().find(x => x.id === S.draft.staffId) || (S.draft.staffId ? S.draft.staff : null) || null;
+  return { ...S.draft, vendor:v, buyer:b, company:b, staff:p };
+}
+
+/* ---------- views ---------- */
+function render(){
+  document.querySelectorAll("#nav button").forEach(b => b.setAttribute("aria-selected", b.dataset.tab===S.tab));
+  const on = S.dbState==="ok";
+  $("#nav").hidden = !on; $("#logout").hidden = !on;
+  if (S.dbState==="login"){ $("#app").innerHTML = viewLogin(); setTimeout(()=>$("#lg-pw")?.focus(),0); return; }
+  if (S.dbState==="loading"){ $("#app").innerHTML = `<div class="empty">불러오는 중…</div>`; return; }
+  if (S.dbState==="error"){ $("#app").innerHTML = `<div class="panel login-wrap stack"><b>데이터를 불러오지 못했습니다.</b><span class="muted">${esc(S.loadErr||"")}</span><div class="row"><button class="btn pri" data-act="retry">다시 시도</button><button class="btn" data-act="logout">로그아웃</button></div></div>`; return; }
+  const banner = "";
+  const v = { order:viewOrder, history:viewHistory, vendors:viewVendors, materials:viewMaterials }[S.tab]();
+  $("#app").innerHTML = banner + v;
+  if (S.tab==="order"){ renderItems(); renderPreview(); renderResults(); }
+}
+function rerender(kind){
+  if (S.tab==="order"){
+    if (kind==="vendors"){ const sel=$("#d-vendor"); if(sel){ sel.innerHTML=vendorOptions(); } const sb=$("#d-buyer"); if(sb){ sb.innerHTML=buyerOptions(); } const ss=$("#d-staff"); if(ss){ ss.innerHTML=staffOptions(); } const pl=$("#d-place"); if(pl&&document.activeElement!==pl) pl.value=S.draft.place||""; const pm=$("#d-pm"); if(pm&&document.activeElement!==pm) pm.value=S.draft.placeManager||""; renderPreview(); }
+    if (kind==="materials") renderResults();
+    if (kind==="orders"){ const dl=$("#sites"); if(dl) dl.innerHTML=siteOptions(); }
+    return;
+  }
+  if ((kind==="vendors"&&S.tab==="vendors"&&!document.activeElement?.closest?.("form"))||(kind==="materials"&&S.tab==="materials")||(kind==="orders"&&S.tab==="history")) render();
+}
+const vendorOptions = () => `<option value="">발주받는 업체 선택</option>` + suppliers().map(v => `<option value="${esc(v.id)}" ${v.id===S.draft.vendorId?"selected":""}>${esc(v.name)}</option>`).join("");
+const staffOptions = () => `<option value="">발주 담당자 선택</option>` + staffList().map(v => `<option value="${esc(v.id)}" ${v.id===S.draft.staffId?"selected":""}>${esc(v.name)} ${esc(v.title)}</option>`).join("");
+const buyerOptions = () => `<option value="">발주하는 업체 선택</option>` + buyers().map(v => `<option value="${esc(v.id)}" ${v.id===S.draft.buyerId?"selected":""}>${esc(v.name)}${v.manager?" · "+esc(v.manager):""}</option>`).join("");
+const siteOptions = () => [...new Set(S.orders.map(o=>o.site).filter(Boolean))].map(s=>`<option value="${esc(s)}"></option>`).join("");
+
+function viewOrder(){
+  const d = S.draft;
+  return `<div class="head"><div><h2>${d.id?"발주서 수정":"새 발주서"}</h2><p class="sub">${d.id?"저장된 발주서를 수정하고 있습니다.":"내용을 입력하면 오른쪽 양식에 바로 반영됩니다."}</p></div>
+  <div class="row"><button class="btn" data-act="new-order">새로 작성</button><button class="btn" data-act="save-order">발주서 저장</button><button class="btn" data-act="print">인쇄</button><button class="btn pri" data-act="pdf">PDF 내려받기</button></div></div>
+  <div class="split">
+   <div class="stack">
+    <section class="panel"><p class="sec-t">기본 정보</p><div class="grid">
+      <label class="f">현장명<input id="d-site" data-f="site" list="sites" value="${esc(d.site)}" placeholder="예: 홍천국도 관내 북부권역 전기시설물 유지보수 공사"></label>
+      <datalist id="sites">${siteOptions()}</datalist>
+      <div class="grid g2"><label class="f">청구일자<input id="d-date" type="date" data-f="date" value="${esc(d.date)}"></label>
+      <label class="f">발주 담당자<select id="d-staff" data-f="staffId">${staffOptions()}</select></label></div>
+      <div class="grid g2"><label class="f">우리 회사 · 발주하는 업체 (양식 오른쪽)<select id="d-buyer" data-f="buyerId">${buyerOptions()}</select></label>
+      <label class="f">발주받는 업체 (양식 왼쪽)<select id="d-vendor" data-f="vendorId">${vendorOptions()}</select></label></div>
+      ${staffList().length?"":`<p class="sub">발주 담당자를 등록하면 골라서 쓸 수 있습니다. <button class="btn sm" data-tab-go="vendors" data-kind="staff">담당자 등록</button></p>`}
+      ${buyers().length&&suppliers().length?"":`<p class="sub">${!buyers().length?"발주하는 업체":"발주받는 업체"}가 아직 없습니다. <button class="btn sm" data-tab-go="vendors" data-kind="${!buyers().length?"buyer":"supplier"}">업체 등록</button></p>`}
+      <div class="grid g2"><label class="f">납기<input id="d-due" data-f="due" value="${esc(d.due)}" placeholder="예: 10/23"></label>
+      <label class="f">대금결제<input id="d-pay" data-f="payment" value="${esc(d.payment)}" placeholder="예: 현금 / 익월말"></label></div>
+    </div></section>
+    <section class="panel"><div class="row" style="justify-content:space-between;margin-bottom:10px"><p class="sec-t" style="margin:0">발주 자재 <span class="pill" id="it-count">${d.items.length}건</span></p><button class="btn sm" data-act="add-blank">빈 줄 추가</button></div>
+      <div class="picker"><input id="d-search" placeholder="자재 목록에서 품명·규격 검색해서 추가" value="${esc(S.search)}" autocomplete="off"><div id="results"></div></div>
+      <div class="items" id="items" style="margin-top:12px"></div>
+    </section>
+    <section class="panel"><p class="sec-t">납품 · 검수</p><div class="grid">
+      <label class="f">특기사항<textarea id="d-special" data-f="special" rows="2">${esc(d.special)}</textarea></label>
+      <div class="grid g2"><label class="f">납품장소<input id="d-place" data-f="place" value="${esc(d.place)}"></label>
+      <label class="f">납품 담당자<input id="d-pm" data-f="placeManager" value="${esc(d.placeManager)}" placeholder="예: 김동신부장(010-0000-0000)"></label></div>
+      <div><p class="sec-t" style="margin-bottom:6px">검수방법</p><div class="checks">${INSPECT.map((k,i)=>`<label><input type="checkbox" id="ins-${i}" data-ins="${k}" ${d.inspect?.[k]?"checked":""}>${k}</label>`).join("")}</div></div>
+    </div></section>
+   </div>
+   <div class="pv-wrap"><div class="pv-bar"><span class="muted" id="pv-info"></span></div><div class="pv" id="preview"></div></div>
+  </div>`;
+}
+function renderItems(){
+  const box = $("#items"); if(!box) return;
+  const items = S.draft.items;
+  $("#it-count").textContent = items.length + "건";
+  if (!items.length){ box.innerHTML = `<div class="empty">위 검색창에서 자재를 찾아 추가하거나 빈 줄을 추가하세요.</div>`; return; }
+  box.innerHTML = items.map((it,i)=>`<div class="it" data-i="${i}">
+    <input id="it-n-${i}" data-k="name" value="${esc(it.name)}" placeholder="품명" aria-label="품명">
+    <input id="it-s-${i}" data-k="spec" value="${esc(it.spec)}" placeholder="규격" aria-label="규격">
+    <input id="it-u-${i}" data-k="unit" value="${esc(it.unit)}" placeholder="단위" aria-label="단위">
+    <input id="it-q-${i}" data-k="qty" value="${esc(it.qty)}" placeholder="수량" inputmode="decimal" aria-label="수량" style="text-align:right">
+    <input id="it-p-${i}" data-k="price" value="${esc(it.price)}" placeholder="단가" inputmode="numeric" aria-label="단가" style="text-align:right">
+    <input id="it-b-${i}" data-k="note" value="${esc(it.note)}" placeholder="비고" aria-label="비고">
+    <div class="acts w2"><span class="no">${i+1}</span><button class="btn sm" data-act="it-up" title="위로">▲</button><button class="btn sm" data-act="it-down" title="아래로">▼</button><button class="btn sm danger" data-act="it-del">삭제</button></div>
+  </div>`).join("");
+}
+function renderResults(){
+  const box = $("#results"); if(!box) return;
+  const q = S.search.trim().toLowerCase();
+  if (!q){ box.innerHTML = ""; return; }
+  const terms = q.split(/\s+/);
+  const hits = []; for (let i=0;i<S.materials.length && hits.length<40;i++){ const m=S.materials[i]; const t=((m.name||"")+" "+(m.spec||"")).toLowerCase(); if (terms.every(x=>t.includes(x))) hits.push(i); }
+  box.innerHTML = `<div class="results">${hits.length? hits.map(i=>{const m=S.materials[i]; return `<button data-pick="${i}"><span>${esc(m.name)} <span class="muted">${esc(m.spec)}</span></span><span class="m">${esc(m.unit)}${m.price?" · "+fmt(m.price)+"원":""}</span></button>`;}).join("") : `<div class="empty">'${esc(S.search)}'에 맞는 자재가 없습니다. ${S.materials.length?"":"자재 목록 탭에서 엑셀로 먼저 등록하세요."}</div>`}</div>`;
+}
+let pvRaf = 0;
+function renderPreview(){
+  cancelAnimationFrame(pvRaf);
+  pvRaf = requestAnimationFrame(()=>{
+    const box = $("#preview"); if(!box) return;
+    const o = draftOrderObj(), pages = paginate(o.items);
+    const w = Math.min(box.clientWidth || 794, 794), sc = w/794;
+    box.innerHTML = pages.map((p,i)=>`<div class="pv-page" style="width:${794*sc}px;height:${1123*sc}px"><div style="transform:scale(${sc});transform-origin:top left;width:794px">${sheetHTML(o,p,i+1,pages.length)}</div></div>`).join("");
+    const info=$("#pv-info"); if(info) info.textContent = `A4 미리보기 · ${pages.length}장`+(pages.length>1?` (1장당 ${ROWS}줄)`:"");
+  });
+}
+new ResizeObserver(()=>{ if(S.tab==="order") renderPreview(); }).observe(document.body);
+
+function viewLogin(){
+  return `<div class="login-wrap"><section class="panel stack">
+    <div><h2>에스에스전력 발주서</h2><p class="sub">회사 비밀번호를 입력하세요.</p></div>
+    <form id="login-form" class="grid">
+      <label class="f">비밀번호<input id="lg-pw" name="password" type="password" autocomplete="current-password" required></label>
+      <button class="btn pri" type="submit" id="lg-btn">들어가기</button>
+      <p class="sub" id="lg-msg" role="alert"></p>
+    </form></section></div>`;
+}
+function viewHistory(){
+  const list = S.orders;
+  return `<div class="head"><div><h2>발주 이력</h2><p class="sub">저장한 발주서 ${list.length}건. 불러와서 수정하거나 복사해서 새로 쓸 수 있습니다.</p></div></div>
+  ${list.length? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>청구일자</th><th>현장명</th><th>발주받는 업체</th><th>자재</th><th>첫 품목</th><th></th></tr></thead><tbody>
+  ${list.map(o=>`<tr><td>${esc(o.date)}</td><td style="max-width:280px;overflow:hidden;text-overflow:ellipsis">${esc(o.site)}</td><td>${esc(o.vendor?.name)}<div class="muted" style="font-size:11px">발주: ${esc(o.buyer?.name)}${o.staff?" · "+esc(o.staff.name):""}</div></td><td class="num">${(o.items||[]).length}건</td><td class="muted">${esc(o.items?.[0]?.name)} ${esc(o.items?.[0]?.spec)}</td>
+  <td><div class="row" style="flex-wrap:nowrap"><button class="btn sm" data-act="o-load" data-id="${esc(o.id)}">불러오기</button><button class="btn sm" data-act="o-copy" data-id="${esc(o.id)}">복사</button>${S.confirm==="o:"+o.id?`<button class="btn sm pri" data-act="o-del-ok" data-id="${esc(o.id)}">삭제 확인</button>`:`<button class="btn sm danger" data-act="o-del" data-id="${esc(o.id)}">삭제</button>`}</div></td></tr>`).join("")}
+  </tbody></table></div>` : `<div class="panel empty">아직 저장한 발주서가 없습니다. 발주서 작성 탭에서 작성한 뒤 ‘발주서 저장’을 누르세요.</div>`}`;
+}
+
+const VF = { buyer:[["name","회사명","예: ㈜에스에스전력"],["bizNo","사업자등록번호","000-00-00000"],["ceo","대표","대표자 이름"],["addr","주소",""],["bizType","업태","예: 도,소매업"],["bizItem","종목","예: 전기자재 외"],["place","기본 납품장소","예: ㈜에스에스전력"],["placeManager","기본 납품 담당자","예: 김동신부장(010-0000-0000)"]],
+  supplier:[["name","업체명","예: ㈜가보테크"],["manager","담당자","예: 김준호이사(010-0000-0000)"],["phone","전화","예: 031) 752-0272"],["fax","팩스","예: 031) 752-0273"]],
+  staff:[["name","이름","예: 김동신"],["title","직급","예: 부장"],["phone","연락처","예: 010-0000-0000"]] };
+const KIND = { buyer:{t:"우리 회사 (발주하는 업체)", s:"우리 회사", d:"양식 오른쪽 칸(사업자등록번호·회사명·대표·주소·업태·종목), 도장, 결재란 서명에 들어갑니다."}, supplier:{t:"발주받는 업체", s:"발주받는 업체", d:"양식 왼쪽 칸(업체명·담당자·전화·팩스)에 들어갑니다."}, staff:{t:"발주 담당자", s:"발주 담당자", d:"고르면 납품 담당자 칸과 결재란 ‘작성’ 서명에 들어갑니다."} };
+function viewVendors(){
+  const k = S.vendorKind, e = S.vendorEdit || {}, list = byKind(k);
+  const tabs = ["buyer","staff","supplier"].map(x=>`<button class="btn ${x===k?"pri":""}" data-act="kind" data-kind="${x}">${KIND[x].s} <span class="pill" style="${x===k?"background:transparent;color:inherit;border-color:currentColor":""}">${byKind(x).length}</span></button>`).join("");
+  const imgField = (f,l,h) => `<div><p class="sec-t" style="margin-bottom:6px">${l} (선택)</p><div class="row"><div class="sig-prev" style="${f==="stamp"?"width:72px;height:72px":""}">${e[f]?`<img src="${esc(e[f])}" alt="${l}" style="${f==="stamp"?"max-height:64px":""}">`:`<span class="muted" style="font-size:12px">없음</span>`}</div>
+      <label class="btn" for="img-${f}">${l} 이미지 올리기</label><input type="file" id="img-${f}" data-img="${f}" accept="image/*" hidden>${e[f]?`<button class="btn danger" type="button" data-act="img-clear" data-f="${f}">지우기</button>`:""}</div><p class="sub" style="margin-top:4px">${h}</p></div>`;
+  const sig = k==="buyer" ? imgField("stamp","도장","회사명 옆에 찍힙니다. 흰 바탕 사진도 괜찮습니다.") + imgField("signature","기본 서명","담당자 서명이 없을 때 결재란 ‘작성’ 칸에 들어갑니다.")
+    : k==="staff" ? imgField("signature","서명","이 담당자로 발주하면 결재란 ‘작성’ 칸에 들어갑니다.") : "";
+  const card = v => k==="staff"
+    ? `<dl class="kv"><dt>직급</dt><dd>${esc(v.title)||"-"}</dd><dt>연락처</dt><dd>${esc(v.phone)||"-"}</dd><dt>서명</dt><dd>${v.signature?"등록됨":"없음"}</dd></dl>`
+    : k==="buyer"
+    ? `<dl class="kv"><dt>사업자번호</dt><dd>${esc(v.bizNo)||"-"}</dd><dt>대표</dt><dd>${esc(v.ceo)||"-"}</dd><dt>주소</dt><dd>${esc(v.addr)||"-"}</dd><dt>업태/종목</dt><dd>${esc(v.bizType)} / ${esc(v.bizItem)}</dd>${v.place?`<dt>납품장소</dt><dd>${esc(v.place)} ${esc(v.placeManager)}</dd>`:""}<dt>도장/서명</dt><dd>${v.stamp?"도장 ✓":"도장 없음"} · ${v.signature?"서명 ✓":"서명 없음"}</dd></dl>`
+    : `<dl class="kv"><dt>담당자</dt><dd>${esc(v.manager)||"-"}</dd><dt>전화</dt><dd>${esc(v.phone)||"-"}</dd><dt>팩스</dt><dd>${esc(v.fax)||"-"}</dd></dl>`;
+  return `<div class="head"><div><h2>업체 등록</h2><p class="sub">${KIND[k].t}: ${KIND[k].d}</p></div><div class="row">${tabs}</div></div>
+  <div class="split">
+    <section class="panel"><p class="sec-t">${KIND[k].t} ${e.id?"수정":"등록"}</p>
+      <form id="vendor-form" class="grid">${VF[k].map(([f,l,p])=>`<label class="f">${l}<input id="v-${k}-${f}" name="${f}" value="${esc(e[f])}" placeholder="${esc(p)}" ${f==="name"?"required":""}></label>`).join("")}
+      ${sig}
+      <div class="row"><button class="btn pri" type="submit">${e.id?"수정 내용 저장":"등록"}</button>${e.id||e.signature||e.stamp?`<button class="btn" type="button" data-act="v-cancel">취소</button>`:""}</div></form>
+    </section>
+    <div>${list.length?`<div class="cards">${list.map(v=>`<article class="card"><div class="nm">${esc(v.name)}${k==="staff"&&v.title?` <span class="muted" style="font-weight:500;font-size:13px">${esc(v.title)}</span>`:""}</div>${card(v)}
+      <div class="row" style="margin-top:4px"><button class="btn sm" data-act="v-use" data-id="${esc(v.id)}">${k==="staff"?"이 담당자로 발주":"이 업체로 발주"}</button><button class="btn sm" data-act="v-edit" data-id="${esc(v.id)}">수정</button>${S.confirm==="v:"+v.id?`<button class="btn sm pri" data-act="v-del-ok" data-id="${esc(v.id)}">삭제 확인</button>`:`<button class="btn sm danger" data-act="v-del" data-id="${esc(v.id)}">삭제</button>`}</div></article>`).join("")}</div>`
+      :`<div class="panel empty">등록된 ${KIND[k].t}가 없습니다. 왼쪽에서 등록하세요.</div>`}</div>
+  </div>
+  <section class="panel" style="margin-top:24px;max-width:440px"><p class="sec-t">접속 비밀번호 변경</p>
+    <form id="pw-form" class="grid">
+      <label class="f">현재 비밀번호<input id="pw-cur" name="current" type="password" autocomplete="current-password" required></label>
+      <label class="f">새 비밀번호 (4자 이상)<input id="pw-new" name="next" type="password" autocomplete="new-password" minlength="4" required></label>
+      <label class="f">새 비밀번호 확인<input id="pw-new2" name="next2" type="password" autocomplete="new-password" minlength="4" required></label>
+      <div class="row"><button class="btn" type="submit">비밀번호 바꾸기</button></div>
+      <p class="sub">바꾸면 다른 직원들도 새 비밀번호로 들어와야 합니다.</p>
+    </form></section>`;
+}
+
+function viewMaterials(){
+  const q = S.matSearch.trim().toLowerCase(), terms=q?q.split(/\s+/):[];
+  const idx = []; S.materials.forEach((m,i)=>{ if(!terms.length || terms.every(t=>((m.name||"")+" "+(m.spec||"")+" "+(m.note||"")).toLowerCase().includes(t))) idx.push(i); });
+  const shown = idx.slice(0,300), e = S.matEdit;
+  const pi = S.pendingImport;
+  return `<div class="head"><div><h2>자재 목록</h2><p class="sub">등록된 자재 ${S.materials.length.toLocaleString()}건. 엑셀로 한꺼번에 올리고, 발주서 작성 때 검색해서 씁니다.</p></div>
+  <div class="row"><button class="btn" data-act="tpl">엑셀 양식 내려받기</button><button class="btn" data-act="mat-export" ${S.materials.length?"":"disabled"}>현재 목록 엑셀로</button></div></div>
+  <div class="split">
+   <div class="stack">
+    <section class="panel"><p class="sec-t">엑셀 대량 등록</p>
+      <label class="drop" id="drop" for="xl-file"><b>엑셀 파일 선택</b> 또는 여기로 끌어놓기<br><span style="font-size:12px">첫 줄 제목: 품명 · 규격 · 단위 · 단가 · 비고 (.xlsx, .xls, .csv)</span></label>
+      <input type="file" id="xl-file" accept=".xlsx,.xls,.csv" hidden>
+      ${pi?`<div style="margin-top:12px" class="stack"><div><b>${esc(pi.file)}</b>에서 자재 <b>${pi.rows.length.toLocaleString()}건</b>을 읽었습니다.${pi.skipped?` <span class="muted">(품명 없는 ${pi.skipped}줄 제외)</span>`:""}</div>
+        <div class="tbl-wrap" style="max-height:180px"><table class="tbl"><thead><tr><th>품명</th><th>규격</th><th>단위</th><th>단가</th><th>비고</th></tr></thead><tbody>${pi.rows.slice(0,6).map(r=>`<tr><td>${esc(r.name)}</td><td>${esc(r.spec)}</td><td>${esc(r.unit)}</td><td class="num">${esc(fmt(r.price))}</td><td>${esc(r.note)}</td></tr>`).join("")}</tbody></table></div>
+        <div class="row"><button class="btn pri" data-act="imp-merge">기존 목록에 추가</button><button class="btn" data-act="imp-replace">전체 바꾸기</button><button class="btn" data-act="imp-cancel">취소</button></div>
+        <p class="sub">‘추가’는 품명·규격이 같은 자재는 단위·단가·비고만 새 값으로 바꿉니다.</p></div>`:""}
+    </section>
+    <section class="panel"><p class="sec-t">${e!=null?"자재 수정":"자재 한 건 등록"}</p>
+      <form id="mat-form" class="grid">
+        <div class="grid g2"><label class="f">품명<input id="m-name" name="name" required value="${esc(e!=null?S.materials[e]?.name:"")}"></label><label class="f">규격<input id="m-spec" name="spec" value="${esc(e!=null?S.materials[e]?.spec:"")}"></label></div>
+        <div class="grid g3"><label class="f">단위<input id="m-unit" name="unit" value="${esc(e!=null?S.materials[e]?.unit:"")}"></label><label class="f">단가<input id="m-price" name="price" inputmode="numeric" value="${esc(e!=null?S.materials[e]?.price:"")}"></label><label class="f">비고<input id="m-note" name="note" value="${esc(e!=null?S.materials[e]?.note:"")}"></label></div>
+        <div class="row"><button class="btn pri" type="submit">${e!=null?"수정 내용 저장":"등록"}</button>${e!=null?`<button class="btn" type="button" data-act="m-cancel">취소</button>`:""}</div>
+      </form>
+    </section>
+   </div>
+   <div class="stack">
+    <div class="row"><input id="mat-q" placeholder="품명·규격 검색" value="${esc(S.matSearch)}" style="max-width:320px">
+      ${S.materials.length?(S.confirm==="m:all"?`<button class="btn pri" data-act="m-clear-ok">전체 삭제 확인</button>`:`<button class="btn danger" data-act="m-clear">전체 삭제</button>`):""}
+      <span class="muted" style="font-size:12px">${idx.length.toLocaleString()}건${idx.length>shown.length?` 중 ${shown.length}건 표시`:""}</span></div>
+    ${S.materials.length?`<div class="tbl-wrap" style="max-height:640px"><table class="tbl"><thead><tr><th>품명</th><th>규격</th><th>단위</th><th style="text-align:right">단가</th><th>비고</th><th></th></tr></thead><tbody>
+      ${shown.map(i=>{const m=S.materials[i]; return `<tr><td>${esc(m.name)}</td><td>${esc(m.spec)}</td><td>${esc(m.unit)}</td><td class="num">${esc(fmt(m.price))}</td><td class="muted">${esc(m.note)}</td><td><div class="row" style="flex-wrap:nowrap"><button class="btn sm" data-act="m-edit" data-i="${i}">수정</button><button class="btn sm danger" data-act="m-del" data-i="${i}">삭제</button></div></td></tr>`;}).join("")}
+    </tbody></table></div>`:`<div class="panel empty">아직 등록된 자재가 없습니다. ‘엑셀 양식 내려받기’로 양식을 받아 채운 뒤 올리세요.</div>`}
+   </div>
+  </div>`;
+}
+
+/* ---------- excel ---------- */
+const HMAP = { name:["품명","자재명","품목","품목명","명칭"], spec:["규격","사양","규격/사양","모델"], unit:["단위"], price:["단가","가격","금액(단가)","단가(원)"], note:["비고","메모","적요"] };
+function parseSheet(ab){
+  const wb = XLSX.read(ab, {type:"array"}); const ws = wb.Sheets[wb.SheetNames[0]];
+  const aoa = XLSX.utils.sheet_to_json(ws, {header:1, defval:"", raw:false});
+  let hr = -1, cols = {name:0,spec:1,unit:2,price:3,note:4};
+  for (let r=0;r<Math.min(15,aoa.length);r++){
+    const row = aoa[r].map(x=>String(x).replace(/\s/g,""));
+    const ni = row.findIndex(x=>HMAP.name.includes(x));
+    if (ni>=0){ hr=r; cols={}; for (const k in HMAP){ cols[k]=row.findIndex(x=>HMAP[k].includes(x)); } break; }
+  }
+  const out=[]; let skipped=0;
+  for (let r=hr+1;r<aoa.length;r++){
+    const row=aoa[r]; const g=k=>cols[k]>=0?String(row[cols[k]]??"").trim():"";
+    const it={name:g("name"),spec:g("spec"),unit:g("unit"),price:g("price").replace(/[^0-9.\-]/g,""),note:g("note")};
+    if(!it.name){ if(it.spec||it.unit||it.price) skipped++; continue; }
+    out.push(it);
+  }
+  return {rows:out, skipped};
+}
+async function handleFile(f){
+  if(!f) return;
+  try{ const r = parseSheet(await f.arrayBuffer()); if(!r.rows.length){ toast("읽을 자재가 없습니다. 첫 줄에 ‘품명’ 제목이 있는지 확인해 주세요."); return; } S.pendingImport={file:f.name, ...r}; render(); }
+  catch(e){ console.warn(e); toast("엑셀 파일을 읽지 못했습니다. .xlsx 또는 .csv 파일인지 확인해 주세요."); }
+}
+function xlsxBytes(aoa, name, widths){
+  const ws = XLSX.utils.aoa_to_sheet(aoa); ws["!cols"]=widths.map(w=>({wch:w}));
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, name);
+  return new Uint8Array(XLSX.write(wb, {type:"array", bookType:"xlsx"}));
+}
+async function offerFile(filename, data){
+  const blob = data instanceof Blob ? data : new Blob([data]);
+  const url = URL.createObjectURL(blob), a = document.createElement("a");
+  a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 5000);
+}
+
+/* ---------- pdf ---------- */
+let busy=false;
+async function makePdf(){
+  if (busy) return;
+  const o = draftOrderObj();
+  if (!o.items.some(it=>it.name)){ toast("자재를 한 건 이상 넣어 주세요"); return; }
+  busy=true; const btn=document.querySelector('[data-act="pdf"]'); if(btn){ btn.disabled=true; btn.textContent="만드는 중…"; }
+  try{
+    if (document.fonts?.ready) await document.fonts.ready;
+    const pages = paginate(o.items), host=$("#render-host");
+    const pdf = new window.jspdf.jsPDF({unit:"mm", format:"a4", orientation:"portrait"});
+    for (let i=0;i<pages.length;i++){
+      host.innerHTML = sheetHTML(o,pages[i],i+1,pages.length);
+      const cv = await html2canvas(host.firstElementChild, {scale:2.5, backgroundColor:"#ffffff", useCORS:true, logging:false});
+      if(i) pdf.addPage();
+      pdf.addImage(cv.toDataURL("image/jpeg",0.93),"JPEG",0,0,210,297);
+    }
+    host.innerHTML="";
+    const d=(o.date||today()).slice(2).replace(/-/g,"");
+    await offerFile(`${d}_발주서-${(o.vendor?.name||"거래처").replace(/[㈜()\s\\/:*?"<>|]/g,"")}.pdf`, pdf.output("blob"));
+  }catch(e){ console.warn(e); toast("PDF를 만들지 못했습니다. 다시 시도해 주세요."); }
+  busy=false; if(btn){ btn.disabled=false; btn.textContent="PDF 내려받기"; }
+}
+
+/* ---------- events ---------- */
+$("#logout").addEventListener("click", ()=>logout());
+document.getElementById("nav").addEventListener("click", e=>{ const b=e.target.closest("button[data-tab]"); if(!b) return; S.tab=b.dataset.tab; S.confirm=null; render(); window.scrollTo(0,0); });
+const app = $("#app");
+app.addEventListener("input", e=>{
+  const t=e.target;
+  if (t.dataset.f==="vendorId"||t.dataset.f==="buyerId"||t.dataset.f==="staffId") return;
+  if (t.dataset.f){ S.draft[t.dataset.f]=t.value; saveDraft(); renderPreview(); return; }
+  if (t.dataset.k){ const i=+t.closest(".it").dataset.i; S.draft.items[i][t.dataset.k]=t.value; saveDraft(); renderPreview(); return; }
+  if (t.id==="d-search"){ S.search=t.value; renderResults(); return; }
+  if (t.id==="mat-q"){ S.matSearch=t.value; clearTimeout(app._mq); app._mq=setTimeout(()=>{ const pos=t.selectionStart; render(); const n=$("#mat-q"); if(n){ n.focus(); try{n.setSelectionRange(pos,pos);}catch(_){} } },200); }
+});
+app.addEventListener("change", e=>{
+  const t=e.target;
+  if (t.dataset.f==="vendorId"){ S.draft.vendorId=t.value; S.draft.vendor=suppliers().find(v=>v.id===t.value)||null; saveDraft(); renderPreview(); }
+  if (t.dataset.f==="staffId"){ applyStaff(t.value); saveDraft(); const pm=$("#d-pm"); if(pm) pm.value=S.draft.placeManager||""; renderPreview(); }
+  if (t.dataset.f==="buyerId"){ applyBuyer(t.value); saveDraft(); const pl=$("#d-place"), pm=$("#d-pm"); if(pl) pl.value=S.draft.place||""; if(pm) pm.value=S.draft.placeManager||""; renderPreview(); }
+  if (t.dataset.ins){ S.draft.inspect={...S.draft.inspect,[t.dataset.ins]:t.checked}; saveDraft(); renderPreview(); }
+  if (t.id==="xl-file"){ handleFile(t.files[0]); t.value=""; }
+  if (t.dataset.img){ loadImg(t.files[0], t.dataset.img); t.value=""; }
+});
+app.addEventListener("dragover", e=>{ const d=e.target.closest("#drop"); if(d){ e.preventDefault(); d.classList.add("on"); } });
+app.addEventListener("dragleave", e=>{ const d=e.target.closest("#drop"); if(d) d.classList.remove("on"); });
+app.addEventListener("drop", e=>{ const d=e.target.closest("#drop"); if(d){ e.preventDefault(); d.classList.remove("on"); handleFile(e.dataTransfer.files[0]); } });
+
+app.addEventListener("submit", async e=>{
+  e.preventDefault(); const f=e.target, fd=Object.fromEntries(new FormData(f).entries());
+  for (const k in fd) fd[k]=String(fd[k]).trim();
+  if (f.id==="login-form"){
+    const btn=$("#lg-btn"), msg=$("#lg-msg"); btn.disabled=true; msg.textContent="";
+    try { const r = await API.call("POST","login",{ password:fd.password }); API.token=r.token; ls.set("po-token", r.token); await initDb(); }
+    catch(e2){ msg.textContent = e2.msg || "들어가지 못했습니다."; btn.disabled=false; }
+    return;
+  }
+  if (f.id==="pw-form"){
+    if (fd.next!==fd.next2){ toast("새 비밀번호 두 칸이 서로 다릅니다"); return; }
+    try { await API.call("POST","password",{ current:fd.current, next:fd.next }); f.reset(); toast("비밀번호를 바꿨습니다"); }
+    catch(e2){ toast(e2.msg || "바꾸지 못했습니다"); }
+    return;
+  }
+  if (f.id==="vendor-form"){
+    if(!fd.name) return;
+    const ed = S.vendorEdit || {}, id = ed.id || ("v"+uid());
+    Object.assign(fd, { kind:S.vendorKind });
+    if (S.vendorKind==="buyer"){ fd.stamp=ed.stamp||""; fd.signature=ed.signature||""; }
+    if (S.vendorKind==="staff"){ fd.signature=ed.signature||""; }
+    if (await dbSet("vendors/"+id, fd)){ toast(ed.id?"수정했습니다":"등록했습니다"); }
+    S.vendorEdit=null; render();
+  }
+  if (f.id==="mat-form"){
+    if(!fd.name) return; fd.price=fd.price.replace(/[^0-9.\-]/g,"");
+    if (S.matEdit!=null){ S.materials[S.matEdit]=fd; S.matEdit=null; } else S.materials=[...S.materials, fd];
+    S.materials=S.materials.slice(); saveMaterials(); render();
+  }
+});
+
+function captureVendorForm(){
+  const f=$("#vendor-form"); if(!f) return;
+  const fd=Object.fromEntries(new FormData(f).entries());
+  S.vendorEdit={...(S.vendorEdit||{}), ...fd};
+}
+function loadImg(file, field){
+  if(!file) return;
+  captureVendorForm();
+  const img=new Image(), url=URL.createObjectURL(file);
+  img.onload=()=>{ const max=field==="stamp"?[240,240]:[360,140]; const r=Math.min(1,max[0]/img.width,max[1]/img.height); const c=document.createElement("canvas"); c.width=Math.round(img.width*r); c.height=Math.round(img.height*r); c.getContext("2d").drawImage(img,0,0,c.width,c.height); URL.revokeObjectURL(url);
+    S.vendorEdit={...(S.vendorEdit||{}), [field]:c.toDataURL("image/png")}; render(); toast("이미지를 넣었습니다. ‘"+(S.vendorEdit.id?"수정 내용 저장":"등록")+"’을 눌러야 저장됩니다."); };
+  img.onerror=()=>toast("이미지를 읽지 못했습니다");
+  img.src=url;
+}
+
+app.addEventListener("click", async e=>{
+  const go=e.target.closest("[data-tab-go]"); if(go){ S.tab=go.dataset.tabGo; if(go.dataset.kind) S.vendorKind=go.dataset.kind; S.vendorEdit=null; render(); return; }
+  const pick=e.target.closest("[data-pick]");
+  if (pick){ const m=S.materials[+pick.dataset.pick]; S.draft.items.push({name:m.name||"",spec:m.spec||"",unit:m.unit||"",qty:"",price:m.price||"",note:m.note||""}); saveDraft(); S.search=""; $("#d-search").value=""; renderResults(); renderItems(); renderPreview(); const q=$("#it-q-"+(S.draft.items.length-1)); if(q) q.focus(); return; }
+  const b=e.target.closest("[data-act]"); if(!b) return;
+  const act=b.dataset.act, id=b.dataset.id;
+  const itRow=b.closest(".it"), ii=itRow?+itRow.dataset.i:-1, items=S.draft.items;
+  switch(act){
+    case "add-blank": items.push({name:"",spec:"",unit:"",qty:"",price:"",note:""}); saveDraft(); renderItems(); renderPreview(); $("#it-n-"+(items.length-1))?.focus(); break;
+    case "it-del": items.splice(ii,1); saveDraft(); renderItems(); renderPreview(); break;
+    case "it-up": if(ii>0){ [items[ii-1],items[ii]]=[items[ii],items[ii-1]]; saveDraft(); renderItems(); renderPreview(); } break;
+    case "it-down": if(ii<items.length-1){ [items[ii+1],items[ii]]=[items[ii],items[ii+1]]; saveDraft(); renderItems(); renderPreview(); } break;
+    case "new-order": S.draft=blankDraft(); saveDraft(); render(); toast("새 발주서를 시작했습니다"); break;
+    case "save-order": {
+      const o=draftOrderObj(); if(!o.site && !o.items.length){ toast("현장명이나 자재를 먼저 입력해 주세요"); break; }
+      const oid=S.draft.id||("o"+uid());
+      const doc={ site:o.site, date:o.date, vendorId:o.vendorId, vendor:o.vendor, due:o.due, payment:o.payment, special:o.special, place:o.place, placeManager:o.placeManager, inspect:o.inspect, items:o.items.filter(it=>it.name||it.spec||it.qty), buyerId:o.buyerId, buyer:{...o.buyer, stamp:"", signature:""}, staffId:o.staffId||"", staff:o.staff?{...o.staff, signature:""}:null, savedAt:new Date().toISOString() };
+      if (await dbSet("orders/"+oid, doc)){ S.draft.id=oid; saveDraft(); render(); toast("발주서를 저장했습니다"); }
+      break; }
+    case "pdf": makePdf(); break;
+    case "print": { const o=draftOrderObj(); const pages=paginate(o.items); $("#print-host").innerHTML=pages.map((p,i)=>sheetHTML(o,p,i+1,pages.length)).join(""); if(document.fonts?.ready) await document.fonts.ready; window.print(); break; }
+    case "retry": initDb(); break;
+    case "logout": logout(); break;
+    case "o-load": case "o-copy": { const o=S.orders.find(x=>x.id===id); if(!o) break; S.draft={ ...blankDraft(), ...o, items:(o.items||[]).map(x=>({...x})), id: act==="o-load"?o.id:null, date: act==="o-load"?o.date:today() }; delete S.draft.company; delete S.draft.savedAt; if(!S.draft.buyerId && buyers()[0]) applyBuyer(buyers()[0].id); saveDraft(); S.tab="order"; render(); toast(act==="o-load"?"발주서를 불러왔습니다":"복사본으로 새 발주서를 시작했습니다"); break; }
+    case "o-del": S.confirm="o:"+id; render(); break;
+    case "o-del-ok": S.confirm=null; if(await dbDel("orders/"+id)) toast("삭제했습니다"); if(S.draft.id===id){ S.draft.id=null; saveDraft(); } render(); break;
+    case "v-edit": S.vendorEdit={...S.vendors.find(v=>v.id===id)}; S.vendorKind=S.vendorEdit.kind==="buyer"||S.vendorEdit.kind==="staff"?S.vendorEdit.kind:"supplier"; render(); window.scrollTo(0,0); break;
+    case "v-cancel": S.vendorEdit=null; render(); break;
+    case "v-use": { const v=S.vendors.find(x=>x.id===id); if(v?.kind==="buyer") applyBuyer(id); else if(v?.kind==="staff") applyStaff(id); else { S.draft.vendorId=id; S.draft.vendor=v||null; } saveDraft(); S.tab="order"; render(); break; }
+    case "v-del": S.confirm="v:"+id; render(); break;
+    case "v-del-ok": S.confirm=null; if(await dbDel("vendors/"+id)) toast("삭제했습니다"); render(); break;
+    case "m-edit": S.matEdit=+b.dataset.i; render(); window.scrollTo(0,0); break;
+    case "m-cancel": S.matEdit=null; render(); break;
+    case "m-del": { const i=+b.dataset.i; S.materials=S.materials.filter((_,k)=>k!==i); if(S.matEdit===i) S.matEdit=null; saveMaterials(); render(); break; }
+    case "m-clear": S.confirm="m:all"; render(); break;
+    case "m-clear-ok": S.confirm=null; S.materials=[]; S.matEdit=null; saveMaterials(); render(); break;
+    case "imp-cancel": S.pendingImport=null; render(); break;
+    case "imp-replace": S.materials=S.pendingImport.rows; S.pendingImport=null; S.matEdit=null; saveMaterials(); render(); break;
+    case "imp-merge": {
+      const list=S.materials.slice(), key=m=>(m.name+"|"+(m.spec||"")).replace(/\s/g,"").toLowerCase(), pos=new Map(list.map((m,i)=>[key(m),i]));
+      let add=0, upd=0; for(const r of S.pendingImport.rows){ const k=key(r); if(pos.has(k)){ list[pos.get(k)]=r; upd++; } else { pos.set(k,list.length); list.push(r); add++; } }
+      S.materials=list; S.pendingImport=null; S.matEdit=null; saveMaterials(); render(); toast(`새 자재 ${add}건, 갱신 ${upd}건`); break; }
+    case "tpl": await offerFile("자재등록_양식.xlsx", xlsxBytes([["품명","규격","단위","단가","비고"],["단자대","누전차단기1개내장형","SET","","가로등용접속함"]],"자재목록",[20,28,8,12,20])); break;
+    case "mat-export": await offerFile(`자재목록_${today()}.xlsx`, xlsxBytes([["품명","규격","단위","단가","비고"], ...S.materials.map(m=>[m.name,m.spec,m.unit,m.price?Number(m.price):"",m.note])],"자재목록",[20,28,8,12,20])); break;
+    case "img-clear": captureVendorForm(); S.vendorEdit={...S.vendorEdit, [b.dataset.f]:""}; render(); break;
+    case "kind": S.vendorKind=b.dataset.kind; S.vendorEdit=null; S.confirm=null; render(); break;
+  }
+});
+
+render();
+initDb();
+})();
+</script>
+
+</body>
+</html>
