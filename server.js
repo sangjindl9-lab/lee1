@@ -92,6 +92,24 @@ async function seedIfEmpty() {
   }
   await store.set("config/seeded", true);
 }
+/* ---------- 발주번호: SS-YYMMDD-NN (청구일자 기준, 날짜별 순번) ---------- */
+const NO_PREFIX = process.env.ORDER_PREFIX || "SS";
+const dayCode = (date) => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(date || ""); return m ? m[1].slice(2) + m[2] + m[3] : new Date(Date.now() + 9 * 3600e3).toISOString().slice(2, 10).replace(/-/g, ""); };
+let noLock = Promise.resolve();
+function nextOrderNo(date, rows) {
+  const head = `${NO_PREFIX}-${dayCode(date)}-`;
+  const used = rows.map((r) => r.value?.no).filter((n) => typeof n === "string" && n.startsWith(head)).map((n) => Number(n.slice(head.length)) || 0);
+  return head + String((used.length ? Math.max(...used) : 0) + 1).padStart(2, "0");
+}
+// 번호 매기기는 한 번에 하나씩 (동시에 저장해도 겹치지 않게)
+function withNoLock(fn) { const run = noLock.then(fn, fn); noLock = run.catch(() => {}); return run; }
+async function backfillOrderNos() {
+  return withNoLock(async () => {
+    const rows = await store.list("orders/");
+    const missing = rows.filter((r) => r.value && !r.value.no).sort((a, b) => String(a.value.date || "").localeCompare(String(b.value.date || "")) || String(a.value.savedAt || "").localeCompare(String(b.value.savedAt || "")));
+    for (const r of missing) { r.value.no = nextOrderNo(r.value.date, rows); await store.set(r.key, r.value); }
+  });
+}
 const strip = (prefix, rows) => rows.filter((r) => r.value != null).map((r) => ({ ...r.value, id: r.key.slice(prefix.length) }));
 
 /* ---------- HTTP ---------- */
@@ -128,6 +146,7 @@ async function api(req, res, parts) {
 
   if (route === "all" && req.method === "GET") {
     await seedIfEmpty();
+    await backfillOrderNos();
     const [vendors, orders, mats] = await Promise.all([store.list("vendors/"), store.list("orders/"), store.list("materials/")]);
     const materials = mats.map((m) => m.value).filter(Boolean).sort((a, b) => (a.idx || 0) - (b.idx || 0)).flatMap((m) => m.items || []);
     return send(res, 200, { vendors: strip("vendors/", vendors), orders: strip("orders/", orders), materials });
@@ -140,6 +159,15 @@ async function api(req, res, parts) {
       const body = await readBody(req, 1_000_000);
       if (!body || typeof body !== "object" || Array.isArray(body)) return fail(res, 400, "잘못된 데이터입니다.");
       delete body.id;
+      if (col === "orders") {
+        const no = await withNoLock(async () => {
+          const prev = await store.get(`orders/${id}`);
+          body.no = prev?.no || nextOrderNo(body.date, await store.list("orders/"));
+          await store.set(`orders/${id}`, body);
+          return body.no;
+        });
+        return send(res, 200, { ok: true, no });
+      }
       await store.set(`${col}/${id}`, body);
       return send(res, 200, { ok: true });
     }

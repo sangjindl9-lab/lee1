@@ -113,6 +113,8 @@ table.tbl{width:100%;border-collapse:collapse;font-size:13px}
 .sheet{width:794px;height:1123px;background:var(--paper);color:var(--paper-ink);font-family:var(--f-sheet);padding:50px 40px 30px;position:relative}
 .sheet *{color:var(--paper-ink)}
 .frame{border:1.4px solid var(--paper-ink);padding:10px 18px 16px}
+.frame{position:relative}
+.s-no{position:absolute;right:20px;top:10px;font-size:12.5px;font-variant-numeric:tabular-nums;letter-spacing:.02em}
 .s-title{text-align:center;font-size:29px;font-weight:500;letter-spacing:.32em;margin:4px 0 6px}
 .s-title span{border-bottom:1.5px solid var(--paper-ink);padding:0 0 1px .32em}
 .s-line{display:flex;justify-content:space-between;align-items:baseline;font-size:17px;margin:0 0 6px;white-space:nowrap}
@@ -245,7 +247,7 @@ const API = {
   }
 };
 const sortV = l => l.sort((a,b)=>(a.name||"").localeCompare(b.name||"","ko"));
-const sortO = l => l.sort((a,b)=>(b.date||"").localeCompare(a.date||"") || (b.savedAt||"").localeCompare(a.savedAt||""));
+const sortO = l => l.sort((a,b)=>(b.date||"").localeCompare(a.date||"") || (b.no||"").localeCompare(a.no||"") || (b.savedAt||"").localeCompare(a.savedAt||""));
 let matSaving = false, matTimer = null;
 function logout(expired){
   API.token=null; ls.set("po-token",null); S.db=null; S.dbState="login"; render();
@@ -285,8 +287,10 @@ function saveMaterials(){
 }
 async function dbSet(path, data){
   const [col,id] = path.split("/");
-  try { await API.call("PUT","doc/"+path, data); }
+  let r;
+  try { r = await API.call("PUT","doc/"+path, data); }
   catch(e){ toast(e.msg || "저장하지 못했습니다."); return false; }
+  if (r && r.no) data.no = r.no;
   const list = S[col].filter(x=>x.id!==id); list.push({ ...data, id });
   S[col] = col==="vendors" ? sortV(list) : sortO(list);
   return true;
@@ -325,6 +329,7 @@ function sheetHTML(o, pageItems, pageNo, total){
   const sig = sigSrc ? `<img src="${esc(sigSrc)}" alt="">` : "";
   const stamp = c.stamp ? `<img class="stamp" src="${esc(c.stamp)}" alt="">` : "";
   return `<div class="sheet"><div class="frame">
+  <div class="s-no">발주번호 : ${esc(o.no||"")}</div>
   <div class="s-title"><span>자재청구및 발주서</span></div>
   <div class="s-line"><div>현 장 명 : <small class="site">${esc(o.site)}</small></div><div>청구일자 : ${kDate(o.date)}</div></div>
   <table class="form">
@@ -393,7 +398,7 @@ const siteOptions = () => [...new Set(S.orders.map(o=>o.site).filter(Boolean))].
 
 function viewOrder(){
   const d = S.draft;
-  return `<div class="head"><div><h2>${d.id?"발주서 수정":"새 발주서"}</h2><p class="sub">${d.id?"저장된 발주서를 수정하고 있습니다.":"내용을 입력하면 오른쪽 양식에 바로 반영됩니다."}</p></div>
+  return `<div class="head"><div><h2>${d.id?"발주서 수정":"새 발주서"}${d.no?` <span class="pill" style="font-size:12px;vertical-align:middle">${esc(d.no)}</span>`:""}</h2><p class="sub">${d.id?"저장된 발주서를 수정하고 있습니다.":"발주번호는 ‘발주서 저장’을 누르면 자동으로 붙습니다."}</p></div>
   <div class="row"><button class="btn" data-act="new-order">새로 작성</button><button class="btn" data-act="save-order">발주서 저장</button><button class="btn" data-act="print">인쇄</button><button class="btn pri" data-act="pdf">PDF 내려받기</button></div></div>
   <div class="split">
    <div class="stack">
@@ -485,8 +490,8 @@ function viewLogin(){
 function viewHistory(){
   const list = S.orders;
   return `<div class="head"><div><h2>발주 이력</h2><p class="sub">저장한 발주서 ${list.length}건. 불러와서 수정하거나 복사해서 새로 쓸 수 있습니다.</p></div></div>
-  ${list.length? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>청구일자</th><th>현장명</th><th>발주받는 업체</th><th>자재</th><th>첫 품목</th><th></th></tr></thead><tbody>
-  ${list.map(o=>`<tr><td>${esc(o.date)}</td><td style="max-width:280px;overflow:hidden;text-overflow:ellipsis">${esc(o.site)}</td><td>${esc(o.vendor?.name)}<div class="muted" style="font-size:11px">발주: ${esc(o.buyer?.name)}${o.staff?" · "+esc(o.staff.name):""}</div></td><td class="num">${(o.items||[]).length}건<div class="muted" style="font-size:11px">${totals(o.items||[],o.vat).total?totals(o.items||[],o.vat).total.toLocaleString("ko-KR")+"원":""}</div></td><td class="muted">${esc(o.items?.[0]?.name)} ${esc(o.items?.[0]?.spec)}</td>
+  ${list.length? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>발주번호</th><th>청구일자</th><th>현장명</th><th>발주받는 업체</th><th>자재</th><th>첫 품목</th><th></th></tr></thead><tbody>
+  ${list.map(o=>`<tr><td style="font-variant-numeric:tabular-nums;font-weight:600">${esc(o.no||"")}</td><td>${esc(o.date)}</td><td style="max-width:280px;overflow:hidden;text-overflow:ellipsis">${esc(o.site)}</td><td>${esc(o.vendor?.name)}<div class="muted" style="font-size:11px">발주: ${esc(o.buyer?.name)}${o.staff?" · "+esc(o.staff.name):""}</div></td><td class="num">${(o.items||[]).length}건<div class="muted" style="font-size:11px">${totals(o.items||[],o.vat).total?totals(o.items||[],o.vat).total.toLocaleString("ko-KR")+"원":""}</div></td><td class="muted">${esc(o.items?.[0]?.name)} ${esc(o.items?.[0]?.spec)}</td>
   <td><div class="row" style="flex-wrap:nowrap"><button class="btn sm" data-act="o-load" data-id="${esc(o.id)}">불러오기</button><button class="btn sm" data-act="o-copy" data-id="${esc(o.id)}">복사</button>${S.confirm==="o:"+o.id?`<button class="btn sm pri" data-act="o-del-ok" data-id="${esc(o.id)}">삭제 확인</button>`:`<button class="btn sm danger" data-act="o-del" data-id="${esc(o.id)}">삭제</button>`}</div></td></tr>`).join("")}
   </tbody></table></div>` : `<div class="panel empty">아직 저장한 발주서가 없습니다. 발주서 작성 탭에서 작성한 뒤 ‘발주서 저장’을 누르세요.</div>`}`;
 }
@@ -620,7 +625,7 @@ async function makePdf(){
     }
     host.innerHTML="";
     const d=(o.date||today()).slice(2).replace(/-/g,"");
-    await offerFile(`${d}_발주서-${(o.vendor?.name||"거래처").replace(/[㈜()\s\\/:*?"<>|]/g,"")}.pdf`, pdf.output("blob"));
+    await offerFile(`${o.no?o.no+"_":d+"_"}발주서-${(o.vendor?.name||"거래처").replace(/[㈜()\s\\/:*?"<>|]/g,"")}.pdf`, pdf.output("blob"));
   }catch(e){ console.warn(e); toast("PDF를 만들지 못했습니다. 다시 시도해 주세요."); }
   busy=false; if(btn){ btn.disabled=false; btn.textContent="PDF 내려받기"; }
 }
@@ -714,13 +719,14 @@ app.addEventListener("click", async e=>{
       const o=draftOrderObj(); if(!o.site && !o.items.length){ toast("현장명이나 자재를 먼저 입력해 주세요"); break; }
       const oid=S.draft.id||("o"+uid());
       const doc={ site:o.site, date:o.date, vendorId:o.vendorId, vendor:o.vendor, due:o.due, payment:o.payment, special:o.special, place:o.place, placeManager:o.placeManager, inspect:o.inspect, vat:o.vat==="포함"?"포함":"별도", items:o.items.filter(it=>it.name||it.spec||it.qty), buyerId:o.buyerId, buyer:{...o.buyer, stamp:"", signature:""}, staffId:o.staffId||"", staff:o.staff?{...o.staff, signature:""}:null, savedAt:new Date().toISOString() };
-      if (await dbSet("orders/"+oid, doc)){ S.draft.id=oid; saveDraft(); render(); toast("발주서를 저장했습니다"); }
+      if (S.draft.no) doc.no=S.draft.no;
+      if (await dbSet("orders/"+oid, doc)){ S.draft.id=oid; S.draft.no=doc.no||""; saveDraft(); render(); toast(`발주서를 저장했습니다 (${doc.no||""})`); }
       break; }
     case "pdf": makePdf(); break;
     case "print": { const o=draftOrderObj(); const pages=paginate(o.items); $("#print-host").innerHTML=pages.map((p,i)=>sheetHTML(o,p,i+1,pages.length)).join(""); if(document.fonts?.ready) await document.fonts.ready; window.print(); break; }
     case "retry": initDb(); break;
     case "logout": logout(); break;
-    case "o-load": case "o-copy": { const o=S.orders.find(x=>x.id===id); if(!o) break; S.draft={ ...blankDraft(), ...o, items:(o.items||[]).map(x=>({...x})), id: act==="o-load"?o.id:null, date: act==="o-load"?o.date:today() }; delete S.draft.company; delete S.draft.savedAt; if(!S.draft.buyerId && buyers()[0]) applyBuyer(buyers()[0].id); saveDraft(); S.tab="order"; render(); toast(act==="o-load"?"발주서를 불러왔습니다":"복사본으로 새 발주서를 시작했습니다"); break; }
+    case "o-load": case "o-copy": { const o=S.orders.find(x=>x.id===id); if(!o) break; S.draft={ ...blankDraft(), ...o, items:(o.items||[]).map(x=>({...x})), id: act==="o-load"?o.id:null, no: act==="o-load"?(o.no||""):"", date: act==="o-load"?o.date:today() }; delete S.draft.company; delete S.draft.savedAt; if(!S.draft.buyerId && buyers()[0]) applyBuyer(buyers()[0].id); saveDraft(); S.tab="order"; render(); toast(act==="o-load"?"발주서를 불러왔습니다":"복사본으로 새 발주서를 시작했습니다"); break; }
     case "o-del": S.confirm="o:"+id; render(); break;
     case "o-del-ok": S.confirm=null; if(await dbDel("orders/"+id)) toast("삭제했습니다"); if(S.draft.id===id){ S.draft.id=null; saveDraft(); } render(); break;
     case "v-edit": S.vendorEdit={...S.vendors.find(v=>v.id===id)}; S.vendorKind=S.vendorEdit.kind==="buyer"||S.vendorEdit.kind==="staff"?S.vendorEdit.kind:"supplier"; render(); window.scrollTo(0,0); break;
