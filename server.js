@@ -53,6 +53,8 @@ async function makeStore() {
   };
 }
 const store = await makeStore();
+// Render 위에서 DB 없이 돌면 재시작 때 데이터가 사라지므로 저장 기능을 막는다
+const NO_DB = !!process.env.RENDER && !process.env.DATABASE_URL;
 
 /* ---------- 인증 ---------- */
 const hmac = (s) => crypto.createHmac("sha256", SECRET).update(s).digest("base64url");
@@ -120,6 +122,7 @@ async function api(req, res, parts) {
     return send(res, 200, { token: makeToken() });
   }
 
+  if (NO_DB) return fail(res, 503, "데이터베이스가 아직 연결되지 않았습니다. 관리자가 DATABASE_URL을 설정해야 합니다.");
   const auth = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "");
   if (!verifyToken(auth)) return fail(res, 401, "로그인이 필요합니다.");
 
