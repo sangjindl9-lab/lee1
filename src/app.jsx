@@ -265,7 +265,7 @@ async function exportExcel(tpl, doc, items, pageCount, name, onProg){
           const bw = pSpan*COLPX - 8, bh = photoRows*PX - 8;
           const data = await fitToBox(item.src, bw, bh, doc.fit);
           const id = wb.addImage({ base64:data, extension:'jpeg' });
-          ws.addImage(id, { tl:{ col:c0-1+0.07, row:top-1+0.2 }, ext:{ width:bw, height:bh }, editAs:'oneCell' });
+          ws.addImage(id, { tl:{ col:c0-1+0.4, row:top-1+0.16 }, br:{ col:c0-1+pSpan, row:top-1+photoRows }, editAs:'twoCell' }); // ExcelJS 오프셋은 열너비·행높이 기준이 달라 끝점은 칸 경계에 맞춤
         }
         const pre = tpl.cmp ? (idx%2===0?'[시공 전] ':'[시공 후] ') : '';
         if(isSide){
