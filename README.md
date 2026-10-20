@@ -35,6 +35,9 @@
 
 ## Render 배포
 
+> 지금 설정: 무료 DB 는 워크스페이스당 1개라서, 발주서 프로그램 DB(`ssjr-balju-db`) 안에 `stayon` 스키마를 따로 만들어 씁니다(`DB_SCHEMA=stayon`). 발주서 테이블과 섞이지 않습니다. 유료 DB 로 옮길 때는 새 DB 의 주소를 `DATABASE_URL` 에 넣으면 테이블이 자동으로 만들어집니다.
+
+
 1. Render 대시보드 → **New → Blueprint** → 이 저장소, 브랜치 `stayon` 선택 → `render.yaml` 대로 웹서비스와 DB 가 만들어집니다.
 2. 환경변수에서 `ADMIN_EMAILS` 에 관리자 이메일을 넣습니다(쉼표로 여러 개). 그 이메일로 가입하면 관리자가 됩니다.
 3. 접속해서 관리자 콘솔 › 설정에서 상호·사업자 정보·입금 계좌·약관을 채웁니다.
@@ -49,6 +52,7 @@
 | `TOSS_CLIENT_KEY`, `TOSS_SECRET_KEY` | 토스페이먼츠 키 |
 | `KAKAO_REST_KEY`, `KAKAO_CLIENT_SECRET` | 카카오 로그인 (시크릿은 사용 설정한 경우만) |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Google 로그인 |
+| `DB_SCHEMA` | 다른 서비스와 DB 하나를 같이 쓸 때 테이블을 넣을 스키마 이름 (예: `stayon`). 비우면 기본(public) |
 | `BASE_URL` | 소셜 로그인 돌아올 주소 (비우면 Render 주소 자동 사용, 도메인 연결 시 입력) |
 
 **키는 절대 코드에 넣지 마세요.** 이 저장소는 공개되어 있습니다.
