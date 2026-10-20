@@ -1,0 +1,16 @@
+{
+  "name": "stayon",
+  "private": true,
+  "version": "1.0.0",
+  "description": "숙소 검색·예약 서비스 (회원·포인트·결제·광고·관리자)",
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test/e2e.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "pg": "^8.13.1"
+  }
+}
