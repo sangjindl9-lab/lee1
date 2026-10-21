@@ -73,6 +73,7 @@ export function Gate({ children }: { children: (account: Account | null) => Reac
     return (
       <Shell title="회원 전용 프로그램입니다" sub="전기·통신 예정공정표">
         <p className="text-[13.5px] text-ink2">이 주소는 더 이상 사용하지 않습니다. 관리자에게 받은 회원 주소로 접속해 로그인하세요.</p>
+        <MovedBackup />
       </Shell>
     );
   if (st.kind === 'login') return <Login notice={st.notice} onDone={apply} />;
@@ -205,5 +206,29 @@ function IpRegister({ me, onDone, onLogout }: { me: Me; onDone: (me: Me) => void
         <p className="text-[12px] text-mute">휴대폰 데이터(LTE·5G)는 IP가 자주 바뀌어 등록 칸을 빨리 쓰게 됩니다. 사무실·현장의 와이파이에서 등록하세요.</p>
       </div>
     </Shell>
+  );
+}
+
+/** 예전 공개 주소에서 쓰던 공정표가 이 브라우저에 남아 있으면 JSON 백업으로 내려받게 한다(새 주소에서 [목록]→[JSON 복원]) */
+function MovedBackup() {
+  const [ps, setPs] = useState<any[]>([]);
+  useEffect(() => {
+    import('../lib/storage').then((m) => m.localProjects()).then((list) => setPs(list.filter((p) => !p.info.name.startsWith('[예시]'))));
+  }, []);
+  if (!ps.length) return null;
+  return (
+    <div className="mt-4 rounded border border-line bg-sunk px-3 py-3 text-[13px]">
+      <div className="mb-2">이 브라우저에 예전에 만든 공정표 {ps.length}개가 남아 있습니다. 백업 파일로 받아 새 주소에서 [목록] → [JSON 복원]으로 옮기세요.</div>
+      <button
+        className="btn btn-primary"
+        onClick={async () => {
+          const { saveFile } = await import('../lib/download');
+          const blob = new Blob([JSON.stringify({ app: 'gongjung-planner', exportedAt: new Date().toISOString(), projects: ps }, null, 1)], { type: 'application/json' });
+          await saveFile('공정표_백업.json', blob);
+        }}
+      >
+        공정표 {ps.length}개 백업 받기
+      </button>
+    </div>
   );
 }
