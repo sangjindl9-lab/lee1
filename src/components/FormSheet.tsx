@@ -12,7 +12,7 @@ const INK = '#111';
 const GRID = '#222';
 const HALF = 27;
 
-export function FormSheet({ p, c, update, onOpenDetail, compact, marks = [] }: { p: Project; c: ProjectCalc; update: (fn: (d: Project) => void, key?: string) => void; onOpenDetail: (id: string) => void; compact: boolean; marks?: PhaseMark[] }) {
+export function FormSheet({ p, c, update, onOpenDetail, compact, marks = [], selected = null, onSelect }: { p: Project; c: ProjectCalc; update: (fn: (d: Project) => void, key?: string) => void; onOpenDetail: (id: string) => void; compact: boolean; marks?: PhaseMark[]; selected?: string | null; onSelect?: (id: string) => void }) {
   const f = buildForm(p, c);
   const box = useRef<HTMLDivElement>(null);
   const [boxW, setBoxW] = useState(0);
@@ -76,8 +76,8 @@ export function FormSheet({ p, c, update, onOpenDetail, compact, marks = [] }: {
     const ax2 = actStart && ae >= actStart ? dateToX(addDays(ae, 1), f.periods, colW) : ax1;
     return (
       <div className="flex" style={{ borderBottom: cellB, height: HALF * 2 }} key={id}>
-        <div style={sticky(0, nameW, { borderRight: cellB, display: 'flex', alignItems: 'center', padding: `0 6px 0 ${8 + depth * 12}px` })}>
-          <button className="text-left leading-snug" style={{ fontSize: compact ? 12 : 13, fontWeight: bold ? 700 : 400, color: INK }} onClick={onClick} disabled={!onClick}>
+        <div style={sticky(0, nameW, { borderRight: cellB, display: 'flex', alignItems: 'center', padding: `0 6px 0 ${8 + depth * 12}px`, background: selected === id ? '#fff3c4' : '#fff', boxShadow: selected === id ? 'inset 3px 0 0 #1d4ed8' : undefined })}>
+          <button className="h-full w-full text-left leading-snug" style={{ fontSize: compact ? 12 : 13, fontWeight: bold ? 700 : 400, color: INK }} onClick={() => onSelect?.(id)} onDoubleClick={onClick} title="눌러서 선택 · 두 번 눌러 상세 편집">
             {label}
           </button>
         </div>

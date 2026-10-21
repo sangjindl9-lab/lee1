@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useProjects } from './state/useProjects';
 import { computeProject, normalizeTo, UNIT_LABEL } from './lib/calc';
 import { generateTasks, rescaleTasks } from './lib/schedule';
@@ -39,6 +39,8 @@ export default function App() {
   const wide = useMedia('(min-width: 1500px)');
   const [cols, setCols] = useState<'full' | 'simple'>(() => (window.innerWidth >= 1500 ? 'full' : 'simple'));
   const [selected, setSelected] = useState<string | null>(null);
+  const selRef = useRef<string | null>(null);
+  selRef.current = selected;
   const [detail, setDetail] = useState<string | null>(null);
   const [dlg, setDlg] = useState<null | 'list' | 'new' | 'template' | 'pdf' | 'regen' | 'delTask'>(null);
   const [infoOpen, setInfoOpen] = useState(!mobile);
@@ -63,6 +65,9 @@ export default function App() {
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
         e.preventDefault();
         S.redo();
+      } else if (e.key === 'Delete' && selRef.current && !document.querySelector('.modal-back')) {
+        e.preventDefault();
+        setDlg('delTask');
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
         e.preventDefault();
         S.flush();
@@ -260,7 +265,7 @@ export default function App() {
                   </span>
                 </div>
               </div>
-              <div className={`flex-wrap items-center gap-1.5 ${sheet === 'edit' ? 'flex' : 'hidden'}`}>
+              <div className="flex flex-wrap items-center gap-1.5">
                 <button className="btn btn-sm" onClick={() => update((d) => setSelected(addAfter(d, sel)))}>
                   + 공종 추가
                 </button>
@@ -282,10 +287,12 @@ export default function App() {
                 <button className="btn btn-sm" disabled={!sel} onClick={() => sel && setDetail(sel)}>
                   상세·색상·메모
                 </button>
-                <button className="btn btn-sm btn-danger" disabled={!sel} onClick={() => setDlg('delTask')}>
-                  삭제
+                <button className="btn btn-sm btn-danger" disabled={!sel} onClick={() => setDlg('delTask')} title="선택한 공종 삭제 (Delete 키)">
+                  공종 삭제
                 </button>
-                <span className="text-[12px] text-mute">{sel ? `선택: ${c.byId.get(sel)?.node.num}. ${c.byId.get(sel)?.node.task.name}` : '행을 눌러 공종을 선택하세요'}</span>
+                <span className="text-[12px] text-mute">
+                  {sel ? `선택: ${c.byId.get(sel)?.node.num}. ${c.byId.get(sel)?.node.task.name}` : sheet === 'form' ? '공종명을 눌러 선택하세요 (두 번 누르면 상세 편집)' : '행을 눌러 공종을 선택하세요'}
+                </span>
               </div>
 
               {p.weightProvisional && p.tasks.length > 0 && (
@@ -332,7 +339,7 @@ export default function App() {
               )}
             </div>
             {sheet === 'form' ? (
-              <FormSheet p={p} c={c} update={update} onOpenDetail={setDetail} compact={mobile} marks={phaseMarks(S.projects, p)} />
+              <FormSheet p={p} c={c} update={update} onOpenDetail={setDetail} compact={mobile} marks={phaseMarks(S.projects, p)} selected={sel} onSelect={setSelected} />
             ) : mobile && mobileTab === 'input' ? (
               <div className="border-t border-line">
                 <MobileTasks c={c} update={update} onOpenDetail={setDetail} />
@@ -372,7 +379,18 @@ export default function App() {
         </div>
       </main>
 
-      {detail && <TaskDetail p={p} c={c} id={detail} update={update} onClose={() => setDetail(null)} />}
+      {detail && <TaskDetail
+          p={p}
+          c={c}
+          id={detail}
+          update={update}
+          onClose={() => setDetail(null)}
+          onDelete={() => {
+            setSelected(detail);
+            setDetail(null);
+            setDlg('delTask');
+          }}
+        />}
       {dlg === 'list' && (
         <ProjectList
           projects={S.projects}

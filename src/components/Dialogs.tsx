@@ -11,7 +11,7 @@ type Upd = (fn: (d: Project) => void, key?: string) => void;
 const SWATCH = ['', '#2c6bd3', '#0f8b8d', '#7a5bd6', '#c2410c', '#a16207', '#be185d', '#475569'];
 
 // ───────────────── 공종 상세 ─────────────────
-export function TaskDetail({ p, c, id, update, onClose }: { p: Project; c: ProjectCalc; id: string; update: Upd; onClose: () => void }) {
+export function TaskDetail({ p, c, id, update, onClose, onDelete }: { p: Project; c: ProjectCalc; id: string; update: Upd; onClose: () => void; onDelete?: () => void }) {
   const r = c.byId.get(id);
   if (!r) return null;
   const t = r.node.task;
@@ -23,7 +23,23 @@ export function TaskDetail({ p, c, id, update, onClose }: { p: Project; c: Proje
     }, key);
 
   return (
-    <Modal title={`공종 상세 · ${r.node.num}. ${t.name}`} onClose={onClose} wide>
+    <Modal
+      title={`공종 상세 · ${r.node.num}. ${t.name}`}
+      onClose={onClose}
+      wide
+      footer={
+        onDelete ? (
+          <>
+            <button className="btn btn-danger mr-auto" onClick={onDelete}>
+              공종 삭제{leaf ? '' : ' (하위 포함)'}
+            </button>
+            <button className="btn btn-primary" onClick={onClose}>
+              완료
+            </button>
+          </>
+        ) : undefined
+      }
+    >
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Field label="공종명" htmlFor="d-name" className="col-span-2">
           <input id="d-name" className="inp" value={t.name} onChange={(e) => set({ name: e.target.value }, 'd-name')} />
