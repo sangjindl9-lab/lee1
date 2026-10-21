@@ -3,7 +3,7 @@ import ExcelJS from 'exceljs';
 import type { Project } from './types';
 import { computeProject, entryPct, plannedPct, sortedHistory, STATUS_LABEL, UNIT_LABEL } from './calc';
 import { addDays, fmtDot, isValidDate, toNum } from './date';
-import { buildForm, formTitle, periodHead } from './form';
+import { buildForm, formTitle, periodHead, formLayout, overviewRows } from './form';
 import { groupMembers, phaseLabel, phaseMarks, summarizePhases, type PhaseMark } from './phases';
 import type { ProjectCalc } from './calc';
 
@@ -339,18 +339,21 @@ export async function exportExcel(p: Project, all: Project[] = []): Promise<Blob
 /** 제출용 양식 시트: 공종·보할·기간·비고, 공종마다 2행(상단 예정값+굵은 밑줄 = 예정선, 하단 실적), 계·누계는 수식 */
 function addFormSheet(wb: ExcelJS.Workbook, p: Project, c: ProjectCalc, marks: PhaseMark[] = []) {
   const f = buildForm(p, c);
+  const L = formLayout(p);
+  const nc = L.cols.length;
+  const ov = L.overview ? 2 : 0; // 공사개요 표가 차지하는 추가 행 수
   const ws = wb.addWorksheet('예정공정표(제출용)', {
     pageSetup: { paperSize: 8 as any, orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, horizontalCentered: true, margins: { left: 0.4, right: 0.4, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 } },
-    views: [{ state: 'frozen', xSplit: 2, ySplit: 5, showGridLines: false }],
+    views: [{ state: 'frozen', xSplit: 1 + nc, ySplit: 5 + ov, showGridLines: false }],
   });
   const n = f.periods.length;
-  const T0 = 3; // 첫 기간 열
+  const T0 = 2 + nc; // 첫 기간 열
   const noteCol = T0 + n;
   const black = { style: 'thin' as const, color: { argb: 'FF000000' } };
   const all = { top: black, left: black, bottom: black, right: black };
   const F = (size = 10, bold = false, color = 'FF000000') => ({ name: FONT, size, bold, color: { argb: color } });
   ws.getColumn(1).width = 26;
-  ws.getColumn(2).width = 8;
+  L.cols.forEach((col, i) => (ws.getColumn(2 + i).width = Math.max(7, col.w / 7.5)));
   for (let i = 0; i < n; i++) ws.getColumn(T0 + i).width = p.view === 'week' ? 6.5 : p.view === 'month' ? 8.2 : 11;
   ws.getColumn(noteCol).width = 14;
 
@@ -361,6 +364,31 @@ function addFormSheet(wb: ExcelJS.Workbook, p: Project, c: ProjectCalc, marks: P
   t.alignment = { horizontal: 'center', vertical: 'middle' };
   ws.getRow(1).height = 40;
   const half = Math.max(1, Math.ceil(noteCol * 0.6));
+  if (L.overview) {
+    // 공사개요 표 (2~4행): 라벨 | 값 | 라벨 | 값
+    const lab1 = 1;
+    const v1a = 2;
+    const mid = Math.max(v1a + 1, Math.floor(noteCol / 2));
+    const lab2 = mid + 1;
+    const v2a = Math.min(noteCol, lab2 + 1);
+    overviewRows(p).forEach((rw, ri) => {
+      const r = 2 + ri;
+      const put = (c1: number, c2: number, v: string, isLabel: boolean) => {
+        if (c2 > c1) ws.mergeCells(r, c1, r, c2);
+        const cell = ws.getCell(r, c1);
+        cell.value = v;
+        cell.font = F(10, isLabel);
+        cell.alignment = { horizontal: isLabel ? 'center' : 'left', vertical: 'middle', indent: isLabel ? 0 : 1, shrinkToFit: true };
+        if (isLabel) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2F2F2' } };
+        for (let cc = c1; cc <= c2; cc++) ws.getCell(r, cc).border = all;
+      };
+      put(lab1, lab1, rw[0], true);
+      put(v1a, mid, rw[1], false);
+      put(lab2, lab2, rw[2], true);
+      if (v2a > lab2) put(v2a, noteCol, rw[3], false);
+      ws.getRow(r).height = 21;
+    });
+  } else {
   ws.mergeCells(2, 1, 2, half);
   ws.getCell(2, 1).value = `공사명 : ${p.info.name}`;
   ws.getCell(2, 1).font = F(10.5, true);
@@ -372,15 +400,17 @@ function addFormSheet(wb: ExcelJS.Workbook, p: Project, c: ProjectCalc, marks: P
     r.font = F(10.5, true);
   }
   ws.getRow(2).height = 22;
+  }
 
   // 3행: 차수 구분(총차 공정표)
+  const BR = 3 + ov;
   if (marks.length) {
-    const lc = ws.getCell(3, 1);
-    ws.mergeCells(3, 1, 3, 2);
+    const lc = ws.getCell(BR, 1);
+    ws.mergeCells(BR, 1, BR, 1 + nc);
     lc.value = '차 수 구 분';
     lc.font = F(10);
     lc.alignment = { horizontal: 'center', vertical: 'middle' };
-    for (const col of [1, 2, noteCol]) ws.getCell(3, col).border = all;
+    for (const col of [1, ...L.cols.map((_, i) => 2 + i), noteCol]) ws.getCell(BR, col).border = all;
     const used = new Set<number>();
     for (const m of marks) {
       const cols = f.periods.map((pr, i) => (m.start <= pr.end && m.end >= pr.start ? i : -1)).filter((i) => i >= 0 && !used.has(i));
@@ -388,20 +418,20 @@ function addFormSheet(wb: ExcelJS.Workbook, p: Project, c: ProjectCalc, marks: P
       cols.forEach((i) => used.add(i));
       const a = T0 + cols[0];
       const b = T0 + cols[cols.length - 1];
-      if (b > a) ws.mergeCells(3, a, 3, b);
-      const cell = ws.getCell(3, a);
+      if (b > a) ws.mergeCells(BR, a, BR, b);
+      const cell = ws.getCell(BR, a);
       cell.value = `${m.label} 공사 (${fmtDot(m.start)}~${fmtDot(m.end)})`;
       cell.font = F(9, true, 'FF1D4ED8');
       cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEEF2FD' } };
       cell.alignment = { horizontal: 'center', vertical: 'middle', shrinkToFit: true };
       const med = { style: 'medium' as const, color: { argb: 'FF1D4ED8' } };
-      for (let col = a; col <= b; col++) ws.getCell(3, col).border = { top: black, bottom: black, left: col === a ? med : undefined, right: col === b ? med : undefined };
+      for (let col = a; col <= b; col++) ws.getCell(BR, col).border = { top: black, bottom: black, left: col === a ? med : undefined, right: col === b ? med : undefined };
     }
-    ws.getRow(3).height = 20;
+    ws.getRow(BR).height = 20;
   }
   // 머리글 4~5행
-  const H1 = 4;
-  const H2 = 5;
+  const H1 = 4 + ov;
+  const H2 = 5 + ov;
   const head = (r1: number, c1: number, r2: number, c2: number, v: string) => {
     if (r1 !== r2 || c1 !== c2) ws.mergeCells(r1, c1, r2, c2);
     const cell = ws.getCell(r1, c1);
@@ -411,7 +441,7 @@ function addFormSheet(wb: ExcelJS.Workbook, p: Project, c: ProjectCalc, marks: P
     for (let r = r1; r <= r2; r++) for (let cc = c1; cc <= c2; cc++) ws.getCell(r, cc).border = all;
   };
   head(H1, 1, H2, 1, '공       종');
-  head(H1, 2, H2, 2, '보할\n(%)');
+  L.cols.forEach((col, i) => head(H1, 2 + i, H2, 2 + i, col.head.filter(Boolean).join('\n')));
   let gi = 0;
   while (gi < n) {
     let gj = gi;
@@ -440,18 +470,25 @@ function addFormSheet(wb: ExcelJS.Workbook, p: Project, c: ProjectCalc, marks: P
     const isParent = c.byId.get(row.id)?.node.isLeaf === false && p.form.level === 'all';
     nameC.font = F(10, isParent);
     nameC.alignment = { vertical: 'middle', wrapText: true };
-    ws.mergeCells(r1, 2, r2, 2);
-    const wC = ws.getCell(r1, 2);
-    wC.value = Math.round(row.weight * 100) / 100;
-    wC.numFmt = '0.00';
-    wC.font = F(10);
-    wC.alignment = { horizontal: 'right', vertical: 'middle' };
+    L.cols.forEach((col, i) => {
+      ws.mergeCells(r1, 2 + i, r2, 2 + i);
+      const cell = ws.getCell(r1, 2 + i);
+      if (col.key === 'weight') {
+        cell.value = Math.round(row.weight * 100) / 100;
+        cell.numFmt = '0.00';
+      } else if (col.key === 'amount') {
+        cell.value = row.amount || null;
+        cell.numFmt = '#,##0';
+      } else cell.value = col.value(row);
+      cell.font = F(col.key === 'weight' ? 10 : 9);
+      cell.alignment = { horizontal: col.key === 'weight' || col.key === 'amount' ? 'right' : 'center', vertical: 'middle', shrinkToFit: true };
+    });
     ws.mergeCells(r1, noteCol, r2, noteCol);
     const noteC = ws.getCell(r1, noteCol);
     noteC.value = row.note;
     noteC.font = F(9);
     noteC.alignment = { vertical: 'middle', wrapText: true };
-    [1, 2, noteCol].forEach((col) => {
+    [1, ...L.cols.map((_, i) => 2 + i), noteCol].forEach((col) => {
       ws.getCell(r1, col).border = all;
       ws.getCell(r2, col).border = all;
     });
@@ -459,14 +496,14 @@ function addFormSheet(wb: ExcelJS.Workbook, p: Project, c: ProjectCalc, marks: P
       const up = ws.getCell(r1, T0 + i);
       const dn = ws.getCell(r2, T0 + i);
       const v = row.plan[i];
-      if (Math.abs(v) >= 0.005) up.value = Math.round(v * 100) / 100;
+      if (L.cellValues && Math.abs(v) >= 0.005) up.value = Math.round(v * 100) / 100;
       up.numFmt = '0.00';
       up.font = F(8);
       up.alignment = { horizontal: 'center', vertical: 'top' };
       const inPlan = isValidDate(row.start) && row.start <= pr.end && row.end >= pr.start;
       up.border = { left: black, right: black, top: black, bottom: inPlan ? { style: 'thick', color: lineColor } : { style: 'hair', color: { argb: 'FFBDBDBD' } } };
       const a = row.act[i];
-      if (showAct && a != null && Math.abs(a) >= 0.005) {
+      if (showAct && L.cellValues && a != null && Math.abs(a) >= 0.005) {
         dn.value = Math.round(a * 100) / 100;
         dn.numFmt = '0.00';
       }
@@ -487,7 +524,7 @@ function addFormSheet(wb: ExcelJS.Workbook, p: Project, c: ProjectCalc, marks: P
     r += 2;
   }
   // 계·누계 (수식)
-  const L = (col: number) => ws.getColumn(col).letter;
+  const L2 = (col: number) => ws.getColumn(col).letter;
   const sumRow = (label: string, kind: 'sum' | 'cum') => {
     const r1 = r;
     const r2 = showAct ? r + 1 : r;
@@ -496,24 +533,33 @@ function addFormSheet(wb: ExcelJS.Workbook, p: Project, c: ProjectCalc, marks: P
     lc.value = label;
     lc.font = F(10.5, true);
     lc.alignment = { horizontal: 'center', vertical: 'middle' };
-    if (r2 > r1) ws.mergeCells(r1, 2, r2, 2);
-    const wc = ws.getCell(r1, 2);
-    if (kind === 'sum') {
-      wc.value = planRows.length ? { formula: `SUM(${planRows.map((x) => `B${x}`).join(',')})`, result: Math.round(f.weightTotal * 100) / 100 } : 0;
-      wc.numFmt = '0.0';
-    }
-    wc.font = F(10, true);
-    wc.alignment = { horizontal: 'right', vertical: 'middle' };
+    L.cols.forEach((col, i) => {
+      const cc = 2 + i;
+      if (r2 > r1) ws.mergeCells(r1, cc, r2, cc);
+      const wc = ws.getCell(r1, cc);
+      if (kind === 'sum') {
+        if (col.key === 'weight') {
+          wc.value = planRows.length ? { formula: `SUM(${planRows.map((x) => `${L2(cc)}${x}`).join(',')})`, result: Math.round(f.weightTotal * 100) / 100 } : 0;
+          wc.numFmt = '0.0';
+        } else if (col.key === 'amount') {
+          wc.value = planRows.length ? { formula: `SUM(${planRows.map((x) => `${L2(cc)}${x}`).join(',')})`, result: Math.round(f.amountTotal) } : 0;
+          wc.numFmt = '#,##0';
+        } else wc.value = col.sum(f);
+      }
+      wc.font = F(col.key === 'weight' ? 10 : 9, true);
+      wc.alignment = { horizontal: col.key === 'weight' || col.key === 'amount' ? 'right' : 'center', vertical: 'middle', shrinkToFit: true };
+    });
     if (r2 > r1) ws.mergeCells(r1, noteCol, r2, noteCol);
-    [1, 2, noteCol].forEach((col) => {
+    [1, ...L.cols.map((_, i) => 2 + i), noteCol].forEach((col) => {
       ws.getCell(r1, col).border = all;
       ws.getCell(r2, col).border = all;
     });
     f.periods.forEach((_, i) => {
       const col = T0 + i;
       const up = ws.getCell(r1, col);
-      if (kind === 'sum') up.value = { formula: planRows.length ? `SUM(${planRows.map((x) => `${L(col)}${x}`).join(',')})` : '0', result: Math.round(f.planSum[i] * 100) / 100 };
-      else up.value = { formula: i ? `${L(col - 1)}${r1}+${L(col)}${r1 - (showAct ? 2 : 1)}` : `${L(col)}${r1 - (showAct ? 2 : 1)}`, result: Math.round(f.planCum[i] * 100) / 100 };
+      if (!L.cellValues) up.value = Math.round((kind === 'sum' ? f.planSum[i] : f.planCum[i]) * 100) / 100 || null; // 막대형: 공종 칸에 숫자가 없으므로 값으로 기록
+      else if (kind === 'sum') up.value = { formula: planRows.length ? `SUM(${planRows.map((x) => `${L2(col)}${x}`).join(',')})` : '0', result: Math.round(f.planSum[i] * 100) / 100 };
+      else up.value = { formula: i ? `${L2(col - 1)}${r1}+${L2(col)}${r1 - (showAct ? 2 : 1)}` : `${L2(col)}${r1 - (showAct ? 2 : 1)}`, result: Math.round(f.planCum[i] * 100) / 100 };
       up.numFmt = '0.00';
       up.font = F(9);
       up.alignment = { horizontal: 'center', vertical: 'middle' };
@@ -534,7 +580,7 @@ function addFormSheet(wb: ExcelJS.Workbook, p: Project, c: ProjectCalc, marks: P
   };
   sumRow('계', 'sum');
   sumRow('누       계', 'cum');
-  ws.getCell(r + 1, 1).value = `※ 상단: 기간별 예정 보할(%) · 굵은 밑줄 = 예정공정 기간${showAct ? ' · 하단(녹색): 저장된 실적 이력 기준 기간별 실적(%) · 점선 = 실제 수행기간' : ''} · 보할 배분: ${p.calendar.distribution === 'month' ? '월 균등' : '작업일 비례'} · 기준일 ${fmtDot(p.info.baseDate)}`;
+  ws.getCell(r + 1, 1).value = `※ ${L.cellValues ? `상단: 기간별 예정 보할(%) · 굵은 밑줄 = 예정공정 기간${showAct ? ' · 하단(녹색): 저장된 실적 이력 기준 기간별 실적(%) · 점선 = 실제 수행기간' : ''}` : `굵은 밑줄 = 예정공정 기간${showAct ? ' · 점선 = 실제 수행기간' : ''} · 계/누계: 기간별 예정 보할(%)`} · 보할 배분: ${p.calendar.distribution === 'month' ? '월 균등' : '작업일 비례'} · 기준일 ${fmtDot(p.info.baseDate)}`;
   ws.getCell(r + 1, 1).font = F(8.5, false, 'FF555555');
   ws.pageSetup.printTitlesRow = `${H1}:${H2}`;
 }

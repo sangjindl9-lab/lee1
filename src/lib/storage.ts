@@ -197,7 +197,7 @@ export function migrate(raw: any): Project | null {
     statusNote: '',
     ...raw,
     calendar: { mode: 'weekday', distribution: 'month', holidays: [], ...(raw.calendar || {}) },
-    form: { ...defaultForm(), ...(raw.form || {}), title: isAutoTitleText(raw.form?.title || '') ? '' : raw.form?.title || '' },
+    form: { ...defaultForm(), ...(raw.form || {}), template: ['basic', 'overview', 'amount', 'bar'].includes(raw.form?.template) ? raw.form.template : 'basic', title: isAutoTitleText(raw.form?.title || '') ? '' : raw.form?.title || '' },
     template: Array.isArray(raw.template) && raw.template.length ? raw.template : DEFAULT_TEMPLATE.map((r) => ({ ...r })),
     schema: 1,
     tasks: raw.tasks.map((t: any) => ({

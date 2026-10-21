@@ -3,7 +3,7 @@ import { jsPDF } from 'jspdf';
 import type { Project } from './types';
 import { computeProject, dateToX, UNIT_LABEL, type Period } from './calc';
 import { addDays, fmtDot, isValidDate } from './date';
-import { buildForm, cellNum, formTitle, periodHead } from './form';
+import { buildForm, cellNum, formLayout, formTitle, overviewRows, periodHead } from './form';
 import { fitText, font, line, PX, rect, setFamily, wrap } from './exportPdf';
 import type { Paper } from './exportPdf';
 import type { PhaseMark } from './phases';
@@ -45,10 +45,16 @@ export async function exportFormPdf(p: Project, paper: Paper = 'A3', marks: Phas
   const W = a4 ? 297 : 420;
   const H = a4 ? 210 : 297;
   const mx = a4 ? 12 : 16;
-  const top = a4 ? 30 : 40;
+  const L = formLayout(p);
+  const ovRowH = a4 ? 4.6 : 5.6;
+  const ovH = L.overview ? ovRowH * 3 : 0;
+  const top = (a4 ? 30 : 40) + (L.overview ? ovH - (a4 ? 2 : 3) : 0);
   const bottom = H - (a4 ? 12 : 16);
   const nameW = a4 ? 42 : 52;
-  const wW = a4 ? 13 : 15;
+  const k = (a4 ? 13 : 15) / 60; // 화면 px → mm
+  const cols = L.cols.map((col) => ({ ...col, w: col.w * k }));
+  const colX = cols.map((_, i) => nameW + cols.slice(0, i).reduce((s, x) => s + x.w, 0));
+  const wW = cols.reduce((s, x) => s + x.w, 0);
   const noteW = a4 ? 20 : 26;
   const tlW = W - 2 * mx - nameW - wW - noteW;
   // 항상 한 장: 모든 기간 칸과 공종을 한 페이지에 맞추고, 칸이 좁아지면 글자를 줄인다
@@ -78,9 +84,9 @@ export async function exportFormPdf(p: Project, paper: Paper = 'A3', marks: Phas
     const idx = periods.map((_, k) => ps + k);
     for (const rs of rStarts) {
       const rows = f.rows.slice(rs, rs + rowsPer);
-      const nRows = rows.length + sumRows;
-      const half = Math.min(maxHalf, avail / nRows / 2);
-      const rowH = half * 2;
+      const half = Math.min(maxHalf, avail / (rows.length * L.rowScale + sumRows) / 2);
+      const sumH = half * 2;
+      const rowH = sumH * L.rowScale; // 공종 행 높이 (막대형은 낮음)
       const vS = Math.min(a4 ? 2.35 : 2.7, colW * 0.24, half * 0.62); // 칸 숫자 글자 크기
       const nameSz = Math.min(a4 ? 2.8 : 3.2, half * 0.78);
       const hSz = Math.min(a4 ? 2.7 : 3.1, colW * 0.3);
@@ -93,8 +99,28 @@ export async function exportFormPdf(p: Project, paper: Paper = 'A3', marks: Phas
       spaced(ctx, formTitle(p, marks.length > 0), W / 2, a4 ? 13 : 18, a4 ? 7.5 : 9.5, a4 ? 1.6 : 2.2);
       const iy = top - (a4 ? 3.2 : 4);
       const isz = a4 ? 3.1 : 3.6;
-      fitText(ctx, `공사명 : ${p.info.name}`, mx, iy, (W - 2 * mx) * 0.56, isz, { weight: 700, color: INK });
-      fitText(ctx, `시공업체 : ${p.info.contractor} (인)`, W - mx, iy, (W - 2 * mx) * 0.4, isz, { weight: 700, color: INK, align: 'right' });
+      if (L.overview) {
+        // 공사개요 표
+        const oy = top - ovH - (a4 ? 2 : 2.6);
+        const ow = W - 2 * mx;
+        const lw = a4 ? 20 : 24;
+        const vw = ow / 2 - lw;
+        const osz = a4 ? 2.9 : 3.3;
+        overviewRows(p).forEach((r, ri) => {
+          const yy = oy + ri * ovRowH;
+          [0, 1].forEach((h) => {
+            const xx = mx + h * (ow / 2);
+            rect(ctx, xx, yy, lw, ovRowH, '#f2f2f2', INK, 0.2);
+            rect(ctx, xx + lw, yy, vw, ovRowH, undefined, INK, 0.2);
+            fitText(ctx, r[h * 2], xx + lw / 2, yy + ovRowH / 2, lw - 1, osz, { align: 'center', color: INK, weight: 700 });
+            fitText(ctx, r[h * 2 + 1] || '', xx + lw + 1.6, yy + ovRowH / 2, vw - 3, osz, { color: INK });
+          });
+        });
+        rect(ctx, mx, oy, ow, ovH, undefined, INK, 0.45);
+      } else {
+        fitText(ctx, `공사명 : ${p.info.name}`, mx, iy, (W - 2 * mx) * 0.56, isz, { weight: 700, color: INK });
+        fitText(ctx, `시공업체 : ${p.info.contractor} (인)`, W - mx, iy, (W - 2 * mx) * 0.4, isz, { weight: 700, color: INK, align: 'right' });
+      }
       if (p.form.showSign) {
         const sw = a4 ? 15 : 18;
         const sx = W - mx - sw * 3;
@@ -139,8 +165,13 @@ export async function exportFormPdf(p: Project, paper: Paper = 'A3', marks: Phas
       // 머리글
       const hh = headH / 2;
       fitText(ctx, '공       종', x0 + nameW / 2, y + headH / 2, nameW - 2, a4 ? 3 : 3.4, { align: 'center', color: INK });
-      fitText(ctx, '보할', x0 + nameW + wW / 2, y + headH / 2 - 1.8, wW - 1, a4 ? 2.8 : 3.2, { align: 'center', color: INK });
-      fitText(ctx, '(%)', x0 + nameW + wW / 2, y + headH / 2 + 1.9, wW - 1, a4 ? 2.6 : 3, { align: 'center', color: INK });
+      cols.forEach((col, ci) => {
+        const cx = x0 + colX[ci] + col.w / 2;
+        if (col.head[1]) {
+          fitText(ctx, col.head[0], cx, y + headH / 2 - 1.8, col.w - 1, a4 ? 2.8 : 3.2, { align: 'center', color: INK });
+          fitText(ctx, col.head[1], cx, y + headH / 2 + 1.9, col.w - 1, a4 ? 2.6 : 3, { align: 'center', color: INK });
+        } else fitText(ctx, col.head[0], cx, y + headH / 2, col.w - 1, a4 ? 2.8 : 3.2, { align: 'center', color: INK });
+      });
       let gi = 0;
       while (gi < periods.length) {
         let gj = gi;
@@ -167,8 +198,13 @@ export async function exportFormPdf(p: Project, paper: Paper = 'A3', marks: Phas
         const lines = wrap(ctx, r.label, nameW - pad - 1.5);
         const shown = rowH < nsz * 2.9 ? [r.label] : lines.length > 2 ? [lines[0], lines.slice(1).join('')] : lines;
         shown.forEach((l, li) => fitText(ctx, l, x0 + pad, y + rowH / 2 + (li - (shown.length - 1) / 2) * (nsz * 1.3), nameW - pad - 1.5, nsz, { color: INK, weight: r.depth === 0 && c.byId.get(r.id)?.node.isLeaf === false ? 700 : 400 }));
-        fitText(ctx, r.weight.toFixed(2), x0 + nameW + wW - 1.2, y + rowH / 2, wW - 2, nameSz, { align: 'right', color: INK, min: 0.8 });
-        line(ctx, tx, y + half, nx, y + half, SOFT, 0.12);
+        cols.forEach((col, ci) => {
+          const right = col.key === 'weight' || col.key === 'amount';
+          const v = col.value(r);
+          if (v) fitText(ctx, v, right ? x0 + colX[ci] + col.w - 1.2 : x0 + colX[ci] + col.w / 2, y + rowH / 2, col.w - 2, col.key === 'weight' ? nameSz : nameSz * 0.9, { align: right ? 'right' : 'center', color: INK, min: 0.8 });
+        });
+        if (L.cellValues) line(ctx, tx, y + half, nx, y + half, SOFT, 0.12);
+        const midY = L.cellValues ? y + half : y + rowH / 2;
         // 예정선
         if (isValidDate(r.start) && isValidDate(r.end) && periods.length) {
           const s = r.start < periods[0].start ? periods[0].start : r.start;
@@ -176,7 +212,8 @@ export async function exportFormPdf(p: Project, paper: Paper = 'A3', marks: Phas
           if (s <= e) {
             const a = tx + dateToX(s, periods, colW);
             const b = tx + dateToX(addDays(e, 1), periods, colW);
-            rect(ctx, a, y + half - (r.color ? 0.7 : 0.45), Math.max(0.5, b - a), r.color ? 1.4 : 0.9, r.color || INK);
+            const bh = L.cellValues ? (r.color ? 1.4 : 0.9) : Math.min(2.2, rowH * 0.32);
+            rect(ctx, a, midY - bh / 2, Math.max(0.5, b - a), bh, r.color || INK);
           }
         }
         // 실적선(실제 착수일이 있을 때만, 점선)
@@ -187,10 +224,11 @@ export async function exportFormPdf(p: Project, paper: Paper = 'A3', marks: Phas
           if (s <= e) {
             const a = tx + dateToX(s, periods, colW);
             const b = tx + dateToX(addDays(e, 1), periods, colW);
-            line(ctx, a, y + rowH - 1.6, b, y + rowH - 1.6, INK, 0.75, [1.6, 0.8]);
+            const ly2 = L.cellValues ? y + rowH - 1.6 : y + rowH - Math.min(1.2, rowH * 0.15);
+            line(ctx, a, ly2, b, ly2, INK, 0.6, [1.6, 0.8]);
           }
         }
-        idx.forEach((gi2, k) => {
+        if (L.cellValues) idx.forEach((gi2, k) => {
           const v = cellNum(r.plan[gi2]);
           if (v) fitText(ctx, v, tx + k * colW + colW / 2, y + half * 0.45, colW - 0.4, vS, { align: 'center', color: INK, min: 0.6 });
           if (showAct) {
@@ -209,9 +247,15 @@ export async function exportFormPdf(p: Project, paper: Paper = 'A3', marks: Phas
         y += rowH;
       };
       rows.forEach(drawRow);
-      const sumRow = (label: string, a: (number | null)[], b: (number | null)[], wt: string) => {
+      const sumRow = (label: string, a: (number | null)[], b: (number | null)[], isSum: boolean) => {
+        const rowH = sumH;
         fitText(ctx, label, x0 + nameW / 2, y + rowH / 2, nameW - 2, Math.min(a4 ? 3 : 3.4, half * 0.85), { align: 'center', color: INK, weight: 700, min: 0.8 });
-        if (wt) fitText(ctx, wt, x0 + nameW + wW - 1.2, y + rowH / 2, wW - 2, nameSz, { align: 'right', color: INK, weight: 700, min: 0.8 });
+        if (isSum)
+          cols.forEach((col, ci) => {
+            const right = col.key === 'weight' || col.key === 'amount';
+            const v = col.sum(f);
+            if (v) fitText(ctx, v, right ? x0 + colX[ci] + col.w - 1.2 : x0 + colX[ci] + col.w / 2, y + rowH / 2, col.w - 2, col.key === 'weight' ? nameSz : nameSz * 0.9, { align: right ? 'right' : 'center', color: INK, weight: 700, min: 0.8 });
+          });
         if (showAct) line(ctx, tx, y + half, nx, y + half, SOFT, 0.12);
         idx.forEach((gi2, k) => {
           const va = a[gi2];
@@ -224,10 +268,10 @@ export async function exportFormPdf(p: Project, paper: Paper = 'A3', marks: Phas
         line(ctx, x0, y + rowH, x0 + tableW, y + rowH, INK, 0.25);
         y += rowH;
       };
-      sumRow('계', f.planSum, f.actSum, f.weightTotal.toFixed(1));
-      sumRow('누      계', f.planCum, f.actCum, '');
+      sumRow('계', f.planSum, f.actSum, true);
+      sumRow('누      계', f.planCum, f.actCum, false);
       // 세로선
-      line(ctx, x0 + nameW, hTop, x0 + nameW, y, INK, 0.25);
+      colX.forEach((cx) => line(ctx, x0 + cx, hTop, x0 + cx, y, INK, 0.25));
       line(ctx, tx, top, tx, y, INK, 0.25);
       periods.forEach((_, k) => k && line(ctx, tx + k * colW, hTop + hh, tx + k * colW, y, INK, 0.2));
       // 차수 경계선
@@ -249,7 +293,7 @@ export async function exportFormPdf(p: Project, paper: Paper = 'A3', marks: Phas
       ctx.setLineDash([]);
       fitText(
         ctx,
-        `${UNIT_LABEL[p.view]} · 보할 배분 ${p.calendar.distribution === 'month' ? '월 균등' : '작업일 비례'} · 상단: 예정공정(굵은 선, 기간별 보할 %)${showAct ? ' · 하단: 실적(녹색 값, 점선은 실제 수행기간)' : ''} · 기준일 ${fmtDot(p.info.baseDate)}(붉은 점선)${rStarts.length > 1 ? ` · 공종 ${rs + 1}~${rs + rows.length}/${f.rows.length}` : ''}`,
+        `${UNIT_LABEL[p.view]} · 보할 배분 ${p.calendar.distribution === 'month' ? '월 균등' : '작업일 비례'} · ${L.cellValues ? `상단: 예정공정(굵은 선, 기간별 보할 %)${showAct ? ' · 하단: 실적(녹색 값, 점선은 실제 수행기간)' : ''}` : `막대: 예정공정 기간${showAct ? ' · 점선: 실제 수행기간' : ''} · 계/누계: 기간별 보할 %`} · 기준일 ${fmtDot(p.info.baseDate)}(붉은 점선)${rStarts.length > 1 ? ` · 공종 ${rs + 1}~${rs + rows.length}/${f.rows.length}` : ''}`,
         mx,
         ly,
         W - 2 * mx - 24,

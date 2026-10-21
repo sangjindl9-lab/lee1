@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Project } from '../lib/types';
 import { addDays, isValidDate } from '../lib/date';
 import { dateToX, UNIT_LABEL, type ProjectCalc } from '../lib/calc';
-import { autoTitle, buildForm, cellNum, formTitle, periodHead } from '../lib/form';
+import { autoTitle, buildForm, cellNum, formLayout, formTitle, FORM_TEMPLATES, overviewRows, periodHead } from '../lib/form';
 import type { PhaseMark } from '../lib/phases';
 
 const PHASE = '#1d4ed8';
@@ -26,7 +26,13 @@ export function FormSheet({ p, c, update, onOpenDetail, compact, marks = [], sel
     return () => ro.disconnect();
   }, []);
   const nameW = compact ? 132 : 190;
-  const wW = compact ? 50 : 60;
+  const L = formLayout(p);
+  const cs = compact ? 0.84 : 1;
+  const cols = L.cols.map((col) => ({ ...col, w: Math.round(col.w * cs) }));
+  const colLeft = cols.map((_, i) => nameW + cols.slice(0, i).reduce((s, x) => s + x.w, 0));
+  const wW = cols.reduce((s, x) => s + x.w, 0); // 고정 칸 전체 폭
+  const rowH = Math.round(HALF * 2 * L.rowScale);
+  const mid = L.cellValues ? HALF : rowH / 2;
   const noteW = compact ? 70 : 110;
   const minCol = p.view === 'week' ? 44 : p.view === 'month' ? 58 : 84;
   const n = Math.max(1, f.periods.length);
@@ -68,7 +74,8 @@ export function FormSheet({ p, c, update, onOpenDetail, compact, marks = [], sel
   const sticky = (left: number, w: number, extra: React.CSSProperties = {}): React.CSSProperties => ({ position: 'sticky', left, width: w, flex: 'none', background: '#fff', zIndex: 2, ...extra });
   const vline: React.CSSProperties = { backgroundImage: `linear-gradient(to right, ${GRID} 1px, transparent 1px)`, backgroundSize: `${colW}px 100%` };
 
-  const Row = ({ id, label, weight, depth, plan, act, start, end, actStart, actEnd, note, bold, onClick, color }: any) => {
+  const Row = (rowData: any) => {
+    const { id, label, depth, plan, act, start, end, actStart, actEnd, note, bold, onClick, color } = rowData;
     const x1 = isValidDate(start) ? dateToX(start, f.periods, colW) : 0;
     const x2 = isValidDate(end) ? dateToX(addDays(end, 1), f.periods, colW) : 0;
     const hasLine = isValidDate(start) && isValidDate(end) && x2 > x1;
@@ -76,30 +83,34 @@ export function FormSheet({ p, c, update, onOpenDetail, compact, marks = [], sel
     const ax1 = actStart ? dateToX(actStart, f.periods, colW) : 0;
     const ax2 = actStart && ae >= actStart ? dateToX(addDays(ae, 1), f.periods, colW) : ax1;
     return (
-      <div className="flex" style={{ borderBottom: cellB, height: HALF * 2 }} key={id}>
+      <div className="flex" style={{ borderBottom: cellB, height: rowH }} key={id}>
         <div style={sticky(0, nameW, { borderRight: cellB, display: 'flex', alignItems: 'center', padding: `0 6px 0 ${8 + depth * 12}px`, background: selected === id ? '#fff3c4' : '#fff', boxShadow: selected === id ? 'inset 3px 0 0 #1d4ed8' : undefined })}>
-          <button className="h-full w-full text-left leading-snug" style={{ fontSize: compact ? 12 : 13, fontWeight: bold ? 700 : 400, color: INK }} onClick={() => {
+          <button className="h-full w-full text-left leading-snug" style={{ fontSize: compact ? 12 : L.cellValues ? 13 : 12.5, lineHeight: L.cellValues ? undefined : 1.18, fontWeight: bold ? 700 : 400, color: INK }} onClick={() => {
               onSelect?.(id);
               onClick?.();
             }} title="눌러서 공종 열기 (수정·삭제)">
             {label}
           </button>
         </div>
-        <div style={sticky(nameW, wW, { borderRight: cellB, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', paddingRight: 6, fontSize: 12.5 })} className="form-num">
-          {weight == null ? '' : weight.toFixed(2)}
-        </div>
+        {cols.map((col, ci) => (
+          <div key={col.key} style={sticky(colLeft[ci], col.w, { borderRight: cellB, display: 'flex', alignItems: 'center', justifyContent: col.key === 'weight' || col.key === 'amount' ? 'flex-end' : 'center', paddingRight: col.key === 'weight' || col.key === 'amount' ? 6 : 0, fontSize: col.key === 'weight' ? 12.5 : 11.5, whiteSpace: 'nowrap', overflow: 'hidden' })} className="form-num">
+            {col.value(rowData)}
+          </div>
+        ))}
         <div className="relative flex-none" style={{ width: tlW, ...vline }}>
-          <div className="absolute inset-x-0" style={{ top: HALF, borderTop: `1px solid #c9c9c9` }} />
-          {hasLine && <div className="absolute" style={{ left: x1, width: x2 - x1, top: HALF - (color ? 3 : 2), height: color ? 5 : 3, background: color || INK }} />}
-          {showAct && actStart && ax2 > ax1 && <div className="absolute" style={{ left: ax1, width: ax2 - ax1, top: HALF * 2 - 9, height: 3, backgroundImage: `repeating-linear-gradient(to right, ${INK} 0 6px, transparent 6px 9px)` }} />}
+          {L.cellValues && <div className="absolute inset-x-0" style={{ top: HALF, borderTop: `1px solid #c9c9c9` }} />}
+          {hasLine && <div className="absolute" style={{ left: x1, width: x2 - x1, top: mid - (L.cellValues ? (color ? 3 : 2) : 4), height: L.cellValues ? (color ? 5 : 3) : 8, background: color || INK }} />}
+          {showAct && actStart && ax2 > ax1 && <div className="absolute" style={{ left: ax1, width: ax2 - ax1, top: rowH - (L.cellValues ? 9 : 6), height: 3, backgroundImage: `repeating-linear-gradient(to right, ${INK} 0 6px, transparent 6px 9px)` }} />}
           <MarkLines />
           {baseX >= 0 && <div className="absolute inset-y-0" style={{ left: baseX - 1, borderLeft: '2px dashed #c62828' }} />}
-          {f.periods.map((_, i) => (
-            <div key={i} className="form-num absolute text-center" style={{ left: i * colW, width: colW, top: 3, fontSize: 10.5, color: INK }}>
-              {cellNum(plan[i])}
-            </div>
-          ))}
+          {L.cellValues &&
+            f.periods.map((_, i) => (
+              <div key={i} className="form-num absolute text-center" style={{ left: i * colW, width: colW, top: 3, fontSize: 10.5, color: INK }}>
+                {cellNum(plan[i])}
+              </div>
+            ))}
           {showAct &&
+            L.cellValues &&
             f.periods.map((_, i) =>
               act[i] == null || Math.abs(act[i]) < 0.005 ? null : (
                 <div key={'a' + i} className="form-num absolute text-center" style={{ left: i * colW, width: colW, top: HALF + 3, fontSize: 10.5, color: '#1b5e20', fontWeight: 600 }}>
@@ -118,9 +129,11 @@ export function FormSheet({ p, c, update, onOpenDetail, compact, marks = [], sel
   const SumRow = ({ label, a, b, bold }: { label: string; a: (number | null)[]; b: (number | null)[]; bold?: boolean }) => (
     <div className="flex" style={{ borderBottom: cellB, height: showAct ? HALF * 2 : HALF + 14 }}>
       <div style={sticky(0, nameW, { borderRight: cellB, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 600, letterSpacing: '0.6em' })}>{label}</div>
-      <div style={sticky(nameW, wW, { borderRight: cellB, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', paddingRight: 6, fontSize: 12.5, fontWeight: 600 })} className="form-num">
-        {bold ? f.weightTotal.toFixed(1) : ''}
-      </div>
+      {cols.map((col, ci) => (
+        <div key={col.key} style={sticky(colLeft[ci], col.w, { borderRight: cellB, display: 'flex', alignItems: 'center', justifyContent: col.key === 'weight' || col.key === 'amount' ? 'flex-end' : 'center', paddingRight: col.key === 'weight' || col.key === 'amount' ? 6 : 0, fontSize: col.key === 'weight' ? 12.5 : 11.5, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden' })} className="form-num">
+          {bold ? col.sum(f) : ''}
+        </div>
+      ))}
       <div className="relative flex-none" style={{ width: tlW, ...vline }}>
         {showAct && <div className="absolute inset-x-0" style={{ top: HALF, borderTop: `1px solid #c9c9c9` }} />}
         <MarkLines />
@@ -144,6 +157,16 @@ export function FormSheet({ p, c, update, onOpenDetail, compact, marks = [], sel
     <div>
       {/* 양식 설정 */}
       <div className="flex flex-wrap items-center gap-2 border-t border-line px-3 py-2 sm:px-4">
+        <div className="flex items-center gap-1.5 text-[13px]">
+          <span className="font-semibold">양식</span>
+          <div className="seg" role="group" aria-label="제출 양식 템플릿">
+            {FORM_TEMPLATES.map((t) => (
+              <button key={t.id} aria-pressed={L.template === t.id} onClick={() => update((d) => void (d.form.template = t.id))} title={t.desc}>
+                {t.name}
+              </button>
+            ))}
+          </div>
+        </div>
         <label className="flex items-center gap-1.5 text-[13px]" htmlFor="form-title">
           <span className="font-semibold">제목</span>
           <input
@@ -236,11 +259,26 @@ export function FormSheet({ p, c, update, onOpenDetail, compact, marks = [], sel
               </div>
             )}
           </div>
-          <div className="mt-4 flex flex-wrap items-end justify-between gap-x-6 gap-y-1" style={{ fontSize: 13, fontWeight: 600 }}>
-            <span>공사명 : {p.info.name}</span>
-            <span>시공업체 : {p.info.contractor} (인)</span>
-          </div>
-          <div className="mt-1.5" style={{ border: `1.5px solid ${INK}`, width: nameW + wW + tlW + noteW + 1 }}>
+          {L.overview ? (
+            <table className="mt-4" style={{ width: nameW + wW + tlW + noteW + 1, borderCollapse: 'collapse', fontSize: 12.5, color: INK, border: `1.5px solid ${INK}` }}>
+              <tbody>
+                {overviewRows(p).map((r, i) => (
+                  <tr key={i} style={{ height: 26 }}>
+                    <th style={{ width: 96, border: cellB, background: '#f2f2f2', fontWeight: 600 }}>{r[0]}</th>
+                    <td style={{ border: cellB, padding: '0 8px' }}>{r[1]}</td>
+                    <th style={{ width: 96, border: cellB, background: '#f2f2f2', fontWeight: 600 }}>{r[2]}</th>
+                    <td style={{ border: cellB, padding: '0 8px', width: '34%' }}>{r[3]}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <div className="mt-4 flex flex-wrap items-end justify-between gap-x-6 gap-y-1" style={{ fontSize: 13, fontWeight: 600 }}>
+              <span>공사명 : {p.info.name}</span>
+              <span>시공업체 : {p.info.contractor} (인)</span>
+            </div>
+          )}
+          <div className={L.overview ? 'mt-2' : 'mt-1.5'} style={{ border: `1.5px solid ${INK}`, width: nameW + wW + tlW + noteW + 1 }}>
             {markBands.length > 0 && (
               <div className="flex" style={{ borderBottom: cellB, height: 24 }}>
                 <div style={sticky(0, nameW + wW, { borderRight: cellB, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12 })}>차 수 구 분</div>
@@ -257,10 +295,12 @@ export function FormSheet({ p, c, update, onOpenDetail, compact, marks = [], sel
             {/* 머리글 */}
             <div className="flex" style={{ borderBottom: cellB, height: 64 }}>
               <div style={sticky(0, nameW, { borderRight: cellB, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, letterSpacing: '1.4em', paddingLeft: '1.4em' })}>공종</div>
-              <div style={sticky(nameW, wW, { borderRight: cellB, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', fontSize: 12.5, lineHeight: 1.25 })}>
-                <span>보할</span>
-                <span>(%)</span>
-              </div>
+              {cols.map((col, ci) => (
+                <div key={col.key} style={sticky(colLeft[ci], col.w, { borderRight: cellB, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', fontSize: 12.5, lineHeight: 1.25 })}>
+                  <span>{col.head[0]}</span>
+                  {col.head[1] && <span>{col.head[1]}</span>}
+                </div>
+              ))}
               <div className="flex-none" style={{ width: tlW }}>
                 <div className="flex" style={{ height: 32, borderBottom: cellB }}>
                   {groups.map((g, i) => (
@@ -290,7 +330,7 @@ export function FormSheet({ p, c, update, onOpenDetail, compact, marks = [], sel
           </div>
           <div className="mt-2 flex flex-wrap justify-between gap-2" style={{ fontSize: 11, color: '#444' }}>
             <span>
-              {UNIT_LABEL[p.view]} · 보할 배분: {p.calendar.distribution === 'month' ? '월 균등' : '작업일 비례'} · 상단: 예정(━ 굵은 선, 기간별 보할값){showAct ? ' · 하단: 실적(┅ 점선, 녹색 값 — 저장된 실적 이력 기준)' : ''}
+              {UNIT_LABEL[p.view]} · 보할 배분: {p.calendar.distribution === 'month' ? '월 균등' : '작업일 비례'} · {L.cellValues ? `상단: 예정(━ 굵은 선, 기간별 보할값)${showAct ? ' · 하단: 실적(┅ 점선, 녹색 값 — 저장된 실적 이력 기준)' : ''}` : `막대: 예정공정 기간${showAct ? ' · ┅ 점선: 실제 수행기간' : ''} · 계/누계: 기간별 보할(%)`}
             </span>
             <span>
               {markXs.length > 0 && <span style={{ color: PHASE }}>│ 차수 경계 · </span>}

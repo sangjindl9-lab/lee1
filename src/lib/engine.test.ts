@@ -202,3 +202,25 @@ describe('제목', () => {
     expect(migrate(old)!.form.title).toBe('');
   });
 });
+
+describe('제출 양식 템플릿', () => {
+  it('템플릿별 고정 칸과 금액 배분', async () => {
+    const { sampleProject } = await import('./schedule');
+    const { computeProject } = await import('./calc');
+    const { buildForm, formLayout } = await import('./form');
+    const p = sampleProject();
+    p.info.amount = 100_000_000;
+    p.form.template = 'amount';
+    expect(formLayout(p).cols.map((c) => c.key)).toEqual(['amount', 'weight']);
+    const c = computeProject(p);
+    const f = buildForm(p, c);
+    const leafSum = f.rows.filter((r) => c.byId.get(r.id)?.node.isLeaf).reduce((s, r) => s + r.amount, 0);
+    expect(Math.abs(leafSum - 100_000_000)).toBeLessThan(f.rows.length + 1);
+    p.form.template = 'bar';
+    const L = formLayout(p);
+    expect(L.cols.map((c) => c.key)).toEqual(['weight', 'start', 'end']);
+    expect(L.cellValues).toBe(false);
+    p.form.template = 'overview';
+    expect(formLayout(p).overview).toBe(true);
+  });
+});

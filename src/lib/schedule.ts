@@ -117,7 +117,7 @@ export function rescaleTasks(tasks: Task[], oldS: ISODate, oldE: ISODate, newS: 
 }
 
 export function defaultForm(): Project['form'] {
-  return { title: '', level: 'all', showActual: true, showSign: false, numbering: true };
+  return { template: 'basic', title: '', level: 'all', showActual: true, showSign: false, numbering: true };
 }
 
 export function defaultInfo(): Project['info'] {

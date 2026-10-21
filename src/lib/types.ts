@@ -78,7 +78,11 @@ export interface TemplateRow {
   pred: string; // 선행 공종(설명용)
 }
 
+/** 제출 양식 템플릿: 기본형 / 공사개요형 / 금액병기형 / 막대형(간략) */
+export type FormTemplate = 'basic' | 'overview' | 'amount' | 'bar';
+
 export interface FormOptions {
+  template: FormTemplate;
   title: string; // 예: 'Ⅳ. 예 정 공 정 표(변경)'
   level: 'all' | 'top'; // 전체 공종 / 상위 공종만
   showActual: boolean; // 하단 칸에 실적 표시
