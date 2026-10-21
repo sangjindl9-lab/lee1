@@ -3,7 +3,7 @@ import { jsPDF } from 'jspdf';
 import type { Project } from './types';
 import { computeProject, dateToX, UNIT_LABEL, type Period } from './calc';
 import { addDays, fmtDot, isValidDate } from './date';
-import { buildForm, cellNum, periodHead } from './form';
+import { buildForm, cellNum, formTitle, periodHead } from './form';
 import { fitText, font, line, PX, rect, setFamily, wrap } from './exportPdf';
 import type { Paper } from './exportPdf';
 import type { PhaseMark } from './phases';
@@ -90,7 +90,7 @@ export async function exportFormPdf(p: Project, paper: Paper = 'A3', marks: Phas
       ctx.setTransform(SCALE, 0, 0, SCALE, 0, 0);
       pageNo++;
       // 제목·개요
-      spaced(ctx, p.form.title || '예 정 공 정 표', W / 2, a4 ? 13 : 18, a4 ? 7.5 : 9.5, a4 ? 1.6 : 2.2);
+      spaced(ctx, formTitle(p, marks.length > 0), W / 2, a4 ? 13 : 18, a4 ? 7.5 : 9.5, a4 ? 1.6 : 2.2);
       const iy = top - (a4 ? 3.2 : 4);
       const isz = a4 ? 3.1 : 3.6;
       fitText(ctx, `공사명 : ${p.info.name}`, mx, iy, (W - 2 * mx) * 0.56, isz, { weight: 700, color: INK });

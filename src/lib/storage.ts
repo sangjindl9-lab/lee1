@@ -3,6 +3,7 @@
 import type { Project } from './types';
 import { DEFAULT_TEMPLATE, defaultForm } from './schedule';
 import { api } from './api';
+import { isAutoTitleText } from './form';
 
 export interface ProjectStore {
   readonly label: string;
@@ -196,7 +197,7 @@ export function migrate(raw: any): Project | null {
     statusNote: '',
     ...raw,
     calendar: { mode: 'weekday', distribution: 'month', holidays: [], ...(raw.calendar || {}) },
-    form: { ...defaultForm(), ...(raw.form || {}) },
+    form: { ...defaultForm(), ...(raw.form || {}), title: isAutoTitleText(raw.form?.title || '') ? '' : raw.form?.title || '' },
     template: Array.isArray(raw.template) && raw.template.length ? raw.template : DEFAULT_TEMPLATE.map((r) => ({ ...r })),
     schema: 1,
     tasks: raw.tasks.map((t: any) => ({

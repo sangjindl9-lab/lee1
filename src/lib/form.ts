@@ -91,3 +91,18 @@ export function periodHead(pr: Period): { top: string; label: string } {
   if (pr.key.includes('-') && pr.group.endsWith('년')) return { top: pr.group.replace('년', ''), label: `${pr.label.replace('월', '').padStart(2, '0')}월` };
   return { top: pr.group, label: pr.label };
 }
+
+/** 자동 제목 문구(제목 칸이 비어 있을 때 사용): 차수 공정표 → "N 차 예정공정표", 차수가 있는 총차 → "총차 예정공정표", 그 외 → "예정공정표" */
+export function autoTitle(p: Project, hasPhases: boolean): string {
+  if (p.contract?.kind === 'phase') return `${p.contract.no} 차 예 정 공 정 표`;
+  if (p.contract?.kind === 'total' && hasPhases) return '총 차 예 정 공 정 표';
+  return '예 정 공 정 표';
+}
+/** 실제 표시 제목: 직접 입력한 제목이 있으면 그것, 없으면 자동 제목 */
+export function formTitle(p: Project, hasPhases: boolean): string {
+  return (p.form.title || '').trim() || autoTitle(p, hasPhases);
+}
+/** 예전 버전이 자동으로 넣던 제목은 '자동'(빈 값)으로 본다 */
+export function isAutoTitleText(t: string): boolean {
+  return /^(\d+\s*차\s*|총\s*차\s*)?예\s*정\s*공\s*정\s*표$/.test((t || '').trim());
+}

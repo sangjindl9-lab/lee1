@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Project } from '../lib/types';
 import { addDays, isValidDate } from '../lib/date';
 import { dateToX, UNIT_LABEL, type ProjectCalc } from '../lib/calc';
-import { buildForm, cellNum, periodHead } from '../lib/form';
+import { autoTitle, buildForm, cellNum, formTitle, periodHead } from '../lib/form';
 import type { PhaseMark } from '../lib/phases';
 
 const PHASE = '#1d4ed8';
@@ -14,6 +14,7 @@ const HALF = 27;
 
 export function FormSheet({ p, c, update, onOpenDetail, compact, marks = [], selected = null, onSelect }: { p: Project; c: ProjectCalc; update: (fn: (d: Project) => void, key?: string) => void; onOpenDetail: (id: string) => void; compact: boolean; marks?: PhaseMark[]; selected?: string | null; onSelect?: (id: string) => void }) {
   const f = buildForm(p, c);
+  const [editTitle, setEditTitle] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   const [boxW, setBoxW] = useState(0);
   useEffect(() => {
@@ -143,7 +144,23 @@ export function FormSheet({ p, c, update, onOpenDetail, compact, marks = [], sel
     <div>
       {/* 양식 설정 */}
       <div className="flex flex-wrap items-center gap-2 border-t border-line px-3 py-2 sm:px-4">
-        <input className="inp" style={{ width: 220 }} value={fo.title} onChange={(e) => update((d) => void (d.form.title = e.target.value), 'form-title')} aria-label="표 제목" title="표 제목 (예: Ⅳ. 예 정 공 정 표(변경))" />
+        <label className="flex items-center gap-1.5 text-[13px]" htmlFor="form-title">
+          <span className="font-semibold">제목</span>
+          <input
+            id="form-title"
+            className="inp"
+            style={{ width: 230 }}
+            value={fo.title}
+            placeholder={`${autoTitle(p, marks.length > 0)} (자동)`}
+            onChange={(e) => update((d) => void (d.form.title = e.target.value), 'form-title')}
+            title="비워 두면 자동 제목(일반: 예정공정표, 차수가 있으면 총차·N차 예정공정표)"
+          />
+        </label>
+        {fo.title.trim() !== '' && (
+          <button className="btn btn-sm" onClick={() => update((d) => void (d.form.title = ''))} title="자동 제목으로 되돌리기">
+            자동 제목
+          </button>
+        )}
         <div className="seg" role="group" aria-label="표시 공종">
           <button aria-pressed={fo.level === 'all'} onClick={() => update((d) => void (d.form.level = 'all'))}>
             전체 공종
@@ -176,9 +193,28 @@ export function FormSheet({ p, c, update, onOpenDetail, compact, marks = [], sel
       <div ref={box} className="overflow-x-auto" style={{ background: '#e9e9e6' }}>
         <div className="form-paper mx-auto my-3" style={{ width: Math.max(nameW + wW + tlW + noteW + 2 + 40, 0), background: '#fff', color: INK, padding: '22px 20px 18px', boxShadow: '0 1px 4px rgba(0,0,0,.18)' }}>
           <div className="relative">
-            <h3 className="text-center" style={{ fontSize: compact ? 22 : 28, fontWeight: 700, letterSpacing: '0.12em' }}>
-              {fo.title}
-            </h3>
+            {editTitle ? (
+              <input
+                autoFocus
+                className="block w-full text-center outline-none"
+                style={{ fontSize: compact ? 22 : 28, fontWeight: 700, letterSpacing: '0.12em', border: '1px dashed #1d4ed8', borderRadius: 4, background: '#f7f9ff', color: INK }}
+                defaultValue={formTitle(p, marks.length > 0)}
+                onBlur={(e) => {
+                  const v = e.target.value.trim();
+                  update((d) => void (d.form.title = v === autoTitle(p, marks.length > 0) ? '' : v));
+                  setEditTitle(false);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                  if (e.key === 'Escape') setEditTitle(false);
+                }}
+                aria-label="표 제목 수정"
+              />
+            ) : (
+              <h3 className="cursor-text text-center hover:bg-[#f7f9ff]" style={{ fontSize: compact ? 22 : 28, fontWeight: 700, letterSpacing: '0.12em', borderRadius: 4 }} onClick={() => setEditTitle(true)} title="눌러서 제목 수정">
+                {formTitle(p, marks.length > 0)}
+              </h3>
+            )}
             {fo.showSign && (
               <div className="absolute right-0 top-0 flex" style={{ border: cellB }}>
                 {(

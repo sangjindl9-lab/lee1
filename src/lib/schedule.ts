@@ -117,7 +117,7 @@ export function rescaleTasks(tasks: Task[], oldS: ISODate, oldE: ISODate, newS: 
 }
 
 export function defaultForm(): Project['form'] {
-  return { title: '예 정 공 정 표', level: 'all', showActual: true, showSign: false, numbering: true };
+  return { title: '', level: 'all', showActual: true, showSign: false, numbering: true };
 }
 
 export function defaultInfo(): Project['info'] {

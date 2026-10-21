@@ -3,7 +3,7 @@ import ExcelJS from 'exceljs';
 import type { Project } from './types';
 import { computeProject, entryPct, plannedPct, sortedHistory, STATUS_LABEL, UNIT_LABEL } from './calc';
 import { addDays, fmtDot, isValidDate, toNum } from './date';
-import { buildForm, periodHead } from './form';
+import { buildForm, formTitle, periodHead } from './form';
 import { groupMembers, phaseLabel, phaseMarks, summarizePhases, type PhaseMark } from './phases';
 import type { ProjectCalc } from './calc';
 
@@ -356,7 +356,7 @@ function addFormSheet(wb: ExcelJS.Workbook, p: Project, c: ProjectCalc, marks: P
 
   ws.mergeCells(1, 1, 1, noteCol);
   const t = ws.getCell(1, 1);
-  t.value = p.form.title || '예 정 공 정 표';
+  t.value = formTitle(p, marks.length > 0);
   t.font = F(20, true);
   t.alignment = { horizontal: 'center', vertical: 'middle' };
   ws.getRow(1).height = 40;

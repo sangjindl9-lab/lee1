@@ -182,3 +182,23 @@ describe('예전 예시 데이터 보정', () => {
     expect(migrate(own)!.info.contractor).toBe('㈜에스에스전력');
   });
 });
+
+import { autoTitle, formTitle, isAutoTitleText } from './form';
+describe('제목', () => {
+  it('일반은 예정공정표, 차수 있는 총차만 총차, 차수는 N차, 직접 입력 우선', () => {
+    const p = newProject();
+    expect(formTitle(p, false)).toBe('예 정 공 정 표');
+    makeTotal(p);
+    expect(formTitle(p, false)).toBe('예 정 공 정 표');
+    expect(formTitle(p, true)).toBe('총 차 예 정 공 정 표');
+    const ph = createPhase(p, 2, p.info.start, p.info.end, 0, false);
+    expect(autoTitle(ph, false)).toBe('2 차 예 정 공 정 표');
+    p.form.title = 'Ⅳ. 예 정 공 정 표(변경)';
+    expect(formTitle(p, true)).toBe('Ⅳ. 예 정 공 정 표(변경)');
+    expect(isAutoTitleText('총 차 예 정 공 정 표')).toBe(true);
+    expect(isAutoTitleText('3 차 예 정 공 정 표')).toBe(true);
+    expect(isAutoTitleText('Ⅳ. 예 정 공 정 표(변경)')).toBe(false);
+    const old = { ...p, form: { ...p.form, title: '총 차 예 정 공 정 표' } };
+    expect(migrate(old)!.form.title).toBe('');
+  });
+});

@@ -20,7 +20,6 @@ export function nextPhaseNo(members: Project[]): number {
 /** 현재 공정표를 총차 예정공정표로 지정 */
 export function makeTotal(d: Project) {
   d.contract = { groupId: uid('g'), kind: 'total', no: 0 };
-  if (!d.form.title || d.form.title.replace(/\s/g, '') === '예정공정표') d.form.title = '총 차 예 정 공 정 표';
 }
 
 /** 다음 차수의 기본 착공일: 직전 차수 준공 다음날, 없으면 총차 착공일 */
@@ -99,7 +98,7 @@ export function createPhase(total: Project, no: number, start: ISODate, end: ISO
   p.template = structuredClone(total.template);
   p.groupShare = { ...total.groupShare };
   p.view = total.view;
-  p.form = { ...total.form, title: `${no} 차 예 정 공 정 표` };
+  p.form = { ...total.form, title: '' };
   p.weightMode = total.weightMode;
   p.contract = { groupId: total.contract!.groupId, kind: 'phase', no };
   let tasks: Task[] = [];
