@@ -125,7 +125,7 @@ export function defaultInfo(): Project['info'] {
   return {
     name: '',
     client: '',
-    contractor: '㈜에스에스전력',
+    contractor: '',
     amount: 0,
     start: today,
     end: addDays(today, 119),
@@ -168,7 +168,7 @@ export function sampleProject(): Project {
   const p = newProject({
     name: '[예시] ○○초등학교 전기·통신 개보수공사',
     client: '○○교육지원청',
-    contractor: '㈜에스에스전력',
+    contractor: '○○전기통신㈜',
     amount: 486000000,
     start: '2026-08-03',
     end: '2027-01-29',
@@ -179,7 +179,7 @@ export function sampleProject(): Project {
     writer: '작성자',
     reviewer: '검토자',
     approver: '승인자',
-    docNo: 'SS-2026-PL-001',
+    docNo: 'PL-2026-001',
     memo: '예시 데이터입니다. 신규 프로젝트를 만들어 실제 현장을 입력하세요.',
   });
   p.tasks = generateTasks(p);
