@@ -291,7 +291,7 @@ export default function App() {
                   공종 삭제
                 </button>
                 <span className="text-[12px] text-mute">
-                  {sel ? `선택: ${c.byId.get(sel)?.node.num}. ${c.byId.get(sel)?.node.task.name}` : sheet === 'form' ? '공종명을 눌러 선택하세요 (두 번 누르면 상세 편집)' : '행을 눌러 공종을 선택하세요'}
+                  {sel ? `선택: ${c.byId.get(sel)?.node.num}. ${c.byId.get(sel)?.node.task.name}` : sheet === 'form' ? '공종명을 누르면 해당 공종이 열리고, 그 안에서 수정·삭제할 수 있습니다' : '행을 눌러 공종을 선택하세요'}
                 </span>
               </div>
 

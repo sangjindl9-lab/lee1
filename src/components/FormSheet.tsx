@@ -77,7 +77,10 @@ export function FormSheet({ p, c, update, onOpenDetail, compact, marks = [], sel
     return (
       <div className="flex" style={{ borderBottom: cellB, height: HALF * 2 }} key={id}>
         <div style={sticky(0, nameW, { borderRight: cellB, display: 'flex', alignItems: 'center', padding: `0 6px 0 ${8 + depth * 12}px`, background: selected === id ? '#fff3c4' : '#fff', boxShadow: selected === id ? 'inset 3px 0 0 #1d4ed8' : undefined })}>
-          <button className="h-full w-full text-left leading-snug" style={{ fontSize: compact ? 12 : 13, fontWeight: bold ? 700 : 400, color: INK }} onClick={() => onSelect?.(id)} onDoubleClick={onClick} title="눌러서 선택 · 두 번 눌러 상세 편집">
+          <button className="h-full w-full text-left leading-snug" style={{ fontSize: compact ? 12 : 13, fontWeight: bold ? 700 : 400, color: INK }} onClick={() => {
+              onSelect?.(id);
+              onClick?.();
+            }} title="눌러서 공종 열기 (수정·삭제)">
             {label}
           </button>
         </div>

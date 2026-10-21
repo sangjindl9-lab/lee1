@@ -24,7 +24,7 @@ export function TaskDetail({ p, c, id, update, onClose, onDelete }: { p: Project
 
   return (
     <Modal
-      title={`공종 상세 · ${r.node.num}. ${t.name}`}
+      title={`공종 상세 · ${r.node.num} ${t.name}`}
       onClose={onClose}
       wide
       footer={
@@ -40,6 +40,16 @@ export function TaskDetail({ p, c, id, update, onClose, onDelete }: { p: Project
         ) : undefined
       }
     >
+      {onDelete && (
+        <div className="mb-3 flex items-center justify-between gap-2 rounded border border-line bg-sunk px-3 py-2 text-[12.5px] text-ink2">
+          <span>
+            보할 {fmt2(r.node.weight)}% · {fmtDot(r.node.start)} ~ {fmtDot(r.node.end)}
+          </span>
+          <button className="btn btn-sm btn-danger" onClick={onDelete}>
+            이 공종 삭제{leaf ? '' : ' (하위 포함)'}
+          </button>
+        </div>
+      )}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Field label="공종명" htmlFor="d-name" className="col-span-2">
           <input id="d-name" className="inp" value={t.name} onChange={(e) => set({ name: e.target.value }, 'd-name')} />
@@ -162,7 +172,7 @@ function PlanCurveEditor({ p, id, update }: { p: Project; id: string; update: Up
         <span className="text-[13.5px] font-semibold">기간별 계획 진도율</span>
         <div className="seg">
           <button aria-pressed={!on} onClick={() => update((d) => void (d.tasks.find((y) => y.id === id)!.planCurve = null))}>
-            작업일 선형(자동)
+            자동(보할 배분 기준)
           </button>
           <button aria-pressed={on} onClick={() => write(deltas)}>
             수동 설정
