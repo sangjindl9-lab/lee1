@@ -86,6 +86,13 @@ export interface FormOptions {
   numbering: boolean; // 공종명 앞 번호
 }
 
+/** 장기계속공사: 총차 공정표와 차수(1차·2차…) 공정표를 하나의 묶음(groupId)으로 연결 */
+export interface ContractLink {
+  groupId: string;
+  kind: 'total' | 'phase';
+  no: number; // 총차 0, 차수 1,2,3…
+}
+
 export interface Project {
   id: string;
   schema: 1;
@@ -101,6 +108,7 @@ export interface Project {
   scheduleBase: { start: ISODate; end: ISODate } | null; // 공정표 생성/재계산 당시 공사기간
   statusNote: string; // 공정현황 및 특이사항
   form: FormOptions; // 제출용 양식 설정
+  contract?: ContractLink | null; // 장기계속공사 차수 연결
   createdAt: string;
   updatedAt: string;
 }

@@ -3,13 +3,16 @@ import type { Project } from '../lib/types';
 import { addDays, isValidDate } from '../lib/date';
 import { dateToX, UNIT_LABEL, type ProjectCalc } from '../lib/calc';
 import { buildForm, cellNum, periodHead } from '../lib/form';
+import type { PhaseMark } from '../lib/phases';
+
+const PHASE = '#1d4ed8';
 
 // 제출용 예정공정표 — 관공서 제출 양식처럼 흑백 표, 상단 칸에 기간별 보할값과 굵은 예정선, 하단 칸에 실적.
 const INK = '#111';
 const GRID = '#222';
 const HALF = 27;
 
-export function FormSheet({ p, c, update, onOpenDetail, compact }: { p: Project; c: ProjectCalc; update: (fn: (d: Project) => void, key?: string) => void; onOpenDetail: (id: string) => void; compact: boolean }) {
+export function FormSheet({ p, c, update, onOpenDetail, compact, marks = [] }: { p: Project; c: ProjectCalc; update: (fn: (d: Project) => void, key?: string) => void; onOpenDetail: (id: string) => void; compact: boolean; marks?: PhaseMark[] }) {
   const f = buildForm(p, c);
   const box = useRef<HTMLDivElement>(null);
   const [boxW, setBoxW] = useState(0);
@@ -39,6 +42,26 @@ export function FormSheet({ p, c, update, onOpenDetail, compact }: { p: Project;
     if (g && g.label === h.top) g.n++;
     else groups.push({ label: h.top, n: 1 });
   }
+  // 총차 공정표: 차수 경계(각 차수 착공일) 세로선
+  const pS = f.periods.length ? f.periods[0].start : '';
+  const pE = f.periods.length ? f.periods[f.periods.length - 1].end : '';
+  const markXs = marks
+    .filter((m) => isValidDate(m.start) && m.start > pS && m.start <= pE)
+    .map((m) => ({ label: m.label, x: dateToX(m.start, f.periods, colW) }));
+  const markBands = marks
+    .filter((m) => isValidDate(m.start) && isValidDate(m.end) && m.end >= pS && m.start <= pE)
+    .map((m) => {
+      const a = dateToX(m.start < pS ? pS : m.start, f.periods, colW);
+      const b = dateToX(addDays(m.end > pE ? pE : m.end, 1), f.periods, colW);
+      return { label: m.label, a, b };
+    });
+  const MarkLines = () => (
+    <>
+      {markXs.map((m) => (
+        <div key={m.label} className="pointer-events-none absolute inset-y-0" style={{ left: m.x - 1, borderLeft: `2px solid ${PHASE}`, opacity: 0.8 }} />
+      ))}
+    </>
+  );
   const baseX = isValidDate(p.info.baseDate) ? dateToX(addDays(p.info.baseDate, 1), f.periods, colW) : -1;
   const cellB = `1px solid ${GRID}`;
   const sticky = (left: number, w: number, extra: React.CSSProperties = {}): React.CSSProperties => ({ position: 'sticky', left, width: w, flex: 'none', background: '#fff', zIndex: 2, ...extra });
@@ -65,6 +88,7 @@ export function FormSheet({ p, c, update, onOpenDetail, compact }: { p: Project;
           <div className="absolute inset-x-0" style={{ top: HALF, borderTop: `1px solid #c9c9c9` }} />
           {hasLine && <div className="absolute" style={{ left: x1, width: x2 - x1, top: HALF - 2, height: 3, background: INK }} />}
           {showAct && actStart && ax2 > ax1 && <div className="absolute" style={{ left: ax1, width: ax2 - ax1, top: HALF * 2 - 9, height: 3, backgroundImage: `repeating-linear-gradient(to right, ${INK} 0 6px, transparent 6px 9px)` }} />}
+          <MarkLines />
           {baseX >= 0 && <div className="absolute inset-y-0" style={{ left: baseX - 1, borderLeft: '2px dashed #c62828' }} />}
           {f.periods.map((_, i) => (
             <div key={i} className="form-num absolute text-center" style={{ left: i * colW, width: colW, top: 3, fontSize: 10.5, color: INK }}>
@@ -95,6 +119,7 @@ export function FormSheet({ p, c, update, onOpenDetail, compact }: { p: Project;
       </div>
       <div className="relative flex-none" style={{ width: tlW, ...vline }}>
         {showAct && <div className="absolute inset-x-0" style={{ top: HALF, borderTop: `1px solid #c9c9c9` }} />}
+        <MarkLines />
         {f.periods.map((_, i) => (
           <div key={i} className="form-num absolute text-center" style={{ left: i * colW, width: colW, top: showAct ? 6 : 12, fontSize: 11.5, color: INK }}>
             {a[i] == null ? '' : a[i]!.toFixed(2)}
@@ -177,6 +202,19 @@ export function FormSheet({ p, c, update, onOpenDetail, compact }: { p: Project;
             <span>시공업체 : {p.info.contractor} (인)</span>
           </div>
           <div className="mt-1.5" style={{ border: `1.5px solid ${INK}`, width: nameW + wW + tlW + noteW + 1 }}>
+            {markBands.length > 0 && (
+              <div className="flex" style={{ borderBottom: cellB, height: 24 }}>
+                <div style={sticky(0, nameW + wW, { borderRight: cellB, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12 })}>차 수 구 분</div>
+                <div className="relative flex-none" style={{ width: tlW }}>
+                  {markBands.map((m) => (
+                    <div key={m.label} className="absolute inset-y-0 flex items-center justify-center" style={{ left: m.a, width: Math.max(2, m.b - m.a), borderLeft: `2px solid ${PHASE}`, borderRight: `2px solid ${PHASE}`, color: PHASE, fontSize: 12, fontWeight: 700, background: 'rgba(29,78,216,0.06)' }}>
+                      {m.b - m.a > 40 ? `${m.label} 공사` : m.label}
+                    </div>
+                  ))}
+                </div>
+                <div className="flex-none" style={{ width: noteW, borderLeft: cellB }} />
+              </div>
+            )}
             {/* 머리글 */}
             <div className="flex" style={{ borderBottom: cellB, height: 64 }}>
               <div style={sticky(0, nameW, { borderRight: cellB, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, letterSpacing: '1.4em', paddingLeft: '1.4em' })}>공종</div>
@@ -216,6 +254,7 @@ export function FormSheet({ p, c, update, onOpenDetail, compact }: { p: Project;
               {UNIT_LABEL[p.view]} · 보할 배분: {p.calendar.distribution === 'month' ? '월 균등' : '작업일 비례'} · 상단: 예정(━ 굵은 선, 기간별 보할값){showAct ? ' · 하단: 실적(┅ 점선, 녹색 값 — 저장된 실적 이력 기준)' : ''}
             </span>
             <span>
+              {markXs.length > 0 && <span style={{ color: PHASE }}>│ 차수 경계 · </span>}
               기준일 {p.info.baseDate.replace(/-/g, '.')} <span style={{ color: '#c62828' }}>┆ 붉은 점선</span>
             </span>
           </div>

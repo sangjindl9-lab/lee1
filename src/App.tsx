@@ -11,6 +11,8 @@ import { isValidDate, todayKST } from './lib/date';
 import type { Project, ViewUnit } from './lib/types';
 import { applyCost, Gantt } from './components/Gantt';
 import { FormSheet } from './components/FormSheet';
+import { PhasePanel } from './components/PhasePanel';
+import { phaseLabel, phaseMarks } from './lib/phases';
 import { InfoPanel, ScheduleBanner, SummaryStrip } from './components/InfoPanel';
 import { SCurve } from './components/SCurve';
 import { HistoryPanel, MobileTasks, StatusPanel } from './components/Panels';
@@ -28,7 +30,7 @@ function useMedia(q: string) {
   return m;
 }
 
-const safeName = (p: Project) => (p.info.name || '공정표').replace(/^\[예시\]\s*/, '예시_').slice(0, 60);
+const safeName = (p: Project) => (p.info.name || '공정표').replace(/^\[예시\]\s*/, '예시_').slice(0, 60) + (p.contract ? `_${phaseLabel(p)}` : '');
 
 export default function App() {
   const S = useProjects();
@@ -96,7 +98,7 @@ export default function App() {
     setBusy(kind === 'xlsx' ? 'Excel 파일 만드는 중…' : `${kind} PDF 만드는 중…`);
     try {
       await new Promise((r) => setTimeout(r, 30));
-      const blob = kind === 'xlsx' ? await exportExcel(p) : style === 'form' ? await exportFormPdf(p, kind) : await exportPdf(p, kind);
+      const blob = kind === 'xlsx' ? await exportExcel(p, S.projects) : style === 'form' ? await exportFormPdf(p, kind, phaseMarks(S.projects, p)) : await exportPdf(p, kind);
       const fname = `${safeName(p)}_예정공정표_${UNIT_LABEL[p.view].replace(' ', '')}${kind === 'xlsx' ? '' : (style === 'form' ? '_제출용_' : '_관리용_') + kind}_${p.info.baseDate}.${kind === 'xlsx' ? 'xlsx' : 'pdf'}`;
       const r = await saveFile(fname, blob);
       toast.show(r === 'saved' ? `${fname} 저장` : r === 'declined' ? '저장을 취소했습니다.' : '파일을 저장하지 못했습니다. 다시 시도하세요.');
@@ -131,7 +133,10 @@ export default function App() {
             </div>
             <button className="min-w-0 text-left" onClick={() => setDlg('list')} title="프로젝트 선택">
               <div className="label leading-tight">프로젝트 ▾ · {S.projects.length}개</div>
-              <div className="truncate text-[15px] font-semibold leading-tight">{p.info.name || '(공사명 없음)'}</div>
+              <div className="truncate text-[15px] font-semibold leading-tight">
+                {p.contract && <span className="mr-1.5 rounded bg-head px-1.5 py-0.5 text-[11.5px] text-headInk">{phaseLabel(p)}</span>}
+                {p.info.name || '(공사명 없음)'}
+              </div>
             </button>
           </div>
           <div className="flex flex-wrap items-center gap-1.5">
@@ -180,6 +185,20 @@ export default function App() {
             }
             onKeep={() => update((d) => void (d.scheduleBase = { start: d.info.start, end: d.info.end }))}
             onRegenerate={() => setDlg('regen')}
+          />
+          <PhasePanel
+            p={p}
+            all={S.projects}
+            update={update}
+            onOpen={(id) => {
+              S.open(id);
+              setSelected(null);
+            }}
+            onAdd={async (np) => {
+              await S.add(np);
+              setSelected(null);
+            }}
+            toast={toast.show}
           />
           <SummaryStrip p={p} c={c} update={update} />
           <InfoPanel p={p} update={update} onGenerate={() => (p.tasks.length ? setDlg('regen') : generate())} onTemplate={() => setDlg('template')} open={infoOpen} setOpen={setInfoOpen} />
@@ -313,7 +332,7 @@ export default function App() {
               )}
             </div>
             {sheet === 'form' ? (
-              <FormSheet p={p} c={c} update={update} onOpenDetail={setDetail} compact={mobile} />
+              <FormSheet p={p} c={c} update={update} onOpenDetail={setDetail} compact={mobile} marks={phaseMarks(S.projects, p)} />
             ) : mobile && mobileTab === 'input' ? (
               <div className="border-t border-line">
                 <MobileTasks c={c} update={update} onOpenDetail={setDetail} />

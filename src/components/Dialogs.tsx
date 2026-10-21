@@ -3,6 +3,7 @@ import type { Project, TemplateRow, WorkKind } from '../lib/types';
 import { addDays, fmtDot, isValidDate, toNum } from '../lib/date';
 import { buildPeriods, clamp, plannedPct, r2, type ProjectCalc, WorkCalendar } from '../lib/calc';
 import { DEFAULT_TEMPLATE, generateTasks, newProject, uid } from '../lib/schedule';
+import { phaseLabel } from '../lib/phases';
 import { Confirm, Field, fmt1, fmt2, Modal, NumField, won } from './ui';
 
 type Upd = (fn: (d: Project) => void, key?: string) => void;
@@ -214,9 +215,18 @@ export function ProjectList({
   const [q, setQ] = useState('');
   const [del, setDel] = useState<Project | null>(null);
   const file = useRef<HTMLInputElement>(null);
-  const list = projects
-    .filter((p) => !q || `${p.info.name} ${p.info.client} ${p.info.location}`.toLowerCase().includes(q.toLowerCase()))
-    .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
+  // 최근 수정순, 같은 장기계속공사 묶음은 총차·1차·2차 순으로 붙여서
+  const filtered = projects.filter((p) => !q || `${p.info.name} ${p.info.client} ${p.info.location} ${phaseLabel(p)}`.toLowerCase().includes(q.toLowerCase()));
+  const groupLatest = new Map<string, string>();
+  for (const p of filtered) if (p.contract) groupLatest.set(p.contract.groupId, [groupLatest.get(p.contract.groupId) || '', p.updatedAt].sort()[1]);
+  const keyOf = (p: Project) => (p.contract ? groupLatest.get(p.contract.groupId)! : p.updatedAt);
+  const list = filtered.sort((a, b) => {
+    const ka = keyOf(a);
+    const kb = keyOf(b);
+    if (ka !== kb) return ka < kb ? 1 : -1;
+    if (a.contract && b.contract && a.contract.groupId === b.contract.groupId) return a.contract.no - b.contract.no;
+    return (a.contract?.groupId || a.id) < (b.contract?.groupId || b.id) ? -1 : 1;
+  });
   return (
     <Modal
       title="프로젝트 관리"
@@ -257,6 +267,7 @@ export function ProjectList({
               <tr key={p.id} style={p.id === curId ? { background: 'var(--sel)' } : undefined}>
                 <td>
                   <button className="text-left font-semibold hover:underline" onClick={() => onOpen(p.id)}>
+                    {p.contract && <span className="mr-1.5 rounded bg-head px-1.5 py-0.5 text-[11px] font-semibold text-headInk">{phaseLabel(p)}</span>}
                     {p.info.name || '(공사명 없음)'}
                   </button>
                 </td>

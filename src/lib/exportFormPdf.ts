@@ -6,6 +6,8 @@ import { addDays, fmtDot, isValidDate } from './date';
 import { buildForm, cellNum, periodHead } from './form';
 import { fitText, font, line, PX, rect, setFamily, wrap } from './exportPdf';
 import type { Paper } from './exportPdf';
+import type { PhaseMark } from './phases';
+const PHASE = '#1d4ed8';
 
 const FAMILY_FORM = '"Nanum Gothic", "Malgun Gothic", "맑은 고딕", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif';
 const INK = '#111111';
@@ -29,7 +31,7 @@ function spaced(ctx: Ctx, text: string, cx: number, y: number, size: number, gap
   });
 }
 
-export async function exportFormPdf(p: Project, paper: Paper = 'A3'): Promise<Blob> {
+export async function exportFormPdf(p: Project, paper: Paper = 'A3', marks: PhaseMark[] = []): Promise<Blob> {
   const c = computeProject(p);
   const f = buildForm(p, c);
   setFamily(FAMILY_FORM);
@@ -60,7 +62,8 @@ export async function exportFormPdf(p: Project, paper: Paper = 'A3'): Promise<Bl
   const minHalf = a4 ? 3.4 : 4.4;
   const maxHalf = a4 ? 8 : 9.5;
   const sumRows = 2;
-  const avail = bottom - top - headH;
+  const bandH = marks.length ? (a4 ? 4.6 : 5.4) : 0;
+  const avail = bottom - top - headH - bandH;
   const rowsPer = Math.max(1, Math.floor(avail / (minHalf * 2)) - sumRows);
   const rStarts: number[] = [];
   for (let i = 0; i < Math.max(1, f.rows.length); i += rowsPer) rStarts.push(i);
@@ -116,6 +119,23 @@ export async function exportFormPdf(p: Project, paper: Paper = 'A3'): Promise<Bl
       const nx = tx + periods.length * colW;
       const tableW = nameW + wW + periods.length * colW + noteW;
       let y = top;
+      const pS = periods.length ? periods[0].start : '';
+      const pE = periods.length ? periods[periods.length - 1].end : '';
+      if (bandH) {
+        fitText(ctx, '차 수 구 분', x0 + (nameW + wW) / 2, y + bandH / 2, nameW + wW - 2, a4 ? 2.8 : 3.1, { align: 'center', color: INK });
+        for (const m of marks) {
+          if (!isValidDate(m.start) || !isValidDate(m.end) || m.end < pS || m.start > pE) continue;
+          const a = tx + dateToX(m.start < pS ? pS : m.start, periods, colW);
+          const b = tx + dateToX(addDays(m.end > pE ? pE : m.end, 1), periods, colW);
+          rect(ctx, a, y, b - a, bandH, 'rgba(29,78,216,0.07)');
+          line(ctx, a, y, a, y + bandH, PHASE, 0.45);
+          line(ctx, b, y, b, y + bandH, PHASE, 0.45);
+          fitText(ctx, b - a > 14 ? `${m.label} 공사` : m.label, (a + b) / 2, y + bandH / 2, Math.max(4, b - a - 1), a4 ? 2.8 : 3.1, { align: 'center', color: PHASE, weight: 700, min: 1.6 });
+        }
+        line(ctx, x0, y + bandH, x0 + tableW, y + bandH, INK, 0.25);
+        y += bandH;
+      }
+      const hTop = y;
       // 머리글
       const hh = headH / 2;
       fitText(ctx, '공       종', x0 + nameW / 2, y + headH / 2, nameW - 2, a4 ? 3 : 3.4, { align: 'center', color: INK });
@@ -206,9 +226,16 @@ export async function exportFormPdf(p: Project, paper: Paper = 'A3'): Promise<Bl
       sumRow('계', f.planSum, f.actSum, f.weightTotal.toFixed(1));
       sumRow('누      계', f.planCum, f.actCum, '');
       // 세로선
-      line(ctx, x0 + nameW, top, x0 + nameW, y, INK, 0.25);
+      line(ctx, x0 + nameW, hTop, x0 + nameW, y, INK, 0.25);
       line(ctx, tx, top, tx, y, INK, 0.25);
-      periods.forEach((_, k) => k && line(ctx, tx + k * colW, top + hh, tx + k * colW, y, INK, 0.2));
+      periods.forEach((_, k) => k && line(ctx, tx + k * colW, hTop + hh, tx + k * colW, y, INK, 0.2));
+      // 차수 경계선
+      for (const m of marks) {
+        if (isValidDate(m.start) && m.start > pS && m.start <= pE) {
+          const mx2 = tx + dateToX(m.start, periods, colW);
+          line(ctx, mx2, hTop + headH, mx2, y, PHASE, 0.5);
+        }
+      }
       line(ctx, nx, top, nx, y, INK, 0.25);
       // 기준일 선
       if (periods.length && p.info.baseDate >= periods[0].start && p.info.baseDate <= periods[periods.length - 1].end) {

@@ -144,3 +144,27 @@ describe('보할 비례조정', () => {
     expect(v.reduce((s, x) => s + x, 0)).toBeCloseTo(100, 9);
   });
 });
+
+import { createPhase, derivePhaseTasks, makeTotal, summarizePhases } from './phases';
+describe('장기계속공사 차수', () => {
+  it('총차에서 차수 생성: 차수 보할 100, 차수 몫 합계 100, 일정은 차수 기간 안', () => {
+    const total = newProject({ kind: 'elec', start: '2026-01-05', end: '2027-12-31', amount: 1_000_000_000 });
+    total.calendar.distribution = 'month';
+    total.tasks = generateTasks(total);
+    makeTotal(total);
+    const ph1 = createPhase(total, 1, '2026-01-05', '2026-12-31', 400_000_000, true);
+    const ph2 = createPhase(total, 2, '2027-01-01', '2027-12-31', 600_000_000, true);
+    for (const ph of [ph1, ph2]) {
+      expect(ph.tasks.reduce((s, t) => s + t.weight, 0)).toBeCloseTo(100, 6);
+      for (const t of ph.tasks) {
+        expect(t.start >= ph.info.start && t.end <= ph.info.end).toBe(true);
+      }
+      expect(ph.contract?.groupId).toBe(total.contract?.groupId);
+    }
+    const sum = summarizePhases(total, [total, ph1, ph2]);
+    expect(sum.sumShare).toBeCloseTo(100, 1);
+    expect(sum.rows[0].amountRatio).toBeCloseTo(40, 6);
+    const d = derivePhaseTasks(total, '2026-01-05', '2026-12-31');
+    expect(d.share + derivePhaseTasks(total, '2027-01-01', '2027-12-31').share).toBeCloseTo(100, 6);
+  });
+});

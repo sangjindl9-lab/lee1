@@ -4,6 +4,7 @@ import type { Project } from './types';
 import { computeProject, entryPct, plannedPct, sortedHistory, STATUS_LABEL, UNIT_LABEL } from './calc';
 import { addDays, fmtDot, isValidDate, toNum } from './date';
 import { buildForm, periodHead } from './form';
+import { groupMembers, phaseLabel, phaseMarks, summarizePhases, type PhaseMark } from './phases';
 import type { ProjectCalc } from './calc';
 
 const FONT = '맑은 고딕';
@@ -22,13 +23,14 @@ const thin = { style: 'thin' as const, color: { argb: C.line } };
 const border = { top: thin, left: thin, bottom: thin, right: thin };
 const fill = (argb: string): ExcelJS.Fill => ({ type: 'pattern', pattern: 'solid', fgColor: { argb } });
 
-export async function exportExcel(p: Project): Promise<Blob> {
+export async function exportExcel(p: Project, all: Project[] = []): Promise<Blob> {
   const c = computeProject(p);
   const wb = new ExcelJS.Workbook();
   wb.creator = p.info.writer || '예정공정표';
   wb.created = new Date();
   const costMode = p.weightMode === 'cost';
-  addFormSheet(wb, p, c);
+  addFormSheet(wb, p, c, phaseMarks(all, p));
+  if (p.contract) addPhaseSheet(wb, p, all);
 
   // ───── 시트2: 관리용 상세 공정표 ─────
   const ws = wb.addWorksheet(`관리용(${UNIT_LABEL[p.view]})`, {
@@ -335,7 +337,7 @@ export async function exportExcel(p: Project): Promise<Blob> {
 }
 
 /** 제출용 양식 시트: 공종·보할·기간·비고, 공종마다 2행(상단 예정값+굵은 밑줄 = 예정선, 하단 실적), 계·누계는 수식 */
-function addFormSheet(wb: ExcelJS.Workbook, p: Project, c: ProjectCalc) {
+function addFormSheet(wb: ExcelJS.Workbook, p: Project, c: ProjectCalc, marks: PhaseMark[] = []) {
   const f = buildForm(p, c);
   const ws = wb.addWorksheet('예정공정표(제출용)', {
     pageSetup: { paperSize: 8 as any, orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, horizontalCentered: true, margins: { left: 0.4, right: 0.4, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 } },
@@ -371,6 +373,32 @@ function addFormSheet(wb: ExcelJS.Workbook, p: Project, c: ProjectCalc) {
   }
   ws.getRow(2).height = 22;
 
+  // 3행: 차수 구분(총차 공정표)
+  if (marks.length) {
+    const lc = ws.getCell(3, 1);
+    ws.mergeCells(3, 1, 3, 2);
+    lc.value = '차 수 구 분';
+    lc.font = F(10);
+    lc.alignment = { horizontal: 'center', vertical: 'middle' };
+    for (const col of [1, 2, noteCol]) ws.getCell(3, col).border = all;
+    const used = new Set<number>();
+    for (const m of marks) {
+      const cols = f.periods.map((pr, i) => (m.start <= pr.end && m.end >= pr.start ? i : -1)).filter((i) => i >= 0 && !used.has(i));
+      if (!cols.length) continue;
+      cols.forEach((i) => used.add(i));
+      const a = T0 + cols[0];
+      const b = T0 + cols[cols.length - 1];
+      if (b > a) ws.mergeCells(3, a, 3, b);
+      const cell = ws.getCell(3, a);
+      cell.value = `${m.label} 공사 (${fmtDot(m.start)}~${fmtDot(m.end)})`;
+      cell.font = F(9, true, 'FF1D4ED8');
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEEF2FD' } };
+      cell.alignment = { horizontal: 'center', vertical: 'middle', shrinkToFit: true };
+      const med = { style: 'medium' as const, color: { argb: 'FF1D4ED8' } };
+      for (let col = a; col <= b; col++) ws.getCell(3, col).border = { top: black, bottom: black, left: col === a ? med : undefined, right: col === b ? med : undefined };
+    }
+    ws.getRow(3).height = 20;
+  }
   // 머리글 4~5행
   const H1 = 4;
   const H2 = 5;
@@ -508,4 +536,48 @@ function addFormSheet(wb: ExcelJS.Workbook, p: Project, c: ProjectCalc) {
   ws.getCell(r + 1, 1).value = `※ 상단: 기간별 예정 보할(%) · 굵은 밑줄 = 예정공정 기간${showAct ? ' · 하단(녹색): 저장된 실적 이력 기준 기간별 실적(%) · 점선 = 실제 수행기간' : ''} · 보할 배분: ${p.calendar.distribution === 'month' ? '월 균등' : '작업일 비례'} · 기준일 ${fmtDot(p.info.baseDate)}`;
   ws.getCell(r + 1, 1).font = F(8.5, false, 'FF555555');
   ws.pageSetup.printTitlesRow = `${H1}:${H2}`;
+}
+
+/** 장기계속공사 차수 현황 시트 */
+function addPhaseSheet(wb: ExcelJS.Workbook, p: Project, all: Project[]) {
+  const members = groupMembers(all.some((x) => x.id === p.id) ? all : [...all, p], p);
+  const total = members.find((x) => x.contract?.kind === 'total');
+  if (!total) return;
+  const sum = summarizePhases(total, members);
+  const ws = wb.addWorksheet('차수 현황');
+  ws.columns = [
+    { header: '차수', width: 8 },
+    { header: '착공일', width: 12 },
+    { header: '준공일', width: 12 },
+    { header: '일수', width: 7 },
+    { header: '계약금액(원)', width: 16 },
+    { header: '총차 대비 금액(%)', width: 14 },
+    { header: '총차 예정 몫(%)', width: 13 },
+    { header: '차수 준공 시 총차 누계(%)', width: 18 },
+    { header: '차수 실적(%)', width: 11 },
+    { header: '총차 환산 실적(%p)', width: 15 },
+  ];
+  const head = ws.getRow(1);
+  head.height = 30;
+  head.eachCell((cell) => {
+    cell.font = { name: FONT, size: 9.5, bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.fill = fill(C.head);
+    cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    cell.border = border;
+  });
+  const put = (vals: (string | number | null)[], bold = false) => {
+    const r = ws.addRow(vals);
+    r.eachCell({ includeEmpty: true }, (cell, col) => {
+      cell.font = { name: FONT, size: 9.5, bold };
+      cell.border = border;
+      cell.numFmt = col === 5 ? '#,##0' : col >= 6 ? '0.00' : '@';
+      if (bold) cell.fill = fill(C.sunk);
+    });
+  };
+  put([phaseLabel(total), fmtDot(total.info.start), fmtDot(total.info.end), toNum(total.info.end) - toNum(total.info.start) + 1, total.info.amount, 100, 100, 100, null, null], true);
+  for (const r of sum.rows)
+    put([r.label, fmtDot(r.start), fmtDot(r.end), r.days, r.amount, r.amountRatio == null ? null : Math.round(r.amountRatio * 100) / 100, r.share, Math.round(r.planCumAtEnd * 100) / 100, Math.round(r.actual * 100) / 100, Math.round(r.totalContribution * 100) / 100]);
+  put(['차수 합계', '', '', null, sum.sumAmount, total.info.amount ? Math.round((sum.sumAmount / total.info.amount) * 10000) / 100 : null, Math.round(sum.sumShare * 100) / 100, null, null, Math.round(sum.sumContribution * 100) / 100], true);
+  ws.addRow([]);
+  ws.addRow(['※ 총차 예정 몫 = 총차 예정공정 중 해당 차수 기간에 들어가는 비율, 총차 환산 실적 = 몫 × 차수 실적']).getCell(1).font = { name: FONT, size: 8.5, color: { argb: 'FF555555' } };
 }
