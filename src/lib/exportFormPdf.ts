@@ -176,7 +176,7 @@ export async function exportFormPdf(p: Project, paper: Paper = 'A3', marks: Phas
           if (s <= e) {
             const a = tx + dateToX(s, periods, colW);
             const b = tx + dateToX(addDays(e, 1), periods, colW);
-            rect(ctx, a, y + half - 0.45, Math.max(0.5, b - a), 0.9, INK);
+            rect(ctx, a, y + half - (r.color ? 0.7 : 0.45), Math.max(0.5, b - a), r.color ? 1.4 : 0.9, r.color || INK);
           }
         }
         // 실적선(실제 착수일이 있을 때만, 점선)

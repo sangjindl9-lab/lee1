@@ -433,6 +433,7 @@ function addFormSheet(wb: ExcelJS.Workbook, p: Project, c: ProjectCalc, marks: P
   for (const row of f.rows) {
     const r1 = r;
     const r2 = r + 1;
+    const lineColor = { argb: row.color ? 'FF' + row.color.slice(1).toUpperCase() : 'FF000000' };
     ws.mergeCells(r1, 1, r2, 1);
     const nameC = ws.getCell(r1, 1);
     nameC.value = '   '.repeat(row.depth) + row.label;
@@ -463,7 +464,7 @@ function addFormSheet(wb: ExcelJS.Workbook, p: Project, c: ProjectCalc, marks: P
       up.font = F(8);
       up.alignment = { horizontal: 'center', vertical: 'top' };
       const inPlan = isValidDate(row.start) && row.start <= pr.end && row.end >= pr.start;
-      up.border = { left: black, right: black, top: black, bottom: inPlan ? { style: 'thick', color: { argb: 'FF000000' } } : { style: 'hair', color: { argb: 'FFBDBDBD' } } };
+      up.border = { left: black, right: black, top: black, bottom: inPlan ? { style: 'thick', color: lineColor } : { style: 'hair', color: { argb: 'FFBDBDBD' } } };
       const a = row.act[i];
       if (showAct && a != null && Math.abs(a) >= 0.005) {
         dn.value = Math.round(a * 100) / 100;
@@ -473,7 +474,7 @@ function addFormSheet(wb: ExcelJS.Workbook, p: Project, c: ProjectCalc, marks: P
       dn.alignment = { horizontal: 'center', vertical: 'top' };
       const ae = row.actEnd || (row.actStart ? p.info.baseDate : '');
       const inAct = showAct && row.actStart && row.actStart <= pr.end && ae >= pr.start;
-      dn.border = { left: black, right: black, bottom: black, top: inPlan ? { style: 'thick', color: { argb: 'FF000000' } } : { style: 'hair', color: { argb: 'FFBDBDBD' } } };
+      dn.border = { left: black, right: black, bottom: black, top: inPlan ? { style: 'thick', color: lineColor } : { style: 'hair', color: { argb: 'FFBDBDBD' } } };
       if (inAct) dn.border = { ...dn.border, bottom: { style: 'mediumDashed', color: { argb: 'FF000000' } } };
     });
     ws.getRow(r1).height = 21;

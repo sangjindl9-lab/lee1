@@ -14,6 +14,7 @@ export interface FormRow {
   actStart: ISODate | '';
   actEnd: ISODate | '';
   actual: number;
+  color: string; // 공종 막대 색상(빈 값이면 검정)
   plan: number[]; // 기간별 보할 반영 예정값
   act: (number | null)[]; // 기간별 보할 반영 실적값 (이력 없는 기간 null)
 }
@@ -68,6 +69,7 @@ export function buildForm(p: Project, c: ProjectCalc): FormData {
         actStart: r.node.isLeaf && isValidDate(t.actualStart) ? t.actualStart : '',
         actEnd: r.node.isLeaf && isValidDate(t.actualEnd) ? t.actualEnd : '',
         actual: r.actual,
+        color: /^#[0-9a-fA-F]{6}$/.test(t.color || '') ? t.color : '',
         plan: sumArr(ids),
         act: sumAct(ids),
       };

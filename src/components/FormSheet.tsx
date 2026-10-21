@@ -67,7 +67,7 @@ export function FormSheet({ p, c, update, onOpenDetail, compact, marks = [], sel
   const sticky = (left: number, w: number, extra: React.CSSProperties = {}): React.CSSProperties => ({ position: 'sticky', left, width: w, flex: 'none', background: '#fff', zIndex: 2, ...extra });
   const vline: React.CSSProperties = { backgroundImage: `linear-gradient(to right, ${GRID} 1px, transparent 1px)`, backgroundSize: `${colW}px 100%` };
 
-  const Row = ({ id, label, weight, depth, plan, act, start, end, actStart, actEnd, note, bold, onClick }: any) => {
+  const Row = ({ id, label, weight, depth, plan, act, start, end, actStart, actEnd, note, bold, onClick, color }: any) => {
     const x1 = isValidDate(start) ? dateToX(start, f.periods, colW) : 0;
     const x2 = isValidDate(end) ? dateToX(addDays(end, 1), f.periods, colW) : 0;
     const hasLine = isValidDate(start) && isValidDate(end) && x2 > x1;
@@ -89,7 +89,7 @@ export function FormSheet({ p, c, update, onOpenDetail, compact, marks = [], sel
         </div>
         <div className="relative flex-none" style={{ width: tlW, ...vline }}>
           <div className="absolute inset-x-0" style={{ top: HALF, borderTop: `1px solid #c9c9c9` }} />
-          {hasLine && <div className="absolute" style={{ left: x1, width: x2 - x1, top: HALF - 2, height: 3, background: INK }} />}
+          {hasLine && <div className="absolute" style={{ left: x1, width: x2 - x1, top: HALF - (color ? 3 : 2), height: color ? 5 : 3, background: color || INK }} />}
           {showAct && actStart && ax2 > ax1 && <div className="absolute" style={{ left: ax1, width: ax2 - ax1, top: HALF * 2 - 9, height: 3, backgroundImage: `repeating-linear-gradient(to right, ${INK} 0 6px, transparent 6px 9px)` }} />}
           <MarkLines />
           {baseX >= 0 && <div className="absolute inset-y-0" style={{ left: baseX - 1, borderLeft: '2px dashed #c62828' }} />}

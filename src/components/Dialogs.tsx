@@ -111,7 +111,7 @@ export function TaskDetail({ p, c, id, update, onClose, onDelete }: { p: Project
             상위 공종입니다. 기간·보할·공정률은 하위 공종 {r.node.leaves.length}개에서 자동 집계됩니다 (보할 {fmt2(r.node.weight)}%, 예정 {fmt1(r.planned)}%, 실적 {fmt1(r.actual)}%).
           </div>
         )}
-        <Field label="막대 색상" className="col-span-2 md:col-span-4">
+        <Field label="막대 색상 (제출 양식의 예정선 · 편집·간트 막대 · PDF · 엑셀에 적용, 기본은 검정)" className="col-span-2 md:col-span-4">
           <div className="flex flex-wrap items-center gap-2">
             {SWATCH.map((s) => (
               <button
