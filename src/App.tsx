@@ -12,6 +12,8 @@ import type { Project, ViewUnit } from './lib/types';
 import { applyCost, Gantt } from './components/Gantt';
 import { FormSheet } from './components/FormSheet';
 import { PhasePanel } from './components/PhasePanel';
+import type { Account } from './auth/Gate';
+import { AccountMenu } from './auth/AccountMenu';
 import { phaseLabel, phaseMarks } from './lib/phases';
 import { InfoPanel, ScheduleBanner, SummaryStrip } from './components/InfoPanel';
 import { SCurve } from './components/SCurve';
@@ -32,7 +34,7 @@ function useMedia(q: string) {
 
 const safeName = (p: Project) => (p.info.name || '공정표').replace(/^\[예시\]\s*/, '예시_').slice(0, 60) + (p.contract ? `_${phaseLabel(p)}` : '');
 
-export default function App() {
+export default function App({ account = null }: { account?: Account | null }) {
   const S = useProjects();
   const toast = useToast();
   const mobile = useMedia('(max-width: 767px)');
@@ -77,6 +79,17 @@ export default function App() {
     return () => window.removeEventListener('keydown', h);
   }, [S]);
 
+  if (S.loadError) {
+    return (
+      <div className="gutter flex h-screen flex-col items-center justify-center gap-3 text-center">
+        <div className="text-[15px] font-semibold">공정표를 불러오지 못했습니다</div>
+        <div className="text-[13px] text-ink2">{S.loadError}</div>
+        <button className="btn btn-primary" onClick={() => location.reload()}>
+          다시 시도
+        </button>
+      </div>
+    );
+  }
   if (!S.ready || !p || !c) {
     return <div className="gutter flex h-screen items-center justify-center text-mute">공정표를 불러오는 중…</div>;
   }
@@ -173,6 +186,7 @@ export default function App() {
             <button className="btn btn-sm btn-primary" onClick={() => setDlg('pdf')} disabled={!!busy}>
               PDF
             </button>
+            {account && <AccountMenu account={account} onImport={(ps) => S.importMany(ps)} toast={toast.show} />}
           </div>
         </div>
       </header>

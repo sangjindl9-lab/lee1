@@ -1,3 +1,4 @@
+/// <reference types="vitest" />
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { viteSingleFile } from 'vite-plugin-singlefile';
@@ -6,7 +7,8 @@ import { viteSingleFile } from 'vite-plugin-singlefile';
 // `npm run build:single` → 단일 HTML 파일(dist-single/index.html) — 파일 하나로 실행
 export default defineConfig(({ mode }) => ({
   plugins: mode === 'single' ? [react(), viteSingleFile()] : [react()],
-  base: './',
+  base: mode === 'single' ? './' : '/',
+  test: { include: ['src/**/*.test.ts'] },
   build: {
     outDir: mode === 'single' ? 'dist-single' : 'dist',
     chunkSizeWarningLimit: 4000,

@@ -10,6 +10,7 @@ export type SaveState = 'idle' | 'pending' | 'saving' | 'saved' | 'error';
 export function useProjects() {
   const storeRef = useRef<ProjectStore | null>(null);
   const [ready, setReady] = useState(false);
+  const [loadError, setLoadError] = useState('');
   const [projects, setProjects] = useState<Project[]>([]);
   const [cur, setCur] = useState<Project | null>(null);
   const past = useRef<Project[]>([]);
@@ -29,11 +30,17 @@ export function useProjects() {
     (async () => {
       const store = await createStore();
       storeRef.current = store;
-      let list = (await store.list()).map(migrate).filter(Boolean) as Project[];
-      if (!list.length) {
-        const s = sampleProject();
-        await store.save(s);
-        list = [s];
+      let list: Project[];
+      try {
+        list = (await store.list()).map(migrate).filter(Boolean) as Project[];
+        if (!list.length) {
+          const s = sampleProject();
+          await store.save(s);
+          list = [s];
+        }
+      } catch (e: any) {
+        if (alive) setLoadError(e?.message || '공정표를 불러오지 못했습니다.');
+        return;
       }
       if (!alive) return;
       list.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
@@ -248,6 +255,7 @@ export function useProjects() {
 
   return {
     ready,
+    loadError,
     projects,
     cur,
     update,

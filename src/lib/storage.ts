@@ -2,6 +2,7 @@
 // 향후 로그인·클라우드 DB(Firebase, Supabase, 자체 API 등)는 어댑터만 추가하면 된다.
 import type { Project } from './types';
 import { DEFAULT_TEMPLATE, defaultForm } from './schedule';
+import { api } from './api';
 
 export interface ProjectStore {
   readonly label: string;
@@ -114,7 +115,41 @@ export class SyncStore implements ProjectStore {
   }
 }
 
+/** 회원제 서버 저장 — 로그인한 회원의 데이터만 읽고 쓴다 */
+export class ServerStore implements ProjectStore {
+  label = '회원 서버';
+  private queue = new Map<string, Promise<void>>();
+  async list() {
+    const r = await api<{ projects: Project[] }>('GET', '/api/projects');
+    return r.projects;
+  }
+  async save(p: Project) {
+    const prev = this.queue.get(p.id) || Promise.resolve();
+    const next = prev.catch(() => {}).then(() => api('PUT', `/api/projects/${encodeURIComponent(p.id)}`, { data: p }).then(() => undefined));
+    this.queue.set(p.id, next);
+    await next;
+  }
+  async remove(id: string) {
+    await api('DELETE', `/api/projects/${encodeURIComponent(id)}`);
+  }
+}
+
+let serverMode = false;
+let lastKey = LAST;
+export function setServerMode(on: boolean, username?: string) {
+  serverMode = on;
+  lastKey = on && username ? `${LAST}.${username}` : LAST;
+}
+export function isServerMode() {
+  return serverMode;
+}
+/** 이 브라우저(로컬)에 남아 있는 공정표 — 회원 서버로 옮길 때 사용 */
+export async function localProjects(): Promise<Project[]> {
+  return (await new LocalStore().list()).map(migrate).filter(Boolean) as Project[];
+}
+
 export async function createStore(): Promise<ProjectStore> {
+  if (serverMode) return new ServerStore();
   const local = new LocalStore();
   try {
     if (window.claude?.use) {
@@ -130,14 +165,14 @@ export async function createStore(): Promise<ProjectStore> {
 
 export function getLastId(): string | null {
   try {
-    return localStorage.getItem(LAST);
+    return localStorage.getItem(lastKey);
   } catch {
     return null;
   }
 }
 export function setLastId(id: string) {
   try {
-    localStorage.setItem(LAST, id);
+    localStorage.setItem(lastKey, id);
   } catch {
     /* noop */
   }

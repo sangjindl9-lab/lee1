@@ -8,11 +8,14 @@
     "build": "tsc --noEmit && vite build",
     "build:single": "tsc --noEmit && vite build --mode single",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run && node --test server/server.test.js",
+    "start": "node server/index.js"
   },
   "dependencies": {
     "exceljs": "^4.4.0",
+    "express": "^4.22.3",
     "jspdf": "^4.2.1",
+    "pg": "^8.23.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "recharts": "^3.10.1"
@@ -28,5 +31,8 @@
     "vite": "^5.4.21",
     "vite-plugin-singlefile": "^2.3.4",
     "vitest": "^2.1.9"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }
