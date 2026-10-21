@@ -51,30 +51,27 @@ export async function exportFormPdf(p: Project, paper: Paper = 'A3', marks: Phas
   const wW = a4 ? 13 : 15;
   const noteW = a4 ? 20 : 26;
   const tlW = W - 2 * mx - nameW - wW - noteW;
-  const minCol = p.view === 'week' ? (a4 ? 8 : 9) : p.view === 'month' ? (a4 ? 14 : 15.5) : a4 ? 18 : 20;
-  const perPage = Math.max(1, Math.floor(tlW / minCol));
+  // 항상 한 장: 모든 기간 칸과 공종을 한 페이지에 맞추고, 칸이 좁아지면 글자를 줄인다
   const n = f.periods.length;
-  const pStarts: number[] = [];
-  for (let i = 0; i < Math.max(1, n); i += perPage) pStarts.push(i);
-  const colW = n <= perPage ? tlW / Math.max(1, n) : tlW / perPage;
+  const perPage = Math.max(1, n);
+  const pStarts: number[] = [0];
+  const colW = tlW / Math.max(1, n);
   const headH = a4 ? 12 : 15;
   const showAct = p.form.showActual;
-  const minHalf = a4 ? 3.4 : 4.4;
   const maxHalf = a4 ? 8 : 9.5;
   const sumRows = 2;
   const bandH = marks.length ? (a4 ? 4.6 : 5.4) : 0;
   const avail = bottom - top - headH - bandH;
-  const rowsPer = Math.max(1, Math.floor(avail / (minHalf * 2)) - sumRows);
-  const rStarts: number[] = [];
-  for (let i = 0; i < Math.max(1, f.rows.length); i += rowsPer) rStarts.push(i);
-  const pages = pStarts.length * rStarts.length;
+  const rowsPer = Math.max(1, f.rows.length);
+  const rStarts: number[] = [0];
+  const pages = 1;
+  const SCALE = PX + 4; // 글자가 작아져도 선명하도록 해상도를 높임
   const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: paper.toLowerCase() as 'a3' | 'a4', compress: true });
   const canvas = document.createElement('canvas');
-  canvas.width = Math.round(W * PX);
-  canvas.height = Math.round(H * PX);
+  canvas.width = Math.round(W * SCALE);
+  canvas.height = Math.round(H * SCALE);
   const ctx = canvas.getContext('2d')!;
   let pageNo = 0;
-  const vS = a4 ? 2.35 : 2.7; // 칸 숫자 글자 크기
 
   for (const ps of pStarts) {
     const periods: Period[] = f.periods.slice(ps, ps + perPage);
@@ -82,12 +79,15 @@ export async function exportFormPdf(p: Project, paper: Paper = 'A3', marks: Phas
     for (const rs of rStarts) {
       const rows = f.rows.slice(rs, rs + rowsPer);
       const nRows = rows.length + sumRows;
-      const half = Math.max(minHalf, Math.min(maxHalf, avail / nRows / 2));
+      const half = Math.min(maxHalf, avail / nRows / 2);
       const rowH = half * 2;
+      const vS = Math.min(a4 ? 2.35 : 2.7, colW * 0.24, half * 0.62); // 칸 숫자 글자 크기
+      const nameSz = Math.min(a4 ? 2.8 : 3.2, half * 0.78);
+      const hSz = Math.min(a4 ? 2.7 : 3.1, colW * 0.3);
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.fillStyle = '#fff';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.setTransform(PX, 0, 0, PX, 0, 0);
+      ctx.setTransform(SCALE, 0, 0, SCALE, 0, 0);
       pageNo++;
       // 제목·개요
       spaced(ctx, p.form.title || '예 정 공 정 표', W / 2, a4 ? 13 : 18, a4 ? 7.5 : 9.5, a4 ? 1.6 : 2.2);
@@ -152,7 +152,7 @@ export async function exportFormPdf(p: Project, paper: Paper = 'A3', marks: Phas
       }
       line(ctx, tx, y + hh, nx, y + hh, INK, 0.25);
       periods.forEach((pr, k) => {
-        fitText(ctx, periodHead(pr).label, tx + k * colW + colW / 2, y + hh + hh / 2, colW - 1, a4 ? 2.7 : 3.1, { align: 'center', color: INK, min: 1.6 });
+        fitText(ctx, periodHead(pr).label, tx + k * colW + colW / 2, y + hh + hh / 2, colW - 0.4, hSz, { align: 'center', color: INK, min: 0.7 });
       });
       fitText(ctx, '비     고', nx + noteW / 2, y + headH / 2, noteW - 2, a4 ? 3 : 3.4, { align: 'center', color: INK });
       y += headH;
@@ -161,13 +161,13 @@ export async function exportFormPdf(p: Project, paper: Paper = 'A3', marks: Phas
 
       const drawRow = (r: (typeof rows)[number]) => {
         // 공종명 (최대 2줄)
-        const nsz = a4 ? 2.8 : 3.2;
+        const nsz = nameSz;
         font(ctx, nsz);
         const pad = 1.6 + r.depth * 2.2;
         const lines = wrap(ctx, r.label, nameW - pad - 1.5);
-        const shown = lines.length > 2 ? [lines[0], lines.slice(1).join('')] : lines;
+        const shown = rowH < nsz * 2.9 ? [r.label] : lines.length > 2 ? [lines[0], lines.slice(1).join('')] : lines;
         shown.forEach((l, li) => fitText(ctx, l, x0 + pad, y + rowH / 2 + (li - (shown.length - 1) / 2) * (nsz * 1.3), nameW - pad - 1.5, nsz, { color: INK, weight: r.depth === 0 && c.byId.get(r.id)?.node.isLeaf === false ? 700 : 400 }));
-        fitText(ctx, r.weight.toFixed(2), x0 + nameW + wW - 1.2, y + rowH / 2, wW - 2, a4 ? 2.8 : 3.2, { align: 'right', color: INK });
+        fitText(ctx, r.weight.toFixed(2), x0 + nameW + wW - 1.2, y + rowH / 2, wW - 2, nameSz, { align: 'right', color: INK, min: 0.8 });
         line(ctx, tx, y + half, nx, y + half, SOFT, 0.12);
         // 예정선
         if (isValidDate(r.start) && isValidDate(r.end) && periods.length) {
@@ -192,32 +192,33 @@ export async function exportFormPdf(p: Project, paper: Paper = 'A3', marks: Phas
         }
         idx.forEach((gi2, k) => {
           const v = cellNum(r.plan[gi2]);
-          if (v) fitText(ctx, v, tx + k * colW + colW / 2, y + half * 0.45, colW - 0.8, vS, { align: 'center', color: INK, min: 1.4 });
+          if (v) fitText(ctx, v, tx + k * colW + colW / 2, y + half * 0.45, colW - 0.4, vS, { align: 'center', color: INK, min: 0.6 });
           if (showAct) {
             const a = cellNum(r.act[gi2]);
-            if (a) fitText(ctx, a, tx + k * colW + colW / 2, y + half + half * 0.45, colW - 0.8, vS, { align: 'center', color: ACT, weight: 700, min: 1.4 });
+            if (a) fitText(ctx, a, tx + k * colW + colW / 2, y + half + half * 0.45, colW - 0.4, vS, { align: 'center', color: ACT, weight: 700, min: 0.6 });
           }
         });
         if (r.note) {
-          font(ctx, 2.5);
+          const ns = Math.min(2.5, half * 0.7);
+          font(ctx, ns);
           wrap(ctx, r.note, noteW - 2)
-            .slice(0, 2)
-            .forEach((l, li) => fitText(ctx, l, nx + 1, y + 2.4 + li * 3.2, noteW - 2, 2.5, { color: INK }));
+            .slice(0, rowH > ns * 3 ? 2 : 1)
+            .forEach((l, li) => fitText(ctx, l, nx + 1, y + ns * 1.1 + li * ns * 1.3, noteW - 2, ns, { color: INK, min: 0.6 }));
         }
         line(ctx, x0, y + rowH, x0 + tableW, y + rowH, INK, 0.25);
         y += rowH;
       };
       rows.forEach(drawRow);
       const sumRow = (label: string, a: (number | null)[], b: (number | null)[], wt: string) => {
-        fitText(ctx, label, x0 + nameW / 2, y + rowH / 2, nameW - 2, a4 ? 3 : 3.4, { align: 'center', color: INK, weight: 700 });
-        if (wt) fitText(ctx, wt, x0 + nameW + wW - 1.2, y + rowH / 2, wW - 2, a4 ? 2.8 : 3.2, { align: 'right', color: INK, weight: 700 });
+        fitText(ctx, label, x0 + nameW / 2, y + rowH / 2, nameW - 2, Math.min(a4 ? 3 : 3.4, half * 0.85), { align: 'center', color: INK, weight: 700, min: 0.8 });
+        if (wt) fitText(ctx, wt, x0 + nameW + wW - 1.2, y + rowH / 2, wW - 2, nameSz, { align: 'right', color: INK, weight: 700, min: 0.8 });
         if (showAct) line(ctx, tx, y + half, nx, y + half, SOFT, 0.12);
         idx.forEach((gi2, k) => {
           const va = a[gi2];
-          if (va != null) fitText(ctx, va.toFixed(2), tx + k * colW + colW / 2, showAct ? y + half / 2 + 0.3 : y + rowH / 2, colW - 0.8, vS + 0.2, { align: 'center', color: INK, min: 1.4 });
+          if (va != null) fitText(ctx, va.toFixed(2), tx + k * colW + colW / 2, showAct ? y + half / 2 + 0.3 : y + rowH / 2, colW - 0.4, vS + 0.2, { align: 'center', color: INK, min: 0.6 });
           if (showAct) {
             const vb = b[gi2];
-            if (vb != null) fitText(ctx, vb.toFixed(2), tx + k * colW + colW / 2, y + half + half / 2, colW - 0.8, vS + 0.2, { align: 'center', color: ACT, weight: 700, min: 1.4 });
+            if (vb != null) fitText(ctx, vb.toFixed(2), tx + k * colW + colW / 2, y + half + half / 2, colW - 0.4, vS + 0.2, { align: 'center', color: ACT, weight: 700, min: 0.6 });
           }
         });
         line(ctx, x0, y + rowH, x0 + tableW, y + rowH, INK, 0.25);

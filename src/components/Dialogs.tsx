@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
-import type { Project, TemplateRow, WorkKind } from '../lib/types';
+import type { Project, Task, TemplateRow, WorkKind } from '../lib/types';
 import { addDays, fmtDot, isValidDate, toNum } from '../lib/date';
 import { buildPeriods, clamp, plannedPct, r2, type ProjectCalc, WorkCalendar } from '../lib/calc';
 import { DEFAULT_TEMPLATE, generateTasks, newProject, uid } from '../lib/schedule';
@@ -11,39 +11,59 @@ type Upd = (fn: (d: Project) => void, key?: string) => void;
 const SWATCH = ['', '#2c6bd3', '#0f8b8d', '#7a5bd6', '#c2410c', '#a16207', '#be185d', '#475569'];
 
 // ───────────────── 공종 상세 ─────────────────
+// 창 안에서 고친 내용은 [저장]을 눌러야 공정표에 반영된다. [취소]·닫기는 고친 내용을 버린다.
 export function TaskDetail({ p, c, id, update, onClose, onDelete }: { p: Project; c: ProjectCalc; id: string; update: Upd; onClose: () => void; onDelete?: () => void }) {
   const r = c.byId.get(id);
-  if (!r) return null;
-  const t = r.node.task;
+  const orig = r?.node.task;
+  const [t, setT] = useState<Task | null>(() => (orig ? structuredClone(orig) : null));
+  const [ask, setAsk] = useState(false);
+  if (!r || !t || !orig) return null;
   const leaf = r.node.isLeaf;
-  const set = (patch: Partial<typeof t>, key?: string) =>
+  const set = (patch: Partial<Task>) => setT((x) => (x ? { ...x, ...patch } : x));
+  const dirty = JSON.stringify(t) !== JSON.stringify(orig);
+  const save = () => {
     update((d) => {
-      const x = d.tasks.find((y) => y.id === id);
-      if (x) Object.assign(x, patch);
-    }, key);
+      const i = d.tasks.findIndex((y) => y.id === id);
+      if (i < 0) return;
+      const datesChanged = t.start !== orig.start || t.end !== orig.end;
+      d.tasks[i] = { ...t, manual: t.manual || datesChanged };
+      if (d.weightMode === 'cost' && t.cost !== orig.cost) {
+        const ids = new Set(d.tasks.map((q) => q.parentId).filter(Boolean));
+        const leaves = d.tasks.filter((q) => !ids.has(q.id));
+        const tot = leaves.reduce((sum, q) => sum + (q.cost || 0), 0);
+        leaves.forEach((q) => (q.weight = tot > 0 ? Math.round(((q.cost || 0) / tot) * 1e6) / 1e4 : 0));
+      }
+    });
+    onClose();
+  };
+  const tryClose = () => (dirty ? setAsk(true) : onClose());
 
   return (
     <Modal
       title={`공종 상세 · ${r.node.num} ${t.name}`}
-      onClose={onClose}
+      onClose={tryClose}
       wide
       footer={
-        onDelete ? (
-          <>
+        <>
+          {onDelete && (
             <button className="btn btn-danger mr-auto" onClick={onDelete}>
               공종 삭제{leaf ? '' : ' (하위 포함)'}
             </button>
-            <button className="btn btn-primary" onClick={onClose}>
-              완료
-            </button>
-          </>
-        ) : undefined
+          )}
+          {dirty && <span className="self-center text-[12.5px] text-warn">저장하지 않은 변경이 있습니다</span>}
+          <button className="btn" onClick={onClose}>
+            취소
+          </button>
+          <button className="btn btn-primary" onClick={save} disabled={!t.name.trim()}>
+            저장
+          </button>
+        </>
       }
     >
       {onDelete && (
         <div className="mb-3 flex items-center justify-between gap-2 rounded border border-line bg-sunk px-3 py-2 text-[12.5px] text-ink2">
           <span>
-            보할 {fmt2(r.node.weight)}% · {fmtDot(r.node.start)} ~ {fmtDot(r.node.end)}
+            보할 {fmt2(leaf ? t.weight : r.node.weight)}% · {fmtDot(leaf ? t.start : r.node.start)} ~ {fmtDot(leaf ? t.end : r.node.end)}
           </span>
           <button className="btn btn-sm btn-danger" onClick={onDelete}>
             이 공종 삭제{leaf ? '' : ' (하위 포함)'}
@@ -52,45 +72,35 @@ export function TaskDetail({ p, c, id, update, onClose, onDelete }: { p: Project
       )}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Field label="공종명" htmlFor="d-name" className="col-span-2">
-          <input id="d-name" className="inp" value={t.name} onChange={(e) => set({ name: e.target.value }, 'd-name')} />
+          <input
+            id="d-name"
+            className="inp"
+            value={t.name}
+            onChange={(e) => set({ name: e.target.value })}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && t.name.trim()) save();
+            }}
+          />
         </Field>
         <Field label="비고(표 표시)" htmlFor="d-note" className="col-span-2">
-          <input id="d-note" className="inp" value={t.note} onChange={(e) => set({ note: e.target.value }, 'd-note')} />
+          <input id="d-note" className="inp" value={t.note} onChange={(e) => set({ note: e.target.value })} />
         </Field>
         {leaf ? (
           <>
             <Field label="계획 시작일" htmlFor="d-s">
-              <input id="d-s" type="date" className="inp num" value={t.start} onChange={(e) => isValidDate(e.target.value) && set({ start: e.target.value, end: e.target.value > t.end ? e.target.value : t.end, manual: true })} />
+              <input id="d-s" type="date" className="inp num" value={t.start} onChange={(e) => isValidDate(e.target.value) && set({ start: e.target.value, end: e.target.value > t.end ? e.target.value : t.end })} />
             </Field>
             <Field label="계획 종료일" htmlFor="d-e">
-              <input id="d-e" type="date" className="inp num" value={t.end} onChange={(e) => isValidDate(e.target.value) && set({ end: e.target.value, start: e.target.value < t.start ? e.target.value : t.start, manual: true })} />
+              <input id="d-e" type="date" className="inp num" value={t.end} onChange={(e) => isValidDate(e.target.value) && set({ end: e.target.value, start: e.target.value < t.start ? e.target.value : t.start })} />
             </Field>
             <Field label={p.weightMode === 'cost' ? '보할(%) — 공사비로 자동 산정' : '보할(%)'} htmlFor="d-w">
-              <NumField id="d-w" className="inp num text-right" value={t.weight} min={0} max={100} readOnly={p.weightMode === 'cost'} onChange={(v) => set({ weight: v }, 'd-w')} />
+              <NumField id="d-w" className="inp num text-right" value={t.weight} min={0} max={100} readOnly={p.weightMode === 'cost'} onChange={(v) => set({ weight: v })} />
             </Field>
             <Field label="공종 공사비(원)" htmlFor="d-cost">
-              <NumField
-                id="d-cost"
-                className="inp num text-right"
-                value={t.cost}
-                thousands
-                min={0}
-                onChange={(v) =>
-                  update((d) => {
-                    const x = d.tasks.find((y) => y.id === id)!;
-                    x.cost = v;
-                    if (d.weightMode === 'cost') {
-                      const ids = new Set(d.tasks.map((q) => q.parentId).filter(Boolean));
-                      const leaves = d.tasks.filter((q) => !ids.has(q.id));
-                      const tot = leaves.reduce((s, q) => s + (q.cost || 0), 0);
-                      leaves.forEach((q) => (q.weight = tot > 0 ? Math.round(((q.cost || 0) / tot) * 1e6) / 1e4 : 0));
-                    }
-                  }, 'd-cost')
-                }
-              />
+              <NumField id="d-cost" className="inp num text-right" value={t.cost} thousands min={0} onChange={(v) => set({ cost: v })} />
             </Field>
             <Field label="실제공정률(%)" htmlFor="d-a">
-              <NumField id="d-a" className="inp num text-right" value={t.actual} min={0} max={100} digits={1} onChange={(v) => set({ actual: v }, 'd-a')} />
+              <NumField id="d-a" className="inp num text-right" value={t.actual} min={0} max={100} digits={1} onChange={(v) => set({ actual: v })} />
             </Field>
             <Field label="실제 착수일" htmlFor="d-as">
               <input id="d-as" type="date" className="inp num" value={t.actualStart} onChange={(e) => set({ actualStart: e.target.value })} />
@@ -113,23 +123,23 @@ export function TaskDetail({ p, c, id, update, onClose, onDelete }: { p: Project
         )}
         <Field label="막대 색상 (제출 양식의 예정선 · 편집·간트 막대 · PDF · 엑셀에 적용, 기본은 검정)" className="col-span-2 md:col-span-4">
           <div className="flex flex-wrap items-center gap-2">
-            {SWATCH.map((s) => (
+            {SWATCH.map((sw) => (
               <button
-                key={s || 'none'}
-                aria-label={s ? `색상 ${s}` : '기본 색상'}
-                aria-pressed={t.color === s}
-                onClick={() => set({ color: s })}
+                key={sw || 'none'}
+                aria-label={sw ? `색상 ${sw}` : '기본 색상'}
+                aria-pressed={t.color === sw}
+                onClick={() => set({ color: sw })}
                 className="h-7 w-7 rounded border"
-                style={{ background: s || 'var(--plan-soft)', borderColor: t.color === s ? 'var(--ink)' : 'var(--line)', borderWidth: t.color === s ? 2 : 1 }}
+                style={{ background: sw || 'var(--plan-soft)', borderColor: t.color === sw ? 'var(--ink)' : 'var(--line)', borderWidth: t.color === sw ? 2 : 1 }}
               >
-                {!s && <span className="text-[10px] text-plan">기본</span>}
+                {!sw && <span className="text-[10px] text-plan">기본</span>}
               </button>
             ))}
             <input type="color" aria-label="직접 선택" value={t.color || '#2c6bd3'} onChange={(e) => set({ color: e.target.value })} className="h-7 w-10 cursor-pointer rounded border border-line bg-panel" />
           </div>
         </Field>
         <Field label="메모" htmlFor="d-memo" className="col-span-2 md:col-span-4">
-          <textarea id="d-memo" className="inp" rows={3} value={t.memo} onChange={(e) => set({ memo: e.target.value }, 'd-memo')} />
+          <textarea id="d-memo" className="inp" rows={3} value={t.memo} onChange={(e) => set({ memo: e.target.value })} />
         </Field>
         {leaf && t.manual && (
           <div className="col-span-2 flex flex-wrap items-center gap-2 text-[12.5px] text-ink2 md:col-span-4">
@@ -140,38 +150,44 @@ export function TaskDetail({ p, c, id, update, onClose, onDelete }: { p: Project
           </div>
         )}
       </div>
-      {leaf && <PlanCurveEditor p={p} id={id} update={update} />}
+      {leaf && <PlanCurveEditor p={p} t={t} onChange={(planCurve) => set({ planCurve })} />}
+      {ask && (
+        <Confirm
+          title="저장하지 않고 닫을까요?"
+          okLabel="저장하지 않고 닫기"
+          message="이 창에서 고친 내용이 공정표에 반영되지 않습니다. 반영하려면 [취소]를 누른 뒤 [저장]을 누르세요."
+          onOk={onClose}
+          onClose={() => setAsk(false)}
+        />
+      )}
     </Modal>
   );
 }
 
 /** 공종별 기간 계획 진도율(수동). 현재 표시 단위의 구간별 계획 %를 입력 → 누적점으로 저장 */
-function PlanCurveEditor({ p, id, update }: { p: Project; id: string; update: Upd }) {
-  const t = p.tasks.find((x) => x.id === id)!;
+function PlanCurveEditor({ p, t, onChange }: { p: Project; t: Task; onChange: (c: Task['planCurve']) => void }) {
   const cal = useMemo(() => new WorkCalendar(p.calendar, t.start || p.info.start, t.end || p.info.end), [p.calendar, t.start, t.end, p.info.start, p.info.end]);
   if (!isValidDate(t.start) || !isValidDate(t.end)) return null;
   const periods = buildPeriods(p.view, p.info.start, t.start, t.end);
   const cums = periods.map((pr) => plannedPct(t, pr.end, cal));
   const deltas = cums.map((v, i) => v - (i ? cums[i - 1] : 0));
   const on = !!t.planCurve?.length;
-  const write = (newDeltas: number[]) =>
-    update((d) => {
-      const x = d.tasks.find((y) => y.id === id)!;
-      let acc = 0;
-      const pts = [];
-      for (let i = 0; i < periods.length - 1; i++) {
-        acc = clamp(acc + newDeltas[i]);
-        pts.push({ date: periods[i].end, cum: r2(acc) });
-      }
-      x.planCurve = pts.length ? pts : null;
-    }, `curve-${id}`);
+  const write = (newDeltas: number[]) => {
+    let acc = 0;
+    const pts = [];
+    for (let i = 0; i < periods.length - 1; i++) {
+      acc = clamp(acc + newDeltas[i]);
+      pts.push({ date: periods[i].end, cum: r2(acc) });
+    }
+    onChange(pts.length ? pts : null);
+  };
   const sumExceptLast = deltas.slice(0, -1).reduce((s, v) => s + v, 0);
   return (
     <div className="mt-5 border-t border-line pt-4">
       <div className="mb-2 flex flex-wrap items-center gap-3">
         <span className="text-[13.5px] font-semibold">기간별 계획 진도율</span>
         <div className="seg">
-          <button aria-pressed={!on} onClick={() => update((d) => void (d.tasks.find((y) => y.id === id)!.planCurve = null))}>
+          <button aria-pressed={!on} onClick={() => onChange(null)}>
             자동(보할 배분 기준)
           </button>
           <button aria-pressed={on} onClick={() => write(deltas)}>
