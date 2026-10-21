@@ -90,9 +90,8 @@ export async function exportFormPdf(p: Project, paper: Paper = 'A3'): Promise<Bl
       spaced(ctx, p.form.title || '예 정 공 정 표', W / 2, a4 ? 13 : 18, a4 ? 7.5 : 9.5, a4 ? 1.6 : 2.2);
       const iy = top - (a4 ? 3.2 : 4);
       const isz = a4 ? 3.1 : 3.6;
-      fitText(ctx, `공사명 : ${p.info.name}`, mx, iy, (W - 2 * mx) * 0.42, isz, { weight: 700, color: INK });
-      fitText(ctx, `업체명 : ${p.info.contractor} (인)`, W / 2 + (a4 ? 4 : 10), iy, (W - 2 * mx) * 0.28, isz, { weight: 700, color: INK, align: 'center' });
-      fitText(ctx, `발주처 : ${p.info.client} (인)`, W - mx, iy, (W - 2 * mx) * 0.28, isz, { weight: 700, color: INK, align: 'right' });
+      fitText(ctx, `공사명 : ${p.info.name}`, mx, iy, (W - 2 * mx) * 0.56, isz, { weight: 700, color: INK });
+      fitText(ctx, `시공업체 : ${p.info.contractor} (인)`, W - mx, iy, (W - 2 * mx) * 0.4, isz, { weight: 700, color: INK, align: 'right' });
       if (p.form.showSign) {
         const sw = a4 ? 15 : 18;
         const sx = W - mx - sw * 3;

@@ -358,19 +358,17 @@ function addFormSheet(wb: ExcelJS.Workbook, p: Project, c: ProjectCalc) {
   t.font = F(20, true);
   t.alignment = { horizontal: 'center', vertical: 'middle' };
   ws.getRow(1).height = 40;
-  const third = Math.max(1, Math.floor(noteCol / 3));
-  ws.mergeCells(2, 1, 2, third);
+  const half = Math.max(1, Math.ceil(noteCol * 0.6));
+  ws.mergeCells(2, 1, 2, half);
   ws.getCell(2, 1).value = `공사명 : ${p.info.name}`;
-  ws.mergeCells(2, third + 1, 2, Math.max(third + 1, noteCol - third));
-  ws.getCell(2, third + 1).value = `업체명 : ${p.info.contractor} (인)`;
-  ws.getCell(2, third + 1).alignment = { horizontal: 'center' };
-  if (noteCol - third + 1 <= noteCol) {
-    ws.mergeCells(2, Math.max(third + 2, noteCol - third + 1), 2, noteCol);
-    const r = ws.getCell(2, Math.max(third + 2, noteCol - third + 1));
-    r.value = `발주처 : ${p.info.client} (인)`;
+  ws.getCell(2, 1).font = F(10.5, true);
+  if (half + 1 <= noteCol) {
+    if (noteCol > half + 1) ws.mergeCells(2, half + 1, 2, noteCol);
+    const r = ws.getCell(2, half + 1);
+    r.value = `시공업체 : ${p.info.contractor} (인)`;
     r.alignment = { horizontal: 'right' };
+    r.font = F(10.5, true);
   }
-  [1, third + 1, Math.max(third + 2, noteCol - third + 1)].forEach((col) => (ws.getCell(2, col).font = F(10.5, true)));
   ws.getRow(2).height = 22;
 
   // 머리글 4~5행

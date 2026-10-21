@@ -174,8 +174,7 @@ export function FormSheet({ p, c, update, onOpenDetail, compact }: { p: Project;
           </div>
           <div className="mt-4 flex flex-wrap items-end justify-between gap-x-6 gap-y-1" style={{ fontSize: 13, fontWeight: 600 }}>
             <span>공사명 : {p.info.name}</span>
-            <span>업체명 : {p.info.contractor} (인)</span>
-            <span>발주처 : {p.info.client} (인)</span>
+            <span>시공업체 : {p.info.contractor} (인)</span>
           </div>
           <div className="mt-1.5" style={{ border: `1.5px solid ${INK}`, width: nameW + wW + tlW + noteW + 1 }}>
             {/* 머리글 */}
