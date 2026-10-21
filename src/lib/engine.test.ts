@@ -168,3 +168,17 @@ describe('장기계속공사 차수', () => {
     expect(d.share + derivePhaseTasks(total, '2027-01-01', '2027-12-31').share).toBeCloseTo(100, 6);
   });
 });
+
+import { migrate } from './storage';
+describe('예전 예시 데이터 보정', () => {
+  it('예시 공사의 옛 회사명을 ○○전기통신㈜로', () => {
+    const p = sampleProject();
+    p.info.contractor = '㈜에스에스전력';
+    p.info.docNo = 'SS-2026-PL-001';
+    const m = migrate(JSON.parse(JSON.stringify(p)))!;
+    expect(m.info.contractor).toBe('○○전기통신㈜');
+    expect(m.info.docNo).toBe('PL-2026-001');
+    const own = { ...p, info: { ...p.info, name: '내 공사', contractor: '㈜에스에스전력' } };
+    expect(migrate(own)!.info.contractor).toBe('㈜에스에스전력');
+  });
+});

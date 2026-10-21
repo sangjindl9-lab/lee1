@@ -181,6 +181,11 @@ export function setLastId(id: string) {
 /** 이전 버전 데이터나 외부 JSON을 현재 구조로 보정 */
 export function migrate(raw: any): Project | null {
   if (!raw || typeof raw !== 'object' || !raw.info || !Array.isArray(raw.tasks)) return null;
+  // 예전 버전 예시 공사에 들어 있던 회사명을 일반 예시 이름으로 교체
+  if (typeof raw.info.name === 'string' && raw.info.name.startsWith('[예시]')) {
+    if (raw.info.contractor === '㈜에스에스전력') raw = { ...raw, info: { ...raw.info, contractor: '○○전기통신㈜' } };
+    if (raw.info.docNo === 'SS-2026-PL-001') raw = { ...raw, info: { ...raw.info, docNo: 'PL-2026-001' } };
+  }
   return {
     weightMode: 'direct',
     weightProvisional: false,
