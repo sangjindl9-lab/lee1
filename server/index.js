@@ -259,38 +259,53 @@ async function corpBasic(b) {
 }
 
 const corpCache = new Map();
-app.get('/api/company/:bizno', async (req, res) => {
-  const b = String(req.params.bizno).replace(/[^0-9]/g, '');
-  if (b.length !== 10) return res.status(400).json({ error: '사업자번호 10자리가 필요합니다' });
+// 업체 1곳 조회: 등록업체 정보 → (실패 시) 최근 낙찰 이력
+async function lookupCompany(b, { deep = true } = {}) {
   const cached = corpCache.get(b);
-  if (cached && Date.now() - cached.t < 7 * 86400000) return res.json(cached);
-
+  if (cached && Date.now() - cached.t < 7 * 86400000) return cached;
   let usrError = '';
   try {
     const c = await corpBasic(b);
-    if (c && (c.adrs || c.tel)) { corpCache.set(b, c); return res.json(c); }
+    if (c && (c.adrs || c.tel)) { corpCache.set(b, c); return c; }
   } catch (err) {
     usrError = err.message;
     if (/SERVICE_KEY_IS_NOT_REGISTERED|등록되지 않은|\[30\]/.test(err.message)) usrState = 'notRegistered';
     console.log(`[company] 사용자정보서비스 실패 ${b}: ${err.message}`);
   }
-
   const hit = companies.get(b);
-  if (hit) return res.json({ found: true, source: 'award', ...hit, usrState });
-  try {
-    // 최근 180일을 30일씩 거슬러 올라가며 이 업체의 최종낙찰 건을 찾음 (공사·용역·물품)
-    for (let w = 0; w < 6; w++) {
-      const end = new Date(Date.now() - w * 30 * 86400000);
-      const start = new Date(end.getTime() - 29 * 86400000);
-      const q = { inqryDiv: '2', inqryBgnDt: `${ymd(start)}0000`, inqryEndDt: `${ymd(end)}2359`, bizno: b, numOfRows: 50, pageNo: 1 };
-      const parts = await Promise.all(['Cnstwk', 'Servc', 'Thng'].map((k) => upstream('scs', `getScsbidListSttus${k}PPSSrch`, q).catch(() => ({ items: [] }))));
-      for (const p of parts) for (const f of p.items || []) if (String(f.bidwinnrBizno) === b) indexCompany(f);
-      if (companies.has(b)) return res.json({ found: true, source: 'award', ...companies.get(b), usrState });
-    }
-    res.json({ found: false, bizno: b, usrState, usrError });
-  } catch (err) {
-    res.status(502).json({ error: `업체 정보 조회 실패: ${err.message}` });
+  if (hit) return { found: true, source: 'award', ...hit, usrState };
+  if (!deep) return { found: false, bizno: b, usrState, usrError };
+  // 최근 180일을 30일씩 거슬러 올라가며 이 업체의 최종낙찰 건을 찾음 (공사·용역·물품)
+  for (let w = 0; w < 6; w++) {
+    const endD = new Date(Date.now() - w * 30 * 86400000);
+    const startD = new Date(endD.getTime() - 29 * 86400000);
+    const q = { inqryDiv: '2', inqryBgnDt: `${ymd(startD)}0000`, inqryEndDt: `${ymd(endD)}2359`, bizno: b, numOfRows: 50, pageNo: 1 };
+    const parts = await Promise.all(['Cnstwk', 'Servc', 'Thng'].map((k) => upstream('scs', `getScsbidListSttus${k}PPSSrch`, q).catch(() => ({ items: [] }))));
+    for (const p of parts) for (const f of p.items || []) if (String(f.bidwinnrBizno) === b) indexCompany(f);
+    if (companies.has(b)) return { found: true, source: 'award', ...companies.get(b), usrState };
   }
+  return { found: false, bizno: b, usrState, usrError };
+}
+
+app.get('/api/company/:bizno', async (req, res) => {
+  const b = String(req.params.bizno).replace(/[^0-9]/g, '');
+  if (b.length !== 10) return res.status(400).json({ error: '사업자번호 10자리가 필요합니다' });
+  try { res.json(await lookupCompany(b)); } catch (err) { res.status(502).json({ error: `업체 정보 조회 실패: ${err.message}` }); }
+});
+
+// 여러 업체 한꺼번에 (엑셀 다운로드용). 동시 6건씩 조회
+app.get('/api/companies', async (req, res) => {
+  const list = [...new Set(String(req.query.b || '').split(',').map((x) => x.replace(/[^0-9]/g, '')).filter((x) => x.length === 10))].slice(0, 500);
+  const out = {};
+  let i = 0;
+  async function worker() {
+    while (i < list.length) {
+      const b = list[i++];
+      try { out[b] = await lookupCompany(b, { deep: false }); } catch { out[b] = { found: false, bizno: b }; }
+    }
+  }
+  await Promise.all(Array.from({ length: 6 }, worker));
+  res.json({ companies: out, usrState });
 });
 
 app.get('/api/award/:kind', async (req, res) => {

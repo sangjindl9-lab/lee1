@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  KINDS, REGIONS, INDUSTRY_PRESETS, api, toApiDt, daysAgo, daysLater, load, save, exportExcel,
+  KINDS, REGIONS, INDUSTRY_PRESETS, api, toApiDt, daysAgo, daysLater, load, save, exportExcel, bizno,
 } from './lib.js';
 
 const RANGES = [
@@ -35,8 +35,18 @@ export default function SearchPage({ page, onOpen, starred, onStar, myBizno }) {
     setPageNo(p);
     setSearched(true);
     save(storeKey, { ...f, from: undefined, to: undefined, kind: undefined });
+    const q = buildQuery(p, f.numOfRows);
+    try {
+      const d = await api(page.svc, page.op(f.kind), q);
+      setState({ loading: false, error: '', items: d.items, total: d.totalCount, mock: !!d.mock, joined: !!d.industryFiltered, truncated: !!d.truncated });
+    } catch (e) {
+      setState({ loading: false, error: e.message, items: [], total: 0, mock: false });
+    }
+  }
+
+  function buildQuery(p, numOfRows) {
     const q = {
-      pageNo: p, numOfRows: f.numOfRows, inqryDiv: f.inqryDiv,
+      pageNo: p, numOfRows, inqryDiv: f.inqryDiv,
       inqryBgnDt: toApiDt(f.from), inqryEndDt: toApiDt(f.to, true),
       bidNtceNm: f.bidNtceNm.trim(), dminsttNm: f.dminsttNm.trim(), ntceInsttNm: f.ntceInsttNm.trim(),
       prtcptLmtRgnCd: f.prtcptLmtRgnCd,
@@ -46,13 +56,47 @@ export default function SearchPage({ page, onOpen, starred, onStar, myBizno }) {
     };
     if (page.id === 'bid') q.bidClseExcpYn = f.bidClseExcpYn;
     if (page.id === 'scs') q.bizno = f.bizno.replaceAll('-', '').trim();
+    return q;
+  }
+
+  // 엑셀 다운로드. 낙찰정보는 검색 결과 전체 + 낙찰(1순위) 업체의 대표자·주소·전화를 붙여서 저장
+  const [exporting, setExporting] = useState('');
+  async function download() {
+    const cols = page.columns.filter((c) => !c.noExcel);
+    const name = `${page.title}_${kindLabel}_${f.from}_${f.to}.xlsx`;
+    if (page.id !== 'scs') return exportExcel(rows, cols, name);
     try {
-      const d = await api(page.svc, page.op(f.kind), q);
-      setState({ loading: false, error: '', items: d.items, total: d.totalCount, mock: !!d.mock, joined: !!d.industryFiltered, truncated: !!d.truncated });
+      setExporting('결과 불러오는 중…');
+      const all = state.total > rows.length ? (await api(page.svc, page.op(f.kind), buildQuery(1, 5000))).items : rows;
+      const biznos = [...new Set(all.map((r) => r.bidwinnrBizno).filter(Boolean))];
+      const info = {};
+      for (let i = 0; i < biznos.length; i += 50) {
+        setExporting(`업체 정보 조회 중… ${Math.min(i + 50, biznos.length)}/${biznos.length}`);
+        const r = await fetch(`/api/companies?b=${biznos.slice(i, i + 50).join(',')}`).then((x) => x.json());
+        Object.assign(info, r.companies || {});
+      }
+      const ci = (r) => info[r.bidwinnrBizno] || {};
+      const corpCols = [
+        { key: '_corpNm', label: '낙찰업체명', wch: 24, excel: (r) => r.bidwinnrNm || '' },
+        { key: '_ceo', label: '대표자', wch: 10, excel: (r) => ci(r).ceo || r.bidwinnrCeoNm || '' },
+        { key: '_bizno', label: '사업자번호', wch: 14, excel: (r) => bizno(r.bidwinnrBizno) },
+        { key: '_adrs', label: '업체주소', wch: 46, excel: (r) => ci(r).adrs || r.bidwinnrAdrs || '' },
+        { key: '_tel', label: '전화번호', wch: 15, excel: (r) => ci(r).tel || r.bidwinnrTelNo || '' },
+        { key: '_fax', label: '팩스', wch: 15, excel: (r) => ci(r).fax || '' },
+      ];
+      // 화면용 업체명 열은 빼고, 업체 정보 묶음을 그 자리에 넣음
+      const base = cols.filter((c) => c.key !== 'bidwinnrNm');
+      const at = cols.findIndex((c) => c.key === 'bidwinnrNm');
+      const excelCols = [...base.slice(0, at), ...corpCols, ...base.slice(at)];
+      setExporting('엑셀 만드는 중…');
+      await exportExcel(all, excelCols, name);
     } catch (e) {
-      setState({ loading: false, error: e.message, items: [], total: 0, mock: false });
+      alertError(e);
+    } finally {
+      setExporting('');
     }
   }
+  const alertError = (e) => setState((s) => ({ ...s, error: `엑셀 다운로드 실패: ${e.message}` }));
 
   // 이미 검색한 뒤 공사/용역/물품 탭을 바꾸면 같은 조건으로 다시 조회
   useEffect(() => { if (searched) run(1); // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -173,9 +217,8 @@ export default function SearchPage({ page, onOpen, starred, onStar, myBizno }) {
           {state.mock && <span className="mock">샘플 데이터 (인증키 미설정)</span>}
           {state.joined && <span className="joined" title="조달청 개찰·낙찰 API의 업종 조건이 정상 동작하지 않아, 입찰공고의 업종(면허)제한 기준으로 걸렀습니다.">업종: 입찰공고 면허제한 기준{state.truncated ? ' · 기간이 길어 일부만 반영' : ''}</span>}
         </div>
-        <button className="ghost" disabled={!rows.length}
-          onClick={() => exportExcel(rows, page.columns.filter((c) => !c.noExcel), `${page.title}_${kindLabel}_${f.from}_${f.to}.xlsx`)}>
-          엑셀 다운로드
+        <button className="ghost" disabled={!rows.length || !!exporting} onClick={download}>
+          {exporting || '엑셀 다운로드'}
         </button>
       </div>
 
