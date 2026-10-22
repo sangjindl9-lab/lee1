@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  KINDS, REGIONS, INDUSTRY_PRESETS, api, toApiDt, daysAgo, daysLater, load, save, exportExcel, bizno,
+  KINDS, REGIONS, INDUSTRY_PRESETS, api, toApiDt, daysAgo, daysLater, load, save, exportExcel, bizno, parseCorpInfo,
 } from './lib.js';
 
 const RANGES = [
@@ -64,29 +64,37 @@ export default function SearchPage({ page, onOpen, starred, onStar, myBizno }) {
   async function download() {
     const cols = page.columns.filter((c) => !c.noExcel);
     const name = `${page.title}_${kindLabel}_${f.from}_${f.to}.xlsx`;
-    if (page.id !== 'scs') return exportExcel(rows, cols, name);
+    // 업체 정보를 붙일 화면: 낙찰정보(낙찰업체), 개찰결과(1순위 업체)
+    const corpOf = page.id === 'scs'
+      ? (r) => ({ name: r.bidwinnrNm, bizno: r.bidwinnrBizno, ceo: r.bidwinnrCeoNm, adrs: r.bidwinnrAdrs, tel: r.bidwinnrTelNo })
+      : page.id === 'openg'
+        ? (r) => { const c = parseCorpInfo(r.opengCorpInfo) || {}; return { name: c.name, bizno: c.bizno, ceo: c.ceo }; }
+        : null;
+    if (!corpOf) return exportExcel(rows, cols, name);
     try {
       setExporting('결과 불러오는 중…');
       const all = state.total > rows.length ? (await api(page.svc, page.op(f.kind), buildQuery(1, 5000))).items : rows;
-      const biznos = [...new Set(all.map((r) => r.bidwinnrBizno).filter(Boolean))];
+      const biznos = [...new Set(all.map((r) => corpOf(r).bizno).filter(Boolean))];
       const info = {};
       for (let i = 0; i < biznos.length; i += 50) {
         setExporting(`업체 정보 조회 중… ${Math.min(i + 50, biznos.length)}/${biznos.length}`);
         const r = await fetch(`/api/companies?b=${biznos.slice(i, i + 50).join(',')}`).then((x) => x.json());
         Object.assign(info, r.companies || {});
       }
-      const ci = (r) => info[r.bidwinnrBizno] || {};
+      const ci = (r) => info[corpOf(r).bizno] || {};
+      const label = page.id === 'scs' ? '낙찰업체명' : '1순위 업체명';
       const corpCols = [
-        { key: '_corpNm', label: '낙찰업체명', wch: 24, excel: (r) => r.bidwinnrNm || '' },
-        { key: '_ceo', label: '대표자', wch: 10, excel: (r) => ci(r).ceo || r.bidwinnrCeoNm || '' },
-        { key: '_bizno', label: '사업자번호', wch: 14, excel: (r) => bizno(r.bidwinnrBizno) },
-        { key: '_adrs', label: '업체주소', wch: 46, excel: (r) => ci(r).adrs || r.bidwinnrAdrs || '' },
-        { key: '_tel', label: '전화번호', wch: 15, excel: (r) => ci(r).tel || r.bidwinnrTelNo || '' },
+        { key: '_corpNm', label, wch: 24, excel: (r) => corpOf(r).name || ci(r).name || '' },
+        { key: '_ceo', label: '대표자', wch: 10, excel: (r) => ci(r).ceo || corpOf(r).ceo || '' },
+        { key: '_bizno', label: '사업자번호', wch: 14, excel: (r) => bizno(corpOf(r).bizno) },
+        { key: '_adrs', label: '업체주소', wch: 46, excel: (r) => ci(r).adrs || corpOf(r).adrs || '' },
+        { key: '_tel', label: '전화번호', wch: 15, excel: (r) => ci(r).tel || corpOf(r).tel || '' },
         { key: '_fax', label: '팩스', wch: 15, excel: (r) => ci(r).fax || '' },
       ];
       // 화면용 업체명 열은 빼고, 업체 정보 묶음을 그 자리에 넣음
-      const base = cols.filter((c) => c.key !== 'bidwinnrNm');
-      const at = cols.findIndex((c) => c.key === 'bidwinnrNm');
+      const corpKey = page.id === 'scs' ? 'bidwinnrNm' : 'opengCorpInfo';
+      const base = cols.filter((c) => c.key !== corpKey);
+      const at = cols.findIndex((c) => c.key === corpKey);
       const excelCols = [...base.slice(0, at), ...corpCols, ...base.slice(at)];
       setExporting('엑셀 만드는 중…');
       await exportExcel(all, excelCols, name);

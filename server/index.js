@@ -305,6 +305,8 @@ app.get('/api/companies', async (req, res) => {
     }
   }
   await Promise.all(Array.from({ length: 6 }, worker));
+  const ok = Object.values(out).filter((c) => c.adrs || c.tel).length;
+  console.log(`[companies] 요청 ${list.length}곳 → 연락처 ${ok}곳 (usr=${usrState})`);
   res.json({ companies: out, usrState });
 });
 
@@ -367,8 +369,13 @@ app.get('/api/:svc/:op', async (req, res) => {
 app.get('/api/health', (_req, res) => res.json({ ok: true, mock: MOCK || !KEY }));
 
 const dist = path.join(__dirname, '..', 'client', 'dist');
-app.use(express.static(dist));
-app.get(/^\/(?!api).*/, (_req, res) => res.sendFile(path.join(dist, 'index.html')));
+// index.html은 캐시하지 않음(새 버전이 바로 보이도록). 해시 붙은 assets는 오래 캐시
+app.use('/assets', express.static(path.join(dist, 'assets'), { maxAge: '365d', immutable: true }));
+app.use(express.static(dist, { index: false, setHeaders: (res) => res.setHeader('Cache-Control', 'no-cache') }));
+app.get(/^\/(?!api).*/, (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.sendFile(path.join(dist, 'index.html'));
+});
 
 app.listen(PORT, () => {
   console.log(`입찰정보 서버 :${PORT} ${MOCK || !KEY ? '(샘플데이터 모드)' : ''}`);
