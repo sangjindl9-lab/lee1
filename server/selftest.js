@@ -1,13 +1,18 @@
-// SELFTEST=1: 국가철도공단 개찰·낙찰 읽기 점검
-export async function selfTest(base) {
-  for (const type of ['award', 'openg']) {
-    const t = Date.now();
-    try {
-      const d = await fetch(`${base}/api/krbid/${type}?numOfRows=5`).then((r) => r.json());
-      console.log(`[SELFTEST] krbid ${type} → ${d.error ? `ERROR ${d.error}` : `total=${d.totalCount} (${d.from}~${d.to})`} ${Date.now() - t}ms`);
-      for (const r of d.items || []) console.log(`[SELFTEST]   ${r.bidNtceNo} ${r.status} | ${r.bidNtceNm.slice(0, 40)} | ${r.winnerNm} ${r.winnerBizno} ${r.winnerAmt} ${r.winnerRate} | 하한${r.lowerRate} 예가${r.plnprc} 참가${r.bidderCount} ${r.detailError}`);
-    } catch (e) { console.log(`[SELFTEST] krbid ${type} EXC ${e.message}`); }
+// SELFTEST=1: 철도공단 개찰 상세의 순위표 페이지 구조 확인
+const UA = 'Mozilla/5.0 (compatible; narabid-info/1.0)';
+const one = (s) => s.replace(/\s+/g, ' ');
+export async function selfTest() {
+  const key = { ggNyeondo: '2026', ggGubun: '01', ggIrBeonho: '000183', ggChasu: '00', gyErBeonho: '', mode: 'A' };
+  // 목록에서 정선선 건의 gyErBeonho 찾기
+  const lst = await fetch('https://ebid.kr.or.kr/krn/krnBidOpengList.do', { headers: { 'User-Agent': UA } }).then((r) => r.text());
+  const m = lst.match(/openBidOpengPopUp\('2026','01','000183','00','(\d+)'/);
+  if (m) key.gyErBeonho = m[1];
+  const html = await fetch('https://ebid.kr.or.kr/bid/rpt/bidOpengResult.do', { method: 'POST', headers: { 'User-Agent': UA, 'Content-Type': 'application/x-www-form-urlencoded', Referer: 'https://ebid.kr.or.kr/krn/krnBidOpengList.do' }, body: new URLSearchParams(key) }).then((r) => r.text());
+  console.log(`[KRDBG2] key=${JSON.stringify(key)} len=${html.length} trs=${(html.match(/<tr/gi) || []).length}`);
+  for (const k of ['pageIndex', 'paging', 'linkPage', '더보기', 'ajax', '.do', 'iframe']) {
+    let i = html.indexOf(k); let n = 0;
+    while (i >= 0 && n < 3) { console.log(`[KRDBG2] @${k} ${one(html.slice(Math.max(0, i - 200), i + 300))}`); i = html.indexOf(k, i + 1); n++; }
   }
-  const d = await fetch(`${base}/api/krbid/award?q=${encodeURIComponent('전기')}&from=2026-09-23&to=2026-10-23&numOfRows=3`).then((r) => r.json()).catch((e) => ({ error: e.message }));
-  console.log(`[SELFTEST] krbid award 1개월 '전기' → ${d.error || `total=${d.totalCount}`} :: ${(d.items || []).map((r) => `${r.bidNtceNm.slice(0, 30)}/${r.winnerNm}`).join(' | ')}`);
+  const tail = html.slice(html.indexOf('저가순위'));
+  console.log(`[KRDBG2] afterHeader ${one(tail.slice(0, 2500))}`);
 }
