@@ -136,6 +136,7 @@ async function industryJoin(op, params) {
     resultCode: '00', totalCount: matched.length, pageNo: page, numOfRows: size,
     items: matched.slice((page - 1) * size, page * size),
     industryFiltered: true, truncated: bids.truncated || results.truncated, mock: results.mock,
+    debug: { bidCount: bids.items.length, resultCount: results.items.length, matched: matched.length },
   };
 }
 
