@@ -21,7 +21,8 @@ RUN npm ci --workspace apps/api --include-workspace-root=false --omit=dev && npm
 
 FROM node:22-bookworm-slim
 ENV NODE_ENV=production TZ=Asia/Seoul NEXT_TELEMETRY_DISABLED=1 HOSTNAME=0.0.0.0
-RUN apt-get update && apt-get install -y --no-install-recommends tini && rm -rf /var/lib/apt/lists/* \
+# DATABASE_URL 이 없을 때 쓰는 내장 PostgreSQL (시연용 — 재배포 시 데이터 초기화)
+RUN apt-get update && apt-get install -y --no-install-recommends tini postgresql-15 && rm -rf /var/lib/apt/lists/* \
   && groupadd -r erp && useradd -r -g erp -d /app erp
 WORKDIR /app
 # API
@@ -37,7 +38,7 @@ COPY apps/api/package.json ./api/apps/api/
 COPY --from=build /app/apps/web/.next/standalone ./web/
 COPY --from=build /app/apps/web/.next/static ./web/apps/web/.next/static
 COPY deploy/render/start.sh ./start.sh
-RUN mkdir -p /data/storage && chown -R erp:erp /data && chmod +x start.sh
+RUN mkdir -p /data/storage /data/pg /tmp/pgsock && chown -R erp:erp /data /tmp/pgsock && chmod +x start.sh
 USER erp
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["./start.sh"]

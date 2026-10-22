@@ -1,6 +1,19 @@
 #!/bin/sh
 # Render 시연 서버 시작 순서: 마이그레이션 → (처음 한 번) 샘플 데이터 → API → (처음 한 번) 시연 발주서 → 화면
 set -e
+
+# 외부 DB 주소가 없으면 컨테이너 안에 PostgreSQL 을 띄운다 (시연용: 재배포하면 처음 상태로 돌아감)
+if [ -z "$DATABASE_URL" ]; then
+  PGBIN=/usr/lib/postgresql/15/bin
+  if [ ! -f /data/pg/PG_VERSION ]; then
+    $PGBIN/initdb -D /data/pg -U erp --auth=trust -E UTF8 --locale=C.UTF-8 >/dev/null
+  fi
+  $PGBIN/pg_ctl -D /data/pg -l /data/pg.log -w -o "-c listen_addresses=127.0.0.1 -c unix_socket_directories=/tmp/pgsock -c shared_buffers=32MB -c max_connections=40" start
+  $PGBIN/psql -h 127.0.0.1 -U erp -d postgres -tAc "select 1 from pg_database where datname='erp'" | grep -q 1 || $PGBIN/createdb -h 127.0.0.1 -U erp erp
+  export DATABASE_URL=postgresql://erp@127.0.0.1:5432/erp
+  echo "내장 PostgreSQL 사용 (시연용)"
+fi
+
 cd /app/api/apps/api
 node dist/db/migrate.js
 
