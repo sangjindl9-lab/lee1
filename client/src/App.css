@@ -231,3 +231,5 @@ table.sub tr.mine td { background: var(--mine); font-weight: 700; }
 .corp-dl dd { margin: 0; padding: 10px 0; border-bottom: 1px solid var(--line-soft); font-size: 14.5px; word-break: keep-all; overflow-wrap: anywhere; }
 .corp-dl .tel { font-weight: 700; font-size: 15.5px; text-decoration: none; }
 .corp-dl .mini { font-size: 12px; margin-left: 6px; }
+
+.banner.inline { width: auto; margin: 0 0 10px; line-height: 1.6; }

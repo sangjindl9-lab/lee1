@@ -313,6 +313,94 @@ app.get('/api/companies', async (req, res) => {
   res.json({ companies: out, usrState });
 });
 
+// ── 철도기관 (공공데이터포털 파일데이터 API, api.odcloud.kr) ─────────────────
+// 실시간 API가 아니라 기관이 올린 파일을 API로 제공. Swagger에서 최신 파일(uddi)을 찾아 전체를 받아 캐시.
+const EXT = {
+  kr: { name: '국가철도공단', ns: '3070357/v1' },
+  korail: { name: '한국철도공사', ns: '15136102/v1' },
+};
+const extCache = new Map(); // src → {t, rows, files}
+
+function normDate(v) {
+  if (v == null || v === '') return '';
+  const s = String(v).trim();
+  let m = s.match(/^(\d{4})[-./]?(\d{2})[-./]?(\d{2})(?:[ T]?(\d{2}):?(\d{2}))?/);
+  if (m) return `${m[1]}-${m[2]}-${m[3]}${m[4] ? ` ${m[4]}:${m[5]}` : ''}`;
+  if (/^\d{5}(\.\d+)?$/.test(s)) { // 엑셀 날짜 일련번호
+    const d = new Date(Date.UTC(1899, 11, 30) + Number(s) * 86400000);
+    return d.toISOString().slice(0, 16).replace('T', ' ').replace(' 00:00', '');
+  }
+  return s;
+}
+const pick = (o, ...keys) => { for (const k of keys) { const hit = Object.keys(o).find((x) => x === k || x.startsWith(k)); if (hit && o[hit] !== '' && o[hit] != null) return o[hit]; } return ''; };
+
+async function extFiles(ns) {
+  const r = await fetch(`https://infuser.odcloud.kr/oas/docs?namespace=${ns}`, { signal: AbortSignal.timeout(20000) });
+  const spec = await r.json();
+  return Object.entries(spec.paths || {}).map(([p, v]) => ({ path: p.replace(/^\/api/, ''), title: v.get?.summary || '' }))
+    .sort((a, b) => (b.title.match(/(\d{8})\s*$/)?.[1] || '').localeCompare(a.title.match(/(\d{8})\s*$/)?.[1] || ''));
+}
+
+async function extLoad(src) {
+  const cfg = EXT[src];
+  const hit = extCache.get(src);
+  if (hit && Date.now() - hit.t < 12 * 3600 * 1000) return hit;
+  const files = await extFiles(cfg.ns);
+  if (!files.length) throw new Error('파일 목록을 찾지 못했습니다');
+  const file = files[0]; // 가장 최근 기준일 파일
+  let rows = []; let page = 1; let total = Infinity;
+  while (rows.length < total && page <= 50) {
+    const u = `https://api.odcloud.kr/api${file.path}?page=${page}&perPage=1000&returnType=JSON&serviceKey=${encodeURIComponent(KEY)}`;
+    const r = await fetch(u, { signal: AbortSignal.timeout(30000) });
+    const text = await r.text();
+    let d;
+    try { d = JSON.parse(text); } catch { throw new Error(`응답 오류: ${text.slice(0, 120)}`); }
+    if (d.code && d.code < 0) throw new Error(`[${d.code}] ${d.msg || ''}`);
+    total = d.totalCount ?? d.matchCount ?? 0;
+    rows = rows.concat(d.data || []);
+    if (!d.data?.length) break;
+    page++;
+  }
+  const norm = rows.map((x) => src === 'kr' ? {
+    org: cfg.name, bidNtceNo: '', bidNtceNm: pick(x, '공고명'), kindNm: pick(x, '공고구분'),
+    amount: String(pick(x, '설계금액')).replace(/[^0-9]/g, ''), prearng: pick(x, '예가방식'), method: pick(x, '계약방법'),
+    standard: pick(x, '심사기준'), lowerRate: pick(x, '낙찰하한율'), jv: pick(x, '공동수급협정서구성방식'),
+    ntceDt: normDate(pick(x, '공고게시일자')), beginDt: normDate(pick(x, '입찰서접수게시일자')),
+    clseDt: normDate(pick(x, '입찰서접수마감일자')), opengDt: normDate(pick(x, '개찰일자')),
+    status: pick(x, '진행상태'), officer: pick(x, '입찰담당관'), dept: pick(x, '소속'),
+  } : {
+    org: cfg.name, bidNtceNo: String(pick(x, '입찰공고번호')), bidNtceNm: pick(x, '입찰공고명'),
+    ntceDt: '', beginDt: normDate(pick(x, '입찰서접수개시일')), clseDt: normDate(pick(x, '입찰서접수마감일')),
+    opengDt: normDate(pick(x, '개찰일')),
+  });
+  const out = { t: Date.now(), rows: norm, file: file.title, files: files.map((f) => f.title) };
+  extCache.set(src, out);
+  console.log(`[ext] ${cfg.name} ${file.title} → ${norm.length}건`);
+  return out;
+}
+
+app.get('/api/ext/:src', async (req, res) => {
+  const { src } = req.params;
+  if (!EXT[src]) return res.status(404).json({ error: '알 수 없는 기관' });
+  if (MOCK || !KEY) return res.json({ items: [], totalCount: 0, file: '(샘플 모드: 데이터 없음)', mock: true });
+  try {
+    const d = await extLoad(src);
+    const q = String(req.query.q || '').trim();
+    const words = q.split(/\s+/).filter(Boolean);
+    const from = req.query.from || ''; const to = req.query.to ? `${req.query.to} 99` : '';
+    const dateOf = (r) => r.ntceDt || r.beginDt || r.opengDt || '';
+    let items = d.rows.filter((r) => words.every((w) => `${r.bidNtceNm} ${r.dept || ''} ${r.kindNm || ''}`.includes(w)));
+    if (from) items = items.filter((r) => dateOf(r) >= from);
+    if (to) items = items.filter((r) => dateOf(r) <= to);
+    items.sort((a, b) => dateOf(b).localeCompare(dateOf(a)));
+    const latest = d.rows.reduce((m, r) => (dateOf(r) > m ? dateOf(r) : m), '');
+    const size = Math.min(Number(req.query.numOfRows || 30), 5000); const page = Number(req.query.pageNo || 1);
+    res.json({ items: items.slice((page - 1) * size, page * size), totalCount: items.length, all: d.rows.length, file: d.file, latest });
+  } catch (err) {
+    res.status(502).json({ error: `${EXT[src].name} 데이터 조회 실패: ${err.message}` });
+  }
+});
+
 app.get('/api/award/:kind', async (req, res) => {
   const { kind } = req.params;
   const kinds = kind === 'All' ? AWARD_KINDS : AWARD_KINDS.includes(kind) ? [kind] : null;
