@@ -1,6 +1,7 @@
 import { wonShort, won, shortDt, dday, parseCorpInfo } from './lib.js';
 
 const num = (v) => Number(v) || 0;
+const KIND_LABEL = { Cnstwk: '공사', Servc: '용역', Thng: '물품', Frgcpt: '외자', Etc: '기타' };
 
 const Dday = ({ s }) => {
   const d = dday(s);
@@ -50,18 +51,22 @@ export const PAGES = [
     ],
   },
   {
-    id: 'scs', title: '낙찰정보', svc: 'scs', op: (k) => `getScsbidListSttus${k}PPSSrch`,
+    id: 'scs', title: '낙찰정보', svc: 'award', op: (k) => k,
     dateDivs: [['2', '개찰일'], ['1', '공고게시일']],
     columns: [
-      { key: 'bidNtceNm', label: '공고명', render: (r) => titleCell(r), excel: (r) => r.bidNtceNm, wch: 50 },
+      { key: '_kind', label: '구분', cls: 'mid', render: (r) => KIND_LABEL[r._kind] || '-', excel: (r) => KIND_LABEL[r._kind] || '' },
+      { key: 'bidNtceNm', label: '공고명', render: (r) => titleCell(r, r.cntrctCnclsMthdNm), excel: (r) => r.bidNtceNm, wch: 50 },
       { key: 'bidNtceNo', label: '공고번호', cls: 'hide', excel: (r) => `${r.bidNtceNo}-${r.bidNtceOrd}`, wch: 18 },
       { key: 'dminsttNm', label: '수요기관', cls: 'org', wch: 24 },
-      { key: 'bidwinnrNm', label: '낙찰업체', cls: 'org strong', wch: 22 },
-      { key: 'bidwinnrCeoNm', label: '대표', cls: 'mid hide-sm' },
-      { key: 'sucsfbidAmt', label: '낙찰금액', cls: 'num', render: (r) => wonShort(r.sucsfbidAmt), sortVal: (r) => num(r.sucsfbidAmt),
-        excel: (r) => num(r.sucsfbidAmt) },
-      { key: 'sucsfbidRate', label: '낙찰률', cls: 'num', render: (r) => (num(r.sucsfbidRate) ? `${r.sucsfbidRate}%` : '-'), sortVal: (r) => num(r.sucsfbidRate) },
-      { key: 'prtcptCnum', label: '참가', cls: 'num', render: (r) => (r.prtcptCnum ? `${num(r.prtcptCnum).toLocaleString()}개사` : '-'), sortVal: (r) => num(r.prtcptCnum) },
+      { key: 'presmptPrce', label: '추정가격', cls: 'num', render: (r) => wonShort(r.presmptPrce), sortVal: (r) => num(r.presmptPrce),
+        excel: (r) => num(r.presmptPrce) },
+      { key: 'awardStatus', label: '상태', cls: 'mid', render: (r) => <span className={`pill ${r.awardStatus === '낙찰확정' ? 'ok' : ''}`}>{r.awardStatus}</span> },
+      { key: 'bidwinnrNm', label: '낙찰(1순위)업체', cls: 'org strong', wch: 24,
+        render: (r) => <>{r.bidwinnrNm || '-'}{r.bidwinnrTelNo && <div className="s">{r.bidwinnrTelNo}</div>}</> },
+      { key: 'sucsfbidAmt', label: '금액', cls: 'num', render: (r) => <>{won(r.sucsfbidAmt)}<div className="s">{num(r.sucsfbidRate) ? `${r.sucsfbidRate}%` : ''}</div></>,
+        sortVal: (r) => num(r.sucsfbidAmt), excel: (r) => num(r.sucsfbidAmt) },
+      { key: 'sucsfbidRate', label: '투찰률', cls: 'hide', excel: (r) => r.sucsfbidRate || '' },
+      { key: 'prtcptCnum', label: '참가', cls: 'num', render: (r) => (r.prtcptCnum ? `${num(r.prtcptCnum).toLocaleString()}` : '-'), sortVal: (r) => num(r.prtcptCnum) },
       { key: 'rlOpengDt', label: '개찰일시', cls: 'date', render: (r) => shortDt(r.rlOpengDt) },
     ],
   },

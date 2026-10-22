@@ -226,12 +226,15 @@ function OpengInfo({ item: r, kind, type }) {
       <dl className="grid">
         {type === 'scs' ? (
           <>
-            <Field label="낙찰업체"><strong>{r.bidwinnrNm}</strong></Field>
+            <Field label="상태">{r.awardStatus || '낙찰확정'}{r.awardStatus === '1순위' ? ' (낙찰자 심사 중)' : ''}</Field>
+            <Field label="낙찰(1순위)업체"><strong>{r.bidwinnrNm}</strong></Field>
             <Field label="대표자">{r.bidwinnrCeoNm}</Field>
             <Field label="사업자번호">{bizno(r.bidwinnrBizno)}</Field>
             <Field label="연락처">{r.bidwinnrTelNo}</Field>
-            <Field label="낙찰금액"><strong>{won(r.sucsfbidAmt)}원</strong></Field>
-            <Field label="낙찰률">{r.sucsfbidRate ? `${r.sucsfbidRate}%` : ''}</Field>
+            <Field label="추정가격">{won(r.presmptPrce)}{Number(r.presmptPrce) ? '원' : ''}</Field>
+            <Field label="낙찰하한율">{r.sucsfbidLwltRate ? `${r.sucsfbidLwltRate}%` : ''}</Field>
+            <Field label="낙찰(투찰)금액"><strong>{won(r.sucsfbidAmt)}원</strong></Field>
+            <Field label="투찰률">{r.sucsfbidRate ? `${r.sucsfbidRate}%` : ''}</Field>
             <Field label="주소" wide>{r.bidwinnrAdrs}</Field>
             <Field label="참가업체">{r.prtcptCnum ? `${Number(r.prtcptCnum).toLocaleString()}개사` : ''}</Field>
             <Field label="최종낙찰일">{r.fnlSucsfDate}</Field>

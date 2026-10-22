@@ -140,6 +140,98 @@ async function industryJoin(op, params) {
   };
 }
 
+// ── 낙찰정보 (타 입찰정보 사이트와 같은 방식) ──────────────────────────────
+// 조달청 "최종낙찰목록" API에는 적격심사 등으로 낙찰자가 확정된 건만 올라와 개찰 직후 건이 빠짐.
+// → 개찰결과(1순위 업체) 기준으로 목록을 만들고, 최종낙찰이 확정된 건은 그 정보로 덮어씀.
+//   추정가격은 같은 기간 입찰공고에서 가져와 붙임.
+const AWARD_KINDS = ['Cnstwk', 'Servc', 'Thng', 'Frgcpt'];
+
+function parseCorp(s) {
+  if (!s) return null;
+  const [name, bizno, ceo, amt, rate] = String(s).split('^');
+  return { name: (name || '').trim(), bizno, ceo, amt, rate };
+}
+
+async function awardForKind(kind, params) {
+  const { indstrytyNm, indstrytyCd, bizno, pageNo, numOfRows, ...rest } = params;
+  const dateDiv = rest.inqryDiv === '1' ? '1' : '2';
+  const dates = { inqryDiv: dateDiv, inqryBgnDt: rest.inqryBgnDt, inqryEndDt: rest.inqryEndDt };
+  const bidParams = { ...dates };
+  if (indstrytyNm) bidParams.indstrytyNm = indstrytyNm;
+  if (indstrytyCd) bidParams.indstrytyCd = indstrytyCd;
+  if (rest.prtcptLmtRgnCd && !indstrytyNm && !indstrytyCd) bidParams.prtcptLmtRgnCd = rest.prtcptLmtRgnCd;
+  const scsParams = { ...dates };
+  if (rest.prtcptLmtRgnCd) scsParams.prtcptLmtRgnCd = rest.prtcptLmtRgnCd;
+
+  const [opens, bids, finals] = await Promise.all([
+    fetchAll('scs', `getOpengResultListInfo${kind}PPSSrch`, rest),
+    fetchAll('bid', `getBidPblancListInfo${kind}PPSSrch`, bidParams),
+    fetchAll('scs', `getScsbidListSttus${kind}PPSSrch`, scsParams),
+  ]);
+  const bidMap = new Map();
+  for (const b of bids.items) bidMap.set(`${b.bidNtceNo}-${b.bidNtceOrd}`, b), bidMap.set(b.bidNtceNo, bidMap.get(b.bidNtceNo) || b);
+  const finMap = new Map();
+  for (const f of finals.items) finMap.set(`${f.bidNtceNo}-${f.bidNtceOrd}-${f.bidClsfcNo}`, f), finMap.set(f.bidNtceNo, finMap.get(f.bidNtceNo) || f);
+
+  const useIndustry = !!(indstrytyNm || indstrytyCd);
+  const rows = [];
+  for (const o of opens.items) {
+    if (o.progrsDivCdNm && o.progrsDivCdNm !== '개찰완료') continue; // 유찰·재입찰 제외
+    const bid = bidMap.get(`${o.bidNtceNo}-${o.bidNtceOrd}`) || bidMap.get(o.bidNtceNo);
+    if (useIndustry && !bid) continue; // 업종은 입찰공고 면허제한 기준
+    const fin = finMap.get(`${o.bidNtceNo}-${o.bidNtceOrd}-${o.bidClsfcNo}`) || finMap.get(o.bidNtceNo);
+    const top = parseCorp(o.opengCorpInfo) || {};
+    const row = {
+      ...o, _kind: kind,
+      awardStatus: fin ? '낙찰확정' : '1순위',
+      bidwinnrNm: fin?.bidwinnrNm || top.name || '',
+      bidwinnrBizno: fin?.bidwinnrBizno || top.bizno || '',
+      bidwinnrCeoNm: fin?.bidwinnrCeoNm || top.ceo || '',
+      bidwinnrTelNo: fin?.bidwinnrTelNo || '',
+      bidwinnrAdrs: fin?.bidwinnrAdrs || '',
+      sucsfbidAmt: fin?.sucsfbidAmt || top.amt || '',
+      sucsfbidRate: fin?.sucsfbidRate || top.rate || '',
+      fnlSucsfDate: fin?.fnlSucsfDate || '',
+      rlOpengDt: o.opengDt,
+      presmptPrce: bid?.presmptPrce || '',
+      bdgtAmt: bid?.bdgtAmt || '',
+      cntrctCnclsMthdNm: bid?.cntrctCnclsMthdNm || '',
+      sucsfbidLwltRate: bid?.sucsfbidLwltRate || '',
+      bidNtceDtlUrl: bid?.bidNtceDtlUrl || '',
+    };
+    if (bizno) {
+      const b = bizno.replaceAll('-', '');
+      if (row.bidwinnrBizno !== b && top.bizno !== b) continue;
+    }
+    rows.push(row);
+  }
+  return { rows, truncated: opens.truncated || bids.truncated || finals.truncated, mock: opens.mock };
+}
+
+app.get('/api/award/:kind', async (req, res) => {
+  const { kind } = req.params;
+  const kinds = kind === 'All' ? AWARD_KINDS : AWARD_KINDS.includes(kind) ? [kind] : null;
+  if (!kinds) return res.status(404).json({ error: '알 수 없는 업무구분' });
+  const params = {};
+  for (const [k, v] of Object.entries(req.query)) if (PARAMS.has(k) && v !== '' && v != null) params[k] = String(v);
+  if (!params.inqryBgnDt || !params.inqryEndDt) return res.status(400).json({ error: '조회 기간을 입력하세요' });
+  try {
+    const parts = [];
+    for (const k of kinds) parts.push(await awardForKind(k, params)); // 순차 호출(초당 호출 제한 대비)
+    const rows = parts.flatMap((p) => p.rows).sort((a, b) => String(b.opengDt).localeCompare(String(a.opengDt)));
+    const size = Number(params.numOfRows || 20); const page = Number(params.pageNo || 1);
+    res.json({
+      resultCode: '00', totalCount: rows.length, pageNo: page, numOfRows: size,
+      items: rows.slice((page - 1) * size, page * size),
+      industryFiltered: !!(params.indstrytyNm || params.indstrytyCd),
+      truncated: parts.some((p) => p.truncated), mock: parts.some((p) => p.mock),
+    });
+  } catch (err) {
+    const msg = err.name === 'TimeoutError' ? '공공데이터 API 응답 지연 (잠시 후 다시 시도)' : err.message;
+    res.status(502).json({ error: msg.startsWith('[') ? msg : `공공데이터 API 호출 실패: ${msg}` });
+  }
+});
+
 app.get('/api/:svc/:op', async (req, res) => {
   const { svc, op } = req.params;
   if (!SERVICES[svc] || !ALLOWED[svc].has(op)) return res.status(404).json({ error: '허용되지 않은 오퍼레이션' });

@@ -10,7 +10,7 @@ const RANGES = [
 export default function SearchPage({ page, onOpen, starred, onStar, myBizno }) {
   const storeKey = `search:${page.id}`;
   const initial = useMemo(() => ({
-    kind: 'Cnstwk', inqryDiv: page.dateDivs[0][0], from: daysAgo(6), to: daysAgo(0), bidNtceNm: '', dminsttNm: '', ntceInsttNm: '',
+    kind: page.id === 'scs' ? 'All' : 'Cnstwk', inqryDiv: page.dateDivs[0][0], from: daysAgo(6), to: daysAgo(0), bidNtceNm: '', dminsttNm: '', ntceInsttNm: '',
     prtcptLmtRgnCd: '', indstrytyNm: '', priceMin: '', priceMax: '', bidClseExcpYn: '', bizno: '', numOfRows: '30',
     ...load(storeKey, {}),
   }), [storeKey]);
@@ -21,7 +21,7 @@ export default function SearchPage({ page, onOpen, starred, onStar, myBizno }) {
   const [adv, setAdv] = useState(false);
   const set = (k) => (e) => setF((p) => ({ ...p, [k]: e?.target ? (e.target.type === 'checkbox' ? (e.target.checked ? 'Y' : '') : e.target.value) : e }));
 
-  const kinds = KINDS.filter((k) => !k.bidOnly || page.id === 'bid');
+  const kinds = KINDS.filter((k) => (!k.bidOnly || page.id === 'bid') && (!k.awardOnly || page.id === 'scs'));
 
   async function run(p = 1) {
     setState((s) => ({ ...s, loading: true, error: '' }));
@@ -174,8 +174,8 @@ export default function SearchPage({ page, onOpen, starred, onStar, myBizno }) {
             {rows.map((r, i) => {
               const key = `${page.id}:${r.bidNtceNo}-${r.bidNtceOrd}-${r.bidClsfcNo || ''}`;
               return (
-                <tr key={key + i} onClick={() => onOpen({ type: page.id, kind: f.kind, item: r })}>
-                  <td className="star-col" onClick={(e) => { e.stopPropagation(); onStar(key, { type: page.id, kind: f.kind, item: r }); }}>
+                <tr key={key + i} onClick={() => onOpen({ type: page.id, kind: r._kind || f.kind, item: r })}>
+                  <td className="star-col" onClick={(e) => { e.stopPropagation(); onStar(key, { type: page.id, kind: r._kind || f.kind, item: r }); }}>
                     <span className={starred[key] ? 'star on' : 'star'} title="관심공고">{starred[key] ? '★' : '☆'}</span>
                   </td>
                   {page.columns.map((c) => <td key={c.key} className={c.cls}>{c.render ? c.render(r) : r[c.key] || '-'}</td>)}

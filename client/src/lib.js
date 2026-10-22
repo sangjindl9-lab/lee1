@@ -1,5 +1,6 @@
 // 공통 유틸: API 호출, 날짜/금액 포맷, 코드표
 export const KINDS = [
+  { id: 'All', label: '전체', awardOnly: true },
   { id: 'Cnstwk', label: '공사' },
   { id: 'Servc', label: '용역' },
   { id: 'Thng', label: '물품' },
@@ -19,7 +20,7 @@ export const INDUSTRY_PRESETS = ['전기공사업', '정보통신공사업', '�
 
 export async function api(svc, op, params = {}) {
   const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== '' && v != null));
-  const r = await fetch(`/api/${svc}/${op}?${qs}`);
+  const r = await fetch(`/api/${svc}/${op}?${qs}`);  // svc 'award' → /api/award/:kind
   const data = await r.json().catch(() => ({ error: `서버 응답 오류 (${r.status})` }));
   if (!r.ok || data.error) throw new Error(data.error || `HTTP ${r.status}`);
   return data;
