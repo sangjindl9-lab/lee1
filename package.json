@@ -1,0 +1,14 @@
+{
+  "name": "narabid-info",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "나라장터 입찰·개찰·낙찰 정보 사이트 (공공데이터포털 API)",
+  "scripts": {
+    "build": "npm --prefix client install --include=dev && npm --prefix client run build",
+    "start": "node server/index.js",
+    "dev:server": "MOCK=1 node --watch server/index.js"
+  },
+  "engines": { "node": ">=20" },
+  "dependencies": { "express": "^4.21.2" }
+}
