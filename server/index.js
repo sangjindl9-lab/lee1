@@ -216,8 +216,7 @@ app.get('/api/award/:kind', async (req, res) => {
   for (const [k, v] of Object.entries(req.query)) if (PARAMS.has(k) && v !== '' && v != null) params[k] = String(v);
   if (!params.inqryBgnDt || !params.inqryEndDt) return res.status(400).json({ error: '조회 기간을 입력하세요' });
   try {
-    const parts = [];
-    for (const k of kinds) parts.push(await awardForKind(k, params)); // 순차 호출(초당 호출 제한 대비)
+    const parts = await Promise.all(kinds.map((k) => awardForKind(k, params)));
     const rows = parts.flatMap((p) => p.rows).sort((a, b) => String(b.opengDt).localeCompare(String(a.opengDt)));
     const size = Number(params.numOfRows || 20); const page = Number(params.pageNo || 1);
     res.json({
