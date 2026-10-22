@@ -1,17 +1,13 @@
-// SELFTEST=1 일 때 서버 시작 직후 실제 API 응답을 점검해 로그에 남김
+// SELFTEST=1 일 때 서버 시작 직후 업체 연락처 조회를 점검해 로그에 남김
 export async function selfTest(base) {
-  const urls = [
-    '/api/usr/getPrcrmntCorpBasicInfo02?inqryDiv=3&bizno=1388155769&numOfRows=5&pageNo=1',
-    '/api/usr/getPrcrmntCorpBasicInfo02?inqryDiv=3&bizno=2268151323&numOfRows=5&pageNo=1',
-    '/api/usr/getPrcrmntCorpBasicInfo02?inqryDiv=1&inqryBgnDt=202610010000&inqryEndDt=202610222359&numOfRows=2&pageNo=1',
-  ];
-  for (const u of urls) {
+  // 유비트론(1순위), 평화건설(1순위), 서화통신(낙찰확정)
+  for (const b of ['1388155769', '2268151323', '4168129536']) {
     try {
-      const r = await fetch(base + u);
-      const t = await r.text();
-      console.log(`[SELFTEST] ${u} → ${r.status} ${t.slice(0, 900)}`);
+      const r = await fetch(`${base}/api/company/${b}`);
+      const d = await r.json();
+      console.log(`[SELFTEST] company/${b} → source=${d.source} usrState=${d.usrState || ''} ${d.name || ''} | ${d.ceo || ''} | ${d.adrs || ''} | ${d.tel || ''} ${d.usrError || d.error || ''}`);
     } catch (e) {
-      console.log(`[SELFTEST] ${u} → EXC ${e.message}`);
+      console.log(`[SELFTEST] company/${b} → EXC ${e.message}`);
     }
   }
 }

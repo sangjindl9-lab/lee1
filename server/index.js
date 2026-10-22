@@ -97,8 +97,11 @@ async function upstream(svc, op, params) {
     const e = parseXmlError(text);
     throw new Error(`[${e.code}] ${e.msg}`);
   }
-  if (svc === 'usr' && process.env.SELFTEST === '1') console.log(`[usr raw] ${text.replace(/\s+/g, " ").slice(0, 700)}`);
-  const data = normalize(JSON.parse(text));
+  const json = JSON.parse(text);
+  // 인증 오류는 JSON으로도 옴: {"OpenAPI_ServiceResponse":{"cmmMsgHeader":{errMsg, returnReasonCode}}}
+  const eh = json.OpenAPI_ServiceResponse?.cmmMsgHeader;
+  if (eh) throw new Error(`[${eh.returnReasonCode || 'ERR'}] ${eh.errMsg || ''} ${eh.returnAuthMsg || ''}`.trim());
+  const data = normalize(json);
   if (data.resultCode && data.resultCode !== '00') throw new Error(`[${data.resultCode}] ${data.resultMsg}`);
   cache.set(cacheKey, { t: Date.now(), data });
   if (cache.size > 500) cache.delete(cache.keys().next().value);
