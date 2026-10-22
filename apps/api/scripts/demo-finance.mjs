@@ -24,7 +24,16 @@ async function session(loginId) {
     if (!res.ok) throw new Error(`${method} ${path} → ${res.status} ${JSON.stringify(data)}`);
     return data;
   };
-  await call('POST', '/auth/login', { loginId, password: PW });
+  // 앞선 시연 스크립트들이 같은 IP 로 로그인해 분당 로그인 제한에 걸릴 수 있다 → 1분 기다렸다 다시
+  for (let i = 0; ; i++) {
+    try {
+      await call('POST', '/auth/login', { loginId, password: PW });
+      break;
+    } catch (e) {
+      if (i >= 2 || !String(e.message).includes('429')) throw e;
+      await new Promise((r) => setTimeout(r, 61_000));
+    }
+  }
   const me = await call('GET', '/auth/me');
   call.companyId = me.companies.find((c) => c.code === 'SS').id;
   return call;
