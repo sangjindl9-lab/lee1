@@ -1,5 +1,6 @@
 'use client';
 
+import { useApprovalLine } from '@/components/approval-line';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -25,6 +26,7 @@ export default function Page() {
   const { id } = useParams<{ id: string }>();
   const qc = useQueryClient();
   const { can, company } = useSession();
+  const { pick: pickLine, node: lineNode } = useApprovalLine();
   const q = useQuery({ queryKey: ['sub-claim', company.id, id], queryFn: () => api<D>(`/subcontracts/claims/${id}`), retry: false });
   const { run, acting } = useRun(['subcontracts', 'subcontract']);
   const [cancel, setCancel] = useState(false);
@@ -45,7 +47,7 @@ export default function Page() {
         <div className="flex flex-wrap gap-1.5">
           {d.canRecall && <Button icon={<Undo2 className="size-3.5" />} onClick={() => run('recall', () => api(`/approvals/${a!.id}/cancel`, { method: 'POST' }), '결재를 회수했습니다').then(refresh)}>결재 회수</Button>}
           {!['PENDING', 'CANCELLED'].includes(d.status) && can('subcontract:update') && <Button variant="danger" icon={<Ban className="size-3.5" />} onClick={() => setCancel(true)}>취소</Button>}
-          {['DRAFT', 'REJECTED'].includes(d.status) && can('subcontract:create') && <Button variant="primary" icon={<Send className="size-3.5" />} loading={acting === 'submit'} onClick={() => run('submit', () => api(`/subcontracts/claims/${d.id}/submit`, { method: 'POST', json: { version: d.version } }), '결재를 올렸습니다').then(refresh)}>결재 상신</Button>}
+          {['DRAFT', 'REJECTED'].includes(d.status) && can('subcontract:create') && <Button variant="primary" icon={<Send className="size-3.5" />} loading={acting === 'submit'} onClick={async () => { const line = await pickLine('SUB_CLAIM', d.thisAmount); if (line === null) return; run('submit', () => api(`/subcontracts/claims/${d.id}/submit`, { method: 'POST', json: { version: d.version, approvalLine: line } }), '결재를 올렸습니다').then(refresh); }}>결재 상신</Button>}
           {d.status === 'APPROVED' && !d.payment && can('expense:create') && <Link href={`/payment-requests/new?source=SUB&vendorId=${d.vendor.id}`}><Button variant="primary" icon={<Wallet className="size-3.5" />}>지급결의 작성</Button></Link>}
         </div>
       </div>
@@ -82,6 +84,7 @@ export default function Page() {
       </div>
       <ReasonDialog open={cancel} title="하도급 기성을 취소할까요?" danger confirm="취소" body={d.status === 'APPROVED' ? '원가 분개를 역분개합니다. 지급결의에 들어간 기성은 먼저 결의를 취소하세요.' : '기록은 남습니다.'} onClose={() => setCancel(false)}
         onConfirm={async (reason) => { if (await run('cancel', () => api(`/subcontracts/claims/${d.id}/cancel`, { method: 'POST', json: { reason } }), '취소했습니다')) { setCancel(false); refresh(); } }} />
+      {lineNode}
     </>
   );
 }

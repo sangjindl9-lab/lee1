@@ -1,5 +1,6 @@
 'use client';
 
+import { type LineStep, useApprovalLine } from '@/components/approval-line';
 import clsx from 'clsx';
 import { useQuery } from '@tanstack/react-query';
 import { ClipboardPaste, Plus, Send, Trash2 } from 'lucide-react';
@@ -126,6 +127,7 @@ const cellCls = 'h-8 w-full bg-transparent px-2 outline-none placeholder:text-fa
 export interface PoSeed { requestId: string; requestCode: string; projectId: string; title: string; deliveryDate: string | null; memo: string | null; lines: { materialId: string | null; name: string; spec: string | null; unit: string; qty: string; memo: string | null }[] }
 
 export function PoForm({ initial, seed, onSaved, onCancel }: { initial?: PoDetail; seed?: PoSeed; onSaved: (id: string, submitted: boolean) => void; onCancel: () => void }) {
+  const { pick: pickLine, node: lineNode } = useApprovalLine();
   const { projects, project: ctxProject, me } = useSession();
   const today = new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10);
   const [projectId, setProjectId] = useState<string | null>(initial?.projectId ?? seed?.projectId ?? ctxProject?.id ?? null);
@@ -264,6 +266,12 @@ export function PoForm({ initial, seed, onSaved, onCancel }: { initial?: PoDetai
       setFormError(Object.keys(local).some((k) => k.startsWith('line.')) ? '빨간 칸의 품명·수량·단가를 입력해 주세요' : null);
       return;
     }
+    let line: LineStep[] | undefined;
+    if (submit) {
+      const picked = await pickLine('PURCHASE_ORDER', String(total));
+      if (picked === null) return;
+      line = picked;
+    }
     setBusy(submit ? 'submit' : 'save');
     try {
       const body = {
@@ -273,7 +281,7 @@ export function PoForm({ initial, seed, onSaved, onCancel }: { initial?: PoDetai
       const saved = initial
         ? await api<{ id: string; version: number }>(`/purchase-orders/${initial.id}`, { method: 'PUT', json: { ...body, version: initial.version } })
         : await api<{ id: string; version: number }>('/purchase-orders', { method: 'POST', json: body });
-      if (submit) await api(`/purchase-orders/${saved.id}/submit`, { method: 'POST', json: { version: saved.version } });
+      if (submit) await api(`/purchase-orders/${saved.id}/submit`, { method: 'POST', json: { version: saved.version, approvalLine: line } });
       onSaved(saved.id, submit);
     } catch (err) {
       if (err instanceof ApiError) {
@@ -300,6 +308,7 @@ export function PoForm({ initial, seed, onSaved, onCancel }: { initial?: PoDetai
 
   return (
     <form ref={formRef} onSubmit={save} noValidate className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
+      {lineNode}
       <div className="min-w-0 space-y-4">
         <section className="rounded-[6px] border border-line bg-surface">
           <header className="border-b border-line px-4 py-2.5"><h2 className="text-section font-semibold">발주 정보</h2></header>

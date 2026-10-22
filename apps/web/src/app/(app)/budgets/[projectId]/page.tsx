@@ -1,5 +1,6 @@
 'use client';
 
+import { type LineStep, useApprovalLine } from '@/components/approval-line';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -14,6 +15,7 @@ import { REV_STATUS } from '@/lib/labels';
 import { useSession } from '@/lib/session';
 
 function RevisionDialog({ s, focus, onClose, onDone }: { s: BudgetSummary; focus?: string | null; onClose: () => void; onDone: (id: string) => void }) {
+  const { pick: pickLine, node: lineNode } = useApprovalLine();
   const [amounts, setAmounts] = useState<Record<string, string>>(() => Object.fromEntries(s.rows.map((r) => [r.costCodeId, r.planned.split('.')[0].replace(/^0$/, '')])));
   const [title, setTitle] = useState(s.hasBreakdown ? (focus ? `${s.rows.find((r) => r.costCodeId === focus)?.name} 증액` : '실행예산 변경') : '최초 실행예산 편성');
   const [reason, setReason] = useState('');
@@ -24,11 +26,17 @@ function RevisionDialog({ s, focus, onClose, onDone }: { s: BudgetSummary; focus
   const contract = BigInt(s.revenue.contractCurrent.split('.')[0]);
   async function save(submit: boolean) {
     setErr(null);
+    let line: LineStep[] | undefined;
+    if (submit) {
+      const picked = await pickLine('BUDGET', String(after > before ? after - before : before - after));
+      if (picked === null) return;
+      line = picked;
+    }
     setBusy(submit ? 'submit' : 'save');
     try {
       const lines = s.rows.filter((r) => (amounts[r.costCodeId] || '0') !== r.planned.split('.')[0]).map((r) => ({ costCodeId: r.costCodeId, afterAmount: amounts[r.costCodeId] || '0' }));
       const rev = await api<{ id: string; version: number }>(`/budgets/${s.project.id}/revisions`, { method: 'POST', json: { title, reason, lines } });
-      if (submit) await api(`/budget-revisions/${rev.id}/submit`, { method: 'POST', json: { version: rev.version } });
+      if (submit) await api(`/budget-revisions/${rev.id}/submit`, { method: 'POST', json: { version: rev.version, approvalLine: line } });
       onDone(rev.id);
     } catch (e) {
       setErr(e instanceof ApiError ? e.body.message : '저장하지 못했습니다');
@@ -39,6 +47,7 @@ function RevisionDialog({ s, focus, onClose, onDone }: { s: BudgetSummary; focus
   return (
     <Dialog open onClose={onClose} title={s.hasBreakdown ? '실행예산 변경 요청' : '실행예산 편성'} width={720}
       footer={<><Button onClick={onClose}>취소</Button><Button loading={busy === 'save'} disabled={!!busy} onClick={() => save(false)}>임시저장</Button><Button variant="primary" loading={busy === 'submit'} disabled={!!busy || reason.trim().length < 2} onClick={() => save(true)}>저장하고 결재 상신</Button></>}>
+      {lineNode}
       <div className="mb-3 grid gap-3 sm:grid-cols-2">
         <Field label="제목" required><Input value={title} onChange={(e) => setTitle(e.target.value)} /></Field>
         <Field label="사유" required hint="결재자가 판단할 수 있게 구체적으로"><Textarea rows={2} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="예: 안전난간 추가 설치로 안전관리비 부족" /></Field>

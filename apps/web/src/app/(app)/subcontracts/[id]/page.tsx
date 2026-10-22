@@ -1,5 +1,6 @@
 'use client';
 
+import { useApprovalLine } from '@/components/approval-line';
 import clsx from 'clsx';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
@@ -31,6 +32,7 @@ export default function Page() {
   const qc = useQueryClient();
   const { ask, node } = useConfirm();
   const { can, company } = useSession();
+  const { pick: pickLine, node: lineNode } = useApprovalLine();
   const q = useQuery({ queryKey: ['subcontract', company.id, id], queryFn: () => api<D>(`/subcontracts/${id}`), retry: false });
   const { run, acting } = useRun(['subcontracts']);
   const [dialog, setDialog] = useState<null | 'cancel' | 'claim' | 'revise'>(null);
@@ -54,7 +56,7 @@ export default function Page() {
         <div className="flex flex-wrap gap-1.5">
           {d.canRecall && <Button icon={<Undo2 className="size-3.5" />} onClick={() => run('recall', () => api(`/approvals/${a!.id}/cancel`, { method: 'POST' }), '결재를 회수했습니다').then(refresh)}>결재 회수</Button>}
           {['DRAFT', 'REJECTED', 'ACTIVE'].includes(d.status) && can('subcontract:update') && <Button variant="danger" icon={<Ban className="size-3.5" />} onClick={() => setDialog('cancel')}>계약 취소</Button>}
-          {['DRAFT', 'REJECTED'].includes(d.status) && can('subcontract:create') && <Button variant="primary" icon={<Send className="size-3.5" />} loading={acting === 'submit'} onClick={() => run('submit', () => api(`/subcontracts/${d.id}/submit`, { method: 'POST', json: { version: d.version } }), '대표 결재를 올렸습니다').then(refresh)}>결재 상신</Button>}
+          {['DRAFT', 'REJECTED'].includes(d.status) && can('subcontract:create') && <Button variant="primary" icon={<Send className="size-3.5" />} loading={acting === 'submit'} onClick={async () => { const line = await pickLine('SUBCONTRACT', d.currentAmount); if (line === null) return; run('submit', () => api(`/subcontracts/${d.id}/submit`, { method: 'POST', json: { version: d.version, approvalLine: line } }), '대표 결재를 올렸습니다').then(refresh); }}>결재 상신</Button>}
           {d.status === 'ACTIVE' && can('subcontract:approve') && <Button icon={<FilePen className="size-3.5" />} onClick={() => setDialog('revise')}>변경계약</Button>}
           {d.status === 'ACTIVE' && can('subcontract:approve') && <Button icon={<CheckCheck className="size-3.5" />} loading={acting === 'complete'} onClick={async () => { if (await ask({ title: '하도급을 정산할까요?', body: '모든 기성이 끝났는지 확인합니다. 정산 후에는 기성을 더 받을 수 없고, 남은 유보금은 지급결의로 지급합니다.', confirm: '정산 완료' })) run('complete', () => api(`/subcontracts/${d.id}/complete`, { method: 'POST' }), '정산 완료했습니다').then(refresh); }}>정산</Button>}
           {d.status === 'ACTIVE' && can('subcontract:create') && Number(d.totals.balance) > 0 && <Button variant="primary" icon={<Plus className="size-4" />} onClick={() => setDialog('claim')}>기성 신청</Button>}
@@ -120,6 +122,7 @@ export default function Page() {
       {dialog === 'revise' && <SubReviseDialog sub={d} onClose={() => setDialog(null)} onDone={() => { setDialog(null); refresh(); }} />}
       <ReasonDialog open={dialog === 'cancel'} title="하도급 계약을 취소할까요?" danger confirm="계약 취소" body="기성이 있는 계약은 취소할 수 없습니다. 기록은 남습니다." onClose={() => setDialog(null)}
         onConfirm={async (reason) => { if (await run('cancel', () => api(`/subcontracts/${d.id}/cancel`, { method: 'POST', json: { reason } }), '취소했습니다')) { setDialog(null); refresh(); } }} />
+      {lineNode}
     </>
   );
 }

@@ -1,5 +1,6 @@
 'use client';
 
+import { useApprovalLine } from '@/components/approval-line';
 import clsx from 'clsx';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
@@ -231,6 +232,7 @@ export default function PoDetailPage() {
   const toast = useToast();
   const qc = useQueryClient();
   const { can, company } = useSession();
+  const { pick: pickLine, node: lineNode } = useApprovalLine();
   const q = useQuery({ queryKey: ['po', company.id, id], queryFn: () => api<PoDetailFull>(`/purchase-orders/${id}`), retry: false });
   const [comment, setComment] = useState('');
   const [acting, setActing] = useState<string | null>(null);
@@ -305,7 +307,7 @@ export default function PoDetailPage() {
           {po.canRecall && <Button icon={<Undo2 className="size-3.5" />} loading={acting === 'recall'} onClick={() => run('recall', () => api(`/approvals/${a!.id}/cancel`, { method: 'POST' }), '결재를 회수했습니다. 작성중으로 돌아갑니다')}>결재 회수</Button>}
           {editable && <Button icon={<Ban className="size-3.5" />} variant="danger" onClick={() => setDialog('cancel')}>발주 취소</Button>}
           {editable && <Link href={`/purchase-orders/${po.id}/edit`}><Button icon={<Pencil className="size-3.5" />}>수정</Button></Link>}
-          {editable && <Button variant="primary" icon={<Send className="size-3.5" />} loading={acting === 'submit'} onClick={() => run('submit', () => api(`/purchase-orders/${po.id}/submit`, { method: 'POST', json: { version: po.version } }), '대표이사에게 결재를 올렸습니다')}>결재 상신</Button>}
+          {editable && <Button variant="primary" icon={<Send className="size-3.5" />} loading={acting === 'submit'} onClick={async () => { const line = await pickLine('PURCHASE_ORDER', po.totalAmount); if (line === null) return; run('submit', () => api(`/purchase-orders/${po.id}/submit`, { method: 'POST', json: { version: po.version, approvalLine: line } }), '결재를 올렸습니다'); }}>결재 상신</Button>}
           {po.status === 'APPROVED' && can('purchase:update') && <Button icon={<Truck className="size-3.5" />} loading={acting === 'sent'} onClick={() => run('sent', () => api(`/purchase-orders/${po.id}/sent`, { method: 'POST', json: { version: po.version } }), '거래처 전송으로 표시했습니다')}>거래처 전송 표시</Button>}
           {['APPROVED', 'SENT'].includes(po.status) && can('purchase:update') && !hasReceipts && (
             <>
@@ -478,6 +480,7 @@ export default function PoDetailPage() {
           }
         }}
       />
+      {lineNode}
     </>
   );
 }

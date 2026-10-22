@@ -88,7 +88,7 @@ npm run dev                        # 화면 http://localhost:3000
 
 ```bash
 cd apps/api
-npm test      # 실제 PostgreSQL(erp_test DB)로 165개 항목 실행 (지시서 필수 테스트 15종 포함)
+npm test      # 실제 PostgreSQL(erp_test DB)로 170개 항목 실행 (지시서 필수 테스트 15종 포함)
 ```
 
 테스트는 `erp_test` 데이터베이스를 매번 지우고 다시 만듭니다. 운영 DB 주소를 `TEST_DATABASE_URL` 에 넣지 마세요.

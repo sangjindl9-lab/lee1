@@ -1,5 +1,6 @@
 'use client';
 
+import { type LineStep, useApprovalLine } from '@/components/approval-line';
 import clsx from 'clsx';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -24,6 +25,7 @@ const int = (v: string | null | undefined) => (v ?? '0').split('.')[0];
 const today = () => new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10);
 
 function Inner() {
+  const { pick: pickLine, node: lineNode } = useApprovalLine();
   const router = useRouter();
   const sp = useSearchParams();
   const toast = useToast();
@@ -54,6 +56,12 @@ function Inner() {
   const advSuggest = p && contract > 0 ? Math.min(Number(p.advanceBalance), Math.floor(Number(p.project.advanceAmount) * thisSupply / contract)) : 0;
 
   async function save(submit: boolean) {
+    let line: LineStep[] | undefined;
+    if (submit) {
+      const picked = await pickLine('CLAIM', String(thisSupply));
+      if (picked === null) return;
+      line = picked;
+    }
     setBusy(true);
     try {
       const body = {
@@ -62,7 +70,7 @@ function Inner() {
         ...(f.byLines ? { lines: lines.filter((l) => l.name.trim() && Number(l.thisAmount) > 0).map((l) => ({ name: l.name, spec: l.spec || null, contractAmount: l.contractAmount || '0', thisAmount: l.thisAmount })) } : { thisSupply: f.thisSupply }),
       };
       const c = await api<{ id: string; version: number }>('/progress-claims', { method: 'POST', json: body });
-      if (submit) await api(`/progress-claims/${c.id}/submit`, { method: 'POST', json: { version: c.version } });
+      if (submit) await api(`/progress-claims/${c.id}/submit`, { method: 'POST', json: { version: c.version, approvalLine: line } });
       qc.invalidateQueries({ queryKey: ['claims'] });
       toast('ok', submit ? '대표 결재를 올렸습니다' : '저장했습니다');
       router.replace(`/claims/${c.id}`);
@@ -75,6 +83,7 @@ function Inner() {
 
   return (
     <>
+      {lineNode}
       <PageHeader title="기성 작성" description="이번 기간에 시공한 금액을 공종별로 넣으면 전회·누적·기성률과 청구액을 계산합니다. 승인되면 매출로 인식됩니다.">
         <Link href="/claims" className="mb-1 inline-flex items-center gap-0.5 text-meta text-muted hover:text-ink"><ChevronLeft className="size-3.5" />기성청구</Link>
       </PageHeader>

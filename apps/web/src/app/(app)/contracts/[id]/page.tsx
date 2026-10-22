@@ -1,5 +1,6 @@
 'use client';
 
+import { useApprovalLine } from '@/components/approval-line';
 import clsx from 'clsx';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
@@ -27,6 +28,7 @@ export default function Page() {
   const { id } = useParams<{ id: string }>();
   const qc = useQueryClient();
   const { can, company } = useSession();
+  const { pick: pickLine, node: lineNode } = useApprovalLine();
   const q = useQuery({ queryKey: ['contract-revision', company.id, id], queryFn: () => api<D>(`/contract-revisions/${id}`), retry: false });
   const { run, acting } = useRun(['contract-revisions', 'contract-summary']);
   const [dialog, setDialog] = useState(false);
@@ -49,7 +51,7 @@ export default function Page() {
         <div className="flex flex-wrap gap-1.5">
           {d.canRecall && <Button icon={<Undo2 className="size-3.5" />} loading={acting === 'recall'} onClick={() => run('recall', () => api(`/approvals/${a!.id}/cancel`, { method: 'POST' }), '결재를 회수했습니다').then(refresh)}>결재 회수</Button>}
           {editable && can('contract:update') && <Button variant="danger" icon={<Ban className="size-3.5" />} onClick={() => setDialog(true)}>취소</Button>}
-          {editable && can('contract:create') && <Button variant="primary" icon={<Send className="size-3.5" />} loading={acting === 'submit'} onClick={() => run('submit', () => api(`/contract-revisions/${d.id}/submit`, { method: 'POST', json: { version: d.version } }), '대표 결재를 올렸습니다').then(refresh)}>결재 상신</Button>}
+          {editable && can('contract:create') && <Button variant="primary" icon={<Send className="size-3.5" />} loading={acting === 'submit'} onClick={async () => { const line = await pickLine('CONTRACT_CHANGE', d.deltaAmount); if (line === null) return; run('submit', () => api(`/contract-revisions/${d.id}/submit`, { method: 'POST', json: { version: d.version, approvalLine: line } }), '대표 결재를 올렸습니다').then(refresh); }}>결재 상신</Button>}
           {d.status === 'APPROVED' && d.budgetLines.length > 0 && !d.budgetRevisionId && can('budget:create') && <Button variant="primary" icon={<ClipboardList className="size-3.5" />} loading={acting === 'budget'} onClick={() => run('budget', () => api(`/contract-revisions/${d.id}/budget-draft`, { method: 'POST' }), '실행예산 변경 초안을 만들었습니다').then(refresh)}>실행예산 조정안 만들기</Button>}
           {d.budgetRevisionId && <Link href={`/budgets/revisions/${d.budgetRevisionId}`}><Button icon={<ClipboardList className="size-3.5" />}>실행예산 변경 보기</Button></Link>}
         </div>
@@ -98,6 +100,7 @@ export default function Page() {
       </div>
       <ReasonDialog open={dialog} title="변경계약을 취소할까요?" danger confirm="취소" body="작성 기록은 남고 계약금액에는 반영되지 않습니다." onClose={() => setDialog(false)}
         onConfirm={async (reason) => { if (await run('cancel', () => api(`/contract-revisions/${d.id}/cancel`, { method: 'POST', json: { reason } }), '취소했습니다')) { setDialog(false); refresh(); } }} />
+      {lineNode}
     </>
   );
 }

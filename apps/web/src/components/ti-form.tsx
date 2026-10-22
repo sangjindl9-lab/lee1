@@ -1,6 +1,7 @@
 'use client';
 
 /** 세금계산서 작성 (매출) / 종이 매입 계산서 입력 — 품목은 99줄까지, 세액은 공급가액의 10%를 기본으로 채운다 */
+import { type LineStep, useApprovalLine } from '@/components/approval-line';
 import { Plus, Send, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { ProjectPicker, VendorPicker } from './pickers';
@@ -21,6 +22,7 @@ export function emptyTi(direction: 'SALES' | 'PURCHASE'): TiFormInitial {
 }
 
 export function TiForm({ initial, onSaved, onCancel }: { initial: TiFormInitial; onSaved: (id: string, submitted: boolean) => void; onCancel: () => void }) {
+  const { pick: pickLine, node: lineNode } = useApprovalLine();
   const toast = useToast();
   const [f, setF] = useState(initial);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -46,6 +48,12 @@ export function TiForm({ initial, onSaved, onCancel }: { initial: TiFormInitial;
     if (!f.vendor) e.vendor = sales ? '공급받는자(거래처)를 선택해 주세요' : '공급자(거래처)를 선택해 주세요';
     if (!f.lines.some((l) => l.name.trim())) e.lines = '품목을 하나 이상 입력해 주세요';
     if (Object.keys(e).length) return setErrors(e);
+    let line: LineStep[] | undefined;
+    if (submit) {
+      const picked = await pickLine('TAX_ISSUE', addDigits(supply, vat));
+      if (picked === null) return;
+      line = picked;
+    }
     setBusy(submit ? 'submit' : 'save');
     try {
       const body = {
@@ -54,7 +62,7 @@ export function TiForm({ initial, onSaved, onCancel }: { initial: TiFormInitial;
         ...(f.id ? { version: f.version } : {}),
       };
       const saved = await api<{ id: string; version: number }>(f.id ? `/tax-invoices/${f.id}` : '/tax-invoices', { method: f.id ? 'PUT' : 'POST', json: body });
-      if (submit) await api(`/tax-invoices/${saved.id}/submit`, { method: 'POST', json: { version: saved.version } });
+      if (submit) await api(`/tax-invoices/${saved.id}/submit`, { method: 'POST', json: { version: saved.version, approvalLine: line } });
       onSaved(saved.id, submit);
     } catch (err) {
       if (err instanceof ApiError) {
@@ -68,6 +76,7 @@ export function TiForm({ initial, onSaved, onCancel }: { initial: TiFormInitial;
 
   return (
     <form onSubmit={(e) => (e.preventDefault(), save(false))} className="space-y-4">
+      {lineNode}
       <section className="rounded-[6px] border border-line bg-surface p-4 sm:p-5">
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <Field label={sales ? '공급받는자 (거래처)' : '공급자 (거래처)'} required error={errors.vendor || errors.vendorId} className="md:col-span-2" hint={sales ? '사업자등록번호가 등록된 거래처만 발행할 수 있습니다' : undefined}>

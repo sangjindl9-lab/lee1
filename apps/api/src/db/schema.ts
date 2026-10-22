@@ -320,7 +320,7 @@ export const approvalLines = pgTable('approval_line', {
   companyId: uuid('company_id').notNull().references(() => companies.id),
   docType: text('doc_type').notNull(),
   minAmount: money('min_amount').notNull().default('0'), // 이 금액(합계) 이상에 적용
-  steps: jsonb('steps').$type<{ title: string; roleKey: string }[]>().notNull(),
+  steps: jsonb('steps').$type<{ title: string; roleKey?: string | null; userId?: string | null }[]>().notNull(),
   ...audited,
 }, (t) => [uniqueIndex('approval_line_uq').on(t.companyId, t.docType, t.minAmount)]);
 
@@ -351,6 +351,7 @@ export const approvalSteps = pgTable('approval_step', {
   stepNo: integer('step_no').notNull(), // 0 = 기안(담당)
   title: text('title').notNull(),
   roleKey: text('role_key'), // 이 역할을 가진 사람이 처리
+  approverUserId: uuid('approver_user_id').references(() => users.id), // 지정된 사람만 처리 (있으면 역할보다 우선)
   approverNames: text('approver_names'), // 상신 시점의 해당 역할 보유자 (표시용)
   state: stepState('state').notNull().default('WAITING'),
   actedById: uuid('acted_by_id'),

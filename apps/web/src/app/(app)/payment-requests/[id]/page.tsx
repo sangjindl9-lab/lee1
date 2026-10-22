@@ -1,5 +1,6 @@
 'use client';
 
+import { useApprovalLine } from '@/components/approval-line';
 import clsx from 'clsx';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
@@ -54,6 +55,7 @@ export default function Page() {
   const { id } = useParams<{ id: string }>();
   const qc = useQueryClient();
   const { can, company } = useSession();
+  const { pick: pickLine, node: lineNode } = useApprovalLine();
   const q = useQuery({ queryKey: ['payreq', company.id, id], queryFn: () => api<Detail>(`/payment-requests/${id}`), retry: false });
   const { run, acting } = useRun(['payreq', 'payreqs']);
   const [dialog, setDialog] = useState<null | 'pay' | 'cancel' | 'unpay'>(null);
@@ -86,7 +88,7 @@ export default function Page() {
           {d.canRecall && <Button icon={<Undo2 className="size-3.5" />} loading={acting === 'recall'} onClick={() => run('recall', () => api(`/approvals/${a!.id}/cancel`, { method: 'POST' }), '결재를 회수했습니다').then(refresh)}>결재 회수</Button>}
           {(editable || (d.status === 'APPROVED' && can('expense:update'))) && <Button variant="danger" icon={<Ban className="size-3.5" />} onClick={() => setDialog('cancel')}>결의 취소</Button>}
           {editable && <Link href={`/payment-requests/${d.id}/edit`}><Button icon={<Pencil className="size-3.5" />}>수정</Button></Link>}
-          {editable && <Button variant="primary" icon={<Send className="size-3.5" />} loading={acting === 'submit'} onClick={() => run('submit', () => api(`/payment-requests/${d.id}/submit`, { method: 'POST', json: { version: d.version } }), '결재를 올렸습니다').then(refresh)}>결재 상신</Button>}
+          {editable && <Button variant="primary" icon={<Send className="size-3.5" />} loading={acting === 'submit'} onClick={async () => { const line = await pickLine('PAYMENT_REQUEST', d.totalAmount); if (line === null) return; run('submit', () => api(`/payment-requests/${d.id}/submit`, { method: 'POST', json: { version: d.version, approvalLine: line } }), '결재를 올렸습니다').then(refresh); }}>결재 상신</Button>}
           {d.status === 'APPROVED' && can('payment:create') && <Button variant="primary" icon={<Wallet className="size-4" />} onClick={() => setDialog('pay')}>지급 처리</Button>}
           {d.status === 'PAID' && can('payment:approve') && <Button icon={<RotateCcw className="size-3.5" />} onClick={() => setDialog('unpay')}>지급 취소</Button>}
         </div>
@@ -190,6 +192,7 @@ export default function Page() {
         onConfirm={async (reason) => { if (await run('cancel', () => api(`/payment-requests/${d.id}/cancel`, { method: 'POST', json: { version: d.version, reason } }), '취소했습니다')) { setDialog(null); refresh(); } }} />
       <ReasonDialog open={dialog === 'unpay'} title="지급을 취소할까요?" danger confirm="지급 취소" body="이체가 실패했거나 잘못 기록한 경우에 씁니다. 지급 분개는 역분개되고 결의는 '지급대기'로 돌아갑니다." onClose={() => setDialog(null)}
         onConfirm={async (reason) => { if (await run('unpay', () => api(`/payment-requests/${d.id}/cancel-payment`, { method: 'POST', json: { reason } }), '지급을 취소했습니다')) { setDialog(null); refresh(); } }} />
+      {lineNode}
     </>
   );
 }

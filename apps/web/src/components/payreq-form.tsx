@@ -1,5 +1,6 @@
 'use client';
 
+import { type LineStep, useApprovalLine } from '@/components/approval-line';
 import clsx from 'clsx';
 import { useQuery } from '@tanstack/react-query';
 import { PackageCheck, Plus, Send, Trash2 } from 'lucide-react';
@@ -41,6 +42,7 @@ const blank = (): Line => ({ key: k(), description: '', accountId: null, costCod
 export type PayReqSeed = Omit<PayReqInitial, 'id' | 'version'>;
 
 export function PayReqForm({ initial, seed, onSaved, onCancel }: { initial?: PayReqInitial; seed?: PayReqSeed; onSaved: (id: string, submitted: boolean) => void; onCancel: () => void }) {
+  const { pick: pickLine, node: lineNode } = useApprovalLine();
   const base: PayReqSeed | undefined = initial ?? seed;
   const { project: ctxProject } = useSession();
   const today = new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10);
@@ -128,6 +130,12 @@ export function PayReqForm({ initial, seed, onSaved, onCancel }: { initial?: Pay
       setFormError(Object.keys(local).some((x) => x.includes('.')) ? '빨간 칸을 채워 주세요' : null);
       return;
     }
+    let line: LineStep[] | undefined;
+    if (submit) {
+      const picked = await pickLine('PAYMENT_REQUEST', String(totals.total));
+      if (picked === null) return;
+      line = picked;
+    }
     setBusy(submit ? 'submit' : 'save');
     try {
       const body = {
@@ -139,7 +147,7 @@ export function PayReqForm({ initial, seed, onSaved, onCancel }: { initial?: Pay
       const saved = initial
         ? await api<{ id: string; version: number }>(`/payment-requests/${initial.id}`, { method: 'PUT', json: { ...body, version: initial.version } })
         : await api<{ id: string; version: number }>('/payment-requests', { method: 'POST', json: body });
-      if (submit) await api(`/payment-requests/${saved.id}/submit`, { method: 'POST', json: { version: saved.version } });
+      if (submit) await api(`/payment-requests/${saved.id}/submit`, { method: 'POST', json: { version: saved.version, approvalLine: line } });
       onSaved(saved.id, submit);
     } catch (err) {
       if (err instanceof ApiError) {
@@ -156,6 +164,7 @@ export function PayReqForm({ initial, seed, onSaved, onCancel }: { initial?: Pay
 
   return (
     <form onSubmit={save} noValidate className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
+      {lineNode}
       <div className="min-w-0 space-y-4">
         <section className="rounded-[6px] border border-line bg-surface">
           <header className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-4 py-2.5">

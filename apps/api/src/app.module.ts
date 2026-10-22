@@ -21,7 +21,7 @@ import { ProjectsController } from './projects/projects.controller';
 import { ProjectsService } from './projects/projects.service';
 import { VendorsController, VendorsService } from './vendors/vendors';
 import { MaterialsController, MaterialsService } from './materials/materials';
-import { ApprovalsController, ApprovalsService } from './approvals/approvals';
+import { ApprovalLineInterceptor, ApprovalsController, ApprovalsService } from './approvals/approvals';
 import { PurchaseController } from './purchase/purchase.controller';
 import { PurchaseService } from './purchase/purchase.service';
 import { PurchaseRequestsController, PurchaseRequestsService } from './purchase/requests';
@@ -68,6 +68,7 @@ import { BackupsController, BackupsService } from './admin/backups';
     { provide: APP_GUARD, useClass: ErpGuard },
     { provide: APP_FILTER, useClass: AllExceptionsFilter },
     { provide: APP_INTERCEPTOR, useClass: IdempotencyInterceptor },
+    { provide: APP_INTERCEPTOR, useClass: ApprovalLineInterceptor },
   ],
 })
 export class AppModule {}

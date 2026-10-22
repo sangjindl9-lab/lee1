@@ -257,13 +257,13 @@ export function ApprovalBox({ steps }: { steps: { title: string; name?: string; 
       <tbody>
         <tr>
           <th rowSpan={2} className="w-6 border border-line-strong bg-surface-2 px-1 font-medium text-muted [writing-mode:vertical-rl]">결재</th>
-          {steps.map((s) => (
-            <th key={s.title} className="h-6 w-[72px] border border-line-strong bg-surface-2 font-medium text-muted">{s.title}</th>
+          {steps.map((s, i) => (
+            <th key={i} className="h-6 w-[72px] border border-line-strong bg-surface-2 font-medium text-muted">{s.title}</th>
           ))}
         </tr>
         <tr>
-          {steps.map((s) => (
-            <td key={s.title} className="h-[68px] border border-line-strong align-middle">
+          {steps.map((s, i) => (
+            <td key={i} className="h-[68px] border border-line-strong align-middle">
               {s.state === 'done' || s.state === 'rejected' ? <Seal name={s.name ?? ''} date={s.date} size={52} rejected={s.state === 'rejected'} /> : s.state === 'waiting' ? <span className="text-faint">{s.name ?? '대기'}</span> : null}
             </td>
           ))}

@@ -1,0 +1,2 @@
+ALTER TABLE "approval_step" ADD COLUMN "approver_user_id" uuid;--> statement-breakpoint
+ALTER TABLE "approval_step" ADD CONSTRAINT "approval_step_approver_user_id_app_user_id_fk" FOREIGN KEY ("approver_user_id") REFERENCES "public"."app_user"("id") ON DELETE no action ON UPDATE no action;

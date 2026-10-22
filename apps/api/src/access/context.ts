@@ -24,6 +24,8 @@ export interface AccessContext {
   userAgent: string;
   /** API 키로 들어온 요청 (세션 대신) */
   apiKeyId?: string;
+  /** 이번 상신에만 쓰는 결재선 (상신 요청에 함께 온 경우) */
+  approvalLine?: { title: string; roleKey?: string | null; userId?: string | null }[];
 }
 
 export interface ErpRequest extends Request {

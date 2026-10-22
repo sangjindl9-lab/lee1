@@ -1,5 +1,6 @@
 'use client';
 
+import { useApprovalLine } from '@/components/approval-line';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -22,6 +23,7 @@ export default function Page() {
   const { id } = useParams<{ id: string }>();
   const qc = useQueryClient();
   const { can, company } = useSession();
+  const { pick: pickLine, node: lineNode } = useApprovalLine();
   const q = useQuery({ queryKey: ['budget-rev', company.id, id], queryFn: () => api<Rev>(`/budget-revisions/${id}`), retry: false });
   const { run, acting } = useRun(['budget', 'budget-overview']);
   const [just, setJust] = useState(false);
@@ -41,7 +43,7 @@ export default function Page() {
         <div className="flex gap-1.5">
           {r.canRecall && <Button icon={<Undo2 className="size-3.5" />} onClick={() => run('recall', () => api(`/approvals/${r.approval!.id}/cancel`, { method: 'POST' }), '회수했습니다').then(refresh)}>결재 회수</Button>}
           {['DRAFT', 'REJECTED'].includes(r.status) && can('budget:update') && <Button variant="danger" icon={<Ban className="size-3.5" />} onClick={() => run('cancel', () => api(`/budget-revisions/${r.id}/cancel`, { method: 'POST', json: { version: r.version } }), '취소했습니다').then(refresh)}>취소</Button>}
-          {['DRAFT', 'REJECTED'].includes(r.status) && can('budget:create') && <Button variant="primary" icon={<Send className="size-3.5" />} loading={acting === 'submit'} onClick={() => run('submit', () => api(`/budget-revisions/${r.id}/submit`, { method: 'POST', json: { version: r.version } }), '결재를 올렸습니다').then(refresh)}>결재 상신</Button>}
+          {['DRAFT', 'REJECTED'].includes(r.status) && can('budget:create') && <Button variant="primary" icon={<Send className="size-3.5" />} loading={acting === 'submit'} onClick={async () => { const line = await pickLine('BUDGET', String(delta)); if (line === null) return; run('submit', () => api(`/budget-revisions/${r.id}/submit`, { method: 'POST', json: { version: r.version, approvalLine: line } }), '결재를 올렸습니다').then(refresh); }}>결재 상신</Button>}
         </div>
       </div>
       {r.canAct && r.approval && <ApprovalActionPanel approval={r.approval} summary={<>{r.projectName} · 실행예산 <b className="num text-ink">{delta >= 0n ? '+' : '△'}{won(String(delta >= 0n ? delta : -delta))}원</b></>} onDone={(a) => { refresh(); if (a === 'approve') setJust(true); }} />}
@@ -73,6 +75,7 @@ export default function Page() {
         </section>
         <aside><ApprovalHistory history={r.approvalHistory} /></aside>
       </div>
+      {lineNode}
     </>
   );
 }

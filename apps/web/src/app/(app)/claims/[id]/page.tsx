@@ -1,5 +1,6 @@
 'use client';
 
+import { useApprovalLine } from '@/components/approval-line';
 import clsx from 'clsx';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
@@ -34,6 +35,7 @@ export default function Page() {
   const toast = useToast();
   const qc = useQueryClient();
   const { can, company } = useSession();
+  const { pick: pickLine, node: lineNode } = useApprovalLine();
   const q = useQuery({ queryKey: ['claim', company.id, id], queryFn: () => api<D>(`/progress-claims/${id}`), retry: false });
   const { run, acting } = useRun(['claims', 'collections']);
   const [dialog, setDialog] = useState<null | 'cancel' | 'collect' | { cancelCol: string }>(null);
@@ -66,7 +68,7 @@ export default function Page() {
           {d.canRecall && <Button icon={<Undo2 className="size-3.5" />} loading={acting === 'recall'} onClick={() => run('recall', () => api(`/approvals/${a!.id}/cancel`, { method: 'POST' }), '결재를 회수했습니다').then(refresh)}>결재 회수</Button>}
           {can('claim:export') && <Button icon={<FileDown className="size-3.5" />} onClick={openPdf}>기성청구서 PDF</Button>}
           {d.status !== 'CANCELLED' && d.status !== 'PENDING' && can('claim:update') && <Button variant="danger" icon={<Ban className="size-3.5" />} onClick={() => setDialog('cancel')}>취소</Button>}
-          {['DRAFT', 'REJECTED'].includes(d.status) && can('claim:create') && <Button variant="primary" icon={<Send className="size-3.5" />} loading={acting === 'submit'} onClick={() => run('submit', () => api(`/progress-claims/${d.id}/submit`, { method: 'POST', json: { version: d.version } }), '대표 결재를 올렸습니다').then(refresh)}>결재 상신</Button>}
+          {['DRAFT', 'REJECTED'].includes(d.status) && can('claim:create') && <Button variant="primary" icon={<Send className="size-3.5" />} loading={acting === 'submit'} onClick={async () => { const line = await pickLine('CLAIM', d.thisSupply); if (line === null) return; run('submit', () => api(`/progress-claims/${d.id}/submit`, { method: 'POST', json: { version: d.version, approvalLine: line } }), '대표 결재를 올렸습니다').then(refresh); }}>결재 상신</Button>}
           {recognized && !inv && can('taxinvoice:create') && <Button variant="primary" icon={<Receipt className="size-3.5" />} loading={acting === 'inv'} onClick={async () => { const r = await run('inv', () => api<{ id: string }>(`/progress-claims/${d.id}/tax-invoice`, { method: 'POST' }), '매출 세금계산서 초안을 만들었습니다'); if (r && typeof r === 'object') router.push(`/tax-invoices/${(r as { id: string }).id}`); }}>세금계산서 만들기</Button>}
           {recognized && Number(d.outstanding) > 0 && can('payment:create') && <Button variant="primary" icon={<Wallet className="size-3.5" />} onClick={() => setDialog('collect')}>수금 기록</Button>}
         </div>
@@ -147,6 +149,7 @@ export default function Page() {
         onConfirm={async (reason) => { if (await run('cancel', () => api(`/progress-claims/${d.id}/cancel`, { method: 'POST', json: { reason } }), '취소했습니다')) { setDialog(null); refresh(); } }} />
       <ReasonDialog open={typeof dialog === 'object' && dialog !== null} title="수금을 취소할까요?" danger confirm="수금 취소" body="잘못 기록한 입금을 되돌립니다. 분개는 역분개되고 미수금이 다시 늘어납니다." onClose={() => setDialog(null)}
         onConfirm={async (reason) => { if (typeof dialog === 'object' && dialog && await run('cc', () => api(`/collections/${dialog.cancelCol}/cancel`, { method: 'POST', json: { reason } }), '수금을 취소했습니다')) { setDialog(null); refresh(); } }} />
+      {lineNode}
     </>
   );
 }

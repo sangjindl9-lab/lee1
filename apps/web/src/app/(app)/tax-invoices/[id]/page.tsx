@@ -1,5 +1,6 @@
 'use client';
 
+import { useApprovalLine } from '@/components/approval-line';
 import clsx from 'clsx';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
@@ -148,6 +149,7 @@ export default function Page() {
   const { id } = useParams<{ id: string }>();
   const qc = useQueryClient();
   const { can, company } = useSession();
+  const { pick: pickLine, node: lineNode } = useApprovalLine();
   const q = useQuery({ queryKey: ['tax-invoice', company.id, id], queryFn: () => api<Detail>(`/tax-invoices/${id}`), retry: false });
   const { run, acting } = useRun(['tax-invoices', 'journals']);
   const [dialog, setDialog] = useState<null | 'ignore' | 'unpost' | 'cancel' | 'issue' | 'vendor'>(null);
@@ -192,7 +194,7 @@ export default function Page() {
           {sales && d.status === 'ISSUED' && d.ntsStatus !== 'SENT' && can('taxinvoice:approve') && <Button variant="danger" icon={<Ban className="size-3.5" />} onClick={() => setDialog('cancel')}>발행 취소</Button>}
           {sales && d.status === 'ISSUED' && <Button icon={<RefreshCw className="size-3.5" />} loading={acting === 'refresh'} onClick={() => run('refresh', () => api(`/tax-invoices/${d.id}/refresh`, { method: 'POST' }), '전송 상태를 새로 확인했습니다').then(refresh)}>전송상태 확인</Button>}
           {sales && d.status === 'DRAFT' && can('taxinvoice:update') && <Link href={`/tax-invoices/${d.id}/edit`}><Button icon={<Pencil className="size-3.5" />}>수정</Button></Link>}
-          {sales && d.status === 'DRAFT' && can('taxinvoice:create') && <Button variant="primary" icon={<Send className="size-3.5" />} loading={acting === 'submit'} onClick={() => run('submit', () => api(`/tax-invoices/${d.id}/submit`, { method: 'POST', json: { version: d.version } }), '발행 결재를 올렸습니다').then(refresh)}>발행 결재 올리기</Button>}
+          {sales && d.status === 'DRAFT' && can('taxinvoice:create') && <Button variant="primary" icon={<Send className="size-3.5" />} loading={acting === 'submit'} onClick={async () => { const line = await pickLine('TAX_ISSUE', d.totalAmount); if (line === null) return; run('submit', () => api(`/tax-invoices/${d.id}/submit`, { method: 'POST', json: { version: d.version, approvalLine: line } }), '발행 결재를 올렸습니다').then(refresh); }}>발행 결재 올리기</Button>}
           {sales && ['READY', 'FAILED'].includes(d.status) && can('taxinvoice:approve') && <Button variant="primary" icon={<Send className="size-3.5" />} onClick={() => setDialog('issue')}>{d.status === 'FAILED' ? '다시 발행' : '발행'}</Button>}
         </div>
       </div>
@@ -255,6 +257,7 @@ export default function Page() {
       <ReasonDialog open={dialog === 'cancel'} title={d.status === 'ISSUED' ? '발행을 취소할까요?' : '계산서를 취소할까요?'} danger confirm="취소" body={d.status === 'ISSUED' ? '국세청 전송 전이라 연동사에서 발행을 취소합니다. 전송된 뒤에는 수정세금계산서를 발행해야 합니다.' : '기록은 남고 이 계산서는 더 이상 발행할 수 없습니다.'} onClose={() => setDialog(null)}
         onConfirm={async (reason) => { if (await run('cancel', () => api(`/tax-invoices/${d.id}/cancel`, { method: 'POST', json: { reason } }), '취소했습니다')) { setDialog(null); refresh(); } }} />
       {dialog === 'issue' && <IssueDialog d={d} open onClose={() => setDialog(null)} onDone={() => { setDialog(null); refresh(); }} />}
+      {lineNode}
     </>
   );
 }

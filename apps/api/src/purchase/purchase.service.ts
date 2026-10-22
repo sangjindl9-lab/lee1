@@ -128,7 +128,7 @@ export class PurchaseService implements OnModuleInit {
     const current = history[0];
     const myRoles = current ? await this.approvals.roleKeys(ctx.companyId!, ctx.user.id) : [];
     const curStep = current?.steps.find((s) => s.stepNo === current.currentStep);
-    const canAct = !!current && ['PENDING', 'HOLD'].includes(current.status) && !!curStep?.roleKey && myRoles.includes(curStep.roleKey);
+    const canAct = !!current && ['PENDING', 'HOLD'].includes(current.status) && !!curStep && this.approvals.isMine(curStep, ctx.user.id, myRoles);
     const canRecall = !!current && current.status === 'PENDING' && current.drafterId === ctx.user.id && !current.steps.some((s) => s.stepNo > 0 && (s.state === 'APPROVED' || s.state === 'HOLD'));
     return {
       canAct,
