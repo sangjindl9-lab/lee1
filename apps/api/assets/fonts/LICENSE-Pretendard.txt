@@ -1,0 +1,4 @@
+Pretendard — SIL Open Font License 1.1 (OFL-1.1)
+https://github.com/orioncactus/pretendard
+Copyright (c) 2021, Kil Hyung-jin, with Reserved Font Name Pretendard.
+PDF 발주서 등 출력물에 글꼴을 내장하기 위해 포함합니다. OFL 은 상업적 사용·내장·재배포를 허용합니다.

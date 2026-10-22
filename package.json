@@ -1,0 +1,10 @@
+{
+  "name": "ss-erp",
+  "private": true,
+  "workspaces": ["apps/*"],
+  "scripts": {
+    "dev:api": "npm run start:dev -w apps/api",
+    "dev:web": "npm run dev -w apps/web",
+    "test": "npm test -w apps/api"
+  }
+}

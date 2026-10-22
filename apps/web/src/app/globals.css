@@ -1,0 +1,233 @@
+@import 'tailwindcss';
+@import '@fontsource/ibm-plex-sans-kr/400.css';
+@import '@fontsource/ibm-plex-sans-kr/500.css';
+@import '@fontsource/ibm-plex-sans-kr/600.css';
+@import '@fontsource/ibm-plex-sans-kr/700.css';
+
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
+/*
+ * SS-ERP 디자인 토큰
+ * 먹(ink) · 지면(paper) · 면(surface) · 선(line) · 강철(steel, 주요 동작) · 인주(seal, 결재·음수·위험)
+ * 공종색: 전기 황동 · 통신 청색 · 건축 녹색 · 복합 보라 — 전선 색상 구분에서 착안
+ */
+:root {
+  --paper: #f5f6f8;
+  --surface: #ffffff;
+  --surface-2: #f0f2f5;
+  --surface-hover: #f6f8fa;
+  --line: #dde1e7;
+  --line-strong: #c5ccd6;
+  --ink: #17202b;
+  --ink-2: #3a4553;
+  --muted: #5b6573;
+  --faint: #8a93a0;
+  --steel: #2b4c6f;
+  --steel-hover: #223e5c;
+  --steel-soft: #e8eef5;
+  --steel-ink: #1f3a57;
+  --seal: #c42b1c;
+  --seal-soft: #fbeceb;
+  --ok: #2f7a4a;
+  --ok-soft: #e7f3ec;
+  --warn: #9a6200;
+  --warn-soft: #fdf3e1;
+  --trade-electric: #b7791f;
+  --trade-telecom: #2563b0;
+  --trade-building: #2f8a4a;
+  --trade-complex: #7a4fb5;
+  --nav: #16202c;
+  --nav-2: #1e2a39;
+  --nav-ink: #b8c2cf;
+  --nav-ink-strong: #f2f5f8;
+  --nav-line: #263344;
+  --focus: #4b86c4;
+  --shadow-pop: 0 10px 30px -12px rgb(16 24 40 / 0.28), 0 2px 6px -2px rgb(16 24 40 / 0.08);
+  color-scheme: light;
+}
+
+[data-theme='dark'] {
+  --paper: #0f141a;
+  --surface: #161c24;
+  --surface-2: #1c232d;
+  --surface-hover: #1f2731;
+  --line: #2a323d;
+  --line-strong: #3a4452;
+  --ink: #e6eaf0;
+  --ink-2: #c4ccd6;
+  --muted: #9aa4b1;
+  --faint: #6f7987;
+  --steel: #6f9cc9;
+  --steel-hover: #8ab0d6;
+  --steel-soft: #1d2b3b;
+  --steel-ink: #a9c6e4;
+  --seal: #f0705f;
+  --seal-soft: #3a1f1c;
+  --ok: #6cc08b;
+  --ok-soft: #17291f;
+  --warn: #e2ad52;
+  --warn-soft: #2d2415;
+  --trade-electric: #c4862a;
+  --trade-telecom: #4f8cd6;
+  --trade-building: #43a35f;
+  --trade-complex: #9b74dc;
+  --nav: #0b1016;
+  --nav-2: #141b24;
+  --nav-ink: #a3adba;
+  --nav-ink-strong: #eef2f6;
+  --nav-line: #1c2530;
+  --focus: #79a9dc;
+  --shadow-pop: 0 14px 36px -12px rgb(0 0 0 / 0.6), 0 2px 8px -2px rgb(0 0 0 / 0.4);
+  color-scheme: dark;
+}
+
+@theme inline {
+  --font-sans: 'IBM Plex Sans KR', 'Apple SD Gothic Neo', 'Malgun Gothic', system-ui, sans-serif;
+  --color-paper: var(--paper);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-hover: var(--surface-hover);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-steel: var(--steel);
+  --color-steel-hover: var(--steel-hover);
+  --color-steel-soft: var(--steel-soft);
+  --color-steel-ink: var(--steel-ink);
+  --color-seal: var(--seal);
+  --color-seal-soft: var(--seal-soft);
+  --color-ok: var(--ok);
+  --color-ok-soft: var(--ok-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-nav: var(--nav);
+  --color-nav-2: var(--nav-2);
+  --color-nav-ink: var(--nav-ink);
+  --color-nav-ink-strong: var(--nav-ink-strong);
+  --color-nav-line: var(--nav-line);
+  --color-electric: var(--trade-electric);
+  --color-telecom: var(--trade-telecom);
+  --color-building: var(--trade-building);
+  --color-complex: var(--trade-complex);
+  --shadow-pop: var(--shadow-pop);
+  --radius-ctl: 4px;
+  --radius-panel: 6px;
+  --text-title: 1.25rem;
+  --text-title--line-height: 1.75rem;
+  --text-section: 0.9375rem;
+  --text-section--line-height: 1.375rem;
+  --text-body: 0.8125rem;
+  --text-body--line-height: 1.25rem;
+  --text-meta: 0.75rem;
+  --text-meta--line-height: 1rem;
+  --text-figure: 1.375rem;
+  --text-figure--line-height: 1.75rem;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    font-feature-settings: 'tnum' 0;
+  }
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: 0.8125rem;
+    line-height: 1.25rem;
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection {
+    background: color-mix(in srgb, var(--steel) 22%, transparent);
+  }
+  :focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 1px;
+  }
+  input,
+  select,
+  textarea,
+  button {
+    font: inherit;
+  }
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+}
+
+@layer utilities {
+  /* 장부 숫자: 고정폭 숫자 + 우측 정렬 */
+  .num {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum' 1;
+    letter-spacing: -0.01em;
+  }
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: var(--line-strong) transparent;
+  }
+}
+
+/* 테스트 모드 띠 (3단계 외부연동에서 사용) */
+.test-mode-stripe {
+  background: repeating-linear-gradient(-45deg, #f6c844 0 12px, #1a1a1a 12px 24px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@keyframes stamp-in {
+  0% {
+    transform: scale(1.6) rotate(-14deg);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(0.94) rotate(-8deg);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1) rotate(-8deg);
+    opacity: 1;
+  }
+}
+.animate-stamp {
+  animation: stamp-in 420ms cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.animate-pop {
+  animation: pop-in 140ms ease-out both;
+}
+@keyframes slide-in-right {
+  from {
+    transform: translateX(24px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+.animate-drawer {
+  animation: slide-in-right 180ms ease-out both;
+}

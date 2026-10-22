@@ -1,0 +1,34 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1792594391689,
+      "tag": "0000_init_stage1",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1792594395286,
+      "tag": "0001_audit_guards",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792603418565,
+      "tag": "0002_stage2_purchase",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1792603419461,
+      "tag": "0003_stage2_guards",
+      "breakpoints": true
+    }
+  ]
+}

@@ -1,0 +1,31 @@
+# HTTPS 자동 발급(Let's Encrypt). 사내망 전용이면 ERP_DOMAIN 을 내부 주소로 두고 아래 tls internal 사용
+{
+	email {$ACME_EMAIL}
+}
+
+{$ERP_DOMAIN} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "same-origin"
+		-Server
+	}
+
+	# 파일 업로드 크기 제한 (API 서버 제한 20MB + 여유)
+	request_body {
+		max_size 25MB
+	}
+
+	# API 는 화면 서버를 거치지 않고 바로 전달
+	handle /api/* {
+		reverse_proxy api:4000
+	}
+	handle {
+		reverse_proxy web:3000
+	}
+
+	# tls internal
+}

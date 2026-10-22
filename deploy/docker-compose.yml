@@ -1,0 +1,104 @@
+# SS-ERP 운영 배포 (회사별 설치형)
+#   1) cp .env.example .env 후 값 채우기
+#   2) docker compose up -d --build
+#   3) https://<ERP_DOMAIN> 접속
+name: ss-erp
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: erp
+      POSTGRES_USER: erp
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD 를 .env 에 설정하세요}
+      TZ: Asia/Seoul
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U erp -d erp"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    # 데이터베이스는 외부에 열지 않는다 (내부 네트워크 전용)
+    networks: [internal]
+
+  api:
+    build: { context: .., dockerfile: apps/api/Dockerfile }
+    restart: unless-stopped
+    depends_on:
+      db: { condition: service_healthy }
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://erp:${DB_PASSWORD}@db:5432/erp
+      APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:?APP_ENCRYPTION_KEY 를 .env 에 설정하세요}
+      WEB_ORIGIN: https://${ERP_DOMAIN}
+      COOKIE_SECURE: "true"
+      TRUST_PROXY: "true"
+      FILE_STORAGE_PATH: /data/storage
+      LICENSE_PUBLIC_KEY: ${LICENSE_PUBLIC_KEY:-}
+      INIT_COMPANY_NAME: ${INIT_COMPANY_NAME:-}
+      INIT_COMPANY_BIZNO: ${INIT_COMPANY_BIZNO:-}
+      INIT_COMPANY_CODE: ${INIT_COMPANY_CODE:-MAIN}
+      INIT_ADMIN_ID: ${INIT_ADMIN_ID:-admin}
+      INIT_ADMIN_PASSWORD: ${INIT_ADMIN_PASSWORD:-}
+      SWAGGER_ENABLED: ${SWAGGER_ENABLED:-false}
+    volumes:
+      - file-storage:/data/storage
+    networks: [internal]
+
+  web:
+    build:
+      context: ..
+      dockerfile: apps/web/Dockerfile
+    restart: unless-stopped
+    environment:
+      API_INTERNAL_URL: http://api:4000
+    depends_on: [api]
+    networks: [internal]
+
+  proxy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      ERP_DOMAIN: ${ERP_DOMAIN:?ERP_DOMAIN 을 .env 에 설정하세요}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on: [web, api]
+    networks: [internal]
+
+  # 매일 새벽 DB·첨부파일 백업 (보관 기간 BACKUP_KEEP_DAYS)
+  backup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    depends_on:
+      db: { condition: service_healthy }
+    environment:
+      PGHOST: db
+      PGUSER: erp
+      PGPASSWORD: ${DB_PASSWORD}
+      PGDATABASE: erp
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-30}
+      BACKUP_HOUR: ${BACKUP_HOUR:-3}
+      TZ: Asia/Seoul
+    volumes:
+      - ./scripts:/scripts:ro
+      - ${BACKUP_DIR:-./backups}:/backups
+      - file-storage:/data/storage:ro
+    entrypoint: ["/bin/sh", "/scripts/backup-loop.sh"]
+    networks: [internal]
+
+volumes:
+  db-data:
+  file-storage:
+  caddy-data:
+  caddy-config:
+
+networks:
+  internal:
