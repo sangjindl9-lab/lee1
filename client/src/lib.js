@@ -16,7 +16,12 @@ export const REGIONS = [
   ['46', '전라남도'], ['29', '광주광역시'], ['12', '전남광주통합특별시'], ['50', '제주도'], ['99', '기타'],
 ];
 
-export const INDUSTRY_PRESETS = ['전기공사업', '정보통신공사업', '소방시설공사업', '기계설비', '전문소방'];
+// 업종 체크박스: [표시명, 검색어(업종명 일부 일치)]
+export const INDUSTRY_PRESETS = [
+  ['전기공사업', '전기공사업'], ['정보통신공사업', '정보통신공사업'], ['소방시설공사업', '소방시설'],
+  ['기계설비·가스', '기계설비'], ['건축공사업', '건축공사업'], ['토목공사업', '토목공사업'],
+  ['실내건축', '실내건축'], ['조경', '조경'],
+];
 
 export async function api(svc, op, params = {}) {
   const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== '' && v != null));

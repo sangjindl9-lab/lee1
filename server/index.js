@@ -115,6 +115,21 @@ async function fetchAll(svc, op, params, maxPages = 10) {
   return { items, truncated: first.totalCount > maxPages * rows, mock: first.mock };
 }
 
+// 업종 여러 개(쉼표 구분) → 업종별로 입찰공고를 받아 공고번호 기준으로 합침
+const splitNames = (v) => String(v || '').split(',').map((x) => x.trim()).filter(Boolean);
+async function fetchBidsByIndustry(kind, base, indstrytyNm, indstrytyCd) {
+  const names = splitNames(indstrytyNm);
+  const queries = names.length ? names.map((n) => ({ ...base, indstrytyNm: n })) : [{ ...base }];
+  if (indstrytyCd) queries.forEach((q) => { q.indstrytyCd = indstrytyCd; });
+  const parts = await Promise.all(queries.map((q) => fetchAll('bid', `getBidPblancListInfo${kind}PPSSrch`, q)));
+  const seen = new Set(); const items = [];
+  for (const p of parts) for (const b of p.items) {
+    const k = `${b.bidNtceNo}-${b.bidNtceOrd}`;
+    if (!seen.has(k)) { seen.add(k); items.push(b); }
+  }
+  return { items, truncated: parts.some((p) => p.truncated), mock: parts[0]?.mock };
+}
+
 // 낙찰·개찰 API는 업종 조건이 제대로 걸러지지 않음(실측: 개찰 0건, 낙찰은 거의 전체).
 // → 입찰공고 API(업종 필터 정상)로 해당 업종 공고번호를 먼저 받고, 결과를 그 번호로 거름.
 async function industryJoin(op, params) {
@@ -122,11 +137,9 @@ async function industryJoin(op, params) {
   const { indstrytyNm, indstrytyCd, pageNo = '1', numOfRows = '20', ...rest } = params;
   const dateDiv = rest.inqryDiv === '1' ? '1' : '2'; // 1:공고게시일, 2:개찰일 (세 API 공통 의미)
   const bidParams = { inqryDiv: dateDiv, inqryBgnDt: rest.inqryBgnDt, inqryEndDt: rest.inqryEndDt };
-  if (indstrytyNm) bidParams.indstrytyNm = indstrytyNm;
-  if (indstrytyCd) bidParams.indstrytyCd = indstrytyCd;
   // 개찰일 기준이면 공고가 기간보다 앞서 나왔을 수 있으므로 입찰공고도 개찰일 기준으로 조회
   const [bids, results] = await Promise.all([
-    fetchAll('bid', `getBidPblancListInfo${kind}PPSSrch`, bidParams),
+    fetchBidsByIndustry(kind, bidParams, indstrytyNm, indstrytyCd),
     fetchAll('scs', op, rest),
   ]);
   const nos = new Set(bids.items.map((b) => b.bidNtceNo));
@@ -157,15 +170,13 @@ async function awardForKind(kind, params) {
   const dateDiv = rest.inqryDiv === '1' ? '1' : '2';
   const dates = { inqryDiv: dateDiv, inqryBgnDt: rest.inqryBgnDt, inqryEndDt: rest.inqryEndDt };
   const bidParams = { ...dates };
-  if (indstrytyNm) bidParams.indstrytyNm = indstrytyNm;
-  if (indstrytyCd) bidParams.indstrytyCd = indstrytyCd;
   if (rest.prtcptLmtRgnCd && !indstrytyNm && !indstrytyCd) bidParams.prtcptLmtRgnCd = rest.prtcptLmtRgnCd;
   const scsParams = { ...dates };
   if (rest.prtcptLmtRgnCd) scsParams.prtcptLmtRgnCd = rest.prtcptLmtRgnCd;
 
   const [opens, bids, finals] = await Promise.all([
     fetchAll('scs', `getOpengResultListInfo${kind}PPSSrch`, rest),
-    fetchAll('bid', `getBidPblancListInfo${kind}PPSSrch`, bidParams),
+    fetchBidsByIndustry(kind, bidParams, indstrytyNm, indstrytyCd),
     fetchAll('scs', `getScsbidListSttus${kind}PPSSrch`, scsParams),
   ]);
   const bidMap = new Map();
@@ -245,7 +256,18 @@ app.get('/api/:svc/:op', async (req, res) => {
   try {
     const needJoin = svc === 'scs' && /PPSSrch$/.test(op) && (params.indstrytyNm || params.indstrytyCd)
       && params.inqryDiv !== '3' && !params.bidNtceNo;
-    const data = needJoin ? await industryJoin(op, params) : await upstream(svc, op, params);
+    const multiBid = svc === 'bid' && /PPSSrch$/.test(op) && splitNames(params.indstrytyNm).length > 1;
+    let data;
+    if (needJoin) data = await industryJoin(op, params);
+    else if (multiBid) {
+      const kind = (op.match(/(Cnstwk|Servc|Thng|Frgcpt|Etc)/) || [])[1];
+      const { indstrytyNm, pageNo, numOfRows, ...rest } = params;
+      const all = await fetchBidsByIndustry(kind, rest, indstrytyNm);
+      const items = all.items.sort((a, b) => String(b.bidNtceDt).localeCompare(String(a.bidNtceDt)));
+      const size = Number(numOfRows); const page = Number(pageNo);
+      data = { resultCode: '00', totalCount: items.length, pageNo: page, numOfRows: size,
+        items: items.slice((page - 1) * size, page * size), truncated: all.truncated, mock: all.mock };
+    } else data = await upstream(svc, op, params);
     res.json(data);
   } catch (err) {
     const msg = err.name === 'TimeoutError' ? '공공데이터 API 응답 지연 (잠시 후 다시 시도)' : err.message;

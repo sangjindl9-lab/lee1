@@ -12,9 +12,14 @@ export default function SearchPage({ page, onOpen, starred, onStar, myBizno }) {
   const initial = useMemo(() => ({
     inqryDiv: page.dateDivs[0][0], from: daysAgo(6), to: daysAgo(0), bidNtceNm: '', dminsttNm: '', ntceInsttNm: '',
     prtcptLmtRgnCd: '', indstrytyNm: '', priceMin: '', priceMax: '', bidClseExcpYn: '', bizno: '', numOfRows: '30',
+    industries: [],
     ...load(storeKey, {}),
     kind: 'Cnstwk', // 기본은 항상 공사
   }), [storeKey]);
+  // 예전 버전에서 저장된 단일 업종값을 체크박스로 옮김
+  if (!Array.isArray(initial.industries)) initial.industries = [];
+  const preset = INDUSTRY_PRESETS.find(([, v]) => v === initial.indstrytyNm);
+  if (preset) { initial.industries = [...new Set([...initial.industries, preset[1]])]; initial.indstrytyNm = ''; }
   const [f, setF] = useState(initial);
   const [pageNo, setPageNo] = useState(1);
   const [state, setState] = useState({ loading: false, error: '', items: [], total: 0, mock: false, joined: false, truncated: false });
@@ -34,7 +39,8 @@ export default function SearchPage({ page, onOpen, starred, onStar, myBizno }) {
       pageNo: p, numOfRows: f.numOfRows, inqryDiv: f.inqryDiv,
       inqryBgnDt: toApiDt(f.from), inqryEndDt: toApiDt(f.to, true),
       bidNtceNm: f.bidNtceNm.trim(), dminsttNm: f.dminsttNm.trim(), ntceInsttNm: f.ntceInsttNm.trim(),
-      prtcptLmtRgnCd: f.prtcptLmtRgnCd, indstrytyNm: f.indstrytyNm.trim(),
+      prtcptLmtRgnCd: f.prtcptLmtRgnCd,
+      indstrytyNm: [...f.industries, ...f.indstrytyNm.split(',')].map((x) => x.trim()).filter(Boolean).join(','),
       presmptPrceBgn: f.priceMin ? Math.round(Number(f.priceMin) * 1e4) : '',
       presmptPrceEnd: f.priceMax ? Math.round(Number(f.priceMax) * 1e4) : '',
     };
@@ -115,9 +121,25 @@ export default function SearchPage({ page, onOpen, starred, onStar, myBizno }) {
             <select value={f.prtcptLmtRgnCd} onChange={set('prtcptLmtRgnCd')}>
               {REGIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
             </select></label>
-          <label className="fld adv"><span>업종</span>
-            <input list="industries" value={f.indstrytyNm} onChange={set('indstrytyNm')} placeholder="예: 전기공사업" />
-            <datalist id="industries">{INDUSTRY_PRESETS.map((x) => <option key={x} value={x} />)}</datalist></label>
+          <div className="fld adv industry">
+            <span>업종 <small>(여러 개 선택 가능)</small></span>
+            <div className="chips">
+              {INDUSTRY_PRESETS.map(([label, v]) => {
+                const on = f.industries.includes(v);
+                return (
+                  <label key={v} className={on ? 'chip on' : 'chip'}>
+                    <input type="checkbox" checked={on}
+                      onChange={() => setF((p) => ({ ...p, industries: on ? p.industries.filter((x) => x !== v) : [...p.industries, v] }))} />
+                    {label}
+                  </label>
+                );
+              })}
+              <input className="chip-input" value={f.indstrytyNm} onChange={set('indstrytyNm')} placeholder="직접입력 (쉼표로 여러 개)" />
+              {(f.industries.length > 0 || f.indstrytyNm) && (
+                <button type="button" className="ghost xs" onClick={() => setF((p) => ({ ...p, industries: [], indstrytyNm: '' }))}>선택 해제</button>
+              )}
+            </div>
+          </div>
           <label className="fld adv"><span>추정가격 (만원)</span>
             <div className="dates">
               <input inputMode="numeric" value={f.priceMin} onChange={set('priceMin')} placeholder="이상" />
