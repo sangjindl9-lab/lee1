@@ -470,5 +470,5 @@ app.get(/^\/(?!api).*/, (_req, res) => {
 
 app.listen(PORT, () => {
   console.log(`입찰정보 서버 :${PORT} ${MOCK || !KEY ? '(샘플데이터 모드)' : ''}`);
-  if (process.env.SELFTEST === '1') setTimeout(() => selfTest(`http://localhost:${PORT}`), 1000);
+  if (process.env.SELFTEST === '1') setTimeout(() => selfTest(`http://localhost:${PORT}`).catch((e) => console.log('[SELFTEST] fail', e.message)), 1000);
 });
