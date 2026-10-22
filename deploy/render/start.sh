@@ -8,7 +8,8 @@ if [ -z "$DATABASE_URL" ]; then
   if [ ! -f /data/pg/PG_VERSION ]; then
     $PGBIN/initdb -D /data/pg -U erp --auth=trust -E UTF8 --locale=C.UTF-8 >/dev/null
   fi
-  $PGBIN/pg_ctl -D /data/pg -l /data/pg.log -w -o "-c listen_addresses=127.0.0.1 -c unix_socket_directories=/tmp/pgsock -c shared_buffers=32MB -c max_connections=40" start
+  mkdir -p /data/pgsock
+  $PGBIN/pg_ctl -D /data/pg -l /data/pg.log -w -o "-c listen_addresses=127.0.0.1 -c unix_socket_directories=/data/pgsock -c shared_buffers=32MB -c max_connections=40 -c dynamic_shared_memory_type=mmap -c huge_pages=off" start || { cat /data/pg.log; exit 1; }
   $PGBIN/psql -h 127.0.0.1 -U erp -d postgres -tAc "select 1 from pg_database where datname='erp'" | grep -q 1 || $PGBIN/createdb -h 127.0.0.1 -U erp erp
   export DATABASE_URL=postgresql://erp@127.0.0.1:5432/erp
   echo "내장 PostgreSQL 사용 (시연용)"
