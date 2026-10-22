@@ -47,7 +47,8 @@ function KrDetail({ type, row, onClose }) {
                 <div className="kv"><dt>접수기간</dt><dd>{d.period || '-'}</dd></div>
                 <div className="kv"><dt>개찰일시</dt><dd>{d.opengDt || '-'}</dd></div>
               </dl>
-              <h3>{type === 'award' ? '낙찰업체' : '개찰순위'} {d.bidders.length > 0 && <small>({d.bidders.length}개사)</small>}</h3>
+              <h3>{type === 'award' ? '낙찰업체' : '개찰 1순위'}</h3>
+              {type === 'openg' && <p className="muted small">국가철도공단은 개찰결과를 1순위 업체만 공개합니다.</p>}
               {!d.bidders.length && <p className="muted">공개된 업체 정보가 없습니다.</p>}
               {d.bidders.length > 0 && (
                 <div className="table-wrap tight">
@@ -125,7 +126,7 @@ export default function KrResult({ type }) {
         { key: '_tel', label: '전화번호', wch: 15, excel: (r) => ci(r).tel || '' },
         { key: '_fax', label: '팩스', wch: 15, excel: (r) => ci(r).fax || '' },
         { key: 'winnerAmt', label: type === 'award' ? '낙찰금액' : '투찰금액', wch: 14, excel: (r) => Number(r.winnerAmt) || '' },
-        { key: 'winnerRate', label: '투찰률', wch: 8 }, { key: 'bidderCount', label: '참가', wch: 6 },
+        { key: 'winnerRate', label: '투찰률', wch: 8 },
         { key: 'opengDt', label: '개찰일시', wch: 16 },
       ], `국가철도공단_${LABEL[type]}_${from}_${to}.xlsx`);
     } catch (e) {
@@ -175,7 +176,7 @@ export default function KrResult({ type }) {
             <tr>
               <th className="mid">구분</th><th>공고명</th><th className="num">설계금액</th><th className="mid">상태</th>
               <th className="corp">{type === 'award' ? '낙찰업체' : '1순위 업체'}</th><th className="num">금액</th>
-              {type === 'openg' && <th className="num hide-sm">참가</th>}<th className="date">개찰일시</th>
+<th className="date">개찰일시</th>
             </tr>
           </thead>
           <tbody>
@@ -188,7 +189,6 @@ export default function KrResult({ type }) {
                 <td className="mid"><span className={`pill ${/낙찰|계약/.test(r.status) ? 'ok' : /유찰/.test(r.status) ? 'warn' : ''}`}>{r.status}</span></td>
                 <td className="corp strong">{r.winnerNm ? <CompanyName name={r.winnerNm} bizno={r.winnerBizno} ceo={r.winnerCeo} /> : <span className="muted small">{r.detailError || '-'}</span>}</td>
                 <td className="num">{won(r.winnerAmt)}{r.winnerRate && <div className="s">{r.winnerRate}%</div>}</td>
-                {type === 'openg' && <td className="num hide-sm">{r.bidderCount || '-'}</td>}
                 <td className="date">{(r.opengDt || '').slice(5)}</td>
               </tr>
             ))}
