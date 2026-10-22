@@ -39,7 +39,7 @@ export interface ApprovalStep {
   state: 'WAITING' | 'APPROVED' | 'REJECTED' | 'HOLD' | 'SKIPPED'; actedByName: string | null; actedAt: string | null; comment: string | null;
 }
 export interface Approval {
-  id: string; docType: 'PURCHASE_ORDER'; docId: string; docCode: string | null; title: string; amount: string; projectId: string | null;
+  id: string; docType: string; docLabel?: string; href?: string | null; docId: string; docCode: string | null; title: string; amount: string; projectId: string | null;
   status: 'PENDING' | 'HOLD' | 'APPROVED' | 'REJECTED' | 'CANCELLED'; currentStep: number; drafterId: string; drafterName: string;
   submittedAt: string; completedAt: string | null; version: number; steps: ApprovalStep[];
 }
@@ -60,7 +60,7 @@ export interface Receipt {
 export interface PoDetail {
   id: string; code: string; revision: number; title: string; status: PoStatus; statusLabel: string; orderDate: string; deliveryDate: string | null;
   deliveryPlace: string | null; paymentTerms: string | null; ourContact: string | null; ourPhone: string | null; vendorContact: string | null; memo: string | null;
-  supplyAmount: string; vatAmount: string; totalAmount: string; vatRate: string; version: number; projectId: string; vendorId: string;
+  supplyAmount: string; vatAmount: string; totalAmount: string; vatRate: string; version: number; projectId: string; vendorId: string; costCodeId: string | null; requestId: string | null;
   approvedAt: string | null; sentAt: string | null; createdAt: string; updatedAt: string;
   lines: PoLine[];
   vendor: VendorRow;
@@ -71,3 +71,6 @@ export interface PoDetail {
   receipts: Receipt[];
 }
 export type PoDetailFull = PoDetail & { canAct: boolean; canRecall: boolean };
+
+/** 결재 문서 상세에 공통으로 붙는 결재 상태 */
+export interface DocApprovalState { approval: Approval | null; approvalHistory: Approval[]; canAct: boolean; canRecall: boolean }

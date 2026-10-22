@@ -31,6 +31,7 @@ async function session(loginId) {
 const buyer = await session('buyer');
 const ceo = await session('ceo');
 const site = await session('site1');
+const acct = await session('acct');
 
 const projects = (await buyer('GET', '/projects?size=50')).rows;
 const P = (name) => projects.find((p) => p.name.includes(name)).id;
@@ -102,3 +103,51 @@ await makePo({
 }, 'draft');
 
 console.log('시연용 발주서 5건 생성: 일부입고·결재대기·반려·입고완료·작성중');
+
+// ───── 2단계-B: 구매요청·계좌·지급결의·전표 ─────
+const yearStart = today.slice(0, 4) + '-01-01';
+const bank = await acct('POST', '/bank-accounts', { kind: 'BANK', name: '국민 운영계좌', bankName: '국민은행', accountNo: '123456-01-789012', holder: '㈜에스에스전력', openingBalance: '385000000', openingDate: yearStart });
+await acct('POST', '/bank-accounts', { kind: 'CARD', name: '법인카드(현대)', bankName: '현대카드', accountNo: '9410-1234-5678-0042' });
+
+await site('POST', '/purchase-requests', {
+  projectId: P('강서초'), title: '3층 교실 콘센트 추가 자재', neededBy: addDays(4), memo: '방과후 교실 증설분',
+  lines: [{ name: '콘센트', spec: '2구 접지 매입', unit: 'EA', qty: '40' }, { name: 'HFIX 전선', spec: '2.5sq', unit: 'm', qty: '600' }, { name: '전선관(HI-PVC)', spec: '28C', unit: '본', qty: '30' }],
+});
+
+const cc = Object.fromEntries((await acct('GET', '/cost-codes')).map((c) => [c.code, c.id]));
+const accs = Object.fromEntries((await acct('GET', '/accounts')).map((a) => [a.code, a.id]));
+async function approveAll(approvalId) {
+  for (const who of [acct, ceo]) {
+    const a = await who('GET', `/approvals/${approvalId}`);
+    if (a.status !== 'PENDING') return;
+    await who('POST', `/approvals/${a.id}/act`, { action: 'approve', version: a.version }).catch(() => undefined);
+  }
+}
+// 1) 마곡 분전반 대금 — 결재 완료 후 지급
+const p4d = await buyer('GET', `/purchase-orders/${p4.id}`);
+const r1 = await acct('POST', '/payment-requests', { kind: 'PURCHASE', title: '마곡 분전반·차단기 대금', requestDate: today, dueDate: addDays(10), vendorId: V('LS전선'), lines: p4d.receipts.map((r) => ({ sourceType: 'RECEIPT', sourceId: r.id })) });
+const s1 = await acct('POST', `/payment-requests/${r1.id}/submit`, { version: r1.version });
+await approveAll(s1.approvalId);
+const r1d = await acct('GET', `/payment-requests/${r1.id}`);
+await acct('POST', `/payment-requests/${r1.id}/pay`, { version: r1d.version, payDate: today, method: 'TRANSFER', bankAccountId: bank.id, memo: '인터넷뱅킹 이체' });
+// 2) 강서초 품질관리 수수료 — 품질관리비 예산 초과 사례
+const r2 = await acct('POST', '/payment-requests', { kind: 'EXPENSE', title: '강서초 전기설비 사용전검사 수수료', requestDate: today, projectId: P('강서초'), payeeName: '한국전기안전공사', lines: [{ description: '사용전검사·절연저항 시험', costCodeId: cc.C10, supplyAmount: '4380000', vatAmount: '438000' }] });
+const s2 = await acct('POST', `/payment-requests/${r2.id}/submit`, { version: r2.version });
+await approveAll(s2.approvalId);
+const r2d = await acct('GET', `/payment-requests/${r2.id}`);
+await acct('POST', `/payment-requests/${r2.id}/pay`, { version: r2d.version, payDate: today, method: 'TRANSFER', bankAccountId: bank.id });
+// 3) 강서초 안전용품 — 결재 대기 (회계관리자 검토 차례)
+const r3 = await site('POST', '/payment-requests', { kind: 'EXPENSE', title: '강서초 안전모·안전조끼 구입', requestDate: today, projectId: P('강서초'), vendorId: V('대한전기자재'), lines: [{ description: '안전모 20개, 안전조끼 20벌', costCodeId: cc.C09, supplyAmount: '640000', vatAmount: '64000' }] });
+await site('POST', `/payment-requests/${r3.id}/submit`, { version: r3.version });
+// 4) 강서초 1차 간선 대금 — 결재 완료, 지급 대기
+const p1d = await buyer('GET', `/purchase-orders/${p1.id}`);
+const r4 = await acct('POST', '/payment-requests', { kind: 'PURCHASE', title: '강서초 1차 간선 케이블 대금', requestDate: today, dueDate: addDays(20), vendorId: V('LS전선'), lines: p1d.receipts.map((r) => ({ sourceType: 'RECEIPT', sourceId: r.id })) });
+const s4 = await acct('POST', `/payment-requests/${r4.id}/submit`, { version: r4.version });
+await approveAll(s4.approvalId);
+
+// 수동 전표 — 본사 임차료 (미승인으로 남겨 승인 흐름을 볼 수 있게)
+await acct('POST', '/journal-entries', { entryDate: today, description: `${today.slice(5, 7)}월 본사 사무실 임차료`, lines: [{ accountId: accs['819'], debit: '3300000' }, { accountId: accs['103'], credit: '3300000' }] });
+// 이전 자동분개는 승인 (오늘 것 중 일부는 미승인으로 남김)
+const drafts = (await acct('GET', '/journal-entries?status=DRAFT&size=200')).rows.filter((r) => r.sourceType !== 'MANUAL').map((r) => r.id);
+if (drafts.length > 2) await acct('POST', '/journal-entries/approve', { ids: drafts.slice(2) });
+console.log('시연용 지급결의 4건·계좌 2개·구매요청 1건·전표 생성');

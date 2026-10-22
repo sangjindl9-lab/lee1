@@ -4,6 +4,7 @@ import { and, asc, desc, eq, inArray, lte, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { AccessService } from '../access/access.service';
 import { AccessContext, can, Ctx, RequirePermission } from '../access/context';
+import type { Resource } from '../access/catalog';
 import { AuditService } from '../audit/audit.service';
 import { notFound } from '../common/errors';
 import { D, moneyStr } from '../common/money';
@@ -11,15 +12,27 @@ import { ZodPipe } from '../common/zod.pipe';
 import { DB, DB_TOKEN, Tx } from '../db/db';
 import { approvalLines, approvals, approvalSteps, memberships, membershipRoles, roles, users } from '../db/schema';
 
-export type DocType = 'PURCHASE_ORDER';
-export const DOC_LABEL: Record<DocType, string> = { PURCHASE_ORDER: '발주서' };
+export const DOC_TYPES = ['PURCHASE_ORDER', 'PAYMENT_REQUEST', 'BUDGET', 'CLAIM', 'CONTRACT_CHANGE', 'SUBCONTRACT', 'SUB_CLAIM', 'TAX_ISSUE'] as const;
+export type DocType = (typeof DOC_TYPES)[number];
+export const DOC_LABEL: Record<DocType, string> = {
+  PURCHASE_ORDER: '발주서', PAYMENT_REQUEST: '지급결의서', BUDGET: '실행예산', CLAIM: '기성청구', CONTRACT_CHANGE: '변경계약',
+  SUBCONTRACT: '하도급계약', SUB_CLAIM: '하도급 기성', TAX_ISSUE: '세금계산서 발행',
+};
 /** 이 문서 종류는 결재선 마지막이 반드시 이 역할이어야 한다 (회사 규정) */
 const REQUIRED_FINAL: Partial<Record<DocType, string>> = { PURCHASE_ORDER: 'CEO' };
-const DEFAULT_LINES: Record<DocType, { title: string; roleKey: string }[]> = { PURCHASE_ORDER: [{ title: '승인', roleKey: 'CEO' }] };
+const CEO_ONLY = [{ title: '승인', roleKey: 'CEO' }];
+const DEFAULT_LINES: Record<DocType, { title: string; roleKey: string }[]> = {
+  PURCHASE_ORDER: CEO_ONLY, BUDGET: CEO_ONLY, CONTRACT_CHANGE: CEO_ONLY, SUBCONTRACT: CEO_ONLY, CLAIM: CEO_ONLY,
+  PAYMENT_REQUEST: [{ title: '검토', roleKey: 'ACCOUNTING_MANAGER' }, { title: '승인', roleKey: 'CEO' }],
+  SUB_CLAIM: [{ title: '검토', roleKey: 'CONTRACT_MANAGER' }, { title: '승인', roleKey: 'CEO' }],
+  TAX_ISSUE: [{ title: '승인', roleKey: 'ACCOUNTING_MANAGER' }],
+};
 
 export interface DocHandler {
   /** 문서를 볼 수 있는 리소스 (권한 확인용) */
-  resource: 'purchase';
+  resource: Resource;
+  /** 결재함에서 문서로 가는 화면 경로 */
+  href: (docId: string) => string;
   onApproved(tx: Tx, docId: string, ctx: AccessContext): Promise<void>;
   onRejected(tx: Tx, docId: string, ctx: AccessContext): Promise<void>;
   onCancelled(tx: Tx, docId: string, ctx: AccessContext): Promise<void>;
@@ -31,7 +44,7 @@ const ActDto = z.object({
   version: z.coerce.number().int().positive(),
 });
 const LineDto = z.object({
-  docType: z.enum(['PURCHASE_ORDER']),
+  docType: z.enum(DOC_TYPES),
   lines: z.array(z.object({
     minAmount: z.union([z.string(), z.number()]).transform((v) => String(v).replace(/,/g, '') || '0').refine((v) => /^\d{1,16}$/.test(v), '금액은 0 이상의 정수'),
     steps: z.array(z.object({ title: z.string().trim().min(1).max(10), roleKey: z.string().min(1).max(40) })).min(1, '결재 단계를 하나 이상 지정해 주세요').max(5),
@@ -210,7 +223,18 @@ export class ApprovalsService {
     }
     if (!list.length) return [];
     const steps = await this.db.select().from(approvalSteps).where(inArray(approvalSteps.approvalId, list.map((a) => a.id))).orderBy(asc(approvalSteps.stepNo));
-    return list.map((a) => ({ ...a, steps: steps.filter((s) => s.approvalId === a.id) }));
+    return list.map((a) => ({ ...a, docLabel: DOC_LABEL[a.docType as DocType] ?? a.docType, href: this.handlers.get(a.docType as DocType)?.href(a.docId) ?? null, steps: steps.filter((s) => s.approvalId === a.id) }));
+  }
+
+  /** 문서 상세 화면용: 현재 결재·이력·내가 처리할 차례인지·회수 가능한지 */
+  async docState(ctx: AccessContext, docType: DocType, docId: string) {
+    const history = await this.historyFor(ctx.companyId!, docType, docId);
+    const current = history[0] ?? null;
+    const myRoles = current ? await this.roleKeys(ctx.companyId!, ctx.user.id) : [];
+    const curStep = current?.steps.find((s) => s.stepNo === current.currentStep);
+    const canAct = !!current && ['PENDING', 'HOLD'].includes(current.status) && !!curStep?.roleKey && myRoles.includes(curStep.roleKey);
+    const canRecall = !!current && current.status === 'PENDING' && current.drafterId === ctx.user.id && !current.steps.some((s) => s.stepNo > 0 && (s.state === 'APPROVED' || s.state === 'HOLD'));
+    return { approval: current, approvalHistory: history, canAct, canRecall };
   }
 
   async counts(ctx: AccessContext) {
@@ -222,7 +246,7 @@ export class ApprovalsService {
   async getLines(ctx: AccessContext) {
     const rows = await this.db.select().from(approvalLines).where(eq(approvalLines.companyId, ctx.companyId!)).orderBy(approvalLines.docType, asc(approvalLines.minAmount));
     const roleList = await this.db.select({ key: roles.key, name: roles.name }).from(roles).where(eq(roles.companyId, ctx.companyId!));
-    return { lines: rows, roles: roleList, required: REQUIRED_FINAL, docTypes: DOC_LABEL };
+    return { lines: rows, roles: roleList, required: REQUIRED_FINAL, docTypes: Object.fromEntries([...this.handlers.keys()].map((k) => [k, DOC_LABEL[k]])), defaults: DEFAULT_LINES };
   }
 
   async setLines(ctx: AccessContext, dto: z.infer<typeof LineDto>) {
@@ -280,7 +304,8 @@ export class ApprovalsController {
   @Get('preview')
   @RequirePermission('approval', 'create')
   preview(@Ctx() ctx: AccessContext, @Query('docType') docType: string, @Query('amount') amount: string) {
-    return this.svc.preview(ctx, docType === 'PURCHASE_ORDER' ? 'PURCHASE_ORDER' : 'PURCHASE_ORDER', /^\d{1,16}(\.\d+)?$/.test(amount ?? '') ? amount : '0');
+    const dt = (DOC_TYPES as readonly string[]).includes(docType) ? (docType as DocType) : 'PURCHASE_ORDER';
+    return this.svc.preview(ctx, dt, /^\d{1,16}(\.\d+)?$/.test(amount ?? '') ? amount : '0');
   }
 
   @Get('lines')

@@ -29,6 +29,20 @@
       "when": 1792603419461,
       "tag": "0003_stage2_guards",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792641963164,
+      "tag": "0004_stage2b_accounting",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792641963921,
+      "tag": "0005_stage2b_guards",
+      "breakpoints": true
     }
   ]
 }

@@ -24,6 +24,14 @@ import { MaterialsController, MaterialsService } from './materials/materials';
 import { ApprovalsController, ApprovalsService } from './approvals/approvals';
 import { PurchaseController } from './purchase/purchase.controller';
 import { PurchaseService } from './purchase/purchase.service';
+import { PurchaseRequestsController, PurchaseRequestsService } from './purchase/requests';
+import { LedgerService } from './accounting/ledger.service';
+import { JournalsController, JournalsService } from './accounting/journals';
+import { LedgerReportsController, LedgerReportsService } from './accounting/reports';
+import { ClosingController, ClosingService } from './accounting/closing';
+import { BankAccountsController, BankAccountsService } from './bank/accounts';
+import { PaymentsController, PaymentsService } from './payments/payments';
+import { BudgetController, BudgetService } from './budget/budget';
 
 @Module({
   imports: [
@@ -33,11 +41,13 @@ import { PurchaseService } from './purchase/purchase.service';
   ],
   controllers: [
     HealthController, AuthController, CompaniesController, UsersController, MembersController, RolesController,
-    ProjectsController, VendorsController, MaterialsController, PurchaseController, ApprovalsController, FilesController, DashboardController, AuditController, LicenseController, TaxRateController,
+    ProjectsController, VendorsController, MaterialsController, PurchaseController, PurchaseRequestsController, ApprovalsController,
+    JournalsController, LedgerReportsController, ClosingController, BankAccountsController, PaymentsController, BudgetController, FilesController, DashboardController, AuditController, LicenseController, TaxRateController,
   ],
   providers: [
     AuditService, AccessService, AuthService, LicenseService, NumberingService, TaxRateService,
-    CompaniesService, UsersService, RolesService, ProjectsService, VendorsService, MaterialsService, ApprovalsService, PurchaseService, FilesService, DashboardService,
+    CompaniesService, UsersService, RolesService, ProjectsService, VendorsService, MaterialsService, ApprovalsService, PurchaseService, PurchaseRequestsService,
+    LedgerService, JournalsService, LedgerReportsService, ClosingService, BankAccountsService, PaymentsService, BudgetService, FilesService, DashboardService,
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: ErpGuard },
     { provide: APP_FILTER, useClass: AllExceptionsFilter },

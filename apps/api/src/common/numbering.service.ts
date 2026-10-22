@@ -27,10 +27,10 @@ export class NumberingService {
   }
 
   /** 연도별 문서번호: PO26-0001 (발주), GR26-0001 (검수) */
-  async yearly(tx: Tx, companyId: string, prefix: 'PO' | 'GR') {
-    const year = todayKST().slice(0, 4);
+  async yearly(tx: Tx, companyId: string, prefix: string, onDate?: string, pad = 4) {
+    const year = (onDate ?? todayKST()).slice(0, 4);
     const n = await this.next(tx, companyId, `${prefix}-${year}`);
-    return `${prefix}${year.slice(2)}-${String(n).padStart(4, '0')}`;
+    return `${prefix}${year.slice(2)}-${String(n).padStart(pad, '0')}`;
   }
 
   async materialCode(tx: Tx, companyId: string) {

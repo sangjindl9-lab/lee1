@@ -32,6 +32,8 @@ const PoBase = z.object({
   ourPhone: optText(30),
   vendorContact: optText(50),
   memo: optText(2000),
+  costCodeId: z.string().uuid().optional().nullable(),
+  requestId: z.string().uuid().optional().nullable(),
   lines: z.array(PoLineDto).min(1, '품목을 하나 이상 입력해 주세요').max(300, '한 발주서에 300개 품목까지 넣을 수 있습니다'),
 });
 const order = (v: { orderDate: string; deliveryDate?: string | null }, ctx: z.RefinementCtx) => {

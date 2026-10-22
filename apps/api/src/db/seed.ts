@@ -9,8 +9,9 @@
 import 'dotenv/config';
 import { eq, sql } from 'drizzle-orm';
 import { createDb, Tx } from './db';
-import { companies, materials, memberships, membershipRoles, projectAssignments, projects, roles, taxRateSettings, users, vendors } from './schema';
+import { budgetRevisionLines, budgetRevisions, companies, costCodes, materials, memberships, membershipRoles, projectAssignments, projectBudgets, projects, roles, taxRateSettings, users, vendors } from './schema';
 import { seedDefaultRoles } from '../admin/companies';
+import { ensureAccountingDefaults } from '../accounting/defaults';
 import { hashPassword, checkPasswordPolicy } from '../auth/password';
 import { isValidBizNo, normalizeBizNo } from '../common/bizno';
 import { encryptField, maskAccount } from '../common/crypto';
@@ -22,6 +23,8 @@ export async function seedBase(tx: Tx) {
     .insert(taxRateSettings)
     .values({ key: 'VAT', rate: '0.1000', effectiveFrom: '1977-07-01', note: '부가가치세법 제30조 (10%)', verifiedBy: '초기설정' })
     .onConflictDoNothing();
+  // 기존 회사에 새 버전의 회계 기본값(계정과목·원가항목·자동분개 규칙·결재선) 보충
+  for (const c of await tx.select({ id: companies.id }).from(companies)) await ensureAccountingDefaults(tx, c.id);
 }
 
 async function createCompanyWithAdmin(tx: Tx, c: { code: string; name: string; bizRegNo: string; ceoName?: string; address?: string }, admin: { loginId: string; name: string; password: string; mustChange: boolean; systemAdmin?: boolean }) {
@@ -91,7 +94,20 @@ async function demo(tx: Tx) {
       })
       .returning();
     if (i <= 2) await tx.insert(projectAssignments).values({ membershipId: site.id, projectId: p.id, roleInProject: '현장소장' });
+    // 원가항목별 실행예산 (샘플: 승인 완료 상태)
+    const share: Record<string, number[]> = { ELECTRIC: [52, 25, 0, 8, 3, 2, 4, 3, 2, 1], TELECOM: [45, 28, 0, 15, 2, 1, 4, 3, 1, 1], BUILDING: [40, 22, 0, 25, 4, 2, 3, 2, 1, 1], COMPLEX: [50, 24, 2, 10, 3, 2, 4, 3, 1, 1] };
+    const ccs = (await tx.select().from(costCodes).where(eq(costCodes.companyId, company.id))).sort((a, b) => a.sortOrder - b.sortOrder).slice(0, 10);
+    let left = BigInt(budget);
+    const parts = ccs.map((c, j) => {
+      const amt = j === ccs.length - 1 ? left : (BigInt(budget) * BigInt(share[trade][j])) / 100n;
+      left -= amt;
+      return { c, amt };
+    }).filter((x) => x.amt > 0n);
+    await tx.insert(projectBudgets).values(parts.map((x) => ({ companyId: company.id, projectId: p.id, costCodeId: x.c.id, amount: `${x.amt}.00` })));
+    const [rev] = await tx.insert(budgetRevisions).values({ companyId: company.id, projectId: p.id, code: `BR${year.slice(2)}-${String(i).padStart(4, '0')}`, title: '최초 실행예산 편성', reason: '계약 체결 후 공종별 실행예산 편성', status: 'APPROVED', totalBefore: '0.00', totalAfter: `${budget}.00`, approvedAt: new Date(cd) }).returning();
+    await tx.insert(budgetRevisionLines).values(parts.map((x) => ({ revisionId: rev.id, costCodeId: x.c.id, beforeAmount: '0.00', afterAmount: `${x.amt}.00` })));
   }
+  await tx.execute(sql`insert into number_sequence (company_id, key, last_value) values (${company.id}, 'BR-2026', 7) on conflict do nothing`);
   // 번호 시퀀스를 샘플 데이터 다음 번호부터 이어가도록 맞춘다
   await tx.execute(sql`insert into number_sequence (company_id, key, last_value) values (${company.id}, 'PROJECT-2026', 7), (${company.id}, 'PROJECT-2025', 7) on conflict do nothing`);
 

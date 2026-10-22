@@ -9,7 +9,8 @@ import { notFound, staleVersion } from '../common/errors';
 import { D, moneyStr, sumMoney, toWon } from '../common/money';
 import { NumberingService, TaxRateService } from '../common/numbering.service';
 import { DB, DB_TOKEN, Tx } from '../db/db';
-import { companies, goodsReceiptLines, goodsReceipts, materials, projects, purchaseOrderLines, purchaseOrders, vendorPrices, vendors } from '../db/schema';
+import { companies, costCodes, goodsReceiptLines, goodsReceipts, materials, projects, purchaseOrderLines, purchaseOrders, purchaseRequests, vendorPrices, vendors } from '../db/schema';
+import { LedgerService } from '../accounting/ledger.service';
 import { CreatePo, ListPoQuery, ListReceiptQuery, ReceiptDto } from './purchase.dto';
 
 type Po = typeof purchaseOrders.$inferSelect;
@@ -35,11 +36,13 @@ export class PurchaseService implements OnModuleInit {
     private readonly numbering: NumberingService,
     private readonly taxRates: TaxRateService,
     private readonly approvals: ApprovalsService,
+    private readonly ledger: LedgerService,
   ) {}
 
   onModuleInit() {
     this.approvals.register('PURCHASE_ORDER', {
       resource: 'purchase',
+      href: (id) => `/purchase-orders/${id}`,
       onApproved: async (tx, id, ctx) => {
         const [po] = await tx.update(purchaseOrders).set({ status: 'APPROVED', approvedAt: new Date(), version: sql`${purchaseOrders.version} + 1` }).where(eq(purchaseOrders.id, id)).returning();
         // 거래처별 최근 매입단가 갱신 (자재마스터와 연결된 품목만)
@@ -149,6 +152,15 @@ export class PurchaseService implements OnModuleInit {
     const [v] = await this.db.select({ id: vendors.id, bizStatus: vendors.bizStatus }).from(vendors).where(and(eq(vendors.id, dto.vendorId), eq(vendors.companyId, ctx.companyId!), isNull(vendors.deletedAt)));
     if (!v) throw new BadRequestException({ code: 'BAD_VENDOR', message: '선택한 거래처를 찾을 수 없습니다', fields: [{ field: 'vendorId', message: '거래처를 다시 선택해 주세요' }] });
     if (v.bizStatus === 'CLOSED') throw new BadRequestException({ code: 'VENDOR_CLOSED', message: '폐업한 거래처에는 발주할 수 없습니다' });
+    if (dto.costCodeId) {
+      const [cc] = await this.db.select({ id: costCodes.id }).from(costCodes).where(and(eq(costCodes.id, dto.costCodeId), eq(costCodes.companyId, ctx.companyId!)));
+      if (!cc) throw new BadRequestException({ code: 'BAD_COST_CODE', message: '원가항목을 다시 선택해 주세요', fields: [{ field: 'costCodeId', message: '원가항목을 다시 선택해 주세요' }] });
+    }
+    if (dto.requestId) {
+      const [rq] = await this.db.select({ id: purchaseRequests.id, projectId: purchaseRequests.projectId, status: purchaseRequests.status, poId: purchaseRequests.poId }).from(purchaseRequests).where(and(eq(purchaseRequests.id, dto.requestId), eq(purchaseRequests.companyId, ctx.companyId!)));
+      if (!rq) throw new BadRequestException({ code: 'BAD_REQUEST_DOC', message: '구매요청을 찾을 수 없습니다' });
+      if (rq.projectId !== dto.projectId) throw new BadRequestException({ code: 'REQUEST_PROJECT', message: '구매요청과 발주서의 현장이 다릅니다' });
+    }
     const mids = [...new Set(dto.lines.map((l) => l.materialId).filter(Boolean))] as string[];
     if (mids.length) {
       const ms = await this.db.select({ id: materials.id }).from(materials).where(and(inArray(materials.id, mids), eq(materials.companyId, ctx.companyId!)));
@@ -172,6 +184,7 @@ export class PurchaseService implements OnModuleInit {
     return {
       projectId: dto.projectId, vendorId: dto.vendorId, title: dto.title, orderDate: dto.orderDate, deliveryDate: dto.deliveryDate ?? null, deliveryPlace: dto.deliveryPlace,
       paymentTerms: dto.paymentTerms, ourContact: dto.ourContact, ourPhone: dto.ourPhone, vendorContact: dto.vendorContact, memo: dto.memo,
+      costCodeId: dto.costCodeId ?? null,
     };
   }
 
@@ -180,11 +193,18 @@ export class PurchaseService implements OnModuleInit {
     const c = await this.compute(dto);
     return this.db.transaction(async (tx) => {
       const code = await this.numbering.yearly(tx, ctx.companyId!, 'PO');
+      const head = this.header(dto);
+      if (!head.costCodeId) head.costCodeId = await this.ledger.defaultCostCode(tx, ctx.companyId!);
       const [po] = await tx
         .insert(purchaseOrders)
-        .values({ companyId: ctx.companyId!, code, ...this.header(dto), supplyAmount: c.supplyAmount, vatAmount: c.vatAmount, totalAmount: c.totalAmount, vatRate: c.vatRate, createdById: ctx.user.id, updatedById: ctx.user.id })
+        .values({ companyId: ctx.companyId!, code, ...head, requestId: dto.requestId ?? null, supplyAmount: c.supplyAmount, vatAmount: c.vatAmount, totalAmount: c.totalAmount, vatRate: c.vatRate, createdById: ctx.user.id, updatedById: ctx.user.id })
         .returning();
       await tx.insert(purchaseOrderLines).values(c.lines.map((l) => ({ ...l, poId: po.id })));
+      if (dto.requestId) {
+        const [rq] = await tx.update(purchaseRequests).set({ status: 'ORDERED', poId: po.id, updatedById: ctx.user.id, updatedAt: new Date(), version: sql`${purchaseRequests.version} + 1` })
+          .where(and(eq(purchaseRequests.id, dto.requestId), eq(purchaseRequests.status, 'REQUESTED'))).returning();
+        if (!rq) throw new ConflictException({ code: 'REQUEST_DONE', message: '이미 발주했거나 반려된 구매요청입니다' });
+      }
       await this.audit.fromCtx(ctx, { action: 'CREATE', resource: 'purchase_order', resourceId: po.id, summary: `발주서 작성 ${po.code} ${po.title} (${D(po.totalAmount).toFixed(0)}원)`, after: { ...po, lines: c.lines } }, tx);
       return po;
     });
@@ -201,7 +221,7 @@ export class PurchaseService implements OnModuleInit {
       const beforeLines = await tx.select().from(purchaseOrderLines).where(eq(purchaseOrderLines.poId, id));
       const [po] = await tx
         .update(purchaseOrders)
-        .set({ ...this.header(dto), supplyAmount: c.supplyAmount, vatAmount: c.vatAmount, totalAmount: c.totalAmount, vatRate: c.vatRate, updatedById: ctx.user.id, updatedAt: new Date(), version: sql`${purchaseOrders.version} + 1` })
+        .set({ ...this.header(dto), costCodeId: dto.costCodeId ?? before.costCodeId ?? (await this.ledger.defaultCostCode(tx, ctx.companyId!)), supplyAmount: c.supplyAmount, vatAmount: c.vatAmount, totalAmount: c.totalAmount, vatRate: c.vatRate, updatedById: ctx.user.id, updatedAt: new Date(), version: sql`${purchaseOrders.version} + 1` })
         .where(and(eq(purchaseOrders.id, id), eq(purchaseOrders.version, dto.version)))
         .returning();
       if (!po) throw staleVersion();
@@ -269,7 +289,10 @@ export class PurchaseService implements OnModuleInit {
   async cancel(ctx: AccessContext, id: string, version: number, reason: string) {
     return this.db.transaction(async (tx) => {
       await this.assertNoReceipts(tx, id);
-      return this.transition(ctx, id, version, ['DRAFT', 'REJECTED', 'APPROVED', 'SENT'], 'CANCELLED', {}, `발주 취소 — ${reason}`, tx);
+      const po = await this.transition(ctx, id, version, ['DRAFT', 'REJECTED', 'APPROVED', 'SENT'], 'CANCELLED', {}, `발주 취소 — ${reason}`, tx);
+      // 구매요청에서 만든 발주서면 요청을 다시 '요청' 상태로 돌려 다른 발주서로 처리할 수 있게 한다
+      if (po.requestId) await tx.update(purchaseRequests).set({ status: 'REQUESTED', poId: null, version: sql`${purchaseRequests.version} + 1` }).where(and(eq(purchaseRequests.id, po.requestId), eq(purchaseRequests.poId, id)));
+      return po;
     });
   }
 
@@ -328,6 +351,19 @@ export class PurchaseService implements OnModuleInit {
         await tx.update(purchaseOrderLines).set({ receivedQty: sql`${purchaseOrderLines.receivedQty} + ${p.qty}` }).where(eq(purchaseOrderLines.id, p.pl.id));
       }
       const status = await this.recomputeStatus(tx, poId);
+      // 자동분개: 공사원가(원가항목 계정) / 외상매입금 — 발생원가는 부가세를 제외한 공급가액
+      const costCodeId = po.costCodeId ?? (await this.ledger.defaultCostCode(tx, ctx.companyId!));
+      if (costCodeId && D(gr.supplyAmount).gt(0)) {
+        const costAcc = await this.ledger.costAccount(tx, ctx.companyId!, costCodeId);
+        const ap = await this.ledger.ruleAccount(tx, ctx.companyId!, 'AP_TRADE');
+        await this.ledger.post(tx, ctx, {
+          date: dto.receiptDate, description: `자재 검수 ${gr.code} · ${po.title}`, sourceType: 'RECEIPT', sourceId: gr.id, sourceCode: gr.code,
+          lines: [
+            { accountId: costAcc, debit: gr.supplyAmount, projectId: po.projectId, vendorId: po.vendorId, costCodeId, memo: `${po.code} 검수` },
+            { accountId: ap, credit: gr.supplyAmount, projectId: po.projectId, vendorId: po.vendorId, memo: `${po.code} 검수` },
+          ],
+        });
+      }
       await this.audit.fromCtx(ctx, { action: 'CREATE', resource: 'goods_receipt', resourceId: poId, summary: `검수 ${gr.code} (${po.code}) ${prepared.length}개 품목, ${D(gr.supplyAmount).toFixed(0)}원 → ${PO_STATUS_LABEL[status]}`, after: { receipt: gr, lines: prepared.map((p) => ({ name: p.pl.name, qty: p.qty })) } }, tx);
       return { ...gr, poStatus: status };
     });
@@ -339,6 +375,9 @@ export class PurchaseService implements OnModuleInit {
       const [gr] = await tx.select().from(goodsReceipts).where(and(eq(goodsReceipts.id, receiptId), eq(goodsReceipts.companyId, ctx.companyId!), this.access.projectScope(ctx, goodsReceipts.projectId)));
       if (!gr) throw notFound('검수 내역');
       await tx.execute(sql`select id from purchase_order where id = ${gr.poId} for update`);
+      // 지급결의에 걸린 검수는 결의부터 취소해야 한다
+      const used = await tx.execute(sql`select r.code from payment_request_line l join payment_request r on r.id = l.request_id where l.active_source_key = ${'RECEIPT:' + receiptId}`);
+      if (used.rows.length) throw new ConflictException({ code: 'RECEIPT_IN_PAYMENT', message: `지급결의 ${(used.rows[0] as { code: string }).code}에 포함된 검수입니다. 지급결의를 먼저 취소하세요` });
       const [u] = await tx.update(goodsReceipts).set({ status: 'CANCELLED', cancelledAt: new Date(), cancelReason: reason, updatedById: ctx.user.id, version: sql`${goodsReceipts.version} + 1` }).where(and(eq(goodsReceipts.id, receiptId), eq(goodsReceipts.status, 'CONFIRMED'))).returning();
       if (!u) throw new ConflictException({ code: 'ALREADY_CANCELLED', message: '이미 취소된 검수입니다' });
       const lines = await tx.select().from(goodsReceiptLines).where(eq(goodsReceiptLines.receiptId, receiptId));
@@ -346,6 +385,7 @@ export class PurchaseService implements OnModuleInit {
       const [po] = await tx.select().from(purchaseOrders).where(eq(purchaseOrders.id, gr.poId));
       if (po.status === 'CLOSED') await tx.update(purchaseOrders).set({ status: 'PARTIAL' }).where(eq(purchaseOrders.id, gr.poId));
       const status = await this.recomputeStatus(tx, gr.poId);
+      await this.ledger.reverseSource(tx, ctx, 'RECEIPT', receiptId, `검수 취소 — ${reason}`);
       await this.audit.fromCtx(ctx, { action: 'CANCEL', resource: 'goods_receipt', resourceId: gr.poId, summary: `검수 취소 ${gr.code} — ${reason} → ${PO_STATUS_LABEL[status]}` }, tx);
       return { poStatus: status };
     });

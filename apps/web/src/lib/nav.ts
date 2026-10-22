@@ -37,8 +37,8 @@ export const NAV: NavGroup[] = [
     items: [
       { label: '현장 목록', href: '/projects', perm: 'project:read', stage: 1 },
       { label: '계약·변경계약', href: '/soon/contracts', perm: 'contract:read', stage: 4, hint: '최초계약 보존, 변경계약 이력, 승인 전 미확정 처리' },
-      { label: '실행예산', href: '/soon/budgets', perm: 'budget:read', stage: 2, hint: '공종·원가항목별 계획·발주확정·발생·지급·잔여 구분' },
-      { label: '현장 손익', href: '/soon/project-pl', perm: 'report:read', stage: 2, hint: '현장별 매출·원가·미수·미지급 실시간 집계' },
+      { label: '실행예산', href: '/budgets', perm: 'budget:read', stage: 2, live: true },
+      { label: '현장 손익', href: '/project-pl', perm: 'report:read', stage: 2, live: true },
     ],
   },
   {
@@ -46,6 +46,7 @@ export const NAV: NavGroup[] = [
     items: [
       { label: '거래처', href: '/vendors', perm: 'vendor:read', stage: 1 },
       { label: '자재마스터', href: '/materials', perm: 'material:read', stage: 2, live: true },
+      { label: '구매요청', href: '/purchase-requests', perm: 'purchase:read', stage: 2, live: true },
       { label: '발주서', href: '/purchase-orders', perm: 'purchase:read', stage: 2, live: true },
       { label: '납품·검수', href: '/receipts', perm: 'receipt:read', stage: 2, live: true },
       { label: '문서 스캔(AI)', href: '/soon/scan', perm: 'document:read', stage: 3, hint: '발주서·거래명세표·세금계산서 사진/PDF 자동 인식' },
@@ -70,8 +71,8 @@ export const NAV: NavGroup[] = [
   {
     key: 'fund', label: '자금', icon: Landmark,
     items: [
-      { label: '지급결의', href: '/soon/expenses', perm: 'expense:read', stage: 2, hint: '지급 요청과 실제 이체를 분리, 결재 후 지급' },
-      { label: '계좌·카드', href: '/soon/bank', perm: 'bank:read', stage: 5, hint: '계좌·법인카드 거래내역 (엑셀 업로드 우선)' },
+      { label: '지급결의', href: '/payment-requests', perm: 'expense:read', stage: 2, live: true },
+      { label: '계좌·카드', href: '/bank', perm: 'bank:read', stage: 5, live: true },
       { label: '거래내역 대사', href: '/soon/reconcile', perm: 'bank:read', stage: 5, hint: '입출금과 미수·미지급 자동 대조' },
       { label: '자금일보·수지', href: '/soon/cashflow', perm: 'bank:read', stage: 5, hint: '일일 자금현황, 월별 예상 현금흐름' },
     ],
@@ -79,10 +80,10 @@ export const NAV: NavGroup[] = [
   {
     key: 'acct', label: '회계', icon: BookOpen,
     items: [
-      { label: '전표', href: '/soon/journals', perm: 'journal:read', stage: 2, hint: '복식부기 전표, 자동분개, 승인·역분개' },
-      { label: '원장·시산표', href: '/soon/ledgers', perm: 'journal:read', stage: 2, hint: '계정별·거래처·현장 보조원장, 합계잔액시산표' },
-      { label: '재무제표', href: '/soon/statements', perm: 'report:read', stage: 2, hint: '손익계산서·재무상태표·공사원가명세서' },
-      { label: '월마감', href: '/soon/closing', perm: 'closing:read', stage: 2, hint: '마감 후 기간 잠금' },
+      { label: '전표', href: '/journals', perm: 'journal:read', stage: 2, live: true },
+      { label: '원장·시산표', href: '/ledgers', perm: 'journal:read', stage: 2, live: true },
+      { label: '재무제표', href: '/statements', perm: 'journal:read', stage: 2, live: true },
+      { label: '월마감', href: '/closing', perm: 'closing:read', stage: 2, live: true },
     ],
   },
   { key: 'labor', label: '노무', icon: HardHat, items: [{ label: '작업일보·노무비', href: '/soon/labor', perm: 'labor:read', stage: 4, hint: '현장별 작업자·공수·노무비 집계' }] },
@@ -101,6 +102,7 @@ export const NAV: NavGroup[] = [
       { label: '사용자', href: '/admin/users', perm: 'user:read', stage: 1 },
       { label: '역할·권한', href: '/admin/roles', perm: 'role:read', stage: 1 },
       { label: '감사로그', href: '/admin/audit', perm: 'audit:read', stage: 1 },
+      { label: '계정과목·분개규칙', href: '/admin/accounting', perm: 'journal:read', stage: 2, live: true },
       { label: '세율 설정', href: '/admin/tax-rates', perm: 'company:read', stage: 1 },
       { label: '라이선스', href: '/admin/license', perm: 'license:read', stage: 1 },
       { label: '외부 연동', href: '/soon/integrations', perm: 'integration:read', stage: 3, hint: '팝빌·바로빌·홈택스·OCR·국세청 상태조회' },

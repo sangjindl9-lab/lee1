@@ -11,6 +11,8 @@ import { projects, vendors } from '../db/schema';
 import { can } from '../access/context';
 import { ApprovalsService } from '../approvals/approvals';
 import { PurchaseService } from '../purchase/purchase.service';
+import { PaymentsService } from '../payments/payments';
+import { BudgetService } from '../budget/budget';
 
 /**
  * 대시보드 — 실제 저장된 데이터만 집계한다.
@@ -19,7 +21,7 @@ import { PurchaseService } from '../purchase/purchase.service';
  */
 @Injectable()
 export class DashboardService {
-  constructor(@Inject(DB_TOKEN) private readonly db: DB, private readonly access: AccessService, private readonly purchase: PurchaseService, private readonly approvals: ApprovalsService) {}
+  constructor(@Inject(DB_TOKEN) private readonly db: DB, private readonly access: AccessService, private readonly purchase: PurchaseService, private readonly approvals: ApprovalsService, private readonly payments: PaymentsService, private readonly budget: BudgetService) {}
 
   async summary(ctx: AccessContext) {
     const scope = and(eq(projects.companyId, ctx.companyId!), isNull(projects.deletedAt), this.access.projectScope(ctx, projects.id));
@@ -78,6 +80,15 @@ export class DashboardService {
     const pending = (stage: number) => ({ available: false as const, stage });
     const purchase = can(ctx, 'purchase', 'read') ? await this.purchase.metrics(ctx) : null;
     const myApprovals = await this.approvals.counts(ctx);
+    const payables = can(ctx, 'expense', 'read') ? await this.payments.metrics(ctx) : null;
+    const draftJournals = can(ctx, 'journal', 'read') && ctx.scope !== 'CONFIRMED_ONLY'
+      ? ((await this.db.execute(sql`select count(*)::int n from journal_entry where company_id = ${ctx.companyId} and status = 'DRAFT'`)).rows[0] as { n: number }).n
+      : null;
+    let costs: { actual: string; committed: string; budget: string; alerts: Awaited<ReturnType<BudgetService['overview']>>['alerts'] } | null = null;
+    if (can(ctx, 'budget', 'read')) {
+      const o = await this.budget.overview(ctx, { status: 'ACTIVE' });
+      costs = { actual: o.totals.actual, committed: o.totals.committed, budget: o.totals.budget, alerts: o.alerts.slice(0, 8) };
+    }
     return {
       asOf: new Date().toISOString(),
       scope: ctx.scope,
@@ -101,6 +112,9 @@ export class DashboardService {
       vendorCount,
       purchase,
       approvals: myApprovals,
+      payables,
+      draftJournals,
+      costs,
       // 이후 단계 지표 — 해당 기능이 구현되기 전에는 값을 만들어 내지 않는다
       pendingMetrics: {
         revenue: pending(RESOURCES.claim.stage), purchases: pending(RESOURCES.purchase.stage), cost: pending(RESOURCES.journal.stage),

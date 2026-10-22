@@ -6,6 +6,7 @@ import { ClipboardPaste, Plus, Send, Trash2 } from 'lucide-react';
 import { ClipboardEvent, FormEvent, KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Combobox, type ComboOption } from '@/components/combobox';
+import { CostCodeSelect } from '@/components/pickers';
 import { ApprovalBox, Button, Field, Input, Textarea, Won } from '@/components/ui';
 import { api, ApiError, qs } from '@/lib/api';
 import { formatMoneyInput, won } from '@/lib/format';
@@ -122,19 +123,24 @@ function NameCell({ line, vendorId, onPick, onChange, onKeyDown, cellRef }: { li
 
 const cellCls = 'h-8 w-full bg-transparent px-2 outline-none placeholder:text-faint focus:bg-steel-soft/50';
 
-export function PoForm({ initial, onSaved, onCancel }: { initial?: PoDetail; onSaved: (id: string, submitted: boolean) => void; onCancel: () => void }) {
+export interface PoSeed { requestId: string; requestCode: string; projectId: string; title: string; deliveryDate: string | null; memo: string | null; lines: { materialId: string | null; name: string; spec: string | null; unit: string; qty: string; memo: string | null }[] }
+
+export function PoForm({ initial, seed, onSaved, onCancel }: { initial?: PoDetail; seed?: PoSeed; onSaved: (id: string, submitted: boolean) => void; onCancel: () => void }) {
   const { projects, project: ctxProject, me } = useSession();
   const today = new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10);
-  const [projectId, setProjectId] = useState<string | null>(initial?.projectId ?? ctxProject?.id ?? null);
+  const [projectId, setProjectId] = useState<string | null>(initial?.projectId ?? seed?.projectId ?? ctxProject?.id ?? null);
+  const [costCodeId, setCostCodeId] = useState<string | null>(initial?.costCodeId ?? null);
   const [vendor, setVendor] = useState<{ id: string; name: string } | null>(initial ? { id: initial.vendorId, name: initial.vendor.name } : null);
   const [h, setH] = useState({
-    title: initial?.title ?? '', orderDate: initial?.orderDate ?? today, deliveryDate: initial?.deliveryDate ?? '', deliveryPlace: initial?.deliveryPlace ?? '',
-    paymentTerms: initial?.paymentTerms ?? '', ourContact: initial?.ourContact ?? me.user.name, ourPhone: initial?.ourPhone ?? '', vendorContact: initial?.vendorContact ?? '', memo: initial?.memo ?? '',
+    title: initial?.title ?? seed?.title ?? '', orderDate: initial?.orderDate ?? today, deliveryDate: initial?.deliveryDate ?? seed?.deliveryDate ?? '', deliveryPlace: initial?.deliveryPlace ?? '',
+    paymentTerms: initial?.paymentTerms ?? '', ourContact: initial?.ourContact ?? me.user.name, ourPhone: initial?.ourPhone ?? '', vendorContact: initial?.vendorContact ?? '', memo: initial?.memo ?? seed?.memo ?? '',
   });
   const [lines, setLines] = useState<LineDraft[]>(() =>
     initial?.lines.length
       ? initial.lines.map((l) => ({ key: newKey(), materialId: l.materialId, name: l.name, spec: l.spec ?? '', unit: l.unit, qty: trimDec(l.qty), unitPrice: trimDec(l.unitPrice), taxType: l.taxType, memo: l.memo ?? '' }))
-      : [blank(), blank(), blank()],
+      : seed?.lines.length
+        ? seed.lines.map((l) => ({ ...blank(), materialId: l.materialId, name: l.name, spec: l.spec ?? '', unit: l.unit, qty: trimDec(l.qty), memo: l.memo ?? '' }))
+        : [blank(), blank(), blank()],
   );
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<string | null>(null);
@@ -261,7 +267,7 @@ export function PoForm({ initial, onSaved, onCancel }: { initial?: PoDetail; onS
     setBusy(submit ? 'submit' : 'save');
     try {
       const body = {
-        projectId, vendorId: vendor!.id, ...h, deliveryDate: h.deliveryDate || null,
+        projectId, vendorId: vendor!.id, ...h, deliveryDate: h.deliveryDate || null, costCodeId, ...(seed && !initial ? { requestId: seed.requestId } : {}),
         lines: used.map((l) => ({ materialId: l.materialId, name: l.name, spec: l.spec, unit: l.unit, qty: l.qty, unitPrice: l.unitPrice || '0', taxType: l.taxType, memo: l.memo })),
       };
       const saved = initial
@@ -314,6 +320,7 @@ export function PoForm({ initial, onSaved, onCancel }: { initial?: PoDetail; onS
             </Field>
             <Field label="납품기한" error={errors.deliveryDate}><Input type="date" value={h.deliveryDate} onChange={(e) => setH({ ...h, deliveryDate: e.target.value })} aria-invalid={!!errors.deliveryDate} /></Field>
             <Field label="발주 제목" required error={errors.title} className="lg:col-span-2"><Input value={h.title} onChange={(e) => setH({ ...h, title: e.target.value })} aria-invalid={!!errors.title} /></Field>
+            <Field label="원가항목" hint="현장 원가에 반영될 항목 (기본 재료비)"><CostCodeSelect value={costCodeId} onChange={(id) => setCostCodeId(id)} emptyLabel="재료비 (기본)" /></Field>
             <Field label="결제조건"><Input value={h.paymentTerms} onChange={(e) => setH({ ...h, paymentTerms: e.target.value })} placeholder="예: 월말 마감 익월 15일" /></Field>
             <Field label="납품장소" className="lg:col-span-2"><Input value={h.deliveryPlace} onChange={(e) => setH({ ...h, deliveryPlace: e.target.value })} placeholder="비워 두면 현장 주소" /></Field>
             <Field label="거래처 담당자"><Input value={h.vendorContact} onChange={(e) => setH({ ...h, vendorContact: e.target.value })} /></Field>

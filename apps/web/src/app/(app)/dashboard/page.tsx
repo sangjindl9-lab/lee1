@@ -31,6 +31,9 @@ interface Summary {
   vendorCount: number;
   purchase: { pending: number; draft: number; confirmed: string; confirmedSupply: string; open: number; receivedSupply: string } | null;
   approvals: { todo: number; minePending: number };
+  payables: { pending: number; approvedCount: number; approvedAmount: string; overdue: number } | null;
+  draftJournals: number | null;
+  costs: { actual: string; committed: string; budget: string; alerts: { projectId: string; projectName: string; costCodeName: string; level: string; planned: string; used: string; usedRate: string | null; ackedBy: string | null }[] } | null;
   pendingMetrics: Record<string, { available: false; stage: number }>;
 }
 
@@ -202,7 +205,7 @@ export default function DashboardPage() {
         )}
         {d && (
           <p className="border-t border-line bg-surface-2 px-4 py-2.5 text-meta text-muted sm:hidden">
-            매출·수금·현금·미지급·세금계산서 지표는 해당 기능이 연결되면 집계됩니다.
+            매출·수금·세금계산서 지표는 해당 기능이 연결되면 집계됩니다.
           </p>
         )}
         {d && (
@@ -221,12 +224,31 @@ export default function DashboardPage() {
                 <PendingCell label="검수 완료" stage={2} />
               </>
             )}
-            <PendingCell label="누적 매출·수금" stage={d.pendingMetrics.revenue.stage} />
-            <PendingCell label="현금·미지급금" stage={d.pendingMetrics.payables.stage} />
-            <PendingCell label="세금계산서" stage={d.pendingMetrics.taxInvoices.stage} />
+            {d.costs ? <MiniCell label="현장 발생원가" href="/budgets" tone={d.costs.alerts.some((a) => a.level === 'OVER') ? 'seal' : undefined} sub={d.costs.alerts.length ? `예산 경고 ${d.costs.alerts.length}건` : `예산 ${wonShort(d.costs.budget)}`}><span className="num">{wonShort(d.costs.actual)}</span></MiniCell> : <PendingCell label="누적 매출·수금" stage={d.pendingMetrics.revenue.stage} />}
+            {d.payables ? <MiniCell label="지급 대기 (결재 완료)" href="/payment-requests?status=APPROVED" tone={d.payables.overdue ? 'seal' : undefined} sub={d.payables.overdue ? `지급예정일 지남 ${d.payables.overdue}건` : `${d.payables.approvedCount}건 · 결재중 ${d.payables.pending}`}><span className="num">{wonShort(d.payables.approvedAmount)}</span></MiniCell> : <PendingCell label="현금·미지급금" stage={d.pendingMetrics.payables.stage} />}
+            {d.draftJournals !== null ? <MiniCell label="미승인 전표" href="/journals?status=DRAFT" sub="승인해야 장부에 반영"><span className="num">{d.draftJournals}</span><span className="ml-0.5 text-meta font-normal text-muted">건</span></MiniCell> : <PendingCell label="세금계산서" stage={d.pendingMetrics.taxInvoices.stage} />}
           </div>
         )}
       </section>
+
+      {!!d?.costs?.alerts.length && (
+        <section className="mt-4 rounded-[6px] border border-seal/35 bg-surface">
+          <header className="flex items-center justify-between border-b border-line px-4 py-2.5">
+            <h2 className="text-section font-semibold text-seal">실행예산 경고 <span className="num font-normal">{d.costs.alerts.length}</span></h2>
+            <Link href="/budgets" className="text-meta text-steel-ink hover:underline">실행예산 보기</Link>
+          </header>
+          <ul className="divide-y divide-line">
+            {d.costs.alerts.slice(0, 5).map((a) => (
+              <li key={`${a.projectId}${a.costCodeName}`}><Link href={`/budgets/${a.projectId}`} className="flex flex-wrap items-center gap-x-3 gap-y-0.5 px-4 py-2 hover:bg-surface-hover">
+                <span className={clsx('rounded-[3px] px-1.5 text-meta font-medium', a.level === 'WARN' ? 'bg-warn-soft text-warn' : 'border border-seal/45 text-seal')}>{a.level === 'WARN' ? '90% 도달' : '초과'}</span>
+                <span className="min-w-0 flex-1 truncate"><b className="font-medium">{a.projectName}</b> · {a.costCodeName}</span>
+                <span className="num text-meta text-ink-2">계획 {wonShort(a.planned)} · 사용 {wonShort(a.used)}</span>
+                <span className="text-meta">{a.ackedBy ? <span className="text-muted">{a.ackedBy} 확인</span> : <span className="font-medium text-seal">미확인</span>}</span>
+              </Link></li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
         <Panel title="진행 현장 공정" actions={<Link href="/projects?status=IN_PROGRESS" className="text-meta text-steel-ink hover:underline">전체 보기</Link>} bodyClassName="p-0">

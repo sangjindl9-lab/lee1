@@ -10,7 +10,8 @@ import { diffOnly } from '../common/diff';
 import { notFound, staleVersion } from '../common/errors';
 import { ZodPipe } from '../common/zod.pipe';
 import { DB, DB_TOKEN, Tx } from '../db/db';
-import { approvalLines, companies, rolePermissions, roles } from '../db/schema';
+import { companies, rolePermissions, roles } from '../db/schema';
+import { ensureAccountingDefaults } from '../accounting/defaults';
 
 const optText = (max = 200) => z.string().trim().max(max).optional().nullable().transform((v) => (v ? v : null));
 const CompanyBase = z.object({
@@ -37,7 +38,7 @@ export async function seedDefaultRoles(tx: Tx, companyId: string) {
     if (perms.length) await tx.insert(rolePermissions).values(perms);
   }
   // 발주서는 모두 대표이사 결재
-  await tx.insert(approvalLines).values({ companyId, docType: 'PURCHASE_ORDER', minAmount: '0', steps: [{ title: '승인', roleKey: 'CEO' }] }).onConflictDoNothing();
+  await ensureAccountingDefaults(tx, companyId);
 }
 
 @Injectable()

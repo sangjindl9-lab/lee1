@@ -32,7 +32,12 @@ export class AllExceptionsFilter implements ExceptionFilter {
       delete (payload as any).error;
       return res.status(status).json(payload);
     }
-    const pgCode = (err as any)?.code ?? (err as any)?.cause?.code;
+    const pgCode = (err as any)?.cause?.code ?? (err as any)?.code;
+    // DB 트리거가 막은 업무 규칙 위반 — 트리거 메시지를 그대로 보여 준다
+    if (pgCode === 'P0001') {
+      const msg = String((err as any)?.cause?.message ?? (err as any)?.message ?? '업무 규칙에 맞지 않습니다');
+      return res.status(409).json({ code: 'RULE_VIOLATION', message: msg });
+    }
     if (pgCode && PG_MESSAGES[pgCode]) {
       const m = PG_MESSAGES[pgCode];
       return res.status(m.status).json({ code: m.code, message: m.message });

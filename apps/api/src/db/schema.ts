@@ -380,6 +380,8 @@ export const purchaseOrders = pgTable('purchase_order', {
   approvalId: uuid('approval_id'),
   approvedAt: ts('approved_at'),
   sentAt: ts('sent_at'),
+  costCodeId: uuid('cost_code_id'), // 원가항목 (기본: 재료비)
+  requestId: uuid('request_id'), // 구매요청에서 만든 경우
   ...audited,
 }, (t) => [
   uniqueIndex('po_company_code_uq').on(t.companyId, t.code),
@@ -433,3 +435,270 @@ export const goodsReceiptLines = pgTable('goods_receipt_line', {
   vatAmount: money('vat_amount').notNull(),
   note: text('note'),
 });
+
+// ═════════════════════════════ 2단계-B: 회계·지급결의·실행예산 ═════════════════════════════
+export const accountType = pgEnum('account_type', ['ASSET', 'LIABILITY', 'EQUITY', 'REVENUE', 'EXPENSE']);
+
+/** 계정과목. category 는 재무제표 표시 구분 */
+export const accounts = pgTable('account', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  companyId: uuid('company_id').notNull().references(() => companies.id),
+  code: text('code').notNull(),
+  name: text('name').notNull(),
+  type: accountType('type').notNull(),
+  // CURRENT_ASSET / NONCURRENT_ASSET / CURRENT_LIABILITY / NONCURRENT_LIABILITY / EQUITY / SALES / CONSTRUCTION_COST / SGA / NON_OP_INCOME / NON_OP_EXPENSE / TAX
+  category: text('category').notNull(),
+  needsVendor: boolean('needs_vendor').notNull().default(false),
+  needsProject: boolean('needs_project').notNull().default(false),
+  isSystem: boolean('is_system').notNull().default(false),
+  isActive: boolean('is_active').notNull().default(true),
+  memo: text('memo'),
+  ...audited,
+}, (t) => [uniqueIndex('account_company_code_uq').on(t.companyId, t.code)]);
+
+/** 자동분개 규칙: 업무 이벤트가 쓸 계정 (회사별로 바꿀 수 있음) */
+export const postingRules = pgTable('posting_rule', {
+  companyId: uuid('company_id').notNull().references(() => companies.id),
+  key: text('key').notNull(),
+  accountId: uuid('account_id').notNull().references(() => accounts.id),
+  updatedAt: ts('updated_at').notNull().defaultNow(),
+  updatedById: uuid('updated_by_id'),
+}, (t) => [primaryKey({ columns: [t.companyId, t.key] })]);
+
+/** 원가항목(공종별 비용 항목) → 공사원가 계정 */
+export const costCodes = pgTable('cost_code', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  companyId: uuid('company_id').notNull().references(() => companies.id),
+  code: text('code').notNull(),
+  name: text('name').notNull(),
+  accountId: uuid('account_id').notNull().references(() => accounts.id),
+  tradeType: text('trade_type'), // 비우면 전 공종 공통
+  sortOrder: integer('sort_order').notNull().default(0),
+  isSystem: boolean('is_system').notNull().default(false),
+  isActive: boolean('is_active').notNull().default(true),
+  ...audited,
+}, (t) => [uniqueIndex('cost_code_company_code_uq').on(t.companyId, t.code)]);
+
+// ───────────── 실행예산 ─────────────
+export const projectBudgets = pgTable('project_budget', {
+  companyId: uuid('company_id').notNull().references(() => companies.id),
+  projectId: uuid('project_id').notNull().references(() => projects.id),
+  costCodeId: uuid('cost_code_id').notNull().references(() => costCodes.id),
+  amount: money('amount').notNull().default('0'),
+  updatedAt: ts('updated_at').notNull().defaultNow(),
+}, (t) => [primaryKey({ columns: [t.projectId, t.costCodeId] })]);
+
+export const docStatus = pgEnum('doc_status', ['DRAFT', 'PENDING', 'APPROVED', 'REJECTED', 'CANCELLED']);
+
+/** 실행예산 편성·변경 — 결재 승인 시에만 예산에 반영 */
+export const budgetRevisions = pgTable('budget_revision', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  companyId: uuid('company_id').notNull().references(() => companies.id),
+  projectId: uuid('project_id').notNull().references(() => projects.id),
+  code: text('code').notNull(),
+  title: text('title').notNull(),
+  reason: text('reason'),
+  status: docStatus('status').notNull().default('DRAFT'),
+  totalBefore: money('total_before').notNull().default('0'),
+  totalAfter: money('total_after').notNull().default('0'),
+  approvalId: uuid('approval_id'),
+  approvedAt: ts('approved_at'),
+  ...audited,
+}, (t) => [uniqueIndex('budget_rev_code_uq').on(t.companyId, t.code), index('budget_rev_project_idx').on(t.projectId)]);
+
+export const budgetRevisionLines = pgTable('budget_revision_line', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  revisionId: uuid('revision_id').notNull().references(() => budgetRevisions.id, { onDelete: 'cascade' }),
+  costCodeId: uuid('cost_code_id').notNull().references(() => costCodes.id),
+  beforeAmount: money('before_amount').notNull(),
+  afterAmount: money('after_amount').notNull(),
+  memo: text('memo'),
+}, (t) => [uniqueIndex('budget_rev_line_uq').on(t.revisionId, t.costCodeId)]);
+
+/** 예산 초과 경고 담당자 확인 */
+export const budgetAlertAcks = pgTable('budget_alert_ack', {
+  projectId: uuid('project_id').notNull().references(() => projects.id),
+  costCodeId: uuid('cost_code_id').notNull().references(() => costCodes.id),
+  level: text('level').notNull(), // WARN(90%) / OVER(초과)
+  note: text('note'),
+  ackedById: uuid('acked_by_id').notNull(),
+  ackedByName: text('acked_by_name').notNull(),
+  ackedAt: ts('acked_at').notNull().defaultNow(),
+}, (t) => [primaryKey({ columns: [t.projectId, t.costCodeId, t.level] })]);
+
+// ───────────── 구매요청 ─────────────
+export const prStatus = pgEnum('purchase_request_status', ['REQUESTED', 'ORDERED', 'REJECTED', 'CANCELLED']);
+
+export const purchaseRequests = pgTable('purchase_request', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  companyId: uuid('company_id').notNull().references(() => companies.id),
+  projectId: uuid('project_id').notNull().references(() => projects.id),
+  code: text('code').notNull(),
+  title: text('title').notNull(),
+  neededBy: date('needed_by'),
+  requesterName: text('requester_name').notNull(),
+  status: prStatus('status').notNull().default('REQUESTED'),
+  poId: uuid('po_id'),
+  memo: text('memo'),
+  rejectReason: text('reject_reason'),
+  ...audited,
+}, (t) => [uniqueIndex('pr_company_code_uq').on(t.companyId, t.code), index('pr_project_idx').on(t.projectId)]);
+
+export const purchaseRequestLines = pgTable('purchase_request_line', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  requestId: uuid('request_id').notNull().references(() => purchaseRequests.id, { onDelete: 'cascade' }),
+  lineNo: integer('line_no').notNull(),
+  materialId: uuid('material_id').references(() => materials.id),
+  name: text('name').notNull(),
+  spec: text('spec'),
+  unit: text('unit').notNull(),
+  qty: qty('qty').notNull(),
+  memo: text('memo'),
+}, (t) => [uniqueIndex('pr_line_uq').on(t.requestId, t.lineNo)]);
+
+// ───────────── 회계기간·전표 ─────────────
+export const periodStatus = pgEnum('period_status', ['OPEN', 'CLOSED']);
+
+export const accountingPeriods = pgTable('accounting_period', {
+  companyId: uuid('company_id').notNull().references(() => companies.id),
+  period: text('period').notNull(), // YYYY-MM
+  status: periodStatus('status').notNull().default('OPEN'),
+  closedAt: ts('closed_at'),
+  closedById: uuid('closed_by_id'),
+  closedByName: text('closed_by_name'),
+  note: text('note'),
+}, (t) => [primaryKey({ columns: [t.companyId, t.period] })]);
+
+export const journalStatus = pgEnum('journal_status', ['DRAFT', 'APPROVED', 'REVERSED', 'VOID']);
+
+export const journalEntries = pgTable('journal_entry', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  companyId: uuid('company_id').notNull().references(() => companies.id),
+  code: text('code').notNull(),
+  entryDate: date('entry_date').notNull(),
+  description: text('description').notNull(),
+  status: journalStatus('status').notNull().default('DRAFT'),
+  sourceType: text('source_type').notNull().default('MANUAL'),
+  sourceId: uuid('source_id'),
+  sourceCode: text('source_code'),
+  purpose: text('purpose').notNull().default('MAIN'),
+  reversalOfId: uuid('reversal_of_id'),
+  reversedById: uuid('reversed_by_id'),
+  totalDebit: money('total_debit').notNull().default('0'),
+  totalCredit: money('total_credit').notNull().default('0'),
+  approvedAt: ts('approved_at'),
+  approvedById: uuid('approved_by_id'),
+  approvedByName: text('approved_by_name'),
+  voidReason: text('void_reason'),
+  createdByName: text('created_by_name'),
+  ...audited,
+}, (t) => [
+  uniqueIndex('je_company_code_uq').on(t.companyId, t.code),
+  index('je_company_date_idx').on(t.companyId, t.entryDate),
+  index('je_source_idx').on(t.sourceType, t.sourceId),
+]);
+
+export const journalLines = pgTable('journal_line', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  entryId: uuid('entry_id').notNull().references(() => journalEntries.id, { onDelete: 'cascade' }),
+  lineNo: integer('line_no').notNull(),
+  accountId: uuid('account_id').notNull().references(() => accounts.id),
+  debit: money('debit').notNull().default('0'),
+  credit: money('credit').notNull().default('0'),
+  projectId: uuid('project_id').references(() => projects.id),
+  vendorId: uuid('vendor_id').references(() => vendors.id),
+  costCodeId: uuid('cost_code_id').references(() => costCodes.id),
+  bankAccountId: uuid('bank_account_id'), // 예금·카드 출납장 구분
+  memo: text('memo'),
+}, (t) => [
+  uniqueIndex('jl_entry_line_uq').on(t.entryId, t.lineNo),
+  index('jl_account_idx').on(t.accountId),
+  index('jl_project_idx').on(t.projectId),
+  index('jl_vendor_idx').on(t.vendorId),
+]);
+
+// ───────────── 계좌·카드 (자금 출처) ─────────────
+export const fundKind = pgEnum('fund_kind', ['BANK', 'CARD', 'CASH']);
+
+export const bankAccounts = pgTable('bank_account', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  companyId: uuid('company_id').notNull().references(() => companies.id),
+  kind: fundKind('kind').notNull().default('BANK'),
+  name: text('name').notNull(), // 별칭 (예: 국민 운영계좌)
+  bankName: text('bank_name'),
+  accountNoEnc: text('account_no_enc'),
+  accountNoMask: text('account_no_mask'),
+  holder: text('holder'),
+  accountId: uuid('account_id').notNull().references(() => accounts.id), // 연결 계정 (보통예금·현금·미지급금(카드))
+  openingBalance: money('opening_balance').notNull().default('0'),
+  openingDate: date('opening_date'),
+  isActive: boolean('is_active').notNull().default(true),
+  memo: text('memo'),
+  ...audited,
+});
+
+// ───────────── 지급결의·지급 ─────────────
+export const payReqKind = pgEnum('payment_request_kind', ['PURCHASE', 'SUBCONTRACT', 'EXPENSE', 'LABOR', 'OTHER']);
+export const payReqStatus = pgEnum('payment_request_status', ['DRAFT', 'PENDING', 'APPROVED', 'REJECTED', 'PAID', 'CANCELLED']);
+
+export const paymentRequests = pgTable('payment_request', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  companyId: uuid('company_id').notNull().references(() => companies.id),
+  code: text('code').notNull(),
+  kind: payReqKind('kind').notNull(),
+  title: text('title').notNull(),
+  requestDate: date('request_date').notNull(),
+  dueDate: date('due_date'),
+  projectId: uuid('project_id').references(() => projects.id), // 비우면 본사 공통
+  vendorId: uuid('vendor_id').references(() => vendors.id),
+  payeeName: text('payee_name').notNull(),
+  supplyAmount: money('supply_amount').notNull().default('0'),
+  vatAmount: money('vat_amount').notNull().default('0'),
+  totalAmount: money('total_amount').notNull().default('0'),
+  status: payReqStatus('status').notNull().default('DRAFT'),
+  approvalId: uuid('approval_id'),
+  approvedAt: ts('approved_at'),
+  paidAt: ts('paid_at'),
+  memo: text('memo'),
+  ...audited,
+}, (t) => [
+  uniqueIndex('payreq_company_code_uq').on(t.companyId, t.code),
+  index('payreq_company_status_idx').on(t.companyId, t.status),
+  index('payreq_project_idx').on(t.projectId),
+]);
+
+export const paymentRequestLines = pgTable('payment_request_line', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  requestId: uuid('request_id').notNull().references(() => paymentRequests.id, { onDelete: 'cascade' }),
+  lineNo: integer('line_no').notNull(),
+  description: text('description').notNull(),
+  accountId: uuid('account_id').references(() => accounts.id), // 경비성 지급의 비용 계정
+  costCodeId: uuid('cost_code_id').references(() => costCodes.id),
+  sourceType: text('source_type'), // RECEIPT / TAX_INVOICE / SUB_CLAIM / LABOR ...
+  sourceId: uuid('source_id'),
+  sourceCode: text('source_code'),
+  /** 같은 원천(검수 등)을 두 번 지급 요청하지 못하게 — 진행 중인 결의에서만 값이 있다 */
+  activeSourceKey: text('active_source_key'),
+  supplyAmount: money('supply_amount').notNull(),
+  vatAmount: money('vat_amount').notNull().default('0'),
+  vatDeductible: boolean('vat_deductible').notNull().default(true),
+  totalAmount: money('total_amount').notNull(),
+}, (t) => [uniqueIndex('payreq_line_uq').on(t.requestId, t.lineNo), uniqueIndex('payreq_line_source_uq').on(t.activeSourceKey)]);
+
+export const payMethod = pgEnum('payment_method', ['TRANSFER', 'CASH', 'CARD', 'BILL', 'OFFSET']);
+
+export const payments = pgTable('payment', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  companyId: uuid('company_id').notNull().references(() => companies.id),
+  code: text('code').notNull(),
+  requestId: uuid('request_id').notNull().references(() => paymentRequests.id),
+  payDate: date('pay_date').notNull(),
+  amount: money('amount').notNull(),
+  method: payMethod('method').notNull().default('TRANSFER'),
+  bankAccountId: uuid('bank_account_id').references(() => bankAccounts.id),
+  memo: text('memo'),
+  status: receiptStatus('status').notNull().default('CONFIRMED'),
+  cancelledAt: ts('cancelled_at'),
+  cancelReason: text('cancel_reason'),
+  ...audited,
+}, (t) => [uniqueIndex('payment_company_code_uq').on(t.companyId, t.code), index('payment_request_idx').on(t.requestId)]);
