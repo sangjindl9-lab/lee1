@@ -27,7 +27,23 @@ async function dump(label, url, opts = {}) {
   }
 }
 
+function around(label, html, key, n = 1400) {
+  let i = html.indexOf(key); let k = 0;
+  while (i >= 0 && k < 3) { console.log(`[KRDBG] ${label} @${key} ${one(html.slice(Math.max(0, i - 50), i + n))}`); i = html.indexOf(key, i + 1); k++; }
+}
 export async function selfTest() {
-  await dump('opengList', 'https://ebid.kr.or.kr/krn/krnBidOpengList.do');
-  await dump('awardList', 'https://ebid.kr.or.kr/krn/krnAwardList.do');
+  const a = await dump('awardList', 'https://ebid.kr.or.kr/krn/krnAwardList.do');
+  const srcs = [...a.matchAll(/<script[^>]*src="([^"]+)"/gi)].map((m) => m[1]);
+  console.log(`[KRDBG] scripts ${srcs.join(' ')}`);
+  around('awardList', a, 'function openScsbidPopUp');
+  around('awardList', a, 'function linkPage', 500);
+  const o = await dump('opengList', 'https://ebid.kr.or.kr/krn/krnBidOpengList.do');
+  around('opengList', o, 'function openBidOpengPopUp');
+  for (const src of srcs.filter((x) => !/jquery|bootstrap|swiper|slick/i.test(x)).slice(0, 8)) {
+    const u = src.startsWith('http') ? src : `https://ebid.kr.or.kr${src.startsWith('/') ? '' : '/krn/'}${src}`;
+    try {
+      const js = await fetch(u, { headers: { 'User-Agent': UA } }).then((r) => r.text());
+      if (/openScsbidPopUp|openBidOpengPopUp/.test(js)) { around(`js ${src}`, js, 'openScsbidPopUp'); around(`js ${src}`, js, 'openBidOpengPopUp'); }
+    } catch (e) { console.log(`[KRDBG] js ${src} EXC ${e.message}`); }
+  }
 }
