@@ -103,6 +103,7 @@ button.xs { height: 26px; font-size: 12px; padding: 0 8px; }
 .result-head strong { font-size: 16px; }
 .count { margin-left: 10px; color: var(--ink-2); font-weight: 600; }
 .mock { margin-left: 10px; font-size: 12px; color: var(--warn); background: var(--warn-soft); padding: 2px 8px; border-radius: 999px; }
+.joined { margin-left: 10px; font-size: 12px; color: var(--accent); background: var(--accent-soft); padding: 2px 8px; border-radius: 999px; cursor: help; }
 .error { background: var(--bad-soft); color: var(--bad); border-radius: 8px; padding: 10px 14px; margin-bottom: 10px; }
 .error.small { padding: 6px 10px; font-size: 13px; }
 

@@ -24,7 +24,7 @@ export async function selfTest(base) {
     try {
       const r = await fetch(`${base}/api/${svc}/${op}?${qs}`);
       const d = await r.json();
-      const titles = (d.items || []).slice(0, 5).map((x) => x.bidNtceNm).join(' | ');
+      const titles = (d.industryFiltered ? '[업종조인] ' : '') + (d.items || []).slice(0, 5).map((x) => x.bidNtceNm).join(' | ');
       console.log(`[SELFTEST] ${op} ${JSON.stringify(p)} → ${d.error ? `ERROR ${d.error}` : `total=${d.totalCount}`} :: ${titles}`);
     } catch (e) {
       console.log(`[SELFTEST] ${op} ${JSON.stringify(p)} → EXC ${e.message}`);

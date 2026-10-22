@@ -79,46 +79,85 @@ function normalize(json) {
   };
 }
 
+// 공공데이터 API 1회 호출 (캐시 포함). 실패 시 Error throw
+async function upstream(svc, op, params) {
+  const qs = new URLSearchParams(params);
+  qs.set('type', 'json');
+  const cacheKey = `${svc}/${op}?${qs}`;
+  const hit = cache.get(cacheKey);
+  if (hit && Date.now() - hit.t < TTL) return hit.data;
+  if (MOCK || !KEY) return { ...mockResponse(svc, op, Object.fromEntries(qs)), mock: true };
+
+  const url = `${SERVICES[svc]}/${op}?serviceKey=${encodeURIComponent(KEY)}&${qs}`;
+  const r = await fetch(url, { signal: AbortSignal.timeout(25000) });
+  const text = await r.text();
+  if (!text.trim().startsWith('{')) {
+    const e = parseXmlError(text);
+    throw new Error(`[${e.code}] ${e.msg}`);
+  }
+  const data = normalize(JSON.parse(text));
+  if (data.resultCode && data.resultCode !== '00') throw new Error(`[${data.resultCode}] ${data.resultMsg}`);
+  cache.set(cacheKey, { t: Date.now(), data });
+  if (cache.size > 500) cache.delete(cache.keys().next().value);
+  return data;
+}
+
+// 여러 페이지를 모두 가져오기 (최대 maxPages × 999건)
+async function fetchAll(svc, op, params, maxPages = 10) {
+  const rows = 999;
+  const first = await upstream(svc, op, { ...params, numOfRows: rows, pageNo: 1 });
+  let items = [...first.items];
+  const pages = Math.min(maxPages, Math.ceil(first.totalCount / rows));
+  for (let p = 2; p <= pages; p++) {
+    const d = await upstream(svc, op, { ...params, numOfRows: rows, pageNo: p });
+    items = items.concat(d.items);
+  }
+  return { items, truncated: first.totalCount > maxPages * rows, mock: first.mock };
+}
+
+// 낙찰·개찰 API는 업종 조건이 제대로 걸러지지 않음(실측: 개찰 0건, 낙찰은 거의 전체).
+// → 입찰공고 API(업종 필터 정상)로 해당 업종 공고번호를 먼저 받고, 결과를 그 번호로 거름.
+async function industryJoin(op, params) {
+  const kind = (op.match(/(Cnstwk|Servc|Thng|Frgcpt)/) || [])[1];
+  const { indstrytyNm, indstrytyCd, pageNo = '1', numOfRows = '20', ...rest } = params;
+  const dateDiv = rest.inqryDiv === '1' ? '1' : '2'; // 1:공고게시일, 2:개찰일 (세 API 공통 의미)
+  const bidParams = { inqryDiv: dateDiv, inqryBgnDt: rest.inqryBgnDt, inqryEndDt: rest.inqryEndDt };
+  if (indstrytyNm) bidParams.indstrytyNm = indstrytyNm;
+  if (indstrytyCd) bidParams.indstrytyCd = indstrytyCd;
+  // 개찰일 기준이면 공고가 기간보다 앞서 나왔을 수 있으므로 입찰공고도 개찰일 기준으로 조회
+  const [bids, results] = await Promise.all([
+    fetchAll('bid', `getBidPblancListInfo${kind}PPSSrch`, bidParams),
+    fetchAll('scs', op, rest),
+  ]);
+  const nos = new Set(bids.items.map((b) => b.bidNtceNo));
+  const matched = results.items.filter((x) => nos.has(x.bidNtceNo));
+  const size = Number(numOfRows); const page = Number(pageNo);
+  return {
+    resultCode: '00', totalCount: matched.length, pageNo: page, numOfRows: size,
+    items: matched.slice((page - 1) * size, page * size),
+    industryFiltered: true, truncated: bids.truncated || results.truncated, mock: results.mock,
+  };
+}
+
 app.get('/api/:svc/:op', async (req, res) => {
   const { svc, op } = req.params;
   if (!SERVICES[svc] || !ALLOWED[svc].has(op)) return res.status(404).json({ error: '허용되지 않은 오퍼레이션' });
 
-  const qs = new URLSearchParams();
+  const params = {};
   for (const [k, v] of Object.entries(req.query)) {
-    if (PARAMS.has(k) && v !== '' && v != null) qs.set(k, String(v));
+    if (PARAMS.has(k) && v !== '' && v != null) params[k] = String(v);
   }
-  if (!qs.has('numOfRows')) qs.set('numOfRows', '20');
-  if (!qs.has('pageNo')) qs.set('pageNo', '1');
-  qs.set('type', 'json');
+  params.numOfRows ??= '20';
+  params.pageNo ??= '1';
 
-  const cacheKey = `${svc}/${op}?${qs}`;
-  const hit = cache.get(cacheKey);
-  if (hit && Date.now() - hit.t < TTL) return res.json(hit.data);
-
-  if (MOCK || !KEY) {
-    const data = { ...mockResponse(svc, op, Object.fromEntries(qs)), mock: true };
-    return res.json(data);
-  }
-
-  const url = `${SERVICES[svc]}/${op}?serviceKey=${encodeURIComponent(KEY)}&${qs}`;
   try {
-    const r = await fetch(url, { signal: AbortSignal.timeout(20000) });
-    const text = await r.text();
-    let data;
-    if (text.trim().startsWith('{')) {
-      data = normalize(JSON.parse(text));
-      if (data.resultCode && data.resultCode !== '00') {
-        return res.status(502).json({ error: `[${data.resultCode}] ${data.resultMsg}` });
-      }
-    } else {
-      const e = parseXmlError(text);
-      return res.status(502).json({ error: `[${e.code}] ${e.msg}` });
-    }
-    cache.set(cacheKey, { t: Date.now(), data });
-    if (cache.size > 500) cache.delete(cache.keys().next().value);
+    const needJoin = svc === 'scs' && /PPSSrch$/.test(op) && (params.indstrytyNm || params.indstrytyCd)
+      && params.inqryDiv !== '3' && !params.bidNtceNo;
+    const data = needJoin ? await industryJoin(op, params) : await upstream(svc, op, params);
     res.json(data);
   } catch (err) {
-    res.status(502).json({ error: `공공데이터 API 호출 실패: ${err.message}` });
+    const msg = err.name === 'TimeoutError' ? '공공데이터 API 응답 지연 (잠시 후 다시 시도)' : err.message;
+    res.status(502).json({ error: msg.startsWith('[') ? msg : `공공데이터 API 호출 실패: ${msg}` });
   }
 });
 

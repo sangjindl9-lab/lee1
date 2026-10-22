@@ -16,7 +16,7 @@ export default function SearchPage({ page, onOpen, starred, onStar, myBizno }) {
   }), [storeKey]);
   const [f, setF] = useState(initial);
   const [pageNo, setPageNo] = useState(1);
-  const [state, setState] = useState({ loading: false, error: '', items: [], total: 0, mock: false });
+  const [state, setState] = useState({ loading: false, error: '', items: [], total: 0, mock: false, joined: false, truncated: false });
   const [sort, setSort] = useState(null);
   const [adv, setAdv] = useState(false);
   const set = (k) => (e) => setF((p) => ({ ...p, [k]: e?.target ? (e.target.type === 'checkbox' ? (e.target.checked ? 'Y' : '') : e.target.value) : e }));
@@ -39,7 +39,7 @@ export default function SearchPage({ page, onOpen, starred, onStar, myBizno }) {
     if (page.id === 'scs') q.bizno = f.bizno.replaceAll('-', '').trim();
     try {
       const d = await api(page.svc, page.op(f.kind), q);
-      setState({ loading: false, error: '', items: d.items, total: d.totalCount, mock: !!d.mock });
+      setState({ loading: false, error: '', items: d.items, total: d.totalCount, mock: !!d.mock, joined: !!d.industryFiltered, truncated: !!d.truncated });
     } catch (e) {
       setState({ loading: false, error: e.message, items: [], total: 0, mock: false });
     }
@@ -145,6 +145,7 @@ export default function SearchPage({ page, onOpen, starred, onStar, myBizno }) {
           <strong>{kindLabel} {page.title}</strong>
           <span className="count">총 {state.total.toLocaleString()}건</span>
           {state.mock && <span className="mock">샘플 데이터 (인증키 미설정)</span>}
+          {state.joined && <span className="joined" title="조달청 개찰·낙찰 API의 업종 조건이 정상 동작하지 않아, 입찰공고의 업종(면허)제한 기준으로 걸렀습니다.">업종: 입찰공고 면허제한 기준{state.truncated ? ' · 기간이 길어 일부만 반영' : ''}</span>}
         </div>
         <button className="ghost" disabled={!rows.length}
           onClick={() => exportExcel(rows, page.columns.filter((c) => !c.noExcel), `${page.title}_${kindLabel}_${f.from}_${f.to}.xlsx`)}>
