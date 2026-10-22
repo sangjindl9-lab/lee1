@@ -10,15 +10,17 @@ const RANGES = [
 export default function SearchPage({ page, onOpen, starred, onStar, myBizno }) {
   const storeKey = `search:${page.id}`;
   const initial = useMemo(() => ({
-    kind: page.id === 'scs' ? 'All' : 'Cnstwk', inqryDiv: page.dateDivs[0][0], from: daysAgo(6), to: daysAgo(0), bidNtceNm: '', dminsttNm: '', ntceInsttNm: '',
+    inqryDiv: page.dateDivs[0][0], from: daysAgo(6), to: daysAgo(0), bidNtceNm: '', dminsttNm: '', ntceInsttNm: '',
     prtcptLmtRgnCd: '', indstrytyNm: '', priceMin: '', priceMax: '', bidClseExcpYn: '', bizno: '', numOfRows: '30',
     ...load(storeKey, {}),
+    kind: 'Cnstwk', // 기본은 항상 공사
   }), [storeKey]);
   const [f, setF] = useState(initial);
   const [pageNo, setPageNo] = useState(1);
   const [state, setState] = useState({ loading: false, error: '', items: [], total: 0, mock: false, joined: false, truncated: false });
   const [sort, setSort] = useState(null);
   const [adv, setAdv] = useState(false);
+  const [searched, setSearched] = useState(false); // 검색 버튼을 누르기 전에는 조회하지 않음
   const set = (k) => (e) => setF((p) => ({ ...p, [k]: e?.target ? (e.target.type === 'checkbox' ? (e.target.checked ? 'Y' : '') : e.target.value) : e }));
 
   const kinds = KINDS.filter((k) => (!k.bidOnly || page.id === 'bid') && (!k.awardOnly || page.id === 'scs'));
@@ -26,7 +28,8 @@ export default function SearchPage({ page, onOpen, starred, onStar, myBizno }) {
   async function run(p = 1) {
     setState((s) => ({ ...s, loading: true, error: '' }));
     setPageNo(p);
-    save(storeKey, { ...f, from: undefined, to: undefined });
+    setSearched(true);
+    save(storeKey, { ...f, from: undefined, to: undefined, kind: undefined });
     const q = {
       pageNo: p, numOfRows: f.numOfRows, inqryDiv: f.inqryDiv,
       inqryBgnDt: toApiDt(f.from), inqryEndDt: toApiDt(f.to, true),
@@ -45,8 +48,9 @@ export default function SearchPage({ page, onOpen, starred, onStar, myBizno }) {
     }
   }
 
-  useEffect(() => { run(1); /* 첫 진입 시 자동 조회 */ // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page.id, f.kind]);
+  // 이미 검색한 뒤 공사/용역/물품 탭을 바꾸면 같은 조건으로 다시 조회
+  useEffect(() => { if (searched) run(1); // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [f.kind]);
 
   const rows = useMemo(() => {
     if (!sort) return state.items;
@@ -143,7 +147,7 @@ export default function SearchPage({ page, onOpen, starred, onStar, myBizno }) {
       <div className="result-head">
         <div>
           <strong>{kindLabel} {page.title}</strong>
-          <span className="count">총 {state.total.toLocaleString()}건</span>
+          {searched && <span className="count">총 {state.total.toLocaleString()}건</span>}
           {state.mock && <span className="mock">샘플 데이터 (인증키 미설정)</span>}
           {state.joined && <span className="joined" title="조달청 개찰·낙찰 API의 업종 조건이 정상 동작하지 않아, 입찰공고의 업종(면허)제한 기준으로 걸렀습니다.">업종: 입찰공고 면허제한 기준{state.truncated ? ' · 기간이 길어 일부만 반영' : ''}</span>}
         </div>
@@ -170,7 +174,11 @@ export default function SearchPage({ page, onOpen, starred, onStar, myBizno }) {
           </thead>
           <tbody>
             {state.loading && !rows.length && <tr><td colSpan={page.columns.length + 1} className="empty">불러오는 중…</td></tr>}
-            {!state.loading && !rows.length && !state.error && <tr><td colSpan={page.columns.length + 1} className="empty">조건에 맞는 공고가 없습니다.</td></tr>}
+            {!state.loading && !rows.length && !state.error && (
+              <tr><td colSpan={page.columns.length + 1} className="empty">
+                {searched ? '조건에 맞는 공고가 없습니다.' : '검색 조건을 정하고 [검색] 버튼을 누르세요.'}
+              </td></tr>
+            )}
             {rows.map((r, i) => {
               const key = `${page.id}:${r.bidNtceNo}-${r.bidNtceOrd}-${r.bidClsfcNo || ''}`;
               return (
