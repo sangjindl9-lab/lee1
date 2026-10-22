@@ -5,6 +5,7 @@ import express from 'express';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mockResponse } from './mock.js';
+import { selfTest } from './selftest.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -127,4 +128,7 @@ const dist = path.join(__dirname, '..', 'client', 'dist');
 app.use(express.static(dist));
 app.get(/^\/(?!api).*/, (_req, res) => res.sendFile(path.join(dist, 'index.html')));
 
-app.listen(PORT, () => console.log(`입찰정보 서버 :${PORT} ${MOCK || !KEY ? '(샘플데이터 모드)' : ''}`));
+app.listen(PORT, () => {
+  console.log(`입찰정보 서버 :${PORT} ${MOCK || !KEY ? '(샘플데이터 모드)' : ''}`);
+  if (process.env.SELFTEST === '1') setTimeout(() => selfTest(`http://localhost:${PORT}`), 1000);
+});
