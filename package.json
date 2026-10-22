@@ -1,0 +1,64 @@
+{
+  "name": "gongjung-desktop",
+  "version": "1.0.0",
+  "description": "전기·정보통신 예정공정표(보할공정표) PC 단독형",
+  "main": "main.js",
+  "devDependencies": {
+    "@fontsource/ibm-plex-mono": "^5.1.0",
+    "@fontsource/ibm-plex-sans-kr": "^5.1.0",
+    "@fontsource/nanum-gothic": "^5.1.0",
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8"
+  },
+  "scripts": {
+    "prepare": "node prepare.mjs",
+    "start": "electron .",
+    "dist": "node prepare.mjs && electron-builder --win --x64"
+  },
+  "author": "예정공정표",
+  "productName": "예정공정표",
+  "build": {
+    "appId": "kr.gongjung.desktop",
+    "productName": "예정공정표",
+    "copyright": "예정공정표",
+    "files": [
+      "main.js",
+      "app/**/*",
+      "build/icon.png"
+    ],
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "artifactName": "Gongjung-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": "always",
+      "createStartMenuShortcut": true,
+      "shortcutName": "예정공정표",
+      "uninstallDisplayName": "예정공정표",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerLanguages": [
+        "ko_KR"
+      ],
+      "language": "1042",
+      "deleteAppDataOnUninstall": false
+    },
+    "publish": null,
+    "executableName": "Gongjung"
+  }
+}
