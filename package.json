@@ -1,0 +1,32 @@
+{
+  "name": "meomul",
+  "private": true,
+  "version": "1.0.0",
+  "description": "머묾 — 숙소 공유·예약 플랫폼 (게스트·호스트·관리자)",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev:web": "vite --config web/vite.config.js",
+    "build": "vite build --config web/vite.config.js",
+    "start": "node server/index.js",
+    "test": "node test/e2e.js"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "^6.1.2",
+    "compression": "^1.8.2",
+    "cookie-parser": "^1.4.7",
+    "express": "^4.22.3",
+    "express-rate-limit": "^8.7.1",
+    "helmet": "^8.3.0",
+    "multer": "^2.5.0",
+    "pg": "^8.23.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^7.18.4",
+    "sharp": "^0.35.5",
+    "vite": "^8.3.5",
+    "zod": "^3.25.76"
+  }
+}
