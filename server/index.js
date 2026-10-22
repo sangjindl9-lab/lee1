@@ -250,7 +250,7 @@ async function corpBasic(b) {
   usrState = 'ok';
   const c = (d.items || []).find((x) => String(x.bizno) === b) || d.items?.[0];
   if (!c) return null;
-  const adrs = [c.adrs, c.dtlAdrs].filter(Boolean).join(' ').trim();
+  const adrs = [c.adrs, c.dtlAdrs].filter(Boolean).join(' ').replace(/\s*\(\s*\)/g, '').replace(/\s+/g, ' ').trim();
   return {
     found: true, source: 'usr', bizno: b, name: c.corpNm, ceo: c.ceoNm, adrs, tel: c.telNo, fax: c.faxNo,
     homepage: c.hmpgAdrs, rgnNm: c.rgnNm, opbizDt: c.opbizDt, corpBsnsDivNm: c.corpBsnsDivNm, hdoffceDivNm: c.hdoffceDivNm,
