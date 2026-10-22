@@ -250,7 +250,10 @@ async function corpBasic(b) {
   usrState = 'ok';
   const c = (d.items || []).find((x) => String(x.bizno) === b) || d.items?.[0];
   if (!c) return null;
-  const adrs = [c.adrs, c.dtlAdrs].filter(Boolean).join(' ').replace(/\s*\(\s*\)/g, '').replace(/\s+/g, ' ').trim();
+  const adrs = [c.adrs, c.dtlAdrs].filter(Boolean).join(' ')
+    .replace(/\s*\(\s*\)/g, '')          // 빈 괄호
+    .replace(/(\d)-0(?![0-9])/g, '$1')      // 22-0 → 22 (부번 없음)
+    .replace(/\s+,/g, ',').replace(/\s+/g, ' ').trim();
   return {
     found: true, source: 'usr', bizno: b, name: c.corpNm, ceo: c.ceoNm, adrs, tel: c.telNo, fax: c.faxNo,
     homepage: c.hmpgAdrs, rgnNm: c.rgnNm, opbizDt: c.opbizDt, corpBsnsDivNm: c.corpBsnsDivNm, hdoffceDivNm: c.hdoffceDivNm,
