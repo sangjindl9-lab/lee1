@@ -230,7 +230,7 @@ function indexCompany(f) {
   const prev = companies.get(b);
   const date = f.fnlSucsfDate || f.rlOpengDt || '';
   if (prev && prev.lastDate > date) return;
-  companies.set(b, { bizno: b, name: f.bidwinnrNm, ceo: f.bidwinnrCeoNm, adrs: f.bidwinnrAdrs, tel: f.bidwinnrTelNo,
+  companies.set(b, { bizno: b, name: f.bidwinnrNm, ceo: f.bidwinnrCeoNm, adrs: String(f.bidwinnrAdrs || '').replace(/\s*\(\s*\)\s*$/, ''), tel: f.bidwinnrTelNo,
     lastDate: date, lastBid: f.bidNtceNm, lastAmt: f.sucsfbidAmt, t: Date.now() });
   if (companies.size > 20000) companies.delete(companies.keys().next().value);
 }
@@ -242,8 +242,8 @@ app.get('/api/company/:bizno', async (req, res) => {
   const hit = companies.get(b);
   if (hit && Date.now() - hit.t < 7 * 86400000) return res.json({ found: true, ...hit });
   try {
-    // 최근 90일을 30일씩 거슬러 올라가며 이 업체의 최종낙찰 건을 찾음 (공사·용역·물품)
-    for (let w = 0; w < 3; w++) {
+    // 최근 180일을 30일씩 거슬러 올라가며 이 업체의 최종낙찰 건을 찾음 (공사·용역·물품)
+    for (let w = 0; w < 6; w++) {
       const end = new Date(Date.now() - w * 30 * 86400000);
       const start = new Date(end.getTime() - 29 * 86400000);
       const q = { inqryDiv: '2', inqryBgnDt: `${ymd(start)}0000`, inqryEndDt: `${ymd(end)}2359`, bizno: b, numOfRows: 50, pageNo: 1 };

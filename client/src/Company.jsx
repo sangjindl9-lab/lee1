@@ -63,7 +63,7 @@ export default function CompanyCard({ info, onClose }) {
           <dd>{s.loading ? <span className="muted">찾는 중…</span> : tel ? <a href={telHref} className="tel">{tel}</a> : <span className="muted">정보 없음</span>}</dd>
         </dl>
         {!s.loading && !adrs && !tel && (
-          <p className="muted small">최근 90일 안에 최종 낙찰된 이력이 없어 주소·전화번호를 찾지 못했습니다. (조달청 데이터는 낙찰 확정 건에만 연락처가 있습니다)</p>
+          <p className="muted small">최근 6개월 안에 최종 낙찰된 이력이 없어 주소·전화번호를 찾지 못했습니다. (조달청 데이터는 낙찰 확정 건에만 연락처가 있습니다)</p>
         )}
         {s.error && <p className="error small">⚠ {s.error}</p>}
         {d?.lastBid && (
