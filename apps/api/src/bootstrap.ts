@@ -49,6 +49,7 @@ export async function createApp(): Promise<INestApplication> {
 
 export async function start() {
   const app = await createApp();
-  await app.listen(config.PORT, '0.0.0.0');
+  // HOST: Render 처럼 한 컨테이너에 화면과 API 를 같이 띄울 때 API 는 127.0.0.1 로만 연다
+  await app.listen(config.PORT, process.env.HOST ?? '0.0.0.0');
   new Logger('SS-ERP').log(`API 서버 시작: http://localhost:${config.PORT}/api/v1 (문서: /api/docs)`);
 }

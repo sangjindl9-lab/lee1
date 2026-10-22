@@ -29,7 +29,8 @@ else
   node dist/db/seed.js
 fi
 
-PORT=4000 node dist/main.js &
+# API 는 컨테이너 안에서만 (127.0.0.1) — 밖으로 열린 포트는 화면(10000) 하나만 두어 Render 가 헷갈리지 않게
+HOST=127.0.0.1 PORT=4000 node dist/main.js &
 API_PID=$!
 
 # API 가 뜰 때까지 대기
@@ -38,13 +39,15 @@ until node -e "fetch('http://127.0.0.1:4000/api/v1/health').then(r=>process.exit
   i=$((i+1)); [ $i -gt 60 ] && echo "API 시작 실패" && exit 1; sleep 1
 done
 
-if [ "$FIRST" = "yes" ] && [ "$DEMO_DATA" = "true" ]; then
-  node scripts/demo-purchase.mjs http://127.0.0.1:4000 && node scripts/demo-tax.mjs http://127.0.0.1:4000 && node scripts/demo-construction.mjs http://127.0.0.1:4000 && node scripts/demo-finance.mjs http://127.0.0.1:4000 || echo "시연 데이터 생성 실패 (서비스는 계속 실행)"
-fi
 
 cd /app/web
 PORT=${PORT:-10000} node apps/web/server.js &
 WEB_PID=$!
+
+# 시연 데이터는 화면이 뜬 뒤 만든다 (오래 걸려도 접속은 바로 가능)
+if [ "$FIRST" = "yes" ] && [ "$DEMO_DATA" = "true" ]; then
+  ( cd /app/api/apps/api && node scripts/demo-purchase.mjs http://127.0.0.1:4000 && node scripts/demo-tax.mjs http://127.0.0.1:4000 && node scripts/demo-construction.mjs http://127.0.0.1:4000 && node scripts/demo-finance.mjs http://127.0.0.1:4000 || echo "시연 데이터 생성 실패 (서비스는 계속 실행)" ) &
+fi
 
 # 둘 중 하나라도 죽으면 컨테이너를 재시작하게 한다
 while kill -0 $API_PID 2>/dev/null && kill -0 $WEB_PID 2>/dev/null; do sleep 5; done
