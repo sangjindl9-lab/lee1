@@ -31,7 +31,12 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   // 화면과 API를 같은 출처로 묶어 세션 쿠키(SameSite=Strict)가 동작하게 한다
   async rewrites() {
-    return [{ source: '/api/v1/:path*', destination: `${API}/api/v1/:path*` }];
+    return [
+      { source: '/api/v1/:path*', destination: `${API}/api/v1/:path*` },
+      // API 문서 (Swagger) — 서버에서 SWAGGER_ENABLED=true 일 때만 열린다
+      { source: '/api/docs', destination: `${API}/api/docs` },
+      { source: '/api/docs/:path*', destination: `${API}/api/docs/:path*` },
+    ];
   },
   async headers() {
     return [{ source: '/:path*', headers: securityHeaders }];

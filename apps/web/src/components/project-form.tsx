@@ -66,8 +66,8 @@ function Segmented<T extends string>({ value, onChange, options, name }: { value
   );
 }
 
-export function ProjectForm({ initial, submitLabel, onSubmit, onCancel, code }: { initial?: ProjectDetail; submitLabel: string; onSubmit: (body: Record<string, unknown>) => Promise<void>; onCancel: () => void; code?: string }) {
-  const [v, setV] = useState<ProjectFormValues>(() => toForm(initial));
+export function ProjectForm({ initial, seed, submitLabel, onSubmit, onCancel, code }: { initial?: ProjectDetail; seed?: Partial<ProjectFormValues>; submitLabel: string; onSubmit: (body: Record<string, unknown>) => Promise<void>; onCancel: () => void; code?: string }) {
+  const [v, setV] = useState<ProjectFormValues>(() => ({ ...toForm(initial), ...seed }));
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);

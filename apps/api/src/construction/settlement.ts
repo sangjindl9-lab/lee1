@@ -112,7 +112,7 @@ export class SettlementController {
   @Post()
   @HttpCode(200)
   @RequirePermission('closing', 'approve')
-  settle(@Ctx() ctx: AccessContext, @Param('id', ParseUUIDPipe) id: string, @Body(new ZodPipe(z.object({ settleDate: dateStr.default(todayKST()), memo: optText(1000), acknowledge: z.boolean().default(false) }))) dto: { settleDate: string; memo?: string | null; acknowledge: boolean }) {
+  settle(@Ctx() ctx: AccessContext, @Param('id', ParseUUIDPipe) id: string, @Body(new ZodPipe(z.object({ settleDate: dateStr.optional().transform((v) => v ?? todayKST()), memo: optText(1000), acknowledge: z.boolean().default(false) }))) dto: { settleDate: string; memo?: string | null; acknowledge: boolean }) {
     return this.svc.settle(ctx, id, dto);
   }
 

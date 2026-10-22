@@ -71,6 +71,20 @@
       "when": 1792647410812,
       "tag": "0009_stage4_guards",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1792648774293,
+      "tag": "0010_stage5_finance_api",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1792648775201,
+      "tag": "0011_stage5_guards",
+      "breakpoints": true
     }
   ]
 }

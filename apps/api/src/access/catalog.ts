@@ -31,7 +31,7 @@ export const RESOURCES = {
   role: { label: '역할·권한', group: '관리', stage: 1 },
   audit: { label: '감사로그', group: '관리', stage: 1 },
   integration: { live: true, label: '외부 연동', group: '관리', stage: 3 },
-  apikey: { label: 'API 키', group: '관리', stage: 5 },
+  apikey: { live: true, label: 'API 키', group: '관리', stage: 5 },
   license: { label: '라이선스', group: '관리', stage: 1 },
 } as const;
 export type Resource = keyof typeof RESOURCES;

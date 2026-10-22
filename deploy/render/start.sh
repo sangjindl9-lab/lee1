@@ -39,7 +39,7 @@ until node -e "fetch('http://127.0.0.1:4000/api/v1/health').then(r=>process.exit
 done
 
 if [ "$FIRST" = "yes" ] && [ "$DEMO_DATA" = "true" ]; then
-  node scripts/demo-purchase.mjs http://127.0.0.1:4000 && node scripts/demo-tax.mjs http://127.0.0.1:4000 && node scripts/demo-construction.mjs http://127.0.0.1:4000 || echo "시연 데이터 생성 실패 (서비스는 계속 실행)"
+  node scripts/demo-purchase.mjs http://127.0.0.1:4000 && node scripts/demo-tax.mjs http://127.0.0.1:4000 && node scripts/demo-construction.mjs http://127.0.0.1:4000 && node scripts/demo-finance.mjs http://127.0.0.1:4000 || echo "시연 데이터 생성 실패 (서비스는 계속 실행)"
 fi
 
 cd /app/web

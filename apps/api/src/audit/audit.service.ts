@@ -55,6 +55,8 @@ function hashOf(prevHash: string, e: Omit<typeof auditLogs.$inferInsert, 'hash' 
 
 @Injectable()
 export class AuditService {
+  /** 이름별 후속 처리 (같은 이름은 덮어쓴다) */
+  static hooks = new Map<string, (tx: Tx, e: { companyId: string | null; userName: string | null; action: string; resource: string; resourceId: string | null; summary: string | null; createdAt: Date }) => Promise<void>>();
   constructor(@Inject(DB_TOKEN) private readonly db: DB) {}
 
   /** 업무 변경과 같은 트랜잭션 안에서 호출하면 둘 다 저장되거나 둘 다 취소된다 */
@@ -82,6 +84,8 @@ export class AuditService {
       const normalized = { ...row, before: row.before ? JSON.parse(JSON.stringify(row.before)) : null, after: row.after ? JSON.parse(JSON.stringify(row.after)) : null };
       const hash = hashOf(prevHash, normalized);
       await t.insert(auditLogs).values({ ...row, prevHash, hash });
+      // 같은 트랜잭션 안에서 후속 처리(웹훅 발송함 기록 등) — 업무가 취소되면 함께 취소된다
+      for (const h of AuditService.hooks.values()) await h(t, { companyId: row.companyId, userName: row.userName, action: row.action, resource: row.resource, resourceId: row.resourceId, summary: row.summary, createdAt: row.createdAt });
     };
     if (tx) return run(tx);
     return this.db.transaction(run);

@@ -34,8 +34,9 @@ export function BrandMark({ compact, tone = 'nav' }: { compact?: boolean; tone?:
 
 /* ─────────────── 사이드바 ─────────────── */
 function useVisibleNav() {
-  const { can } = useSession();
-  return useMemo(() => NAV.map((g) => ({ ...g, items: g.items.filter((i) => !i.perm || can(i.perm)) })).filter((g) => g.items.length), [can]);
+  const { can, me } = useSession();
+  const sys = me.user.isSystemAdmin;
+  return useMemo(() => NAV.map((g) => ({ ...g, items: g.items.filter((i) => (!i.perm || can(i.perm)) && (!i.systemAdmin || sys)) })).filter((g) => g.items.length), [can, sys]);
 }
 
 function useApprovalCount() {

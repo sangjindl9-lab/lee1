@@ -22,6 +22,8 @@ export interface AccessContext {
   assignedProjectIds: string[];
   ip: string;
   userAgent: string;
+  /** API 키로 들어온 요청 (세션 대신) */
+  apiKeyId?: string;
 }
 
 export interface ErpRequest extends Request {

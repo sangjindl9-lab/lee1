@@ -4,6 +4,7 @@ import { AccessService } from '../access/access.service';
 import { ALLOW_MFA_PENDING, ErpRequest, IS_PUBLIC, NO_COMPANY, PERMISSION } from '../access/context';
 import { safeEqual, sha256 } from '../common/crypto';
 import { LicenseService } from '../license/license.service';
+import { ADMIN_ONLY, ApiKeysService } from '../platform/apikeys';
 import { AuthService } from './auth.service';
 
 export const SESSION_COOKIE = 'erp_sid';
@@ -22,6 +23,7 @@ export class ErpGuard implements CanActivate {
     private readonly auth: AuthService,
     private readonly access: AccessService,
     private readonly license: LicenseService,
+    private readonly apiKeys: ApiKeysService,
   ) {}
 
   private meta<T>(key: string, ec: ExecutionContext): T | undefined {
@@ -31,6 +33,9 @@ export class ErpGuard implements CanActivate {
   async canActivate(ec: ExecutionContext): Promise<boolean> {
     if (this.meta<boolean>(IS_PUBLIC, ec)) return true;
     const req = ec.switchToHttp().getRequest<ErpRequest>();
+
+    const authz = req.header('authorization') ?? '';
+    if (authz.startsWith('Bearer ssk_') && !req.cookies?.[SESSION_COOKIE]) return this.viaApiKey(ec, req, authz.slice(7).trim());
 
     const token = req.cookies?.[SESSION_COOKIE];
     const found = typeof token === 'string' && token.length > 20 ? await this.auth.validate(token) : null;
@@ -82,6 +87,28 @@ export class ErpGuard implements CanActivate {
     if (perm && !req.ctx.permissions.has(`${perm.resource}:${perm.action}`)) {
       throw new ForbiddenException({ code: 'FORBIDDEN', message: '이 작업을 할 권한이 없습니다. 관리자에게 권한을 요청하세요' });
     }
+    return true;
+  }
+
+  /** API 키 요청: CSRF 대신 키, 회사는 키의 회사, 권한은 발급자 권한 ∩ 키 범위 */
+  private async viaApiKey(ec: ExecutionContext, req: ErpRequest, raw: string): Promise<boolean> {
+    const found = await this.apiKeys.validate(raw, req.ip ?? '');
+    if (!found) throw new UnauthorizedException({ code: 'API_KEY_INVALID', message: 'API 키가 올바르지 않거나 폐기되었습니다' });
+    const { key, user } = found;
+    if (this.meta<boolean>(NO_COMPANY, ec)) throw new ForbiddenException({ code: 'API_NOT_ALLOWED', message: '이 기능은 API 키로 쓸 수 없습니다' });
+    if (!SAFE_METHODS.has(req.method) && !(await this.license.isWritable())) throw new ForbiddenException({ code: 'LICENSE_READONLY', message: '라이선스가 만료되어 조회만 가능합니다' });
+    const acc = await this.access.resolve(user.id, user.isSystemAdmin, key.companyId);
+    if (!acc) throw new ForbiddenException({ code: 'API_KEY_OWNER_NO_ACCESS', message: '키 발급자가 더 이상 이 회사에 소속되어 있지 않습니다' });
+    const scopes = new Set((key.scopes as string[]) ?? []);
+    const permissions = new Set([...acc.permissions].filter((p) => scopes.has(p) && !ADMIN_ONLY.has(p.split(':')[0])));
+    req.ctx = {
+      user: { id: user.id, loginId: user.loginId, name: `${user.name} (API ${key.name})`, isSystemAdmin: false, mustChangePassword: false },
+      sessionId: `api:${key.id}`, companyId: key.companyId, membershipId: acc.membershipId, permissions, scope: acc.scope, assignedProjectIds: acc.assignedProjectIds,
+      ip: req.ip ?? '', userAgent: req.header('user-agent') ?? '', apiKeyId: key.id,
+    };
+    const perm = this.meta<{ resource: string; action: string }>(PERMISSION, ec);
+    if (!perm) throw new ForbiddenException({ code: 'API_NOT_ALLOWED', message: '이 기능은 API 키로 쓸 수 없습니다' });
+    if (!permissions.has(`${perm.resource}:${perm.action}`)) throw new ForbiddenException({ code: 'API_SCOPE', message: `이 API 키에는 '${perm.resource}:${perm.action}' 권한이 없습니다` });
     return true;
   }
 }

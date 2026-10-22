@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { APP_FILTER, APP_GUARD } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AccessService } from './access/access.service';
 import { CompaniesController, CompaniesService } from './admin/companies';
@@ -42,6 +42,12 @@ import { ClaimsController, ClaimsService } from './construction/claims';
 import { SubcontractsController, SubcontractsService } from './construction/subcontracts';
 import { LaborController, LaborService } from './construction/labor';
 import { SettlementController, SettlementService } from './construction/settlement';
+import { BankTransactionsController, BankTransactionsService } from './bank/transactions';
+import { CashController, CashService } from './bank/cash';
+import { ApiKeysController, ApiKeysService, IdempotencyInterceptor } from './platform/apikeys';
+import { WebhooksController, WebhooksService } from './platform/webhooks';
+import { ReportsController, ReportsService } from './reports/reports';
+import { BackupsController, BackupsService } from './admin/backups';
 
 @Module({
   imports: [
@@ -52,15 +58,16 @@ import { SettlementController, SettlementService } from './construction/settleme
   controllers: [
     HealthController, AuthController, CompaniesController, UsersController, MembersController, RolesController,
     ProjectsController, VendorsController, MaterialsController, PurchaseController, PurchaseRequestsController, ApprovalsController,
-    JournalsController, LedgerReportsController, ClosingController, BankAccountsController, PaymentsController, BudgetController, IntegrationsController, TaxInvoicesController, DocumentsController, ContractRevisionsController, ClaimsController, SubcontractsController, LaborController, SettlementController, FilesController, DashboardController, AuditController, LicenseController, TaxRateController,
+    JournalsController, LedgerReportsController, ClosingController, BankAccountsController, PaymentsController, BudgetController, IntegrationsController, TaxInvoicesController, DocumentsController, ContractRevisionsController, ClaimsController, SubcontractsController, LaborController, SettlementController, BankTransactionsController, CashController, ApiKeysController, WebhooksController, ReportsController, BackupsController, FilesController, DashboardController, AuditController, LicenseController, TaxRateController,
   ],
   providers: [
     AuditService, AccessService, AuthService, LicenseService, NumberingService, TaxRateService,
     CompaniesService, UsersService, RolesService, ProjectsService, VendorsService, MaterialsService, ApprovalsService, PurchaseService, PurchaseRequestsService,
-    LedgerService, JournalsService, LedgerReportsService, ClosingService, BankAccountsService, PaymentsService, BudgetService, IntegrationsService, TaxInvoicesService, HometaxCollectService, DocumentsService, ContractRevisionsService, ClaimsService, SubcontractsService, LaborService, SettlementService, FilesService, DashboardService,
+    LedgerService, JournalsService, LedgerReportsService, ClosingService, BankAccountsService, PaymentsService, BudgetService, IntegrationsService, TaxInvoicesService, HometaxCollectService, DocumentsService, ContractRevisionsService, ClaimsService, SubcontractsService, LaborService, SettlementService, BankTransactionsService, CashService, ApiKeysService, WebhooksService, ReportsService, BackupsService, FilesService, DashboardService,
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: ErpGuard },
     { provide: APP_FILTER, useClass: AllExceptionsFilter },
+    { provide: APP_INTERCEPTOR, useClass: IdempotencyInterceptor },
   ],
 })
 export class AppModule {}

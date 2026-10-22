@@ -2,7 +2,7 @@
  * 외부 연동 공통 타입 — 공급업체를 바꿔 끼울 수 있게 기능별 인터페이스로 나눈다 (Provider Adapter).
  */
 export type Mode = 'TEST' | 'LIVE';
-export type IntegrationKind = 'TAX_ISSUE' | 'HOMETAX' | 'BIZ_STATUS' | 'OCR';
+export type IntegrationKind = 'TAX_ISSUE' | 'HOMETAX' | 'BIZ_STATUS' | 'OCR' | 'G2B';
 
 export interface ProviderContext {
   mode: Mode;

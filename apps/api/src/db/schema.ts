@@ -1103,3 +1103,105 @@ export const projectSettlements = pgTable('project_settlement', {
   reopenReason: text('reopen_reason'),
   ...audited,
 }, (t) => [index('project_settlement_project_idx').on(t.projectId)]);
+
+// ───────────── 5단계: 통장·카드 거래 · API 키 · 웹훅 · 백업 ─────────────
+/** 통장·카드 거래내역 (엑셀·CSV 업로드) — 입출금을 지급·수금·전표와 맞춘다 */
+export const bankTransactions = pgTable('bank_transaction', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  companyId: uuid('company_id').notNull().references(() => companies.id),
+  bankAccountId: uuid('bank_account_id').notNull().references(() => bankAccounts.id),
+  txDate: date('tx_date').notNull(),
+  txTime: text('tx_time'),
+  direction: text('direction').notNull(), // IN 입금 / OUT 출금
+  amount: money('amount').notNull(),
+  balance: money('balance'),
+  description: text('description'),
+  counterparty: text('counterparty'),
+  memo: text('memo'),
+  approvalNo: text('approval_no'), // 카드 승인번호
+  dedupeKey: text('dedupe_key').notNull(),
+  status: text('status').notNull().default('UNMATCHED'), // UNMATCHED / MATCHED / IGNORED
+  matchedType: text('matched_type'), // PAYMENT / COLLECTION / JOURNAL
+  matchedId: uuid('matched_id'),
+  journalEntryId: uuid('journal_entry_id'),
+  ignoreReason: text('ignore_reason'),
+  importBatch: uuid('import_batch'),
+  source: text('source').notNull().default('EXCEL'),
+  ...audited,
+}, (t) => [uniqueIndex('bank_tx_dedupe_uq').on(t.companyId, t.bankAccountId, t.dedupeKey), index('bank_tx_company_date_idx').on(t.companyId, t.txDate), index('bank_tx_status_idx').on(t.companyId, t.status)]);
+
+/** 외부 프로그램용 API 키 — 원문은 발급 때 한 번만 보여 주고 해시만 저장 */
+export const apiCredentials = pgTable('api_credential', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  companyId: uuid('company_id').notNull().references(() => companies.id),
+  userId: uuid('user_id').notNull().references(() => users.id), // 발급자 — 이 사람 권한을 넘을 수 없다
+  name: text('name').notNull(),
+  keyPrefix: text('key_prefix').notNull(),
+  keyHash: text('key_hash').notNull(),
+  scopes: jsonb('scopes').notNull(), // ['vendor:read', 'project:read', ...]
+  allowedIps: jsonb('allowed_ips'),
+  expiresAt: ts('expires_at'),
+  lastUsedAt: ts('last_used_at'),
+  lastUsedIp: text('last_used_ip'),
+  revokedAt: ts('revoked_at'),
+  revokedReason: text('revoked_reason'),
+  createdAt: ts('created_at').notNull().defaultNow(),
+}, (t) => [uniqueIndex('api_credential_hash_uq').on(t.keyHash), index('api_credential_company_idx').on(t.companyId)]);
+
+/** Idempotency-Key — 같은 요청이 두 번 와도 한 번만 처리 */
+export const apiIdempotency = pgTable('api_idempotency', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  credentialId: uuid('credential_id').notNull().references(() => apiCredentials.id),
+  idemKey: text('idem_key').notNull(),
+  method: text('method').notNull(),
+  path: text('path').notNull(),
+  bodyHash: text('body_hash').notNull(),
+  statusCode: integer('status_code'),
+  response: jsonb('response'),
+  createdAt: ts('created_at').notNull().defaultNow(),
+}, (t) => [uniqueIndex('api_idempotency_uq').on(t.credentialId, t.idemKey)]);
+
+export const webhookEndpoints = pgTable('webhook_endpoint', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  companyId: uuid('company_id').notNull().references(() => companies.id),
+  name: text('name').notNull(),
+  url: text('url').notNull(),
+  secretEnc: text('secret_enc').notNull(),
+  events: jsonb('events').notNull(), // ['payment_request.pay', 'tax_invoice.*', '*']
+  isActive: boolean('is_active').notNull().default(true),
+  ...audited,
+}, (t) => [index('webhook_endpoint_company_idx').on(t.companyId)]);
+
+/** 웹훅 발송함 (Outbox) — 업무 트랜잭션과 함께 저장되고, 커밋된 것만 발송 */
+export const webhookDeliveries = pgTable('webhook_delivery', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  companyId: uuid('company_id').notNull().references(() => companies.id),
+  endpointId: uuid('endpoint_id').notNull().references(() => webhookEndpoints.id),
+  event: text('event').notNull(),
+  payload: jsonb('payload').notNull(),
+  status: text('status').notNull().default('PENDING'), // PENDING / DELIVERED / FAILED
+  attempts: integer('attempts').notNull().default(0),
+  nextAttemptAt: ts('next_attempt_at').notNull().defaultNow(),
+  lastStatusCode: integer('last_status_code'),
+  lastError: text('last_error'),
+  deliveredAt: ts('delivered_at'),
+  createdAt: ts('created_at').notNull().defaultNow(),
+}, (t) => [index('webhook_delivery_pending_idx').on(t.status, t.nextAttemptAt), index('webhook_delivery_endpoint_idx').on(t.endpointId, t.createdAt)]);
+
+export const backups = pgTable('backup_record', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  kind: text('kind').notNull(), // MANUAL / AUTO
+  status: text('status').notNull().default('RUNNING'), // RUNNING / DONE / FAILED
+  dbFile: text('db_file'),
+  filesFile: text('files_file'),
+  dbSize: integer('db_size'),
+  filesSize: integer('files_size'),
+  sha256: text('sha256'),
+  verified: boolean('verified'),
+  verifyMessage: text('verify_message'),
+  errorMessage: text('error_message'),
+  startedAt: ts('started_at').notNull().defaultNow(),
+  finishedAt: ts('finished_at'),
+  createdById: uuid('created_by_id'),
+  createdByName: text('created_by_name'),
+});

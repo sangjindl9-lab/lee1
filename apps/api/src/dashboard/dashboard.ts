@@ -89,8 +89,29 @@ export class DashboardService {
       const o = await this.budget.overview(ctx, { status: 'ACTIVE' });
       costs = { actual: o.totals.actual, committed: o.totals.committed, budget: o.totals.budget, alerts: o.alerts.slice(0, 8) };
     }
+    // 처리할 일 — 3~5단계 업무 (권한이 있는 항목만)
+    const cid = ctx.companyId;
+    const one = async <T,>(q: ReturnType<typeof sql>) => (await this.db.execute(q)).rows[0] as T;
+    const work = {
+      taxInvoices: can(ctx, 'taxinvoice', 'read')
+        ? await one<{ unposted: number; amount: string; failed: number }>(sql`select count(*) filter (where direction = 'PURCHASE' and status = 'COLLECTED')::int unposted,
+            coalesce(sum(total_amount) filter (where direction = 'PURCHASE' and status = 'COLLECTED'),0)::text amount, count(*) filter (where direction = 'SALES' and status = 'FAILED')::int failed
+            from tax_invoice where company_id = ${cid}`)
+        : null,
+      receivables: can(ctx, 'claim', 'read')
+        ? await one<{ outstanding: string; overdue: string; overdueCount: number }>(sql`select coalesce(sum(o),0)::text outstanding, coalesce(sum(o) filter (where due_date < ${today}),0)::text overdue, count(*) filter (where due_date < ${today} and o > 0)::int "overdueCount"
+            from (select c.due_date, c.receivable_amount - coalesce((select sum(amount) from collection x where x.claim_id = c.id and x.status = 'CONFIRMED'),0) o
+              from progress_claim c where c.company_id = ${cid} and c.status in ('APPROVED','INVOICED','PARTIAL')) t`)
+        : null,
+      bank: can(ctx, 'bank', 'read')
+        ? await one<{ unmatched: number; cash: string }>(sql`select (select count(*) from bank_transaction where company_id = ${cid} and status = 'UNMATCHED')::int unmatched,
+            coalesce((select sum(l.debit - l.credit) from journal_line l join journal_entry e on e.id = l.entry_id join bank_account b on b.id = l.bank_account_id
+              where e.company_id = ${cid} and b.kind <> 'CARD' and b.is_active and e.status in ('DRAFT','APPROVED','REVERSED')),0)::text cash`)
+        : null,
+    };
     return {
       asOf: new Date().toISOString(),
+      work,
       scope: ctx.scope,
       contract: {
         active: { count: activeRows.reduce((a, r) => a + r.n, 0), supply: activeSupply, vat: sum(activeRows, 'vat'), total: sum(activeRows, 'total'), budget: activeBudget,

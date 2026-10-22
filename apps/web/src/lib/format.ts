@@ -64,6 +64,10 @@ export function dateTime(v: string | null | undefined) {
 export function relative(v: string | null | undefined) {
   if (!v) return '';
   const diff = Date.now() - new Date(v).getTime();
+  if (diff < -30000) {
+    const fm = Math.round(-diff / 60000);
+    return fm < 60 ? `${fm}분 뒤` : fm < 1440 ? `${Math.round(fm / 60)}시간 뒤` : `${Math.round(fm / 1440)}일 뒤`;
+  }
   const m = Math.round(diff / 60000);
   if (m < 1) return '방금';
   if (m < 60) return `${m}분 전`;

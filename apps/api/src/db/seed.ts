@@ -53,7 +53,7 @@ async function demo(tx: Tx) {
   const { company } = await createCompanyWithAdmin(
     tx,
     { code: 'SS', name: '㈜에스에스전력', bizRegNo: '1018117536', ceoName: '이상진', address: '서울특별시 강서구 공항대로 000' },
-    { loginId: 'admin', name: '시스템관리자', password: pw, mustChange: false },
+    { loginId: 'admin', name: '시스템관리자', password: pw, mustChange: false, systemAdmin: true },
   );
   // 두 번째 회사 — 회사 간 데이터 격리 시연용
   const other = await createCompanyWithAdmin(

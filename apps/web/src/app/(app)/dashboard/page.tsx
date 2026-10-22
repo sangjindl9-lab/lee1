@@ -35,6 +35,7 @@ interface Summary {
   draftJournals: number | null;
   costs: { actual: string; committed: string; budget: string; alerts: { projectId: string; projectName: string; costCodeName: string; level: string; planned: string; used: string; usedRate: string | null; ackedBy: string | null }[] } | null;
   pendingMetrics: Record<string, { available: false; stage: number }>;
+  work: { taxInvoices: { unposted: number; amount: string; failed: number } | null; receivables: { outstanding: string; overdue: string; overdueCount: number } | null; bank: { unmatched: number; cash: string } | null };
 }
 
 /** 지표 한 칸 — 하나의 장부 띠 안에서 구분선으로 나뉜다 */
@@ -196,17 +197,11 @@ export default function DashboardPage() {
             </Cell>
           </div>
         )}
-        {/* 이후 단계 지표 — 값을 만들어 내지 않고 연결 전임을 표시 */}
         {d && (
           <div className="grid grid-cols-2 gap-px border-t border-line bg-line sm:hidden [&>*]:bg-surface">
             <MiniCell label="결재할 문서" href="/approvals" tone={d.approvals.todo ? 'seal' : undefined}><span className="num">{d.approvals.todo}</span><span className="ml-0.5 text-meta font-normal text-muted">건</span></MiniCell>
             {d.purchase && <MiniCell label="미승인 발주서" href="/purchase-orders?status=PENDING"><span className="num">{d.purchase.pending}</span><span className="ml-0.5 text-meta font-normal text-muted">건</span></MiniCell>}
           </div>
-        )}
-        {d && (
-          <p className="border-t border-line bg-surface-2 px-4 py-2.5 text-meta text-muted sm:hidden">
-            매출·수금·세금계산서 지표는 해당 기능이 연결되면 집계됩니다.
-          </p>
         )}
         {d && (
           <div className="grid grid-cols-2 gap-px border-t border-line bg-line max-sm:hidden sm:grid-cols-4 lg:grid-cols-7 [&>*]:bg-surface-2 max-lg:[&>*:last-child]:col-span-2">
@@ -230,6 +225,16 @@ export default function DashboardPage() {
           </div>
         )}
       </section>
+
+      {d?.work && (d.work.taxInvoices || d.work.receivables || d.work.bank) && (
+        <section aria-label="자금·매출 처리할 일" className="mt-4 grid grid-cols-2 gap-px overflow-hidden rounded-[6px] border border-line bg-line sm:grid-cols-3 lg:grid-cols-5 [&>*]:bg-surface">
+          {d.work.bank && <MiniCell label="현재 자금 (예금·현금)" href="/cash"><span className="num">{wonShort(d.work.bank.cash)}</span></MiniCell>}
+          {d.work.receivables && <MiniCell label="기성 미수금" href="/collections" sub={`청구 후 받지 못한 금액`}><span className="num">{wonShort(d.work.receivables.outstanding)}</span></MiniCell>}
+          {d.work.receivables && <MiniCell label="연체 미수금" href="/collections" tone={d.work.receivables.overdueCount ? 'seal' : undefined} sub={d.work.receivables.overdueCount ? `수금예정일 지남 ${d.work.receivables.overdueCount}건` : '연체 없음'}><span className="num">{wonShort(d.work.receivables.overdue)}</span></MiniCell>}
+          {d.work.taxInvoices && <MiniCell label="미처리 매입 계산서" href="/tax-invoices?status=COLLECTED" tone={d.work.taxInvoices.failed ? 'seal' : undefined} sub={d.work.taxInvoices.failed ? `매출 발행 실패 ${d.work.taxInvoices.failed}건` : `합계 ${wonShort(d.work.taxInvoices.amount)}`}><span className="num">{d.work.taxInvoices.unposted}</span><span className="ml-0.5 text-meta font-normal text-muted">건</span></MiniCell>}
+          {d.work.bank && <MiniCell label="미처리 통장 거래" href="/bank/transactions" sub="거래내역 대사에서 처리"><span className="num">{d.work.bank.unmatched}</span><span className="ml-0.5 text-meta font-normal text-muted">건</span></MiniCell>}
+        </section>
+      )}
 
       {!!d?.costs?.alerts.length && (
         <section className="mt-4 rounded-[6px] border border-seal/35 bg-surface">

@@ -32,13 +32,16 @@ export async function createApp(): Promise<INestApplication> {
   if (config.NODE_ENV !== 'production' || process.env.SWAGGER_ENABLED === 'true') {
     const doc = new DocumentBuilder()
       .setTitle('SS-ERP API')
-      .setDescription('전기·정보통신·건축공사 통합 회계 ERP — 내부 API v1.\n\n모든 상태 변경 요청은 X-CSRF-Token, 회사 범위 요청은 X-Company-Id 헤더가 필요합니다.')
+      .setDescription('전기·정보통신·건축공사 통합 회계 ERP — API v1.\n\n**외부 프로그램**: 관리 › API 키에서 발급한 키를 `Authorization: Bearer ssk_…` 로 보냅니다. 회사는 키에 정해져 있고, 권한은 발급자 권한 ∩ 키 범위입니다. POST 요청에는 `Idempotency-Key` 헤더(요청마다 고유값)가 필수이며, 같은 키로 다시 보내면 처음 응답을 그대로 돌려줍니다.\n\n**화면(세션)**: 상태 변경 요청은 X-CSRF-Token, 회사 범위 요청은 X-Company-Id 헤더가 필요합니다.\n\n금액은 문자열(원 단위, 소수 2자리)로 주고받습니다.')
       .setVersion('1.0.0')
+      .addBearerAuth({ type: 'http', scheme: 'bearer', bearerFormat: 'ssk_…', description: 'API 키' }, 'apikey')
       .addCookieAuth('erp_sid')
       .addApiKey({ type: 'apiKey', in: 'header', name: 'X-Company-Id' }, 'company')
       .addApiKey({ type: 'apiKey', in: 'header', name: 'X-CSRF-Token' }, 'csrf')
       .build();
-    SwaggerModule.setup('api/docs', app, SwaggerModule.createDocument(app, doc), { jsonDocumentUrl: 'api/docs/openapi.json' });
+    const document = SwaggerModule.createDocument(app, doc);
+    document.security = [{ apikey: [] }];
+    SwaggerModule.setup('api/docs', app, document, { jsonDocumentUrl: 'api/docs/openapi.json' });
   }
   app.enableShutdownHooks();
   return app;

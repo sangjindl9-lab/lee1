@@ -15,6 +15,8 @@ export interface NavItem {
   /** 메뉴 옆 숫자 배지 */
   badge?: 'approvals';
   hint?: string;
+  /** 시스템관리자에게만 보이는 메뉴 */
+  systemAdmin?: boolean;
 }
 export interface NavGroup {
   key: string;
@@ -73,8 +75,8 @@ export const NAV: NavGroup[] = [
     items: [
       { label: '지급결의', href: '/payment-requests', perm: 'expense:read', stage: 2, live: true },
       { label: '계좌·카드', href: '/bank', perm: 'bank:read', stage: 5, live: true },
-      { label: '거래내역 대사', href: '/soon/reconcile', perm: 'bank:read', stage: 5, hint: '입출금과 미수·미지급 자동 대조' },
-      { label: '자금일보·수지', href: '/soon/cashflow', perm: 'bank:read', stage: 5, hint: '일일 자금현황, 월별 예상 현금흐름' },
+      { label: '거래내역 대사', href: '/bank/transactions', perm: 'bank:read', stage: 5, live: true },
+      { label: '자금일보·수지', href: '/cash', perm: 'bank:read', stage: 5, live: true },
     ],
   },
   {
@@ -94,7 +96,7 @@ export const NAV: NavGroup[] = [
       { label: '결재선 설정', href: '/admin/approval-lines', perm: 'approval:read', stage: 2, live: true },
     ],
   },
-  { key: 'report', label: '보고서', icon: BarChart3, items: [{ label: '보고서', href: '/soon/reports', perm: 'report:read', stage: 2, hint: '현장별 손익·원가명세서·미수·미지급·자금일보' }] },
+  { key: 'report', label: '보고서', icon: BarChart3, items: [{ label: '보고서', href: '/reports', perm: 'report:read', stage: 5, live: true }] },
   {
     key: 'admin', label: '관리', icon: Settings2,
     items: [
@@ -106,7 +108,9 @@ export const NAV: NavGroup[] = [
       { label: '세율 설정', href: '/admin/tax-rates', perm: 'company:read', stage: 1 },
       { label: '라이선스', href: '/admin/license', perm: 'license:read', stage: 1 },
       { label: '외부 연동', href: '/admin/integrations', perm: 'integration:read', stage: 3, live: true },
-      { label: 'API 키', href: '/soon/api-keys', perm: 'apikey:read', stage: 5, hint: '외부 프로그램용 REST API 키 발급·폐기' },
+      { label: 'API 키', href: '/admin/api-keys', perm: 'apikey:read', stage: 5, live: true },
+      { label: '웹훅', href: '/admin/webhooks', perm: 'integration:read', stage: 5, live: true },
+      { label: '백업', href: '/admin/backups', perm: 'company:read', stage: 5, live: true, systemAdmin: true },
     ],
   },
 ];

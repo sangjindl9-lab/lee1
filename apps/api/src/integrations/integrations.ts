@@ -19,6 +19,7 @@ import { NtsBizStatusProvider } from './providers/nts';
 import { AnthropicOcr, BuiltinPdfOcr, ClovaOcr, SampleOcr } from './providers/ocr';
 import { BarobillIssueProvider, PopbillIssueProvider, SandboxIssueProvider } from './providers/tax-issue';
 import { withRetry } from './retry';
+import { G2bOpenApi, G2bProvider, G2bSample } from './providers/g2b';
 import { BizStatusProvider, HometaxProvider, IntegrationKind, Mode, OcrProvider, ProviderContext, ProviderError, TaxIssueProvider } from './types';
 
 interface FieldDef { key: string; label: string; secret?: boolean; required?: boolean; help?: string; type?: 'text' | 'textarea' | 'select' | 'checkbox'; options?: { value: string; label: string }[] }
@@ -53,6 +54,11 @@ export const CATALOG: Record<IntegrationKind, { label: string; description: stri
     label: '사업자 휴폐업 조회', description: '국세청 사업자등록 상태(계속·휴업·폐업)를 조회해 거래처에 표시합니다.',
     providers: [{ id: 'NTS_OPENAPI', label: '국세청 사업자등록 상태조회 (공공데이터포털)', description: 'data.go.kr 에서 활용신청 후 받은 일반 인증키(Decoding)', verified: true, docs: 'https://www.data.go.kr/data/15081808/openapi.do', fields: [{ key: 'serviceKey', label: '서비스키', secret: true, required: true }] }],
   },
+  G2B: {
+    label: '나라장터 계약정보', description: '조달청 나라장터의 공사 계약을 조회해 현장 등록 초안으로 가져옵니다. 키가 없으면 현장을 직접 등록하세요.',
+    providers: [{ id: 'G2B_OPENAPI', label: '조달청 나라장터 계약정보서비스 (공공데이터포털)', description: 'data.go.kr 활용신청 후 받은 일반 인증키(Decoding). 서비스 주소가 바뀌면 설정에서 수정 — 운영 전 실제 조회로 확인 필요', verified: false, docs: 'https://www.data.go.kr', fields: [{ key: 'serviceKey', label: '서비스키', secret: true, required: true }, { key: 'baseUrl', label: '서비스 주소', help: '비워 두면 https://apis.data.go.kr/1230000/ao/CntrctInfoService' }] },
+      { id: 'SAMPLE', label: '샘플 계약 (테스트 전용)', description: '나라장터를 조회하지 않고 샘플 계약 3건을 돌려줍니다 — 시연·교육용', verified: true, testOnly: true, fields: [] }],
+  },
   OCR: {
     label: '문서 인식 (OCR·AI)', description: '발주서·거래명세표·세금계산서·영수증 사진/PDF에서 품목과 금액을 읽습니다. 결과는 사람이 확인한 뒤에만 등록됩니다.',
     providers: [
@@ -73,9 +79,10 @@ const PROVIDERS = {
   TAX_ISSUE: { POPBILL: new PopbillIssueProvider(), BAROBILL: new BarobillIssueProvider(), SANDBOX: new SandboxIssueProvider() } as Record<string, TaxIssueProvider>,
   HOMETAX: { CODEF: new CodefHometaxProvider() } as Record<string, HometaxProvider>,
   BIZ_STATUS: { NTS_OPENAPI: new NtsBizStatusProvider() } as Record<string, BizStatusProvider>,
+  G2B: { G2B_OPENAPI: new G2bOpenApi(), SAMPLE: new G2bSample() } as Record<string, G2bProvider>,
   OCR: { BUILTIN_PDF: new BuiltinPdfOcr(), ANTHROPIC: new AnthropicOcr(), CLOVA: new ClovaOcr(), SAMPLE: new SampleOcr() } as Record<string, OcrProvider>,
 };
-type ProviderOf<K extends IntegrationKind> = K extends 'TAX_ISSUE' ? TaxIssueProvider : K extends 'HOMETAX' ? HometaxProvider : K extends 'BIZ_STATUS' ? BizStatusProvider : OcrProvider;
+type ProviderOf<K extends IntegrationKind> = K extends 'TAX_ISSUE' ? TaxIssueProvider : K extends 'HOMETAX' ? HometaxProvider : K extends 'BIZ_STATUS' ? BizStatusProvider : K extends 'G2B' ? G2bProvider : OcrProvider;
 
 const SaveDto = z.object({
   provider: z.string().min(1).max(30),
@@ -217,7 +224,7 @@ export class IntegrationsService {
   }
 }
 
-const KindParam = z.enum(['TAX_ISSUE', 'HOMETAX', 'BIZ_STATUS', 'OCR']);
+const KindParam = z.enum(['TAX_ISSUE', 'HOMETAX', 'BIZ_STATUS', 'OCR', 'G2B']);
 
 @ApiTags('관리 · 외부 연동')
 @Controller('integrations')
@@ -253,6 +260,15 @@ export class IntegrationsController {
   @RequirePermission('integration', 'update')
   test(@Ctx() ctx: AccessContext, @Param('kind', new ZodPipe(KindParam)) kind: IntegrationKind) {
     return this.svc.test(ctx, kind);
+  }
+
+  /** 나라장터 공사 계약 조회 → 현장 등록 초안 */
+  @Get('g2b/contracts')
+  @RequirePermission('project', 'create')
+  async g2b(@Ctx() ctx: AccessContext, @Query(new ZodPipe(z.object({ from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), keyword: z.string().trim().max(50).optional(), bizNo: z.string().max(12).optional() }))) q: { from: string; to: string; keyword?: string; bizNo?: string }) {
+    const r = await this.svc.require(ctx.companyId!, 'G2B');
+    const { value } = await this.svc.run(ctx, 'G2B', r.providerId, r.pc.mode, 'SEARCH', () => r.provider.search(r.pc, q), { summary: `나라장터 계약 조회 ${q.from}~${q.to}${q.keyword ? ` '${q.keyword}'` : ''}`, resultOf: (v) => ({ count: v.length }) });
+    return value.map(({ raw, ...c }) => ({ ...c, raw: undefined }));
   }
 
   @Get('jobs')
