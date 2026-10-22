@@ -139,6 +139,8 @@ export class ApprovalsService {
    * 승인·반려·보류. 결재 행을 잠그고(FOR UPDATE) 처리하므로 두 사람이 동시에 눌러도 한 번만 반영된다.
    */
   async act(ctx: AccessContext, id: string, dto: z.infer<typeof ActDto>) {
+    // 결재는 사람만 — API 키로는 승인·반려할 수 없다 (가드에서도 막지만 한 번 더)
+    if (ctx.apiKeyId) throw new ForbiddenException({ code: 'API_NOT_ALLOWED', message: '결재는 API 키로 할 수 없습니다' });
     if (dto.action === 'reject' && !dto.comment) throw new BadRequestException({ code: 'COMMENT_REQUIRED', message: '반려 사유를 입력해 주세요', fields: [{ field: 'comment', message: '반려 사유 필수' }] });
     const myRoles = await this.roleKeys(ctx.companyId!, ctx.user.id);
     return this.db.transaction(async (tx) => {

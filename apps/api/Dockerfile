@@ -17,7 +17,10 @@ RUN npm ci --workspace apps/api --include-workspace-root=false --omit=dev && npm
 
 FROM node:22-bookworm-slim
 ENV NODE_ENV=production TZ=Asia/Seoul
-RUN apt-get update && apt-get install -y --no-install-recommends tini postgresql-client && rm -rf /var/lib/apt/lists/* \
+# pg_dump 는 DB 서버(PostgreSQL 16)와 같은 판이어야 하므로 PGDG 저장소의 16 판 클라이언트 사용 (화면 백업용)
+RUN apt-get update && apt-get install -y --no-install-recommends tini ca-certificates postgresql-common \
+  && /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y \
+  && apt-get install -y --no-install-recommends postgresql-client-16 && rm -rf /var/lib/apt/lists/* \
   && groupadd -r erp && useradd -r -g erp -d /app erp
 WORKDIR /app
 COPY --from=prod-deps /app/node_modules ./node_modules
@@ -28,7 +31,7 @@ COPY apps/api/drizzle ./apps/api/drizzle
 COPY apps/api/assets ./apps/api/assets
 COPY apps/api/scripts ./apps/api/scripts
 COPY apps/api/package.json ./apps/api/
-RUN mkdir -p /data/storage && chown -R erp:erp /data
+RUN mkdir -p /data/storage /data/backups && chown -R erp:erp /data
 USER erp
 WORKDIR /app/apps/api
 EXPOSE 4000

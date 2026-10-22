@@ -43,8 +43,13 @@ services:
       INIT_ADMIN_ID: ${INIT_ADMIN_ID:-admin}
       INIT_ADMIN_PASSWORD: ${INIT_ADMIN_PASSWORD:-}
       SWAGGER_ENABLED: ${SWAGGER_ENABLED:-false}
+      # 화면(관리 > 백업)에서 만드는 수동 백업 — 매일 자동 백업은 아래 backup 컨테이너가 맡는다
+      BACKUP_DIR: /data/backups
+      BACKUP_AUTO: "false"
+      BACKUP_KEEP: ${BACKUP_KEEP_MANUAL:-10}
     volumes:
       - file-storage:/data/storage
+      - app-backups:/data/backups
     networks: [internal]
 
   web:
@@ -97,6 +102,7 @@ services:
 volumes:
   db-data:
   file-storage:
+  app-backups:
   caddy-data:
   caddy-config:
 

@@ -193,6 +193,8 @@ describe('API 키 — 범위 제한 · Idempotency-Key', () => {
     expect((await auth(http0().get('/api/v1/journal-entries'))).status).toBe(403);
     expect((await auth(http0().get('/api/v1/users'))).status).toBe(403);
     expect((await http0().get('/api/v1/vendors').set('Authorization', 'Bearer ssk_' + 'x'.repeat(48))).status).toBe(401);
+    // 결재는 사람만
+    expect((await auth(http0().post('/api/v1/approvals/00000000-0000-4000-8000-000000000000/act').set('Idempotency-Key', 'approve-try-1')).send({ action: 'approve', version: 1 })).status).toBe(403);
   });
 
   it('POST 는 Idempotency-Key 필수 — 같은 키 재전송은 한 번만 처리, 다른 내용이면 422', async () => {
