@@ -49,7 +49,7 @@ export const NAV: NavGroup[] = [
       { label: '구매요청', href: '/purchase-requests', perm: 'purchase:read', stage: 2, live: true },
       { label: '발주서', href: '/purchase-orders', perm: 'purchase:read', stage: 2, live: true },
       { label: '납품·검수', href: '/receipts', perm: 'receipt:read', stage: 2, live: true },
-      { label: '문서 스캔(AI)', href: '/soon/scan', perm: 'document:read', stage: 3, hint: '발주서·거래명세표·세금계산서 사진/PDF 자동 인식' },
+      { label: '문서 스캔', href: '/scan', perm: 'document:read', stage: 3, live: true },
     ],
   },
   {
@@ -63,9 +63,9 @@ export const NAV: NavGroup[] = [
   {
     key: 'tax', label: '세금계산서', icon: Receipt,
     items: [
-      { label: '매출 발행', href: '/soon/tax-issue', perm: 'taxinvoice:read', stage: 3, hint: '팝빌·바로빌 연동 발행, 국세청 전송상태' },
-      { label: '매입 수집', href: '/soon/tax-collect', perm: 'taxinvoice:read', stage: 3, hint: '홈택스 매입·매출 수집, 중복 확인' },
-      { label: '발주·계산서 대사', href: '/soon/tax-match', perm: 'taxinvoice:read', stage: 3, hint: '발주·검수·계산서 금액 차이 경고' },
+      { label: '매출 발행', href: '/tax-invoices?direction=SALES', perm: 'taxinvoice:read', stage: 3, live: true },
+      { label: '매입 수집·처리', href: '/tax-invoices', perm: 'taxinvoice:read', stage: 3, live: true },
+      { label: '발주·계산서 대사', href: '/tax-invoices/reconcile', perm: 'taxinvoice:read', stage: 3, live: true },
     ],
   },
   {
@@ -105,7 +105,7 @@ export const NAV: NavGroup[] = [
       { label: '계정과목·분개규칙', href: '/admin/accounting', perm: 'journal:read', stage: 2, live: true },
       { label: '세율 설정', href: '/admin/tax-rates', perm: 'company:read', stage: 1 },
       { label: '라이선스', href: '/admin/license', perm: 'license:read', stage: 1 },
-      { label: '외부 연동', href: '/soon/integrations', perm: 'integration:read', stage: 3, hint: '팝빌·바로빌·홈택스·OCR·국세청 상태조회' },
+      { label: '외부 연동', href: '/admin/integrations', perm: 'integration:read', stage: 3, live: true },
       { label: 'API 키', href: '/soon/api-keys', perm: 'apikey:read', stage: 5, hint: '외부 프로그램용 REST API 키 발급·폐기' },
     ],
   },

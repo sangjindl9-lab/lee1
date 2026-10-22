@@ -93,3 +93,15 @@ export const ACCOUNT_CATEGORY: Record<string, string> = {
 export const BUDGET_LEVEL: Record<string, { label: string; tone: Tone }> = {
   OK: { label: '정상', tone: 'outline' }, WARN: { label: '90% 도달', tone: 'warn' }, OVER: { label: '초과', tone: 'seal' }, UNBUDGETED: { label: '예산 없음', tone: 'seal' },
 };
+export const TI_STATUS: Record<string, { label: string; tone: Tone }> = {
+  COLLECTED: { label: '미처리', tone: 'warn' }, POSTED: { label: '처리완료', tone: 'ok' }, IGNORED: { label: '제외', tone: 'muted' },
+  DRAFT: { label: '작성중', tone: 'outline' }, PENDING: { label: '결재중', tone: 'warn' }, READY: { label: '발행대기', tone: 'steel' },
+  ISSUED: { label: '발행', tone: 'ok' }, FAILED: { label: '발행실패', tone: 'seal' }, CANCELLED: { label: '취소', tone: 'muted' },
+};
+export const NTS_STATUS: Record<string, { label: string; tone: Tone }> = {
+  NOT_SENT: { label: '국세청 미전송', tone: 'muted' }, WAITING: { label: '전송 대기', tone: 'warn' }, SENT: { label: '국세청 전송완료', tone: 'ok' }, FAILED: { label: '전송 실패', tone: 'seal' },
+};
+export const TI_SOURCE: Record<string, string> = { HOMETAX: '홈택스 수집', EXCEL: '홈택스 엑셀', MANUAL: '직접 입력', OCR: '문서 스캔' };
+export const DOC_STATUS: Record<string, { label: string; tone: Tone }> = {
+  UPLOADED: { label: '인식 대기', tone: 'outline' }, EXTRACTED: { label: '확인 필요', tone: 'warn' }, FAILED: { label: '인식 실패', tone: 'seal' }, REGISTERED: { label: '등록 완료', tone: 'ok' }, REJECTED: { label: '반려', tone: 'muted' },
+};

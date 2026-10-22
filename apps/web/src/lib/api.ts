@@ -95,3 +95,13 @@ export function qs(params: Record<string, unknown>): string {
   const s = u.toString();
   return s ? `?${s}` : '';
 }
+
+/** 미리보기용 파일 — 회사 헤더와 함께 받아 blob URL 로 (iframe·img 에 사용) */
+export async function blobUrl(path: string): Promise<{ url: string; type: string }> {
+  const headers = new Headers();
+  if (companyId) headers.set('x-company-id', companyId);
+  const res = await fetch(`/api/v1${path}`, { headers, credentials: 'same-origin', cache: 'no-store' });
+  if (!res.ok) throw new ApiError(res.status, { code: 'PREVIEW', message: '원본 파일을 불러오지 못했습니다' });
+  const blob = await res.blob();
+  return { url: URL.createObjectURL(blob), type: blob.type };
+}

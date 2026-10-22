@@ -43,11 +43,31 @@ function useApprovalCount() {
   return useQuery({ queryKey: ['approval-counts', company.id], queryFn: () => api<{ todo: number; minePending: number }>('/approvals/counts'), enabled: can('approval:create'), refetchInterval: 60_000 }).data?.todo ?? 0;
 }
 
+/** 현재 주소의 쿼리 — 경로가 바뀌거나 앞뒤로 이동할 때 다시 읽는다 */
+function useSearch(path: string) {
+  const [s, setS] = useState('');
+  useEffect(() => {
+    const read = () => setS(window.location.search.slice(1));
+    read();
+    const t = setInterval(read, 700);
+    window.addEventListener('popstate', read);
+    return () => (clearInterval(t), window.removeEventListener('popstate', read));
+  }, [path]);
+  return s;
+}
+
 function NavLink({ item, collapsed, onNavigate, fav, onFav }: { item: NavItem; collapsed?: boolean; onNavigate?: () => void; fav?: boolean; onFav?: () => void }) {
   const path = usePathname();
   const todo = useApprovalCount();
   const live = isLiveItem(item);
-  const active = path === item.href || (item.href !== '/dashboard' && path.startsWith(item.href + '/'));
+  const search = useSearch(path);
+  const [ipath, iquery] = item.href.split('?');
+  // 같은 경로를 쿼리로 나눈 메뉴(매입·매출)는 쿼리까지 맞아야, 더 구체적인 하위 메뉴가 있으면 그쪽만 활성
+  const sibling = ALL_ITEMS.some((o) => o.href !== item.href && o.href.split('?')[0] === ipath);
+  const deeper = ALL_ITEMS.some((o) => o.href !== item.href && o.href.startsWith(ipath + '/') && (path === o.href || path.startsWith(o.href + '/')));
+  const active = iquery
+    ? path === ipath && iquery.split('&').every((kv) => search.includes(kv))
+    : !deeper && (path === ipath ? !(sibling && ALL_ITEMS.some((o) => o.href.startsWith(ipath + '?') && o.href.split('?')[1].split('&').every((kv) => search.includes(kv)))) : ipath !== '/dashboard' && path.startsWith(ipath + '/'));
   return (
     <div className="group/item relative">
       <Link

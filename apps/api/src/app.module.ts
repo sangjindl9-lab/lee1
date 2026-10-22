@@ -32,6 +32,11 @@ import { ClosingController, ClosingService } from './accounting/closing';
 import { BankAccountsController, BankAccountsService } from './bank/accounts';
 import { PaymentsController, PaymentsService } from './payments/payments';
 import { BudgetController, BudgetService } from './budget/budget';
+import { IntegrationsController, IntegrationsService } from './integrations/integrations';
+import { TaxInvoicesService } from './taxinvoices/taxinvoices.service';
+import { TaxInvoicesController } from './taxinvoices/taxinvoices.controller';
+import { HometaxCollectService } from './taxinvoices/collect.service';
+import { DocumentsController, DocumentsService } from './documents/documents';
 
 @Module({
   imports: [
@@ -42,12 +47,12 @@ import { BudgetController, BudgetService } from './budget/budget';
   controllers: [
     HealthController, AuthController, CompaniesController, UsersController, MembersController, RolesController,
     ProjectsController, VendorsController, MaterialsController, PurchaseController, PurchaseRequestsController, ApprovalsController,
-    JournalsController, LedgerReportsController, ClosingController, BankAccountsController, PaymentsController, BudgetController, FilesController, DashboardController, AuditController, LicenseController, TaxRateController,
+    JournalsController, LedgerReportsController, ClosingController, BankAccountsController, PaymentsController, BudgetController, IntegrationsController, TaxInvoicesController, DocumentsController, FilesController, DashboardController, AuditController, LicenseController, TaxRateController,
   ],
   providers: [
     AuditService, AccessService, AuthService, LicenseService, NumberingService, TaxRateService,
     CompaniesService, UsersService, RolesService, ProjectsService, VendorsService, MaterialsService, ApprovalsService, PurchaseService, PurchaseRequestsService,
-    LedgerService, JournalsService, LedgerReportsService, ClosingService, BankAccountsService, PaymentsService, BudgetService, FilesService, DashboardService,
+    LedgerService, JournalsService, LedgerReportsService, ClosingService, BankAccountsService, PaymentsService, BudgetService, IntegrationsService, TaxInvoicesService, HometaxCollectService, DocumentsService, FilesService, DashboardService,
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: ErpGuard },
     { provide: APP_FILTER, useClass: AllExceptionsFilter },

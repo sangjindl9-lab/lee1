@@ -138,6 +138,43 @@ export class FilesService {
     this.storage.stream(f.storageKey).pipe(res);
   }
 
+  /** 문서 스캔용 저장 — 현장·거래처가 아직 정해지지 않은 파일. PDF·이미지만 */
+  async storeScan(ctx: AccessContext, file: Express.Multer.File | undefined, projectId?: string | null) {
+    if (!file) throw new BadRequestException({ code: 'NO_FILE', message: '파일을 선택해 주세요' });
+    const originalName = Buffer.from(file.originalname, 'latin1').toString('utf8').replace(/[\\/:*?"<>|\x00-\x1f]/g, '_').slice(0, 200);
+    const ext = path.extname(originalName).slice(1).toLowerCase();
+    if (!['pdf', 'jpg', 'jpeg', 'png', 'webp'].includes(ext)) throw new BadRequestException({ code: 'FILE_TYPE', message: 'PDF 또는 사진(JPG·PNG·WEBP)만 인식할 수 있습니다' });
+    const rule = ALLOWED[ext];
+    const real = await detect(file.buffer);
+    if (!real || !rule.sig.includes(real)) throw new BadRequestException({ code: 'FILE_SIGNATURE', message: '파일 내용이 확장자와 다릅니다. 손상되었거나 위장된 파일일 수 있어 업로드를 막았습니다' });
+    const now = new Date();
+    const key = `${ctx.companyId}/scan/${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${randomUUID()}.${ext}`;
+    await this.storage.put(key, file.buffer);
+    const [f] = await this.db.insert(fileObjects).values({ companyId: ctx.companyId!, projectId: projectId ?? null, category: 'scan', originalName, storageKey: key, mimeType: rule.mime, size: file.size, sha256: sha256(file.buffer), createdById: ctx.user.id }).returning();
+    return f;
+  }
+
+  /** 권한 확인은 호출한 쪽(문서 스캔)이 한다 */
+  async streamRaw(fileId: string, companyId: string, res: Response, inline = true) {
+    const [f] = await this.db.select().from(fileObjects).where(and(eq(fileObjects.id, fileId), eq(fileObjects.companyId, companyId)));
+    if (!f) throw notFound('파일');
+    res.setHeader('Content-Type', f.mimeType);
+    res.setHeader('Content-Length', String(f.size));
+    res.setHeader('Content-Disposition', `${inline ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(f.originalName)}`);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Security-Policy', "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; sandbox");
+    res.setHeader('Cache-Control', 'private, no-store');
+    this.storage.stream(f.storageKey).pipe(res);
+  }
+
+  async readBuffer(fileId: string, companyId: string) {
+    const [f] = await this.db.select().from(fileObjects).where(and(eq(fileObjects.id, fileId), eq(fileObjects.companyId, companyId)));
+    if (!f) throw notFound('파일');
+    const chunks: Buffer[] = [];
+    for await (const c of this.storage.stream(f.storageKey) as AsyncIterable<Buffer>) chunks.push(c);
+    return { file: f, buffer: Buffer.concat(chunks) };
+  }
+
   /** 첨부 해제 (원본은 보존, 목록에서만 제외) */
   async remove(ctx: AccessContext, id: string) {
     const f = await this.find(ctx, id, 'update');

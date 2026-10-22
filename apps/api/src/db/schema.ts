@@ -702,3 +702,169 @@ export const payments = pgTable('payment', {
   cancelReason: text('cancel_reason'),
   ...audited,
 }, (t) => [uniqueIndex('payment_company_code_uq').on(t.companyId, t.code), index('payment_request_idx').on(t.requestId)]);
+
+// ═════════════════════════════ 3단계: 세금계산서·외부 연동·문서 스캔 ═════════════════════════════
+/** 외부 연동 설정 — 비밀값은 암호화(secretsEnc), 화면에는 '설정됨'만 표시 */
+export const integrationConfigs = pgTable('integration_config', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  companyId: uuid('company_id').notNull().references(() => companies.id),
+  kind: text('kind').notNull(), // TAX_ISSUE / HOMETAX / BIZ_STATUS / OCR / BANK
+  provider: text('provider').notNull(), // POPBILL / BAROBILL / CODEF / NTS_OPENAPI / ANTHROPIC / CLOVA / BUILTIN / SANDBOX
+  mode: text('mode').notNull().default('TEST'), // TEST / LIVE
+  enabled: boolean('enabled').notNull().default(false),
+  settings: jsonb('settings').$type<Record<string, unknown>>().notNull().default({}),
+  secretsEnc: text('secrets_enc'),
+  secretKeys: jsonb('secret_keys').$type<string[]>().notNull().default([]), // 어떤 비밀값이 저장되어 있는지 (값 아님)
+  lastTestAt: ts('last_test_at'),
+  lastTestOk: boolean('last_test_ok'),
+  lastTestMessage: text('last_test_message'),
+  ...audited,
+}, (t) => [uniqueIndex('integration_company_kind_uq').on(t.companyId, t.kind)]);
+
+/** 외부 API 호출 기록 — 재시도·장애 추적 */
+export const integrationJobs = pgTable('integration_job', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  companyId: uuid('company_id').notNull().references(() => companies.id),
+  kind: text('kind').notNull(),
+  provider: text('provider').notNull(),
+  mode: text('mode').notNull(),
+  action: text('action').notNull(),
+  status: text('status').notNull().default('RUNNING'), // RUNNING / SUCCESS / FAILED / WAITING_AUTH
+  attempts: integer('attempts').notNull().default(0),
+  summary: text('summary'),
+  result: jsonb('result'),
+  errorCode: text('error_code'),
+  errorMessage: text('error_message'),
+  startedAt: ts('started_at').notNull().defaultNow(),
+  finishedAt: ts('finished_at'),
+  createdById: uuid('created_by_id'),
+  createdByName: text('created_by_name'),
+}, (t) => [index('integration_job_company_idx').on(t.companyId, t.startedAt)]);
+
+export const taxDirection = pgEnum('tax_direction', ['SALES', 'PURCHASE']);
+export const taxInvoiceStatus = pgEnum('tax_invoice_status', [
+  'COLLECTED', // 매입: 수집됨(미처리)
+  'POSTED', // 매입: 확인·분개 완료
+  'IGNORED', // 매입: 처리 제외 (중복·업무무관)
+  'DRAFT', // 매출: 작성중
+  'PENDING', // 매출: 발행 결재중
+  'READY', // 매출: 결재 완료, 발행 대기
+  'ISSUED', // 매출: 발행 완료 (국세청 전송 상태는 nts_status)
+  'FAILED', // 매출: 발행 실패
+  'CANCELLED',
+]);
+
+export const taxInvoices = pgTable('tax_invoice', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  companyId: uuid('company_id').notNull().references(() => companies.id),
+  direction: taxDirection('direction').notNull(),
+  docKind: text('doc_kind').notNull().default('TAX'), // TAX 세금계산서 / EXEMPT 계산서
+  invoiceType: text('invoice_type'), // 일반 / 영세율 / 위수탁 / 수입 ...
+  status: taxInvoiceStatus('status').notNull(),
+  code: text('code').notNull(), // 내부 관리번호 TI26-0001
+  approvalNo: text('approval_no'), // 국세청 승인번호
+  writeDate: date('write_date').notNull(), // 작성일자
+  issueDate: date('issue_date'),
+  sendDate: date('send_date'),
+  purpose: text('purpose').notNull().default('CHARGE'), // CHARGE 청구 / RECEIPT 영수
+  supplierBizNo: text('supplier_biz_no'),
+  supplierName: text('supplier_name'),
+  supplierCeo: text('supplier_ceo'),
+  supplierAddress: text('supplier_address'),
+  supplierBizType: text('supplier_biz_type'),
+  supplierBizItem: text('supplier_biz_item'),
+  supplierEmail: text('supplier_email'),
+  buyerBizNo: text('buyer_biz_no'),
+  buyerName: text('buyer_name'),
+  buyerCeo: text('buyer_ceo'),
+  buyerAddress: text('buyer_address'),
+  buyerBizType: text('buyer_biz_type'),
+  buyerBizItem: text('buyer_biz_item'),
+  buyerEmail: text('buyer_email'),
+  vendorId: uuid('vendor_id').references(() => vendors.id),
+  projectId: uuid('project_id').references(() => projects.id),
+  supplyAmount: money('supply_amount').notNull(),
+  vatAmount: money('vat_amount').notNull(),
+  totalAmount: money('total_amount').notNull(),
+  remark: text('remark'),
+  modifyReason: text('modify_reason'), // 수정사유
+  originalApprovalNo: text('original_approval_no'),
+  source: text('source').notNull(), // HOMETAX / EXCEL / MANUAL / OCR / ISSUE
+  provider: text('provider'),
+  providerMode: text('provider_mode'), // TEST / LIVE — 테스트 발행은 법적 효력이 없다
+  providerKey: text('provider_key'), // 연동사 문서관리번호
+  ntsStatus: text('nts_status'), // NOT_SENT / WAITING / SENT / FAILED
+  ntsMessage: text('nts_message'),
+  dedupeKey: text('dedupe_key').notNull(),
+  // 대사(발주·검수·기성과 비교)
+  matchedSupply: money('matched_supply'),
+  matchDiff: money('match_diff'),
+  matchNote: text('match_note'),
+  // 분개 설정 (매입: 업무와 무관한 경비성 계산서)
+  accountId: uuid('account_id').references(() => accounts.id),
+  costCodeId: uuid('cost_code_id').references(() => costCodes.id),
+  vatDeductible: boolean('vat_deductible').notNull().default(true),
+  claimId: uuid('claim_id'), // 4단계 기성청구 연결 (매출)
+  approvalId: uuid('approval_id'),
+  raw: jsonb('raw'), // 연동사 원본 자료 (XML/JSON) 보관
+  postedAt: ts('posted_at'),
+  ignoredReason: text('ignored_reason'),
+  ...audited,
+}, (t) => [
+  uniqueIndex('tax_invoice_code_uq').on(t.companyId, t.code),
+  index('tax_invoice_company_dir_idx').on(t.companyId, t.direction, t.writeDate),
+  index('tax_invoice_vendor_idx').on(t.vendorId),
+]);
+
+export const taxInvoiceLines = pgTable('tax_invoice_line', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  invoiceId: uuid('invoice_id').notNull().references(() => taxInvoices.id, { onDelete: 'cascade' }),
+  lineNo: integer('line_no').notNull(),
+  itemDate: date('item_date'),
+  name: text('name'),
+  spec: text('spec'),
+  qty: qty('qty'),
+  unitPrice: price('unit_price'),
+  supplyAmount: money('supply_amount').notNull(),
+  vatAmount: money('vat_amount').notNull().default('0'),
+  remark: text('remark'),
+}, (t) => [uniqueIndex('tax_invoice_line_uq').on(t.invoiceId, t.lineNo)]);
+
+/** 세금계산서 ↔ 검수·발주·기성 연결 (한 발주가 여러 계산서로, 한 계산서가 여러 검수를 묶어 발행될 수 있다) */
+export const taxInvoiceMatches = pgTable('tax_invoice_match', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  invoiceId: uuid('invoice_id').notNull().references(() => taxInvoices.id, { onDelete: 'cascade' }),
+  sourceType: text('source_type').notNull(), // RECEIPT / CLAIM
+  sourceId: uuid('source_id').notNull(),
+  supplyAmount: money('supply_amount').notNull(),
+  vatAmount: money('vat_amount').notNull().default('0'),
+  createdAt: ts('created_at').notNull().defaultNow(),
+  createdById: uuid('created_by_id'),
+}, (t) => [uniqueIndex('tax_invoice_match_uq').on(t.invoiceId, t.sourceType, t.sourceId), index('tax_invoice_match_source_idx').on(t.sourceType, t.sourceId)]);
+
+// ───────────── 문서 스캔 (OCR/AI) ─────────────
+export const documentStatus = pgEnum('document_status', ['UPLOADED', 'EXTRACTED', 'FAILED', 'REGISTERED', 'REJECTED']);
+
+export const documents = pgTable('document', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  companyId: uuid('company_id').notNull().references(() => companies.id),
+  code: text('code').notNull(),
+  docType: text('doc_type').notNull(), // ISSUED_PO 구매발주서 / RECEIVED_PO 수주발주서 / STATEMENT 거래명세표 / DELIVERY 자재납품서 / TAX_INVOICE / RECEIPT 영수증 / QUOTE 견적서
+  fileId: uuid('file_id').notNull().references(() => fileObjects.id),
+  fileSha256: text('file_sha256').notNull(),
+  status: documentStatus('status').notNull().default('UPLOADED'),
+  projectId: uuid('project_id').references(() => projects.id),
+  vendorId: uuid('vendor_id').references(() => vendors.id),
+  provider: text('provider'),
+  providerMode: text('provider_mode'),
+  confidence: rate('confidence'),
+  extracted: jsonb('extracted'), // 인식 원본 (수정 전)
+  reviewed: jsonb('reviewed'), // 사용자 확인·수정본
+  duplicateKey: text('duplicate_key'),
+  duplicateOfId: uuid('duplicate_of_id'),
+  registeredType: text('registered_type'), // PURCHASE_ORDER / TAX_INVOICE / PAYMENT_REQUEST / PROJECT_FILE
+  registeredId: uuid('registered_id'),
+  errorMessage: text('error_message'),
+  rejectReason: text('reject_reason'),
+  ...audited,
+}, (t) => [uniqueIndex('document_code_uq').on(t.companyId, t.code), index('document_company_status_idx').on(t.companyId, t.status)]);
