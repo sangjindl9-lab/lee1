@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import SearchPage from './SearchPage.jsx';
 import Detail from './Detail.jsx';
+import CompanyCard from './Company.jsx';
 import { PAGES } from './pages.jsx';
 import { KINDS, load, save, shortDt, dday, wonShort } from './lib.js';
 import './App.css';
@@ -42,6 +43,13 @@ export default function App() {
   const [myBizno, setMyBizno] = useState(() => load('myBizno', ''));
   const [showSet, setShowSet] = useState(false);
   const [mock, setMock] = useState(false);
+  const [company, setCompany] = useState(null);
+  useEffect(() => {
+    const h = (e) => setCompany(e.detail);
+    window.addEventListener('open-company', h);
+    return () => window.removeEventListener('open-company', h);
+  }, []);
+  const closeCompany = useCallback(() => setCompany(null), []);
 
   useEffect(() => { save('tab', tab); }, [tab]);
   useEffect(() => { fetch('/api/health').then((r) => r.json()).then((d) => setMock(d.mock)).catch(() => {}); }, []);
@@ -93,6 +101,7 @@ export default function App() {
 
       <footer className="foot">자료: 조달청 나라장터 (공공데이터포털 OpenAPI) · 실제 입찰 전 나라장터 원문을 꼭 확인하세요.</footer>
 
+      {company && <CompanyCard info={company} onClose={closeCompany} />}
       {sel && <Detail sel={sel} onClose={close} onOpen={setSel} myBizno={myBizno} starred={starred} onStar={onStar} />}
     </div>
   );

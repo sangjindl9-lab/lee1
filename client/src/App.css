@@ -130,6 +130,7 @@ table.list tbody tr:last-child td { border-bottom: 0; }
 .date { white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--ink-2); font-size: 13px; }
 .mid { white-space: nowrap; color: var(--ink-2); font-size: 13px; }
 .org { color: var(--ink-2); font-size: 13px; max-width: 220px; }
+.corp { font-size: 13px; color: var(--ink-2); max-width: 200px; }
 .strong { color: var(--ink); font-weight: 600; }
 .hide { display: none; }
 .title-cell .t { font-weight: 600; color: var(--ink); min-width: 260px; }
@@ -216,3 +217,17 @@ table.sub tr.mine td { background: var(--mine); font-weight: 700; }
   .drawer header { padding: 14px 16px; }
   .drawer-body { padding: 4px 16px 24px; }
 }
+
+/* 업체 카드 */
+.corp-link { background: none; border: 0; padding: 0; font: inherit; color: inherit; cursor: pointer; text-align: left;
+  text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: 3px; }
+.corp-link:hover { color: var(--accent); text-decoration-color: var(--accent); }
+.modal-bg { position: fixed; inset: 0; background: rgba(10, 18, 30, .45); z-index: 70; display: grid; place-items: center; padding: 16px; }
+.corp-card { width: min(440px, 100%); background: var(--panel); border-radius: 14px; box-shadow: 0 12px 40px rgba(0,0,0,.25); padding: 18px 20px 16px; }
+.corp-card header { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.corp-card h2 { margin: 6px 0 0; font-size: 18px; }
+.corp-dl { display: grid; grid-template-columns: 84px 1fr; margin: 0 0 10px; border-top: 1px solid var(--line-soft); }
+.corp-dl dt { color: var(--ink-3); font-size: 13px; padding: 10px 0; border-bottom: 1px solid var(--line-soft); }
+.corp-dl dd { margin: 0; padding: 10px 0; border-bottom: 1px solid var(--line-soft); font-size: 14.5px; word-break: keep-all; overflow-wrap: anywhere; }
+.corp-dl .tel { font-weight: 700; font-size: 15.5px; text-decoration: none; }
+.corp-dl .mini { font-size: 12px; margin-left: 6px; }

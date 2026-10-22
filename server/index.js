@@ -182,6 +182,7 @@ async function awardForKind(kind, params) {
   const bidMap = new Map();
   for (const b of bids.items) bidMap.set(`${b.bidNtceNo}-${b.bidNtceOrd}`, b), bidMap.set(b.bidNtceNo, bidMap.get(b.bidNtceNo) || b);
   const finMap = new Map();
+  for (const f of finals.items) indexCompany(f);
   for (const f of finals.items) finMap.set(`${f.bidNtceNo}-${f.bidNtceOrd}-${f.bidClsfcNo}`, f), finMap.set(f.bidNtceNo, finMap.get(f.bidNtceNo) || f);
 
   const useIndustry = !!(indstrytyNm || indstrytyCd);
@@ -218,6 +219,44 @@ async function awardForKind(kind, params) {
   }
   return { rows, truncated: opens.truncated || bids.truncated || finals.truncated, mock: opens.mock };
 }
+
+// ── 업체 정보 (주소·대표자·전화) ─────────────────────────────────────────
+// 개찰 1순위 정보에는 상호·사업자번호·대표자만 있음. 주소·전화는 "최종낙찰목록"에만 있으므로
+// 조회하면서 받은 낙찰 데이터로 사업자번호별 연락처를 모아두고, 없으면 최근 낙찰 이력을 찾아봄.
+const companies = new Map(); // bizno → {name, ceo, adrs, tel, lastDate, lastBid}
+function indexCompany(f) {
+  const b = String(f.bidwinnrBizno || '').replaceAll('-', '');
+  if (!b || (!f.bidwinnrAdrs && !f.bidwinnrTelNo)) return;
+  const prev = companies.get(b);
+  const date = f.fnlSucsfDate || f.rlOpengDt || '';
+  if (prev && prev.lastDate > date) return;
+  companies.set(b, { bizno: b, name: f.bidwinnrNm, ceo: f.bidwinnrCeoNm, adrs: f.bidwinnrAdrs, tel: f.bidwinnrTelNo,
+    lastDate: date, lastBid: f.bidNtceNm, lastAmt: f.sucsfbidAmt, t: Date.now() });
+  if (companies.size > 20000) companies.delete(companies.keys().next().value);
+}
+const ymd = (d) => `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+
+app.get('/api/company/:bizno', async (req, res) => {
+  const b = String(req.params.bizno).replace(/[^0-9]/g, '');
+  if (b.length !== 10) return res.status(400).json({ error: '사업자번호 10자리가 필요합니다' });
+  const hit = companies.get(b);
+  if (hit && Date.now() - hit.t < 7 * 86400000) return res.json({ found: true, ...hit });
+  try {
+    // 최근 90일을 30일씩 거슬러 올라가며 이 업체의 최종낙찰 건을 찾음 (공사·용역·물품)
+    for (let w = 0; w < 3; w++) {
+      const end = new Date(Date.now() - w * 30 * 86400000);
+      const start = new Date(end.getTime() - 29 * 86400000);
+      const q = { inqryDiv: '2', inqryBgnDt: `${ymd(start)}0000`, inqryEndDt: `${ymd(end)}2359`, bizno: b, numOfRows: 50, pageNo: 1 };
+      const parts = await Promise.all(['Cnstwk', 'Servc', 'Thng'].map((k) => upstream('scs', `getScsbidListSttus${k}PPSSrch`, q).catch(() => ({ items: [] }))));
+      // API가 bizno 조건을 무시할 수 있으므로 사업자번호가 실제로 같은 건만 사용
+      for (const p of parts) for (const f of p.items || []) if (String(f.bidwinnrBizno) === b) indexCompany(f);
+      if (companies.has(b)) return res.json({ found: true, ...companies.get(b) });
+    }
+    res.json({ found: false, bizno: b });
+  } catch (err) {
+    res.status(502).json({ error: `업체 정보 조회 실패: ${err.message}` });
+  }
+});
 
 app.get('/api/award/:kind', async (req, res) => {
   const { kind } = req.params;

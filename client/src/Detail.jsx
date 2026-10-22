@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { CompanyName } from './Company.jsx';
 import { api, won, wonShort, dt, dday, bizno, parseCorpInfo, g2bLink, exportExcel } from './lib.js';
 
 function useApi(svc, op, params, enabled = true) {
@@ -143,7 +144,7 @@ function Ranking({ r, myBizno }) {
               {items.map((x, i) => (
                 <tr key={i} className={x.prcbdrBizno === mine ? 'mine' : ''}>
                   <td className="num">{x.opengRank}</td>
-                  <td>{x.prcbdrNm}<div className="s show-sm">{x.prcbdrCeoNm}</div></td>
+                  <td><CompanyName name={x.prcbdrNm} bizno={x.prcbdrBizno} ceo={x.prcbdrCeoNm} /><div className="s show-sm">{x.prcbdrCeoNm}</div></td>
                   <td className="hide-sm">{bizno(x.prcbdrBizno)}</td>
                   <td className="num">{won(x.bidprcAmt)}</td>
                   <td className="num">{x.bidprcrt}%</td>
@@ -227,7 +228,7 @@ function OpengInfo({ item: r, kind, type }) {
         {type === 'scs' ? (
           <>
             <Field label="상태">{r.awardStatus || '낙찰확정'}{r.awardStatus === '1순위' ? ' (낙찰자 심사 중)' : ''}</Field>
-            <Field label="낙찰(1순위)업체"><strong>{r.bidwinnrNm}</strong></Field>
+            <Field label="낙찰(1순위)업체"><strong><CompanyName name={r.bidwinnrNm} bizno={r.bidwinnrBizno} ceo={r.bidwinnrCeoNm} tel={r.bidwinnrTelNo} adrs={r.bidwinnrAdrs} /></strong></Field>
             <Field label="대표자">{r.bidwinnrCeoNm}</Field>
             <Field label="사업자번호">{bizno(r.bidwinnrBizno)}</Field>
             <Field label="연락처">{r.bidwinnrTelNo}</Field>
@@ -243,7 +244,7 @@ function OpengInfo({ item: r, kind, type }) {
           <>
             <Field label="진행">{r.progrsDivCdNm}</Field>
             <Field label="참가업체">{r.prtcptCnum ? `${Number(r.prtcptCnum).toLocaleString()}개사` : ''}</Field>
-            <Field label="1순위">{top?.name}</Field>
+            <Field label="1순위">{top ? <CompanyName name={top.name} bizno={top.bizno} ceo={top.ceo} /> : ''}</Field>
             <Field label="1순위 투찰">{top ? `${won(top.amt)}원 (${top.rate}%)` : ''}</Field>
             <Field label="개찰일시">{dt(r.opengDt)}</Field>
             <Field label="수요기관">{r.dminsttNm}</Field>

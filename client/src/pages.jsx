@@ -1,4 +1,5 @@
 import { wonShort, won, shortDt, dday, parseCorpInfo } from './lib.js';
+import { CompanyName } from './Company.jsx';
 
 const num = (v) => Number(v) || 0;
 const KIND_LABEL = { Cnstwk: '공사', Servc: '용역', Thng: '물품', Frgcpt: '외자', Etc: '기타' };
@@ -41,7 +42,7 @@ export const PAGES = [
       { key: 'dminsttNm', label: '수요기관', cls: 'org', wch: 24 },
       { key: 'progrsDivCdNm', label: '진행', cls: 'mid', render: (r) => <span className={`pill ${r.progrsDivCdNm === '개찰완료' ? 'ok' : 'warn'}`}>{r.progrsDivCdNm || '-'}</span> },
       { key: 'prtcptCnum', label: '참가', cls: 'num', render: (r) => (r.prtcptCnum ? `${num(r.prtcptCnum).toLocaleString()}개사` : '-'), sortVal: (r) => num(r.prtcptCnum) },
-      { key: 'opengCorpInfo', label: '1순위 업체', cls: 'org', render: (r) => parseCorpInfo(r.opengCorpInfo)?.name || '-',
+      { key: 'opengCorpInfo', label: '1순위 업체', cls: 'corp', render: (r) => { const c = parseCorpInfo(r.opengCorpInfo); return c ? <CompanyName name={c.name} bizno={c.bizno} ceo={c.ceo} /> : '-'; },
         excel: (r) => parseCorpInfo(r.opengCorpInfo)?.name || '' },
       { key: 'bidAmt', label: '투찰금액', cls: 'num', render: (r) => wonShort(parseCorpInfo(r.opengCorpInfo)?.amt),
         sortVal: (r) => num(parseCorpInfo(r.opengCorpInfo)?.amt), excel: (r) => num(parseCorpInfo(r.opengCorpInfo)?.amt) },
@@ -61,8 +62,8 @@ export const PAGES = [
       { key: 'presmptPrce', label: '추정가격', cls: 'num', render: (r) => wonShort(r.presmptPrce), sortVal: (r) => num(r.presmptPrce),
         excel: (r) => num(r.presmptPrce) },
       { key: 'awardStatus', label: '상태', cls: 'mid', render: (r) => <span className={`pill ${r.awardStatus === '낙찰확정' ? 'ok' : ''}`}>{r.awardStatus}</span> },
-      { key: 'bidwinnrNm', label: '낙찰(1순위)업체', cls: 'org strong', wch: 24,
-        render: (r) => <>{r.bidwinnrNm || '-'}{r.bidwinnrTelNo && <div className="s">{r.bidwinnrTelNo}</div>}</> },
+      { key: 'bidwinnrNm', label: '낙찰(1순위)업체', cls: 'corp strong', wch: 24,
+        render: (r) => <><CompanyName name={r.bidwinnrNm} bizno={r.bidwinnrBizno} ceo={r.bidwinnrCeoNm} tel={r.bidwinnrTelNo} adrs={r.bidwinnrAdrs} />{r.bidwinnrTelNo && <div className="s">{r.bidwinnrTelNo}</div>}</> },
       { key: 'sucsfbidAmt', label: '금액', cls: 'num', render: (r) => <>{won(r.sucsfbidAmt)}<div className="s">{num(r.sucsfbidRate) ? `${r.sucsfbidRate}%` : ''}</div></>,
         sortVal: (r) => num(r.sucsfbidAmt), excel: (r) => num(r.sucsfbidAmt) },
       { key: 'sucsfbidRate', label: '투찰률', cls: 'hide', excel: (r) => r.sucsfbidRate || '' },
