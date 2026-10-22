@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mockResponse } from './mock.js';
 import { selfTest } from './selftest.js';
+import { krResults, krDetail } from './krbid.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -399,6 +400,31 @@ app.get('/api/ext/:src', async (req, res) => {
   } catch (err) {
     res.status(502).json({ error: `${EXT[src].name} 데이터 조회 실패: ${err.message}` });
   }
+});
+
+// ── 국가철도공단 개찰·낙찰 (전자조달 공개 화면) ─────────────────────────────
+app.get('/api/krbid/:type', async (req, res) => {
+  const { type } = req.params;
+  if (!['award', 'openg'].includes(type)) return res.status(404).json({ error: '알 수 없는 구분' });
+  const today = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
+  const from = String(req.query.from || '') || new Date(Date.now() + 9 * 3600 * 1000 - 7 * 86400000).toISOString().slice(0, 10);
+  const to = String(req.query.to || '') || today;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) return res.status(400).json({ error: '날짜 형식 오류' });
+  if ((new Date(to) - new Date(from)) / 86400000 > 92) return res.status(400).json({ error: '기간은 3개월 이내로 지정하세요' });
+  try {
+    const size = Math.min(Number(req.query.numOfRows || 30), 300);
+    const d = await krResults(type, from, to, { q: String(req.query.q || ''), page: Number(req.query.pageNo || 1), size });
+    res.json({ items: d.rows, totalCount: d.total, truncated: d.truncated, from, to });
+  } catch (err) {
+    res.status(502).json({ error: `철도공단 사이트 조회 실패: ${err.message}` });
+  }
+});
+
+app.get('/api/krbid/:type/detail', async (req, res) => {
+  const { type } = req.params;
+  const key = Object.fromEntries(['ggNyeondo', 'ggGubun', 'ggIrBeonho', 'ggChasu', 'gyErBeonho'].map((k) => [k, String(req.query[k] || '').replace(/[^0-9]/g, '')]));
+  if (!['award', 'openg'].includes(type) || !key.ggNyeondo || !key.ggIrBeonho) return res.status(400).json({ error: '잘못된 요청' });
+  try { res.json(await krDetail(type, key)); } catch (err) { res.status(502).json({ error: `철도공단 상세 조회 실패: ${err.message}` }); }
 });
 
 app.get('/api/award/:kind', async (req, res) => {

@@ -1,10 +1,13 @@
 import { useState } from 'react';
 import { won, wonShort, daysAgo, exportExcel, load, save } from './lib.js';
+import KrResult from './KrResult.jsx';
 
 // 철도기관 (국가철도공단·한국철도공사) — 공공데이터포털 파일데이터. 실시간이 아님.
 const SOURCES = [
-  { id: 'kr', label: '국가철도공단' },
-  { id: 'korail', label: '한국철도공사' },
+  { id: 'kr-openg', label: '철도공단 개찰결과' },
+  { id: 'kr-award', label: '철도공단 낙찰결과' },
+  { id: 'kr', label: '철도공단 입찰정보(파일)' },
+  { id: 'korail', label: '철도공사 입찰공고(파일)' },
 ];
 
 const COLS = {
@@ -35,7 +38,7 @@ const COLS = {
 
 export default function RailPage() {
   const saved = load('search:rail', {});
-  const [src, setSrc] = useState('kr');
+  const [src, setSrc] = useState('kr-award');
   const [q, setQ] = useState(saved.q || '');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -60,7 +63,7 @@ export default function RailPage() {
     const qs = new URLSearchParams({ q, from, to, pageNo: 1, numOfRows: 5000 });
     const d = await fetch(`/api/ext/${src}?${qs}`).then((r) => r.json());
     if (d.error) return setS((x) => ({ ...x, error: d.error }));
-    exportExcel(d.items, COLS[src], `${SOURCES.find((x) => x.id === src).label}_입찰정보.xlsx`);
+    exportExcel(d.items, COLS[src], `${SOURCES.find((x) => x.id === src).label}.xlsx`);
   }
 
   const pages = Math.max(1, Math.ceil(s.total / 30));
@@ -69,9 +72,10 @@ export default function RailPage() {
       <div className="kind-tabs" role="tablist">
         {SOURCES.map((x) => (
           <button key={x.id} role="tab" aria-selected={src === x.id} className={src === x.id ? 'on' : ''}
-            onClick={() => { setSrc(x.id); if (s.searched) run(1, x.id); }}>{x.label}</button>
+            onClick={() => { setSrc(x.id); if (s.searched && !x.id.startsWith('kr-')) run(1, x.id); }}>{x.label}</button>
         ))}
       </div>
+      {src.startsWith('kr-') ? <KrResult key={src} type={src.slice(3)} /> : <>
 
       <div className="banner inline">
         ⓘ 이 기관들은 실시간 API가 없어 <b>기관이 공공데이터포털에 올린 파일</b>을 보여줍니다.
@@ -104,7 +108,7 @@ export default function RailPage() {
 
       <div className="result-head">
         <div>
-          <strong>{SOURCES.find((x) => x.id === src).label} 입찰정보</strong>
+          <strong>{SOURCES.find((x) => x.id === src).label}</strong>
           {s.searched && <span className="count">총 {s.total.toLocaleString()}건{s.all ? ` (전체 ${s.all.toLocaleString()}건 중)` : ''}</span>}
         </div>
         <button className="ghost" disabled={!s.items.length} onClick={download}>엑셀 다운로드</button>
@@ -148,6 +152,7 @@ export default function RailPage() {
           <button disabled={pageNo >= pages || s.loading} onClick={() => run(pageNo + 1)}>다음 ›</button>
         </nav>
       )}
+      </>}
     </section>
   );
 }

@@ -100,7 +100,7 @@ export default function App() {
           : <SearchPage key={tab} page={page} onOpen={setSel} starred={starred} onStar={onStar} myBizno={myBizno} />}
       </main>
 
-      <footer className="foot">자료: 조달청 나라장터 (공공데이터포털 OpenAPI) · 실제 입찰 전 나라장터 원문을 꼭 확인하세요. · 버전 10.22-24시</footer>
+      <footer className="foot">자료: 조달청 나라장터 (공공데이터포털 OpenAPI) · 실제 입찰 전 나라장터 원문을 꼭 확인하세요. · 버전 10.23-01시</footer>
 
       {company && <CompanyCard info={company} onClose={closeCompany} />}
       {sel && <Detail sel={sel} onClose={close} onOpen={setSel} myBizno={myBizno} starred={starred} onStar={onStar} />}
