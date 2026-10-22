@@ -97,7 +97,7 @@ async function upstream(svc, op, params) {
     const e = parseXmlError(text);
     throw new Error(`[${e.code}] ${e.msg}`);
   }
-  if (svc === 'usr' && process.env.SELFTEST === '1') console.log(`[usr raw] ${text.slice(0, 600)}`);
+  if (svc === 'usr' && process.env.SELFTEST === '1') console.log(`[usr raw] ${text.replace(/\s+/g, " ").slice(0, 700)}`);
   const data = normalize(JSON.parse(text));
   if (data.resultCode && data.resultCode !== '00') throw new Error(`[${data.resultCode}] ${data.resultMsg}`);
   cache.set(cacheKey, { t: Date.now(), data });
