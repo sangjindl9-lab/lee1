@@ -20,7 +20,7 @@ export function CompanyName({ name, bizno, ceo, tel, adrs, children }) {
 export default function CompanyCard({ info, onClose }) {
   const [s, setS] = useState({ loading: true, data: null, error: '' });
   const b = String(info.bizno || '').replace(/[^0-9]/g, '');
-  const known = info.adrs || info.tel;
+  const known = false; // 항상 등록업체 정보로 최신 연락처 확인
 
   useEffect(() => {
     if (known || b.length !== 10) { setS({ loading: false, data: null, error: '' }); return; }
@@ -38,9 +38,9 @@ export default function CompanyCard({ info, onClose }) {
   }, [onClose]);
 
   const d = s.data?.found ? s.data : null;
-  const adrs = info.adrs || d?.adrs;
-  const tel = info.tel || d?.tel;
-  const ceo = info.ceo || d?.ceo;
+  const adrs = d?.adrs || info.adrs;
+  const tel = d?.tel || info.tel;
+  const ceo = d?.ceo || info.ceo;
   const telHref = tel ? `tel:${tel.replace(/[^0-9+]/g, '')}` : null;
   const mapHref = adrs ? `https://map.naver.com/p/search/${encodeURIComponent(adrs)}` : null;
 
@@ -61,12 +61,21 @@ export default function CompanyCard({ info, onClose }) {
           <dd>{s.loading ? <span className="muted">찾는 중…</span> : adrs ? <>{adrs} {mapHref && <a href={mapHref} target="_blank" rel="noreferrer" className="mini">지도</a>}</> : <span className="muted">정보 없음</span>}</dd>
           <dt>전화번호</dt>
           <dd>{s.loading ? <span className="muted">찾는 중…</span> : tel ? <a href={telHref} className="tel">{tel}</a> : <span className="muted">정보 없음</span>}</dd>
+          {d?.fax && <><dt>팩스</dt><dd>{d.fax}</dd></>}
+          {d?.homepage && <><dt>홈페이지</dt><dd><a href={/^https?:/.test(d.homepage) ? d.homepage : `http://${d.homepage}`} target="_blank" rel="noreferrer">{d.homepage}</a></dd></>}
+          {d?.source === 'usr' && (d.corpBsnsDivNm || d.hdoffceDivNm || d.emplyeNum) && (
+            <><dt>구분</dt><dd>{[d.corpBsnsDivNm, d.hdoffceDivNm, Number(d.emplyeNum) ? `직원 ${d.emplyeNum}명` : '', d.opbizDt ? `개업 ${String(d.opbizDt).slice(0, 10)}` : ''].filter(Boolean).join(' · ')}</dd></>
+          )}
         </dl>
         {!s.loading && !adrs && !tel && (
-          <p className="muted small">최근 6개월 안에 최종 낙찰된 이력이 없어 주소·전화번호를 찾지 못했습니다. (조달청 데이터는 낙찰 확정 건에만 연락처가 있습니다)</p>
+          <p className="muted small">나라장터 등록업체 정보에서 이 업체를 찾지 못했습니다.</p>
+        )}
+        {s.data?.usrState === 'notRegistered' && (
+          <p className="error small">사용자정보서비스 API 활용신청이 필요합니다. 공공데이터포털에서 「조달청_나라장터 사용자정보 서비스」를 신청하면 모든 업체 연락처가 나옵니다.</p>
         )}
         {s.error && <p className="error small">⚠ {s.error}</p>}
-        {d?.lastBid && (
+        {d?.source === 'usr' && <p className="muted small">출처: 나라장터 등록업체 정보 (조달청 사용자정보서비스)</p>}
+        {d?.source === 'award' && d?.lastBid && (
           <p className="muted small">연락처 출처: 최근 낙찰 「{d.lastBid}」 {d.lastDate ? `(${String(d.lastDate).slice(0, 10)})` : ''}{Number(d.lastAmt) ? ` · ${won(d.lastAmt)}원` : ''}</p>
         )}
       </div>

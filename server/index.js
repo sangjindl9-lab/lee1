@@ -16,6 +16,7 @@ const MOCK = process.env.MOCK === '1';
 const SERVICES = {
   bid: 'https://apis.data.go.kr/1230000/ad/BidPublicInfoService', // 입찰공고정보서비스
   scs: 'https://apis.data.go.kr/1230000/as/ScsbidInfoService',    // 낙찰정보서비스
+  usr: 'https://apis.data.go.kr/1230000/ao/UsrInfoService02',      // 사용자정보서비스(조달업체 기본정보)
 };
 
 // 호출 허용 오퍼레이션 (API 문서 기준)
@@ -31,6 +32,7 @@ const ALLOWED = {
     'getBidPblancListInfoServcBsisAmount',
     'getBidPblancListInfoThngBsisAmount',
   ]),
+  usr: new Set(['getPrcrmntCorpBasicInfo02']),
   scs: new Set([
     ...KINDS.map((k) => `getScsbidListSttus${k}PPSSrch`),   // 낙찰목록
     ...KINDS.map((k) => `getOpengResultListInfo${k}PPSSrch`), // 개찰결과
@@ -47,7 +49,7 @@ const PARAMS = new Set([
   'bidClsfcNo', 'rbidNo', 'bidNtceNm', 'ntceInsttCd', 'ntceInsttNm', 'dminsttCd', 'dminsttNm',
   'refNo', 'prtcptLmtRgnCd', 'prtcptLmtRgnNm', 'indstrytyCd', 'indstrytyNm', 'presmptPrceBgn',
   'presmptPrceEnd', 'dtilPrdctClsfcNo', 'masYn', 'prcrmntReqNo', 'bidClseExcpYn', 'intrntnlDivCd',
-  'bizno',
+  'bizno', 'corpNm',
 ]);
 
 // 간단한 메모리 캐시 (3분) — 같은 검색 반복 시 트래픽 절약
@@ -236,11 +238,41 @@ function indexCompany(f) {
 }
 const ymd = (d) => `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
 
+// 1순위: 사용자정보서비스(나라장터 등록업체 전체) — 낙찰 여부와 관계없이 주소·전화·대표자 제공
+// 2순위: 최근 낙찰 이력(최종낙찰목록)에서 찾기
+let usrState = 'unknown'; // 'ok' | 'notRegistered' | 'unknown'
+async function corpBasic(b) {
+  const d = await upstream('usr', 'getPrcrmntCorpBasicInfo02', { inqryDiv: '3', bizno: b, numOfRows: 5, pageNo: 1 });
+  usrState = 'ok';
+  const c = (d.items || []).find((x) => String(x.bizno) === b) || d.items?.[0];
+  if (!c) return null;
+  const adrs = [c.adrs, c.dtlAdrs].filter(Boolean).join(' ').trim();
+  return {
+    found: true, source: 'usr', bizno: b, name: c.corpNm, ceo: c.ceoNm, adrs, tel: c.telNo, fax: c.faxNo,
+    homepage: c.hmpgAdrs, rgnNm: c.rgnNm, opbizDt: c.opbizDt, corpBsnsDivNm: c.corpBsnsDivNm, hdoffceDivNm: c.hdoffceDivNm,
+    emplyeNum: c.emplyeNum, t: Date.now(),
+  };
+}
+
+const corpCache = new Map();
 app.get('/api/company/:bizno', async (req, res) => {
   const b = String(req.params.bizno).replace(/[^0-9]/g, '');
   if (b.length !== 10) return res.status(400).json({ error: '사업자번호 10자리가 필요합니다' });
+  const cached = corpCache.get(b);
+  if (cached && Date.now() - cached.t < 7 * 86400000) return res.json(cached);
+
+  let usrError = '';
+  try {
+    const c = await corpBasic(b);
+    if (c && (c.adrs || c.tel)) { corpCache.set(b, c); return res.json(c); }
+  } catch (err) {
+    usrError = err.message;
+    if (/SERVICE_KEY_IS_NOT_REGISTERED|등록되지 않은|\[30\]/.test(err.message)) usrState = 'notRegistered';
+    console.log(`[company] 사용자정보서비스 실패 ${b}: ${err.message}`);
+  }
+
   const hit = companies.get(b);
-  if (hit && Date.now() - hit.t < 7 * 86400000) return res.json({ found: true, ...hit });
+  if (hit) return res.json({ found: true, source: 'award', ...hit, usrState });
   try {
     // 최근 180일을 30일씩 거슬러 올라가며 이 업체의 최종낙찰 건을 찾음 (공사·용역·물품)
     for (let w = 0; w < 6; w++) {
@@ -248,11 +280,10 @@ app.get('/api/company/:bizno', async (req, res) => {
       const start = new Date(end.getTime() - 29 * 86400000);
       const q = { inqryDiv: '2', inqryBgnDt: `${ymd(start)}0000`, inqryEndDt: `${ymd(end)}2359`, bizno: b, numOfRows: 50, pageNo: 1 };
       const parts = await Promise.all(['Cnstwk', 'Servc', 'Thng'].map((k) => upstream('scs', `getScsbidListSttus${k}PPSSrch`, q).catch(() => ({ items: [] }))));
-      // API가 bizno 조건을 무시할 수 있으므로 사업자번호가 실제로 같은 건만 사용
       for (const p of parts) for (const f of p.items || []) if (String(f.bidwinnrBizno) === b) indexCompany(f);
-      if (companies.has(b)) return res.json({ found: true, ...companies.get(b) });
+      if (companies.has(b)) return res.json({ found: true, source: 'award', ...companies.get(b), usrState });
     }
-    res.json({ found: false, bizno: b });
+    res.json({ found: false, bizno: b, usrState, usrError });
   } catch (err) {
     res.status(502).json({ error: `업체 정보 조회 실패: ${err.message}` });
   }

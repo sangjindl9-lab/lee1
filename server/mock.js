@@ -64,6 +64,12 @@ function list(gen, q, total = 57) {
 export function mockResponse(svc, op, q) {
   seed = 7 + Number(q.pageNo || 1);
   const kind = kindOf(op);
+  if (svc === 'usr') {
+    const c = CORPS.find((x) => x[1] === q.bizno) || ['샘플정보통신㈜', q.bizno, '홍대표'];
+    return { resultCode: '00', resultMsg: '정상', totalCount: 1, pageNo: 1, numOfRows: 5, items: [{
+      bizno: c[1], corpNm: c[0], ceoNm: c[2], adrs: '강원특별자치도 원주시 시청로 1', dtlAdrs: '2층', telNo: '033-123-4567', faxNo: '033-123-4568',
+      rgnNm: '강원특별자치도', corpBsnsDivNm: '공사', hdoffceDivNm: '본사', opbizDt: '2010-03-02 00:00:00', emplyeNum: '8', hmpgAdrs: '' }] };
+  }
   if (svc === 'bid') {
     if (op.endsWith('LicenseLimit')) return list(() => ({ bidNtceNo: q.bidNtceNo, bidNtceOrd: '000', lmtGrpNo: '1', lmtSno: '1', lcnsLmtNm: '전기공사업/0036', permsnIndstrytyList: '' }), q, 1);
     if (op.endsWith('PrtcptPsblRgn')) return list(() => ({ bidNtceNo: q.bidNtceNo, lmtSno: '1', prtcptPsblRgnNm: '강원특별자치도' }), q, 1);
