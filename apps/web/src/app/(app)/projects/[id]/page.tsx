@@ -203,6 +203,20 @@ export default function ProjectDetailPage() {
         </Stat>
       </div>
 
+      <nav aria-label="이 현장의 업무" className="mt-3 flex flex-wrap gap-1.5">
+        {[
+          { href: `/project-pl/${p.id}`, label: '현장 손익', perm: 'report:read' },
+          { href: `/budgets/${p.id}`, label: '실행예산', perm: 'budget:read' },
+          { href: `/contracts?projectId=${p.id}`, label: '변경계약', perm: 'contract:read' },
+          { href: `/claims?projectId=${p.id}`, label: '기성·수금', perm: 'claim:read' },
+          { href: `/subcontracts?projectId=${p.id}`, label: '하도급', perm: 'subcontract:read' },
+          { href: `/labor?projectId=${p.id}`, label: '노무비', perm: 'labor:read' },
+          { href: `/projects/${p.id}/settlement`, label: p.status === 'SETTLED' ? '준공정산 (완료)' : '준공정산', perm: 'report:read' },
+        ].filter((x) => can(x.perm)).map((x) => (
+          <Link key={x.href} href={x.href} className="rounded-[4px] border border-line bg-surface px-2.5 py-1 text-meta text-ink-2 hover:border-steel hover:text-ink">{x.label}</Link>
+        ))}
+      </nav>
+
       <div className="mt-5">
         <Tabs<Tab>
           value={tab}

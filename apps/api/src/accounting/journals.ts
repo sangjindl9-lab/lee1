@@ -74,7 +74,7 @@ export function sourceHref(sourceType: string, sourceId: string | null, extra?: 
     case 'TAX_INVOICE': return `/tax-invoices/${sourceId}`;
     case 'CLAIM': return `/claims/${sourceId}`;
     case 'COLLECTION': return `/collections`;
-    case 'SUB_CLAIM': return `/subcontracts`;
+    case 'SUB_CLAIM': return `/subcontracts/claims/${sourceId}`;
     case 'LABOR': return `/labor`;
     default: return null;
   }

@@ -126,6 +126,9 @@ export class ProjectsService {
       contractType: dto.contractType, contractDate: dto.contractDate ?? null, startDate: dto.startDate ?? null,
       plannedEndDate: dto.plannedEndDate ?? null, actualEndDate: dto.actualEndDate ?? null,
       managerName: dto.managerName, siteManagerName: dto.siteManagerName, memo: dto.memo,
+      clientVendorId: dto.clientVendorId ?? null,
+      advanceAmount: moneyStr(dto.advanceAmount || '0'),
+      retentionRate: D(dto.retentionPercent ?? 0).div(100).toFixed(4),
     };
   }
 
@@ -150,6 +153,11 @@ export class ProjectsService {
     const [before] = await this.db.select().from(projects).where(and(eq(projects.id, id), this.baseWhere(ctx)));
     if (!before) throw notFound('현장');
     const amounts = await this.amounts(dto);
+    if (!D(amounts.supplyAmount).eq(before.supplyAmount)) {
+      const used = (await this.db.execute(sql`select (select count(*) from contract_revision where project_id = ${id} and status <> 'CANCELLED') + (select count(*) from progress_claim where project_id = ${id} and status not in ('CANCELLED','REJECTED')) n`)).rows[0] as { n: string };
+      if (Number(used.n) > 0) throw new BadRequestException({ code: 'USE_REVISION', message: '변경계약이나 기성이 있는 현장의 계약금액은 여기서 바꿀 수 없습니다. 변경계약으로 처리하세요 (최초계약 보존)' });
+    }
+    if (before.status === 'SETTLED' && dto.status !== 'SETTLED') throw new BadRequestException({ code: 'SETTLED', message: '정산 완료된 현장은 준공정산 화면에서 다시 열어야 합니다' });
     return this.db.transaction(async (tx) => {
       const [p] = await tx
         .update(projects)
@@ -206,6 +214,7 @@ function present(p: typeof projects.$inferSelect) {
     ...p,
     progressPercent: D(p.progressRate).mul(100).toFixed(1),
     jointSharePercent: p.jointShareRate === null ? null : D(p.jointShareRate).mul(100).toFixed(2),
+    retentionPercent: D(p.retentionRate).mul(100).toFixed(2),
     plannedMargin: moneyStr(D(p.supplyAmount).minus(p.executionBudget)),
     plannedMarginRate: D(p.supplyAmount).gt(0) ? D(p.supplyAmount).minus(p.executionBudget).div(p.supplyAmount).toFixed(4) : null,
   };

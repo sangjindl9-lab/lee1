@@ -4,6 +4,7 @@ import clsx from 'clsx';
 import { useQuery } from '@tanstack/react-query';
 import { FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Checkbox, Field, Input, MoneyInput, Select, Textarea, Won } from '@/components/ui';
+import { VendorPicker } from '@/components/pickers';
 import { api, ApiError } from '@/lib/api';
 import { addDigits, pct, previewVat } from '@/lib/format';
 import { CONTRACT_ROLE, SECTOR, STATUS, TRADE, type ProjectStatus, type TradeType } from '@/lib/labels';
@@ -15,6 +16,7 @@ export interface ProjectFormValues {
   contractDate: string; startDate: string; plannedEndDate: string; actualEndDate: string;
   supplyAmount: string; vatAmount: string; vatManual: boolean; executionBudget: string; jointShareRate: string; progressRate: string;
   managerName: string; siteManagerName: string; memo: string;
+  clientVendor: { id: string; name: string } | null; advanceAmount: string; retentionPercent: string;
 }
 
 const intOf = (v: string) => (v ?? '0').split('.')[0];
@@ -29,6 +31,7 @@ export function toForm(p?: ProjectDetail): ProjectFormValues {
     vatManual: !!p && intOf(p.vatAmount) !== previewVat(intOf(p.supplyAmount), Number(p.vatRate)),
     executionBudget: p ? intOf(p.executionBudget) : '', jointShareRate: p?.jointSharePercent ?? '', progressRate: p ? String(Number(p.progressPercent)) : '0',
     managerName: p?.managerName ?? '', siteManagerName: p?.siteManagerName ?? '', memo: p?.memo ?? '',
+    clientVendor: p?.clientVendorId ? { id: p.clientVendorId, name: p.clientName ?? '발주처' } : null, advanceAmount: p ? intOf(p.advanceAmount ?? '0') : '', retentionPercent: p ? String(Number(p.retentionPercent ?? 0)) : '0',
   };
 }
 
@@ -107,6 +110,7 @@ export function ProjectForm({ initial, submitLabel, onSubmit, onCancel, code }: 
         contractDate: v.contractDate || null, startDate: v.startDate || null, plannedEndDate: v.plannedEndDate || null, actualEndDate: v.actualEndDate || null,
         supplyAmount: v.supplyAmount || '0', vatAmount: v.vatManual ? v.vatAmount || '0' : null, executionBudget: v.executionBudget || '0',
         jointShareRate: v.contractRole === 'JOINT' && v.jointShareRate ? Number(v.jointShareRate) : null, progressRate: Number(v.progressRate || 0),
+        clientVendorId: v.clientVendor?.id ?? null, advanceAmount: v.advanceAmount || '0', retentionPercent: Number(v.retentionPercent || 0),
         managerName: v.managerName, siteManagerName: v.siteManagerName, memo: v.memo,
       });
     } catch (err) {
@@ -180,8 +184,8 @@ export function ProjectForm({ initial, submitLabel, onSubmit, onCancel, code }: 
           <Field label="발주 구분">
             <Segmented name="발주 구분" value={v.clientSector} onChange={(x) => set('clientSector', x)} options={(Object.keys(SECTOR) as (keyof typeof SECTOR)[]).map((k) => ({ value: k, label: SECTOR[k] }))} />
           </Field>
-          <Field label="발주처">
-            <Input value={v.clientName} onChange={(e) => set('clientName', e.target.value)} />
+          <Field label="발주처" hint="거래처에서 고르면 기성·수금 채권이 그 거래처로 잡힙니다">
+            <VendorPicker value={v.clientVendor?.id ?? null} display={v.clientVendor?.name} onChange={(o) => setV((x) => ({ ...x, clientVendor: o, clientName: o ? o.name : x.clientName }))} placeholder={v.clientName || '거래처 검색'} />
           </Field>
           <Field label="계약형태" hint="총액·단가·장기계속 등">
             <Input value={v.contractType} onChange={(e) => set('contractType', e.target.value)} list="contract-types" />
@@ -226,6 +230,15 @@ export function ProjectForm({ initial, submitLabel, onSubmit, onCancel, code }: 
           </div>
           <Field label="실행예산" error={err('executionBudget')} hint="계획 원가 총액">
             <MoneyInput value={v.executionBudget} onChange={(d) => set('executionBudget', d)} />
+          </Field>
+          <Field label="선급금 (공급가)" hint="계약상 받을 선급금 — 기성에서 나누어 공제">
+            <MoneyInput value={v.advanceAmount} onChange={(d) => set('advanceAmount', d)} />
+          </Field>
+          <Field label="기성 유보율" hint="기성마다 떼어 두는 비율 (없으면 0)">
+            <div className="relative">
+              <Input inputMode="decimal" value={v.retentionPercent} onChange={(e) => set('retentionPercent', e.target.value.replace(/[^0-9.]/g, ''))} className="num pr-7 text-right" />
+              <span className="pointer-events-none absolute top-1/2 right-2.5 -translate-y-1/2 text-meta text-faint">%</span>
+            </div>
           </Field>
         </Section>
 

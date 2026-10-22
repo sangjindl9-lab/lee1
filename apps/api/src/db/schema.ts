@@ -143,6 +143,12 @@ export const projects = pgTable('project', {
   managerName: text('manager_name'),
   siteManagerName: text('site_manager_name'),
   memo: text('memo'),
+  /** 발주처 거래처 (기성·수금 채권의 상대방) */
+  clientVendorId: uuid('client_vendor_id'),
+  /** 선급금 계약액 */
+  advanceAmount: money('advance_amount').notNull().default('0'),
+  /** 기본 유보율 (기성마다 바꿀 수 있음) */
+  retentionRate: rate('retention_rate').notNull().default('0'),
   deletedAt: ts('deleted_at'),
   ...audited,
 }, (t) => [
@@ -868,3 +874,232 @@ export const documents = pgTable('document', {
   rejectReason: text('reject_reason'),
   ...audited,
 }, (t) => [uniqueIndex('document_code_uq').on(t.companyId, t.code), index('document_company_status_idx').on(t.companyId, t.status)]);
+
+
+// ───────────── 4단계: 계약변경 · 기성 · 수금 · 하도급 · 노무 · 준공정산 ─────────────
+/** 변경계약 — 최초계약(project.supply_amount)은 그대로 두고 증감만 쌓는다. 결재 전에는 확정 계약금액에 들어가지 않는다 */
+export const contractRevisions = pgTable('contract_revision', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  companyId: uuid('company_id').notNull().references(() => companies.id),
+  projectId: uuid('project_id').notNull().references(() => projects.id),
+  code: text('code').notNull(),
+  revisionNo: integer('revision_no').notNull(),
+  revisionDate: date('revision_date').notNull(),
+  reason: text('reason').notNull(),
+  beforeSupply: money('before_supply').notNull(),
+  deltaAmount: money('delta_amount').notNull(),
+  afterSupply: money('after_supply').notNull(),
+  vatRate: rate('vat_rate').notNull(),
+  deltaVat: money('delta_vat').notNull(),
+  beforeEndDate: date('before_end_date'),
+  afterEndDate: date('after_end_date'),
+  /** 승인 때 함께 만들 실행예산 조정안 [{costCodeId, delta}] — 실행예산은 별도 결재 */
+  budgetLines: jsonb('budget_lines'),
+  budgetRevisionId: uuid('budget_revision_id'),
+  status: docStatus('status').notNull().default('DRAFT'),
+  approvalId: uuid('approval_id'),
+  approvedAt: ts('approved_at'),
+  fileId: uuid('file_id'),
+  ...audited,
+}, (t) => [uniqueIndex('contract_revision_code_uq').on(t.companyId, t.code), index('contract_revision_project_idx').on(t.projectId)]);
+
+export const claimStatus = pgEnum('claim_status', ['DRAFT', 'PENDING', 'APPROVED', 'REJECTED', 'INVOICED', 'PARTIAL', 'COLLECTED', 'CANCELLED']);
+
+/** 기성청구 — 승인 시 매출 인식(공사수입), 세금계산서는 별도(부가세만), 수금은 collection */
+export const progressClaims = pgTable('progress_claim', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  companyId: uuid('company_id').notNull().references(() => companies.id),
+  projectId: uuid('project_id').notNull().references(() => projects.id),
+  vendorId: uuid('vendor_id').notNull().references(() => vendors.id),
+  code: text('code').notNull(),
+  claimNo: integer('claim_no').notNull(),
+  claimDate: date('claim_date').notNull(),
+  periodFrom: date('period_from'),
+  periodTo: date('period_to'),
+  dueDate: date('due_date'),
+  contractSupply: money('contract_supply').notNull(),
+  prevCumulative: money('prev_cumulative').notNull(),
+  thisSupply: money('this_supply').notNull(),
+  cumulative: money('cumulative').notNull(),
+  progressRate: rate('progress_rate').notNull(),
+  vatRate: rate('vat_rate').notNull(),
+  vatAmount: money('vat_amount').notNull(),
+  advanceDeduction: money('advance_deduction').notNull().default('0'),
+  retentionRate: rate('retention_rate').notNull().default('0'),
+  retentionAmount: money('retention_amount').notNull().default('0'),
+  /** 받을 금액 = 금회 공급가 + 세액 − 선급금 공제 − 유보금 */
+  receivableAmount: money('receivable_amount').notNull(),
+  isFinal: boolean('is_final').notNull().default(false),
+  status: claimStatus('status').notNull().default('DRAFT'),
+  approvalId: uuid('approval_id'),
+  approvedAt: ts('approved_at'),
+  memo: text('memo'),
+  ...audited,
+}, (t) => [uniqueIndex('progress_claim_code_uq').on(t.companyId, t.code), index('progress_claim_project_idx').on(t.projectId)]);
+
+export const progressClaimLines = pgTable('progress_claim_line', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  claimId: uuid('claim_id').notNull().references(() => progressClaims.id, { onDelete: 'cascade' }),
+  lineNo: integer('line_no').notNull(),
+  name: text('name').notNull(),
+  spec: text('spec'),
+  unit: text('unit'),
+  contractAmount: money('contract_amount').notNull().default('0'),
+  prevAmount: money('prev_amount').notNull().default('0'),
+  thisAmount: money('this_amount').notNull(),
+  cumulativeAmount: money('cumulative_amount').notNull(),
+}, (t) => [uniqueIndex('progress_claim_line_uq').on(t.claimId, t.lineNo)]);
+
+export const collectionKind = pgEnum('collection_kind', ['ADVANCE', 'CLAIM', 'RETENTION', 'OTHER']);
+
+/** 수금 — 매출(기성 승인)과 분리. 입금 확인 시 (예금 / 공사미수금·선수금·유보금) */
+export const collections = pgTable('collection', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  companyId: uuid('company_id').notNull().references(() => companies.id),
+  projectId: uuid('project_id').notNull().references(() => projects.id),
+  vendorId: uuid('vendor_id').notNull().references(() => vendors.id),
+  claimId: uuid('claim_id').references(() => progressClaims.id),
+  code: text('code').notNull(),
+  kind: collectionKind('kind').notNull(),
+  collectDate: date('collect_date').notNull(),
+  amount: money('amount').notNull(),
+  method: text('method').notNull().default('TRANSFER'),
+  bankAccountId: uuid('bank_account_id').references(() => bankAccounts.id),
+  bankTransactionId: uuid('bank_transaction_id'),
+  memo: text('memo'),
+  status: text('status').notNull().default('CONFIRMED'), // CONFIRMED / CANCELLED
+  cancelReason: text('cancel_reason'),
+  ...audited,
+}, (t) => [uniqueIndex('collection_code_uq').on(t.companyId, t.code), index('collection_project_idx').on(t.projectId), index('collection_claim_idx').on(t.claimId)]);
+
+export const subcontractStatus = pgEnum('subcontract_status', ['DRAFT', 'PENDING', 'ACTIVE', 'REJECTED', 'COMPLETED', 'CANCELLED']);
+
+/** 하도급·외주 계약 — 최초금액 보존, 변경은 subcontract_revision */
+export const subcontracts = pgTable('subcontract', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  companyId: uuid('company_id').notNull().references(() => companies.id),
+  projectId: uuid('project_id').notNull().references(() => projects.id),
+  vendorId: uuid('vendor_id').notNull().references(() => vendors.id),
+  costCodeId: uuid('cost_code_id').notNull().references(() => costCodes.id),
+  code: text('code').notNull(),
+  title: text('title').notNull(),
+  contractDate: date('contract_date').notNull(),
+  startDate: date('start_date'),
+  endDate: date('end_date'),
+  originalAmount: money('original_amount').notNull(),
+  currentAmount: money('current_amount').notNull(),
+  vatRate: rate('vat_rate').notNull(),
+  retentionRate: rate('retention_rate').notNull().default('0'),
+  progressRate: rate('progress_rate').notNull().default('0'),
+  guaranteeType: text('guarantee_type'),
+  guaranteeNo: text('guarantee_no'),
+  guaranteeAmount: money('guarantee_amount'),
+  guaranteeExpiry: date('guarantee_expiry'),
+  status: subcontractStatus('status').notNull().default('DRAFT'),
+  approvalId: uuid('approval_id'),
+  approvedAt: ts('approved_at'),
+  completedAt: ts('completed_at'),
+  scope: text('scope'),
+  memo: text('memo'),
+  ...audited,
+}, (t) => [uniqueIndex('subcontract_code_uq').on(t.companyId, t.code), index('subcontract_project_idx').on(t.projectId)]);
+
+export const subcontractRevisions = pgTable('subcontract_revision', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  subcontractId: uuid('subcontract_id').notNull().references(() => subcontracts.id),
+  revisionNo: integer('revision_no').notNull(),
+  revisionDate: date('revision_date').notNull(),
+  beforeAmount: money('before_amount').notNull(),
+  deltaAmount: money('delta_amount').notNull(),
+  afterAmount: money('after_amount').notNull(),
+  reason: text('reason').notNull(),
+  createdAt: ts('created_at').notNull().defaultNow(),
+  createdById: uuid('created_by_id'),
+}, (t) => [uniqueIndex('subcontract_revision_uq').on(t.subcontractId, t.revisionNo)]);
+
+/** 하도급 기성 — 승인 시 (외주비·부가세대급금 / 외상매입금·하도급유보금) */
+export const subClaims = pgTable('sub_claim', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  companyId: uuid('company_id').notNull().references(() => companies.id),
+  subcontractId: uuid('subcontract_id').notNull().references(() => subcontracts.id),
+  projectId: uuid('project_id').notNull().references(() => projects.id),
+  vendorId: uuid('vendor_id').notNull().references(() => vendors.id),
+  code: text('code').notNull(),
+  claimNo: integer('claim_no').notNull(),
+  claimDate: date('claim_date').notNull(),
+  prevCumulative: money('prev_cumulative').notNull(),
+  thisAmount: money('this_amount').notNull(),
+  cumulative: money('cumulative').notNull(),
+  progressRate: rate('progress_rate').notNull(),
+  vatAmount: money('vat_amount').notNull(),
+  retentionAmount: money('retention_amount').notNull().default('0'),
+  /** 지급할 금액 = 금회 + 세액 − 유보금 */
+  payableAmount: money('payable_amount').notNull(),
+  status: docStatus('status').notNull().default('DRAFT'),
+  approvalId: uuid('approval_id'),
+  approvedAt: ts('approved_at'),
+  memo: text('memo'),
+  ...audited,
+}, (t) => [uniqueIndex('sub_claim_code_uq').on(t.companyId, t.code), index('sub_claim_sub_idx').on(t.subcontractId)]);
+
+/** 작업자 — 주민번호·계좌는 암호화, 화면에는 가린 값만 */
+export const laborWorkers = pgTable('labor_worker', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  companyId: uuid('company_id').notNull().references(() => companies.id),
+  code: text('code').notNull(),
+  name: text('name').notNull(),
+  kind: text('kind').notNull().default('DAILY'), // DAILY 일용 / STAFF 직원
+  trade: text('trade'),
+  phone: text('phone'),
+  residentNoEnc: text('resident_no_enc'),
+  residentNoMask: text('resident_no_mask'),
+  bankName: text('bank_name'),
+  bankAccountEnc: text('bank_account_enc'),
+  bankAccountMask: text('bank_account_mask'),
+  dailyWage: money('daily_wage').notNull().default('0'),
+  isActive: boolean('is_active').notNull().default(true),
+  memo: text('memo'),
+  ...audited,
+}, (t) => [uniqueIndex('labor_worker_code_uq').on(t.companyId, t.code)]);
+
+export const laborRecords = pgTable('labor_record', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  companyId: uuid('company_id').notNull().references(() => companies.id),
+  projectId: uuid('project_id').notNull().references(() => projects.id),
+  workerId: uuid('worker_id').notNull().references(() => laborWorkers.id),
+  costCodeId: uuid('cost_code_id').notNull().references(() => costCodes.id),
+  workDate: date('work_date').notNull(),
+  workType: text('work_type'),
+  manDays: numeric('man_days', { precision: 6, scale: 2 }).notNull().default('1'), // 공수
+  overtimeHours: numeric('overtime_hours', { precision: 6, scale: 2 }).notNull().default('0'),
+  dailyWage: money('daily_wage').notNull(),
+  overtimeRate: rate('overtime_rate').notNull().default('1.5'),
+  amount: money('amount').notNull(),
+  status: text('status').notNull().default('RECORDED'), // RECORDED / CONFIRMED / CANCELLED
+  confirmedAt: ts('confirmed_at'),
+  /** 함께 확정(분개)된 묶음 — 확정 취소 때 함께 되돌린다 */
+  confirmBatchId: uuid('confirm_batch_id'),
+  memo: text('memo'),
+  ...audited,
+}, (t) => [index('labor_record_project_idx').on(t.projectId, t.workDate), index('labor_record_worker_idx').on(t.workerId, t.workDate)]);
+
+/** 준공정산 — 정산 시점의 숫자를 그대로 보관 */
+export const projectSettlements = pgTable('project_settlement', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  companyId: uuid('company_id').notNull().references(() => companies.id),
+  projectId: uuid('project_id').notNull().references(() => projects.id),
+  settleDate: date('settle_date').notNull(),
+  finalContract: money('final_contract').notNull(),
+  totalClaimed: money('total_claimed').notNull(),
+  totalCollected: money('total_collected').notNull(),
+  receivable: money('receivable').notNull(),
+  totalCost: money('total_cost').notNull(),
+  totalPaid: money('total_paid').notNull(),
+  unpaid: money('unpaid').notNull(),
+  profit: money('profit').notNull(),
+  snapshot: jsonb('snapshot').notNull(),
+  status: text('status').notNull().default('SETTLED'), // SETTLED / REOPENED
+  memo: text('memo'),
+  reopenReason: text('reopen_reason'),
+  ...audited,
+}, (t) => [index('project_settlement_project_idx').on(t.projectId)]);

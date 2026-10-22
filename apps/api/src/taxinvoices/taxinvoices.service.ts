@@ -188,8 +188,8 @@ export class TaxInvoicesService implements OnModuleInit {
       },
       available: async (ctx, q) => {
         const conds: SQL[] = [eq(taxInvoices.companyId, ctx.companyId!), eq(taxInvoices.direction, 'PURCHASE'), eq(taxInvoices.status, 'POSTED'),
-          sql`not exists (select 1 from ${taxInvoiceMatches} m where m.invoice_id = ${taxInvoices.id})`,
-          sql`not exists (select 1 from ${paymentRequestLines} l where l.active_source_key = 'TAX_INVOICE:' || ${taxInvoices.id}::text)`];
+          sql`not exists (select 1 from tax_invoice_match m where m.invoice_id = tax_invoice.id)`,
+          sql`not exists (select 1 from payment_request_line l where l.active_source_key = 'TAX_INVOICE:' || tax_invoice.id::text)`];
         if (q.vendorId) conds.push(eq(taxInvoices.vendorId, q.vendorId));
         if (q.projectId) conds.push(eq(taxInvoices.projectId, q.projectId));
         return this.db.select({ id: taxInvoices.id, code: taxInvoices.code, writeDate: taxInvoices.writeDate, supplierName: taxInvoices.supplierName, supplyAmount: taxInvoices.supplyAmount, vatAmount: taxInvoices.vatAmount, approvalNo: taxInvoices.approvalNo, projectId: taxInvoices.projectId })
@@ -598,6 +598,7 @@ export class TaxInvoicesService implements OnModuleInit {
         }).where(eq(taxInvoices.id, id)).returning();
         // 법적 효력이 있는 발행만 장부에 반영 (테스트·가상 발행은 분개하지 않는다)
         if (legal) await this.postSales(tx, ctx, u);
+        if (u.claimId) await tx.execute(sql`update progress_claim set status = 'INVOICED', version = version + 1 where id = ${u.claimId} and status = 'APPROVED'`);
         await this.audit.fromCtx(ctx, { action: 'ISSUE', resource: 'tax_invoice', resourceId: id, summary: `매출 세금계산서 ${legal ? '발행' : '테스트(가상) 발행'} ${t.code} ${t.buyerName} ${D(t.totalAmount).toFixed(0)}원 · ${r.providerId}` }, tx);
         return this.present(u);
       });
@@ -649,6 +650,7 @@ export class TaxInvoicesService implements OnModuleInit {
     return this.db.transaction(async (tx) => {
       await this.ledger.reverseSource(tx, ctx, 'TAX_INVOICE', id, `세금계산서 취소 — ${reason}`);
       const [u] = await tx.update(taxInvoices).set({ status: 'CANCELLED', ntsMessage: reason, version: sql`${taxInvoices.version} + 1` }).where(eq(taxInvoices.id, id)).returning();
+      if (u.claimId) await tx.execute(sql`update progress_claim set status = 'APPROVED', version = version + 1 where id = ${u.claimId} and status = 'INVOICED'`);
       await this.audit.fromCtx(ctx, { action: 'CANCEL', resource: 'tax_invoice', resourceId: id, summary: `매출 세금계산서 취소 ${t.code} — ${reason}` }, tx);
       return this.present(u);
     });

@@ -114,6 +114,7 @@ export const POSTING_RULES: { key: string; label: string; account: string; descr
   { key: 'ADVANCE_RECEIVED', label: '공사선수금', account: '259', description: '선급금 수령 및 기성 정산' },
   { key: 'REVENUE', label: '공사 매출', account: '404', description: '기성 승인(매출 인식)' },
   { key: 'RETAINAGE_AP', label: '하도급 유보금', account: '264', description: '하도급 기성 중 유보' },
+  { key: 'LABOR_PAYABLE', label: '노무비 미지급', account: '262', description: '노무비 확정 시 대변, 지급 시 차변' },
   { key: 'WITHHOLDING', label: '원천징수 예수금', account: '254', description: '노무비 원천세·4대보험' },
   { key: 'BANK_DEFAULT', label: '기본 출금 계좌 계정', account: '103', description: '계좌를 지정하지 않은 지급·수금' },
   { key: 'CASH', label: '현금', account: '101', description: '현금 지급' },

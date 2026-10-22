@@ -102,8 +102,8 @@ function Inner() {
           {can('taxinvoice:create') && <Button icon={<CloudDownload className="size-3.5" />} onClick={() => setDialog('collect')}>홈택스 가져오기</Button>}
           {can('taxinvoice:create') && <Link href={`/tax-invoices/new?direction=${dir}`}><Button variant="primary" icon={<Plus className="size-4" />}>{purchase ? '종이 계산서 입력' : '매출 계산서 작성'}</Button></Link>}
         </>}
-      >
-        <div className="mt-3 flex gap-1" role="tablist" aria-label="매입·매출">
+       />
+      <div className="mb-4">        <div className=" flex gap-1" role="tablist" aria-label="매입·매출">
           {(['PURCHASE', 'SALES'] as const).map((k) => (
             <button key={k} role="tab" aria-selected={dir === k} onClick={() => set({ direction: k, status: '', mismatch: '' })}
               className={clsx('h-9 border-b-2 px-3 font-medium', dir === k ? 'border-ink text-ink' : 'border-transparent text-muted hover:text-ink')}>
@@ -111,7 +111,7 @@ function Inner() {
             </button>
           ))}
         </div>
-      </PageHeader>
+      </div>
       {d && (
         <SumStrip items={[
           { label: '조회 합계', value: d.sums.totalAmount, hint: `${d.total}건`, strong: true },

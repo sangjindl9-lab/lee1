@@ -24,7 +24,7 @@ const CEO_ONLY = [{ title: '승인', roleKey: 'CEO' }];
 const DEFAULT_LINES: Record<DocType, { title: string; roleKey: string }[]> = {
   PURCHASE_ORDER: CEO_ONLY, BUDGET: CEO_ONLY, CONTRACT_CHANGE: CEO_ONLY, SUBCONTRACT: CEO_ONLY, CLAIM: CEO_ONLY,
   PAYMENT_REQUEST: [{ title: '검토', roleKey: 'ACCOUNTING_MANAGER' }, { title: '승인', roleKey: 'CEO' }],
-  SUB_CLAIM: [{ title: '검토', roleKey: 'CONTRACT_MANAGER' }, { title: '승인', roleKey: 'CEO' }],
+  SUB_CLAIM: [{ title: '검토', roleKey: 'ACCOUNTING_MANAGER' }, { title: '승인', roleKey: 'CEO' }],
   TAX_ISSUE: [{ title: '승인', roleKey: 'ACCOUNTING_MANAGER' }],
 };
 

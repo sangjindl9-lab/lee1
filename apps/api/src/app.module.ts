@@ -37,6 +37,11 @@ import { TaxInvoicesService } from './taxinvoices/taxinvoices.service';
 import { TaxInvoicesController } from './taxinvoices/taxinvoices.controller';
 import { HometaxCollectService } from './taxinvoices/collect.service';
 import { DocumentsController, DocumentsService } from './documents/documents';
+import { ContractRevisionsController, ContractRevisionsService } from './construction/contracts';
+import { ClaimsController, ClaimsService } from './construction/claims';
+import { SubcontractsController, SubcontractsService } from './construction/subcontracts';
+import { LaborController, LaborService } from './construction/labor';
+import { SettlementController, SettlementService } from './construction/settlement';
 
 @Module({
   imports: [
@@ -47,12 +52,12 @@ import { DocumentsController, DocumentsService } from './documents/documents';
   controllers: [
     HealthController, AuthController, CompaniesController, UsersController, MembersController, RolesController,
     ProjectsController, VendorsController, MaterialsController, PurchaseController, PurchaseRequestsController, ApprovalsController,
-    JournalsController, LedgerReportsController, ClosingController, BankAccountsController, PaymentsController, BudgetController, IntegrationsController, TaxInvoicesController, DocumentsController, FilesController, DashboardController, AuditController, LicenseController, TaxRateController,
+    JournalsController, LedgerReportsController, ClosingController, BankAccountsController, PaymentsController, BudgetController, IntegrationsController, TaxInvoicesController, DocumentsController, ContractRevisionsController, ClaimsController, SubcontractsController, LaborController, SettlementController, FilesController, DashboardController, AuditController, LicenseController, TaxRateController,
   ],
   providers: [
     AuditService, AccessService, AuthService, LicenseService, NumberingService, TaxRateService,
     CompaniesService, UsersService, RolesService, ProjectsService, VendorsService, MaterialsService, ApprovalsService, PurchaseService, PurchaseRequestsService,
-    LedgerService, JournalsService, LedgerReportsService, ClosingService, BankAccountsService, PaymentsService, BudgetService, IntegrationsService, TaxInvoicesService, HometaxCollectService, DocumentsService, FilesService, DashboardService,
+    LedgerService, JournalsService, LedgerReportsService, ClosingService, BankAccountsService, PaymentsService, BudgetService, IntegrationsService, TaxInvoicesService, HometaxCollectService, DocumentsService, ContractRevisionsService, ClaimsService, SubcontractsService, LaborService, SettlementService, FilesService, DashboardService,
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: ErpGuard },
     { provide: APP_FILTER, useClass: AllExceptionsFilter },

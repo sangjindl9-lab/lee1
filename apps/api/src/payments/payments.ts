@@ -36,7 +36,7 @@ export const PayReqLineDto = z.object({
   description: z.string().trim().max(200).optional().nullable(),
   accountId: z.string().uuid().optional().nullable(),
   costCodeId: z.string().uuid().optional().nullable(),
-  sourceType: z.enum(['RECEIPT', 'SUB_CLAIM', 'LABOR', 'TAX_INVOICE']).optional().nullable(),
+  sourceType: z.enum(['RECEIPT', 'SUB_CLAIM', 'SUB_RETENTION', 'LABOR', 'TAX_INVOICE']).optional().nullable(),
   sourceId: z.string().uuid().optional().nullable(),
   supplyAmount: amt.default('0'),
   vatAmount: amt.default('0'),

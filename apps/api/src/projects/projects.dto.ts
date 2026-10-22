@@ -31,6 +31,9 @@ export const ProjectBase = z.object({
   progressRate: z.coerce.number().min(0, '공정률은 0~100 사이').max(100, '공정률은 0~100 사이').default(0), // % 입력
   managerName: optText(50),
   siteManagerName: optText(50),
+  clientVendorId: z.string().uuid().optional().nullable().or(z.literal('').transform(() => null)),
+  advanceAmount: amount.optional().nullable(),
+  retentionPercent: z.coerce.number().min(0).max(30).optional().nullable(), // % 입력
   memo: optText(2000),
 });
 

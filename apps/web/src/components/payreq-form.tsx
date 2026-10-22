@@ -21,6 +21,18 @@ export interface PayReqInitial {
   lines: { description: string; accountId: string | null; costCodeId: string | null; supplyAmount: string; vatAmount: string; vatDeductible: boolean; sourceType: string | null; sourceId: string | null; sourceCode: string | null }[];
 }
 
+type ExtraSrc = { id: string; code: string; title: string; supply: string; vat: string; type: string };
+/** 구분별로 지급결의에 넣을 수 있는 원천 문서 (금액은 원천 그대로, 서버가 다시 확인) */
+const EXTRA_SOURCES: Partial<Record<Kind, { type: string; label: string; needVendor: boolean; map: (r: Record<string, string>) => Omit<ExtraSrc, 'type'> }[]>> = {
+  EXPENSE: [{ type: 'TAX_INVOICE', label: '처리된 세금계산서', needVendor: true, map: (r) => ({ id: r.id, code: r.code, title: `세금계산서 ${r.supplierName} · ${r.writeDate}`, supply: r.supplyAmount, vat: r.vatAmount }) }],
+  OTHER: [{ type: 'TAX_INVOICE', label: '처리된 세금계산서', needVendor: true, map: (r) => ({ id: r.id, code: r.code, title: `세금계산서 ${r.supplierName} · ${r.writeDate}`, supply: r.supplyAmount, vat: r.vatAmount }) }],
+  SUBCONTRACT: [
+    { type: 'SUB_CLAIM', label: '승인된 하도급 기성', needVendor: true, map: (r) => ({ id: r.id, code: r.code, title: `${r.title} ${r.claimNo}회 기성 · ${r.projectName}${Number(r.retentionAmount) ? ` (유보 ${Number(r.retentionAmount).toLocaleString('ko-KR')} 제외)` : ''}`, supply: String(Number(r.thisAmount) - Number(r.retentionAmount)), vat: r.vatAmount }) },
+    { type: 'SUB_RETENTION', label: '정산된 하도급 유보금', needVendor: true, map: (r) => ({ id: r.id, code: r.code, title: `${r.title} 유보금`, supply: r.retention, vat: '0' }) },
+  ],
+  LABOR: [{ type: 'LABOR', label: '확정된 노무비', needVendor: false, map: (r) => ({ id: r.id, code: r.workDate, title: `${r.workerName} · ${r.projectName} · ${Number(r.manDays)}공수`, supply: r.amount, vat: '0' }) }],
+};
+
 let seq = 0;
 const k = () => `l${++seq}`;
 const int = (v: string) => (v ? BigInt(v) : 0n);
@@ -49,7 +61,8 @@ export function PayReqForm({ initial, seed, onSaved, onCancel }: { initial?: Pay
   const sourceMode = kind === 'PURCHASE';
   const srcLines = lines.filter((l) => l.sourceType);
   const manualLines = lines.filter((l) => !l.sourceType);
-  const tiLines = lines.filter((l) => l.sourceType === 'TAX_INVOICE');
+  const extraTypes = EXTRA_SOURCES[kind] ?? [];
+  const tiLines = lines.filter((l) => l.sourceType && l.sourceType !== 'RECEIPT');
   const used = sourceMode ? srcLines : [...tiLines, ...manualLines.filter((l) => l.description.trim() || l.supply || l.vat)];
 
   const receipts = useQuery({
@@ -60,13 +73,13 @@ export function PayReqForm({ initial, seed, onSaved, onCancel }: { initial?: Pay
   // 수정 화면: 이미 이 결의에 담긴 검수는 '사용 가능' 목록에서 빠지므로 따로 보여 준다
   const pickedIds = new Set(srcLines.map((l) => l.sourceId));
   const tiSrc = useQuery({
-    queryKey: ['payreq-sources-ti', vendor?.id],
-    queryFn: () => api<{ id: string; code: string; writeDate: string; supplierName: string; supplyAmount: string; vatAmount: string; approvalNo: string | null; projectId: string | null }[]>(`/payment-requests/sources${qs({ type: 'TAX_INVOICE', vendorId: vendor?.id })}`),
-    enabled: !sourceMode && !!vendor,
+    queryKey: ['payreq-sources-extra', kind, vendor?.id, projectId],
+    queryFn: async () => (await Promise.all(extraTypes.map(async (t) => (await api<Record<string, string>[]>(`/payment-requests/sources${qs({ type: t.type, vendorId: vendor?.id, projectId: t.type === 'LABOR' ? projectId ?? undefined : undefined })}`)).map((r) => ({ ...t.map(r), type: t.type }))))).flat(),
+    enabled: !sourceMode && extraTypes.length > 0 && (!!vendor || extraTypes.every((t) => !t.needVendor)),
   });
-  const toggleTi = (t: { id: string; code: string; writeDate: string; supplierName: string; supplyAmount: string; vatAmount: string }) => {
+  const toggleTi = (t: ExtraSrc) => {
     if (tiLines.some((l) => l.sourceId === t.id)) setLines((ls) => ls.filter((l) => l.sourceId !== t.id));
-    else setLines((ls) => [...ls.filter((l) => l.sourceType || l.description || l.supply), { key: k(), description: `세금계산서 ${t.supplierName} ${t.writeDate}`, accountId: null, costCodeId: null, supply: t.supplyAmount.split('.')[0], vat: t.vatAmount.split('.')[0], vatDeductible: true, sourceType: 'TAX_INVOICE', sourceId: t.id, sourceCode: t.code }]);
+    else setLines((ls) => [...ls.filter((l) => l.sourceType || l.description || l.supply), { key: k(), description: t.title, accountId: null, costCodeId: null, supply: t.supply.split('.')[0], vat: t.vat.split('.')[0], vatDeductible: true, sourceType: t.type, sourceId: t.id, sourceCode: t.code }]);
   };
   const toggleReceipt = (r: ReceiptSrc) => {
     if (pickedIds.has(r.id)) setLines((ls) => ls.filter((l) => l.sourceId !== r.id));
@@ -147,7 +160,7 @@ export function PayReqForm({ initial, seed, onSaved, onCancel }: { initial?: Pay
         <section className="rounded-[6px] border border-line bg-surface">
           <header className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-4 py-2.5">
             <h2 className="text-section font-semibold">지급 구분</h2>
-            <SegTabs<Kind> label="지급 구분" value={kind} onChange={(v) => { setKind(v); setLines(v === 'PURCHASE' ? lines.filter((l) => l.sourceType === 'RECEIPT') : [...lines.filter((l) => !l.sourceType || l.sourceType === 'TAX_INVOICE'), ...(lines.some((l) => !l.sourceType) ? [] : [blank()])]); }} items={(['PURCHASE', 'EXPENSE', 'SUBCONTRACT', 'LABOR', 'OTHER'] as Kind[]).map((v) => ({ value: v, label: PAYREQ_KIND[v] }))} />
+            <SegTabs<Kind> label="지급 구분" value={kind} onChange={(v) => { setKind(v); setLines(v === 'PURCHASE' ? lines.filter((l) => l.sourceType === 'RECEIPT') : [...lines.filter((l) => !l.sourceType || (EXTRA_SOURCES[v] ?? []).some((t) => t.type === l.sourceType)), ...(lines.some((l) => !l.sourceType) ? [] : [blank()])]); }} items={(['PURCHASE', 'EXPENSE', 'SUBCONTRACT', 'LABOR', 'OTHER'] as Kind[]).map((v) => ({ value: v, label: PAYREQ_KIND[v] }))} />
           </header>
           <div className="grid gap-4 p-4 sm:grid-cols-2 lg:grid-cols-3">
             <Field label="제목" required error={errors.title} className="lg:col-span-2"><Input value={h.title} onChange={(e) => setH({ ...h, title: e.target.value })} aria-invalid={!!errors.title} placeholder={sourceMode ? '예: 대한전기자재 10월 자재대금' : '예: 강서초 현장 안전용품 구입'} /></Field>
@@ -206,22 +219,23 @@ export function PayReqForm({ initial, seed, onSaved, onCancel }: { initial?: Pay
               </div>
               <Button size="sm" icon={<Plus className="size-3.5" />} onClick={() => setLines((ls) => [...ls, blank()])}>항목 추가</Button>
             </header>
-            {vendor && (tiLines.length > 0 || (tiSrc.data?.length ?? 0) > 0) && (
+            {(tiLines.length > 0 || (tiSrc.data?.length ?? 0) > 0) && (
               <div className="border-b border-line bg-surface-2/60 px-4 py-2.5">
-                <p className="mb-1.5 text-meta font-medium text-ink-2">처리된 세금계산서로 지급 <span className="font-normal text-muted">— 금액은 계산서 그대로, 미지급금을 정리합니다</span></p>
-                <ul className="space-y-1">
-                  {[...tiLines.filter((l) => !(tiSrc.data ?? []).some((t) => t.id === l.sourceId)).map((l) => ({ id: l.sourceId!, code: l.sourceCode ?? '', writeDate: '', supplierName: l.description, supplyAmount: l.supply, vatAmount: l.vat })), ...(tiSrc.data ?? [])].map((t) => (
+                <p className="mb-1.5 text-meta font-medium text-ink-2">{extraTypes.map((t) => t.label).join(' · ')}에서 가져오기 <span className="font-normal text-muted">— 금액은 원천 문서 그대로이며 이미 잡힌 채무를 정리합니다</span></p>
+                <ul className="max-h-[280px] space-y-1 overflow-auto">
+                  {[...tiLines.filter((l) => !(tiSrc.data ?? []).some((t) => t.id === l.sourceId)).map((l) => ({ id: l.sourceId!, code: l.sourceCode ?? '', title: l.description, supply: l.supply, vat: l.vat, type: l.sourceType! })), ...(tiSrc.data ?? [])].map((t) => (
                     <li key={t.id}>
                       <label className="flex cursor-pointer items-center gap-2 rounded-[4px] px-1.5 py-1 hover:bg-surface-hover">
                         <Checkbox checked={tiLines.some((l) => l.sourceId === t.id)} onChange={() => toggleTi(t)} />
-                        <span className="num text-muted">{t.code}</span><span className="min-w-0 flex-1 truncate">{t.writeDate ? `${t.supplierName} · ${t.writeDate}` : t.supplierName}</span>
-                        <span className="num">{won(String(BigInt(t.supplyAmount.split('.')[0] || '0') + BigInt(t.vatAmount.split('.')[0] || '0')))}</span>
+                        <span className="num shrink-0 text-muted">{t.code}</span><span className="min-w-0 flex-1 truncate">{t.title}</span>
+                        <span className="num">{won(String(BigInt(t.supply.split('.')[0] || '0') + BigInt(t.vat.split('.')[0] || '0')))}</span>
                       </label>
                     </li>
                   ))}
                 </ul>
               </div>
             )}
+            {extraTypes.some((t) => t.needVendor) && !vendor && <p className="border-b border-line px-4 py-2 text-meta text-muted">거래처를 고르면 그 거래처의 {extraTypes.map((t) => t.label).join('·')}을(를) 불러올 수 있습니다.</p>}
             <div className="divide-y divide-line">
               {manualLines.map((l, i) => {
                 const a = accName(l.accountId);

@@ -36,7 +36,7 @@ export const NAV: NavGroup[] = [
     key: 'site', label: '현장관리', icon: Building2,
     items: [
       { label: '현장 목록', href: '/projects', perm: 'project:read', stage: 1 },
-      { label: '계약·변경계약', href: '/soon/contracts', perm: 'contract:read', stage: 4, hint: '최초계약 보존, 변경계약 이력, 승인 전 미확정 처리' },
+      { label: '계약·변경계약', href: '/contracts', perm: 'contract:read', stage: 4, live: true },
       { label: '실행예산', href: '/budgets', perm: 'budget:read', stage: 2, live: true },
       { label: '현장 손익', href: '/project-pl', perm: 'report:read', stage: 2, live: true },
     ],
@@ -55,9 +55,9 @@ export const NAV: NavGroup[] = [
   {
     key: 'sales', label: '매출·기성', icon: FileText,
     items: [
-      { label: '기성청구', href: '/soon/claims', perm: 'claim:read', stage: 4, hint: '전회·금회·누적 기성, 유보금, 기성청구서 PDF' },
-      { label: '수금관리', href: '/soon/collections', perm: 'claim:read', stage: 4, hint: '수금예정·실수금 매칭, 미수금 연체' },
-      { label: '하도급·외주', href: '/soon/subcontracts', perm: 'subcontract:read', stage: 4, hint: '하도급 계약·기성·지급·정산' },
+      { label: '기성청구', href: '/claims', perm: 'claim:read', stage: 4, live: true },
+      { label: '수금·미수금', href: '/collections', perm: 'claim:read', stage: 4, live: true },
+      { label: '하도급·외주', href: '/subcontracts', perm: 'subcontract:read', stage: 4, live: true },
     ],
   },
   {
@@ -86,7 +86,7 @@ export const NAV: NavGroup[] = [
       { label: '월마감', href: '/closing', perm: 'closing:read', stage: 2, live: true },
     ],
   },
-  { key: 'labor', label: '노무', icon: HardHat, items: [{ label: '작업일보·노무비', href: '/soon/labor', perm: 'labor:read', stage: 4, hint: '현장별 작업자·공수·노무비 집계' }] },
+  { key: 'labor', label: '노무', icon: HardHat, items: [{ label: '작업일보·노무비', href: '/labor', perm: 'labor:read', stage: 4, live: true }] },
   {
     key: 'approval', label: '전자결재', icon: Stamp,
     items: [

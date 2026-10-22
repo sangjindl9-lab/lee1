@@ -105,3 +105,14 @@ export const TI_SOURCE: Record<string, string> = { HOMETAX: '홈택스 수집', 
 export const DOC_STATUS: Record<string, { label: string; tone: Tone }> = {
   UPLOADED: { label: '인식 대기', tone: 'outline' }, EXTRACTED: { label: '확인 필요', tone: 'warn' }, FAILED: { label: '인식 실패', tone: 'seal' }, REGISTERED: { label: '등록 완료', tone: 'ok' }, REJECTED: { label: '반려', tone: 'muted' },
 };
+export const CLAIM_STATUS: Record<string, { label: string; tone: Tone }> = {
+  DRAFT: { label: '작성중', tone: 'outline' }, PENDING: { label: '결재중', tone: 'warn' }, APPROVED: { label: '승인(미발행)', tone: 'steel' }, REJECTED: { label: '반려', tone: 'seal' },
+  INVOICED: { label: '계산서 발행', tone: 'steel' }, PARTIAL: { label: '일부 수금', tone: 'warn' }, COLLECTED: { label: '수금 완료', tone: 'ok' }, CANCELLED: { label: '취소', tone: 'muted' },
+};
+export const SC_STATUS: Record<string, { label: string; tone: Tone }> = {
+  DRAFT: { label: '작성중', tone: 'outline' }, PENDING: { label: '결재중', tone: 'warn' }, ACTIVE: { label: '진행', tone: 'steel' }, REJECTED: { label: '반려', tone: 'seal' }, COMPLETED: { label: '정산 완료', tone: 'ok' }, CANCELLED: { label: '취소', tone: 'muted' },
+};
+export const DOC_FLOW: Record<string, { label: string; tone: Tone }> = {
+  DRAFT: { label: '작성중', tone: 'outline' }, PENDING: { label: '결재중', tone: 'warn' }, APPROVED: { label: '승인', tone: 'ok' }, REJECTED: { label: '반려', tone: 'seal' }, CANCELLED: { label: '취소', tone: 'muted' },
+};
+export const COLLECTION_KIND: Record<string, string> = { ADVANCE: '선급금', CLAIM: '기성금', RETENTION: '유보금', OTHER: '기타' };

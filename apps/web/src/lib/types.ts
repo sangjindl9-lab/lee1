@@ -11,6 +11,7 @@ export interface FileItem { id: string; category: string; originalName: string; 
 export interface ProjectDetail extends ProjectRow {
   companyId: string; primeContractor: string | null; subContractor: string | null; siteAddress: string | null; contractType: string | null;
   actualEndDate: string | null; vatRate: string; jointShareRate: string | null; jointSharePercent: string | null; managerName: string | null; memo: string | null;
+  clientVendorId: string | null; advanceAmount: string; retentionRate: string; retentionPercent: string;
   createdAt: string; updatedAt: string;
   members: { membershipId: string; roleInProject: string | null; name: string; loginId: string }[];
   files: FileItem[];
