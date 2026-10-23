@@ -121,3 +121,21 @@ test('대시보드·발급 대장·CSV·활동 기록', async () => {
   // 발급 후에는 사업자번호를 바꿀 수 없다
   assert.equal((await call('/api/admin/customers/' + cust.id, { method: 'PUT', json: { name: '바꿈', bizRegNo: '1018117536' } })).status, 400);
 });
+
+test('관리자 비밀번호를 화면에서 바꾸면 새 비밀번호로만 로그인되고 다른 세션은 끊긴다', async () => {
+  const other = cookie;
+  assert.equal((await call('/api/admin/password', { method: 'POST', json: { current: 'wrong-one', next: 'NewPass!2026xyz' } })).status, 400);
+  assert.equal((await call('/api/admin/password', { method: 'POST', json: { current: PW, next: 'short' } })).status, 400);
+  assert.equal((await call('/api/admin/password', { method: 'POST', json: { current: PW, next: 'alllowercaseletters' } })).status, 400);
+  const ok = await call('/api/admin/password', { method: 'POST', json: { current: PW, next: 'NewPass!2026xyz' } });
+  assert.equal(ok.status, 200);
+  // 바꾼 화면은 계속 쓸 수 있다 (새 쿠키)
+  assert.equal((await call('/api/admin/me')).status, 200);
+  assert.ok((await call('/api/admin/me')).body.passwordChangedAt);
+  // 예전 세션은 끊긴다
+  const old = await fetch(base + '/api/admin/me', { headers: { cookie: other } });
+  assert.equal(old.status, 401);
+  // 예전 비밀번호(환경변수)는 더 이상 안 되고 새 비밀번호만 된다
+  assert.equal((await call('/api/admin/login', { method: 'POST', json: { password: PW } })).status, 401);
+  assert.equal((await call('/api/admin/login', { method: 'POST', json: { password: 'NewPass!2026xyz' } })).status, 200);
+});

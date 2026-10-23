@@ -5,7 +5,7 @@
  * 환경변수
  *   DATABASE_URL         PostgreSQL 주소
  *   LICENSE_PRIVATE_KEY  판매자 서명 비밀키 (Ed25519 PEM 을 base64 로 인코딩). 유출되면 누구나 라이선스를 만들 수 있다
- *   ADMIN_PASSWORD       관리자 로그인 비밀번호
+ *   ADMIN_PASSWORD       처음 관리자 비밀번호 (화면 '설정'에서 바꾸면 그 뒤로는 바뀐 비밀번호만 쓰임)
  *   SESSION_SECRET       로그인 쿠키 서명용 무작위 문자열 (32자 이상)
  *   PORT                 기본 8080
  */
@@ -22,7 +22,29 @@ const PROD = env('NODE_ENV') === 'production';
 function buildApp({ pool, privateKey, adminPassword, sessionSecret }) {
   const publicKey = crypto.createPublicKey(privateKey);
   const publicPem = L.publicKeyPem(privateKey);
-  const pwHash = crypto.scryptSync(adminPassword, 'ss-license-portal', 32);
+  // ── 관리자 비밀번호 ──
+  //  처음에는 ADMIN_PASSWORD 환경변수로 로그인하고, 화면에서 바꾸면 DB에 저장된 값(scrypt)을 쓴다.
+  //  비밀번호를 바꾸면 세션 버전이 올라가 다른 곳에 로그인된 세션은 모두 끊긴다.
+  const envHash = crypto.scryptSync(adminPassword, 'ss-license-portal', 32);
+  const hashPw = (pw) => {
+    const salt = crypto.randomBytes(16);
+    return `scrypt$${salt.toString('base64url')}$${crypto.scryptSync(pw, salt, 32).toString('base64url')}`;
+  };
+  const checkPw = (pw, stored) => {
+    if (!stored) return crypto.timingSafeEqual(crypto.scryptSync(String(pw), 'ss-license-portal', 32), envHash);
+    const [, salt, hash] = stored.split('$');
+    const given = crypto.scryptSync(String(pw), Buffer.from(salt, 'base64url'), 32);
+    const want = Buffer.from(hash, 'base64url');
+    return given.length === want.length && crypto.timingSafeEqual(given, want);
+  };
+  let authCache = null;
+  const auth = async () => {
+    if (authCache) return authCache;
+    const rows = (await pool.query(`select key, value from portal_setting where key in ('admin_password', 'session_version')`)).rows;
+    const m = Object.fromEntries(rows.map((r) => [r.key, r.value]));
+    authCache = { stored: m.admin_password ?? null, ver: Number(m.session_version ?? 0), changedAt: null };
+    return authCache;
+  };
 
   const app = express();
   app.disable('x-powered-by');
@@ -70,18 +92,18 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret }) {
     return f && f.n >= 5 && Date.now() - f.at < 15 * 60_000;
   };
 
-  app.post('/api/admin/login', (req, res) => {
+  app.post('/api/admin/login', async (req, res) => {
     const ip = req.ip ?? '';
     if (tooMany(ip)) return res.status(429).json({ message: '로그인 실패가 많아 15분 동안 잠겼습니다' });
-    const given = crypto.scryptSync(String(req.body?.password ?? ''), 'ss-license-portal', 32);
-    if (!crypto.timingSafeEqual(given, pwHash)) {
+    const a = await auth();
+    if (!checkPw(req.body?.password ?? '', a.stored)) {
       const f = fails.get(ip) ?? { n: 0, at: Date.now() };
       fails.set(ip, { n: f.n + 1, at: Date.now() });
       audit(req, 'LOGIN_FAIL', '관리자 로그인 실패');
       return res.status(401).json({ message: '비밀번호가 맞지 않습니다' });
     }
     fails.delete(ip);
-    setSessionCookie(res, signSession({ exp: Date.now() + SESSION_HOURS * 3600_000 }), SESSION_HOURS * 3600);
+    setSessionCookie(res, signSession({ exp: Date.now() + SESSION_HOURS * 3600_000, v: a.ver }), SESSION_HOURS * 3600);
     audit(req, 'LOGIN', '관리자 로그인');
     res.json({ ok: true });
   });
@@ -93,8 +115,9 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret }) {
 
   // 관리자 API: 로그인 쿠키 + (변경 요청은) 사용자 지정 헤더 — 다른 사이트에서 위조 요청을 보낼 수 없게
   const admin = express.Router();
-  admin.use((req, res, next) => {
-    if (!readSession(cookie(req, 'sid'))) return res.status(401).json({ message: '로그인이 필요합니다' });
+  admin.use(async (req, res, next) => {
+    const sess = readSession(cookie(req, 'sid'));
+    if (!sess || (sess.v ?? 0) !== (await auth()).ver) return res.status(401).json({ message: '로그인이 필요합니다' });
     if (req.method !== 'GET' && req.get('x-portal') !== '1') return res.status(403).json({ message: '요청이 올바르지 않습니다' });
     next();
   });
@@ -106,7 +129,38 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret }) {
   });
   const bad = (message, status = 400) => Object.assign(new Error(message), { status });
 
-  admin.get('/me', (req, res) => res.json({ ok: true, publicKey: publicPem }));
+  admin.get('/me', wrap(async (req, res) => {
+    const a = await auth();
+    const [row] = (await q(`select updated_at from portal_setting where key = 'admin_password'`)).rows;
+    res.json({ ok: true, publicKey: publicPem, passwordChangedAt: row?.updated_at ?? null });
+  }));
+
+  /** 관리자 비밀번호 변경 — 현재 비밀번호 확인, 변경 후 다른 세션은 모두 로그아웃 */
+  admin.post('/password', wrap(async (req, res) => {
+    const a = await auth();
+    const current = String(req.body?.current ?? '');
+    const next = String(req.body?.next ?? '');
+    if (!checkPw(current, a.stored)) {
+      audit(req, 'PASSWORD_FAIL', '비밀번호 변경 실패 (현재 비밀번호 불일치)');
+      throw bad('현재 비밀번호가 맞지 않습니다');
+    }
+    if (next.length < 12) throw bad('새 비밀번호는 12자 이상이어야 합니다');
+    if (next.length > 200) throw bad('새 비밀번호가 너무 깁니다');
+    const kinds = [/[a-z]/, /[A-Z]/, /[0-9]/, /[^A-Za-z0-9]/].filter((r) => r.test(next)).length;
+    if (kinds < 3) throw bad('영문 대문자·소문자·숫자·특수문자 중 3가지 이상을 섞어 주세요');
+    if (next === current) throw bad('지금과 다른 비밀번호를 입력해 주세요');
+    const ver = a.ver + 1;
+    await q(
+      `insert into portal_setting(key, value) values ('admin_password', $1), ('session_version', $2)
+       on conflict (key) do update set value = excluded.value, updated_at = now()`,
+      [hashPw(next), String(ver)],
+    );
+    authCache = null;
+    audit(req, 'PASSWORD_CHANGE', '관리자 비밀번호 변경');
+    // 지금 쓰는 화면은 새 세션으로 이어서 사용
+    setSessionCookie(res, signSession({ exp: Date.now() + SESSION_HOURS * 3600_000, v: ver }), SESSION_HOURS * 3600);
+    res.json({ ok: true });
+  }));
 
   /** 고객별 최신 라이선스와 상태 */
   const CUSTOMER_STATE_SQL = `

@@ -317,13 +317,34 @@ async function pageSettings() {
   loading('settings');
   const me = await api('/me');
   shell('settings', `
-    <div class="page-head"><div><h1>설정</h1><p>판매자 서명키 정보입니다.</p></div></div>
+    <div class="page-head"><div><h1>설정</h1><p>관리자 비밀번호와 판매자 서명키 정보입니다.</p></div></div>
+    <section class="panel"><header><h2>관리자 비밀번호 변경</h2><span class="muted small">${me.passwordChangedAt ? '마지막 변경 ' + dt(me.passwordChangedAt) : '처음 받은 비밀번호 사용 중'}</span></header>
+      <form id="pwf" class="body" autocomplete="off">
+        <div class="form-grid">
+          <label class="f wide">현재 비밀번호<input type="password" name="current" autocomplete="current-password" required /></label>
+          <label class="f">새 비밀번호<input type="password" name="next" autocomplete="new-password" minlength="12" required /><span class="hint">12자 이상, 영문 대·소문자·숫자·특수문자 중 3가지 이상</span></label>
+          <label class="f">새 비밀번호 확인<input type="password" name="confirm" autocomplete="new-password" minlength="12" required /></label>
+        </div>
+        <p class="small muted" style="margin:12px 0 0">바꾸면 이 화면을 뺀 다른 PC·휴대폰의 로그인은 모두 끊깁니다.</p>
+        <div class="row end" style="margin-top:12px"><button class="btn primary">비밀번호 변경</button></div>
+      </form>
+    </section>
     <section class="panel"><header><h2>판매자 공개키</h2><button class="btn sm" id="cp">복사</button></header><div class="body">
       <p class="muted" style="margin-top:0">SS-ERP에 들어 있는 공개키와 같아야 이 사이트에서 발급한 라이선스가 인정됩니다. 공개키는 알려져도 괜찮습니다.</p>
       <div class="lic-text">${esc(me.publicKey)}</div>
       <div class="note warn" style="margin-top:12px">비밀키(서명키)는 이 서버의 환경변수에만 있고 화면에는 나오지 않습니다. 따로 보관한 백업 파일을 잃어버리지 마세요. 비밀키가 유출되면 누구나 라이선스를 만들 수 있으니 즉시 키를 교체해야 합니다.</div>
     </div></section>`);
   document.getElementById('cp').onclick = () => copy(me.publicKey, '공개키를 복사했습니다');
+  document.getElementById('pwf').onsubmit = async (e) => {
+    e.preventDefault();
+    const f = formData(e.target);
+    if (f.next !== f.confirm) return toast('새 비밀번호가 서로 다릅니다', 'error');
+    try {
+      await api('/password', { method: 'POST', json: { current: f.current, next: f.next } });
+      toast('비밀번호를 바꿨습니다');
+      pageSettings();
+    } catch (err) { toast(err.message, 'error'); }
+  };
 }
 
 // ── 라우팅 ─────────────────────────────────────────────────────

@@ -15,7 +15,7 @@
 |---|---|
 | `DATABASE_URL` | PostgreSQL |
 | `LICENSE_PRIVATE_KEY` | 판매자 서명 비밀키 (Ed25519 PEM 을 base64 로 인코딩). **유출 금지** |
-| `ADMIN_PASSWORD` | 관리자 비밀번호 (12자 이상) |
+| `ADMIN_PASSWORD` | 처음 관리자 비밀번호 (12자 이상). 화면 **설정 > 관리자 비밀번호 변경**에서 바꾸면 이후로는 바뀐 비밀번호만 쓰임 |
 | `SESSION_SECRET` | 로그인 쿠키 서명용 무작위 문자열 |
 | `NODE_ENV` | `production` |
 
