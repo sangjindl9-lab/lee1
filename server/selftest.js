@@ -1,20 +1,21 @@
-// SELFTEST=1: 통합 입찰공고·낙찰정보 점검 (나라장터 + 타기관)
-const pad = (n) => String(n).padStart(2, '0');
-const ymd = (d) => `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}`;
-export async function selfTest(base) {
-  const now = new Date(Date.now() + 9 * 3600 * 1000); const from = new Date(now.getTime() - 6 * 86400000);
-  const q = (extra) => new URLSearchParams({ inqryBgnDt: `${ymd(from)}0000`, inqryEndDt: `${ymd(now)}2359`, numOfRows: '5', pageNo: '1', ...extra });
-  const cases = [
-    ['bids/Cnstwk', { inqryDiv: '1', indstrytyNm: '전기공사업' }],
-    ['bids/Cnstwk', { inqryDiv: '1', prtcptLmtRgnCd: '51', indstrytyNm: '전기공사업' }],
-    ['award/All', { inqryDiv: '2', indstrytyNm: '전기공사업' }],
-    ['award/All', { inqryDiv: '2' }],
+// SELFTEST=1: 업체검색 가능 여부 확인 (사용자정보서비스)
+const one = (s) => s.replace(/\s+/g, ' ');
+export async function selfTest() {
+  const KEY = process.env.DATA_GO_KR_KEY;
+  const base = 'https://apis.data.go.kr/1230000/ao/UsrInfoService02';
+  const tries = [
+    ['getPrcrmntCorpBasicInfo02', { inqryDiv: '1', inqryBgnDt: '200001010000', inqryEndDt: '202610232359', corpNm: '에스에스전력' }],
+    ['getPrcrmntCorpBasicInfo02', { inqryDiv: '2', inqryBgnDt: '202601010000', inqryEndDt: '202610232359', corpNm: '에스에스전력' }],
+    ['getPrcrmntCorpBasicInfo02', { inqryDiv: '1', inqryBgnDt: '202610010000', inqryEndDt: '202610232359', corpNm: '전력' }],
+    ['getPrcrmntCorpBasicInfo02', { inqryDiv: '2', inqryBgnDt: '202501010000', inqryEndDt: '202610232359', corpNm: '서화통신' }],
+    ['getPrcrmntCorpIndstrytyInfo02', { inqryDiv: '1', bizno: '4168129536' }],
   ];
-  for (const [path, extra] of cases) {
-    const t = Date.now();
+  for (const [op, p] of tries) {
     try {
-      const d = await fetch(`${base}/api/${path}?${q(extra)}`).then((r) => r.json());
-      console.log(`[SELFTEST] ${path} ${JSON.stringify(extra)} → ${d.error || `total=${d.totalCount} orgs=${JSON.stringify(d.orgCounts)}`} ${Date.now() - t}ms :: ${(d.items || []).map((r) => `[${r._org}]${r.bidNtceNm?.slice(0, 25)}${r.bidwinnrNm ? `/${r.bidwinnrNm}` : ''}`).join(' | ')}`);
-    } catch (e) { console.log(`[SELFTEST] ${path} EXC ${e.message}`); }
+      const qs = new URLSearchParams({ ...p, type: 'json', numOfRows: '5', pageNo: '1' });
+      const r = await fetch(`${base}/${op}?serviceKey=${encodeURIComponent(KEY)}&${qs}`, { signal: AbortSignal.timeout(30000) });
+      const t = await r.text();
+      console.log(`[CORPDBG] ${op} ${JSON.stringify(p)} → ${r.status} ${one(t).slice(0, 1500)}`);
+    } catch (e) { console.log(`[CORPDBG] ${op} EXC ${e.message}`); }
   }
 }
