@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { STAMP_FONTS, CENTER_FONTS, renderStamp } from '../lib/stamp.js'
 
-const CENTERS = ['代表理事', '代表', '理事', '대표이사', '印']
+const CENTERS = ['代表理事', '代表理事印', '代表', '理事', '대표이사', '대표이사인', '印', '']
 const COLORS = [['#d1272e', '인주 빨강'], ['#a8181b', '진홍'], ['#1f3f8f', '파랑'], ['#1d1b17', '검정']]
 
 function StampPreview({ opts, selected, onClick }) {
@@ -29,13 +29,14 @@ export default function StampTab({ onFinish, toast }) {
   const [centerScale, setCenterScale] = useState(1)
   const [ringScale, setRingScale] = useState(1)
   const [mark, setMark] = useState('dot')
+  const [cols, setCols] = useState(0)
   const [applied, setApplied] = useState(null)   // 만들기 눌렀을 때의 옵션
   const [sel, setSel] = useState(-1)
 
-  const generate = () => { setApplied({ kind, text: text.trim(), center, color, centerFont, thin, innerR, centerScale, ringScale, mark }); setSel(-1) }
+  const generate = () => { setApplied({ kind, text: text.trim(), center, color, centerFont, thin, innerR, centerScale, ringScale, mark, cols }); setSel(-1) }
   useEffect(() => { generate() }, []) // 첫 진입 시 예시 생성
   // 슬라이더·옵션은 만들기 없이 바로 반영
-  useEffect(() => { if (applied) setApplied(a => ({ ...a, color, centerFont, thin, innerR, centerScale, ringScale, center, mark })) }, [color, centerFont, thin, innerR, centerScale, ringScale, center, mark])
+  useEffect(() => { if (applied) setApplied(a => ({ ...a, kind, color, centerFont, thin, innerR, centerScale, ringScale, center, mark, cols })) }, [kind, color, centerFont, thin, innerR, centerScale, ringScale, center, mark, cols])
 
   const make = () => {
     if (sel < 0 || !applied) return toast('도장 모양을 먼저 선택하세요')
@@ -48,12 +49,13 @@ export default function StampTab({ onFinish, toast }) {
     <div className="stamp">
       <div className="sbar">
         <select value={kind} onChange={e => setKind(e.target.value)} aria-label="도장 종류">
-          <option value="corp">법인 직인</option>
+          <option value="corp">법인 직인 (원형)</option>
+          <option value="corpsq">법인 직인 (사각)</option>
           <option value="person">개인 인감 (원형)</option>
           <option value="square">개인 인감 (사각)</option>
         </select>
         <div className="sin">
-          <input value={text} maxLength={14} onChange={e => setText(e.target.value)} placeholder={kind === 'corp' ? '회사명 (법인명)' : '이름'} />
+          <input value={text} maxLength={14} onChange={e => setText(e.target.value)} placeholder={kind.startsWith('corp') ? '회사명 (법인명)' : '이름'} />
           <span className="cnt"><b>{[...text].length}</b>/14</span>
         </div>
         <button type="button" className="btn" onClick={generate}>만들기</button>
@@ -66,14 +68,20 @@ export default function StampTab({ onFinish, toast }) {
           <label>둘레 글자 크기 <span>{Math.round(ringScale * 100)}%</span><input type="range" min="0.5" max="1.2" step="0.02" value={ringScale} onChange={e => setRingScale(+e.target.value)} /></label>
         </div>
       )}
-      {kind === 'corp' && (
+      {kind === 'corpsq' && (
+        <div className="sliders">
+          <label>글자 크기 <span>{Math.round(centerScale * 100)}%</span><input type="range" min="0.5" max="1.4" step="0.02" value={centerScale} onChange={e => setCenterScale(+e.target.value)} /></label>
+          <label>열 수 <span>{cols || '자동'}</span><input type="range" min="0" max="6" step="1" value={cols} onChange={e => setCols(+e.target.value)} /></label>
+        </div>
+      )}
+      {kind.startsWith('corp') && (
         <div className="sopt">
-          <label>중앙 문구
-            <select value={center} onChange={e => setCenter(e.target.value)}>{CENTERS.map(c => <option key={c}>{c}</option>)}</select>
+          <label>{kind === 'corp' ? '중앙 문구' : '끝 문구'}
+            <select value={center} onChange={e => setCenter(e.target.value)}>{CENTERS.map(c => <option key={c} value={c}>{c || '(없음)'}</option>)}</select>
           </label>
-          <label>상단 표시
+          {kind === 'corp' && <label>상단 표시
             <select value={mark} onChange={e => setMark(e.target.value)}><option value="dot">● 점</option><option value="none">없음</option>{[1,2,3,4,5,6,7,8,9].map(n => <option key={n} value={String(n)}>숫자 {n}</option>)}</select>
-          </label>
+          </label>}
           <label>한자 서체
             <select value={centerFont} onChange={e => setCenterFont(e.target.value)}>{CENTER_FONTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
           </label>
@@ -85,7 +93,7 @@ export default function StampTab({ onFinish, toast }) {
           </label>
         </div>
       )}
-      {kind !== 'corp' && (
+      {!kind.startsWith('corp') && (
         <div className="sopt">
           <label>획 굵기
             <select value={thin} onChange={e => setThin(+e.target.value)}><option value={1}>아주 가늘게</option><option value={0.6}>가늘게</option><option value={0.3}>보통</option><option value={0}>굵게 (원본)</option></select>

@@ -37,9 +37,27 @@ export function renderStamp(cv, o) {
     if (/^\d+$/.test(mark)) { x.font = `800 ${fs * 0.95}px 'Noto Sans KR',sans-serif`; x.save(); x.translate(cx, cy - rr); draw(mark, 0, fs * 0.04); x.restore() }
     const c = [...o.center], cs = o.centerScale ?? 1
     const cfont = `${o.centerFont || "'Noto Serif KR'"},'Noto Serif KR'`
-    if (c.length === 4) { const g = ri * 0.7 * cs; x.font = `700 ${ri * 0.7 * cs}px ${cfont}`; [[1, 0], [1, 1], [0, 0], [0, 1]].forEach(([col, row], i) => draw(c[i], cx + (col - .5) * g, cy + (row - .5) * g + ri * 0.02)) }
+    if (c.length >= 5) { const cols2 = 2, rows2 = Math.ceil(c.length / 2), g = ri * 1.5 / rows2 * cs, gx = ri * 0.62 * cs; x.font = `700 ${Math.min(g, ri * 0.6) * 0.95}px ${cfont}`; let k = 0; for (let col = 1; col >= 0; col--) for (let row = 0; row < rows2; row++) { if (k >= c.length) break; draw(c[k++], cx + (col - .5) * gx, cy + (row - (rows2 - 1) / 2) * g + ri * 0.02) } }
+    else if (c.length === 4) { const g = ri * 0.7 * cs; x.font = `700 ${ri * 0.7 * cs}px ${cfont}`; [[1, 0], [1, 1], [0, 0], [0, 1]].forEach(([col, row], i) => draw(c[i], cx + (col - .5) * g, cy + (row - .5) * g + ri * 0.02)) }
     else if (c.length >= 3) { const g = ri * 0.52 * cs; x.font = `700 ${ri * 0.5 * cs}px ${cfont}`; c.forEach((ch, i) => draw(ch, cx, cy + (i - (c.length - 1) / 2) * g + 2)) }
     else { const g = ri * 0.8 * cs; x.font = `700 ${ri * 0.78 * cs}px ${cfont}`; c.forEach((ch, i) => draw(ch, cx, cy + (i - (c.length - 1) / 2) * g + ri * 0.03)) }
+  } else if (o.kind === 'corpsq') {
+    // 법인 사각직인: 회사명 + 중앙문구(代表理事 등)를 세로쓰기, 오른쪽 열부터 왼쪽으로
+    const cfont = `${o.centerFont || "'Noto Serif KR'"},'Noto Serif KR'`
+    const side = R * 1.84, x0 = cx - side / 2, y0 = cy - side / 2
+    base.lineWidth = W * 0.022; base.strokeRect(x0, y0, side, side)
+    const chars = [...(text.replace(/\s/g, '') + (o.center || ''))], n = chars.length
+    const cols = o.cols || Math.max(2, Math.ceil(Math.sqrt(n))), rows = Math.ceil(n / cols)
+    const pad = side * 0.07, inner = side - pad * 2, cw = inner / cols, rh = inner / rows
+    const cs = o.centerScale ?? 1, fs = Math.min(cw, rh) * 0.92 * cs
+    let i = 0
+    for (let c = cols - 1; c >= 0; c--) for (let r = 0; r < rows; r++) {
+      if (i >= n) break
+      const ch = chars[i++], hanja = /[\u4E00-\u9FFF]/.test(ch)
+      x.font = `700 ${fs}px ${hanja ? cfont : font}`
+      const mw = x.measureText(ch).width || fs, sx = Math.max(0.6, Math.min(1.5, (cw * 0.9) / mw)), sy = Math.max(0.7, Math.min(1.4, (rh * 0.9) / fs))
+      x.save(); x.translate(x0 + pad + (c + 0.5) * cw, y0 + pad + (r + 0.5) * rh); x.scale(sx, sy); draw(ch, 0, fs * 0.05); x.restore()
+    }
   } else {
     let chars = [...text.replace(/\s/g, '')].slice(0, 4)
     if (chars.length === 3 || chars.length === 1) chars.push('인')
