@@ -21,23 +21,23 @@ export function renderStamp(cv, o) {
     // 둘레 글자 중심 r=0.78R 크기 0.27R, 상단 점은 글자 한 칸을 차지
     const R2 = W * 0.455
     base.lineWidth = W * 0.02; base.beginPath(); base.arc(cx, cy, R2, 0, Math.PI * 2); base.stroke()
-    const ri = R2 * 0.55; base.lineWidth = W * 0.015; base.beginPath(); base.arc(cx, cy, ri, 0, Math.PI * 2); base.stroke()
+    const ri = R2 * (o.innerR ?? 0.55); base.lineWidth = W * 0.015; base.beginPath(); base.arc(cx, cy, ri, 0, Math.PI * 2); base.stroke()
     const rr = R2 * 0.78, chars = [...text.replace(/\s/g, '')], n = chars.length
     const step = (Math.PI * 2) / (n + 1), top = -Math.PI / 2
     base.beginPath(); base.arc(cx + rr * Math.cos(top), cy + rr * Math.sin(top), W * 0.022, 0, Math.PI * 2); base.fill()
     // 글자를 띠(내원~외곽선)에 꽉 차게: 높이는 띠의 88%, 폭은 각 칸의 88%에 맞춰 가로 늘림/줄임
-    const band = R2 - ri, fs = band * 0.88, slot = rr * step * 0.88
+    const band = R2 - ri, fs = band * 0.88 * (o.ringScale ?? 1), slot = rr * step * 0.88 * (o.ringScale ?? 1)
     x.font = `700 ${fs}px ${font}`
     chars.forEach((ch, i) => {
       const a = top + (i + 1) * step, mw = x.measureText(ch).width || fs
       const sx = Math.max(0.55, Math.min(1.6, slot / mw))
       x.save(); x.translate(cx + rr * Math.cos(a), cy + rr * Math.sin(a)); x.rotate(a + Math.PI / 2); x.scale(sx, 1); draw(ch, 0, fs * 0.04); x.restore()
     })
-    const c = [...o.center]
+    const c = [...o.center], cs = o.centerScale ?? 1
     const cfont = `${o.centerFont || "'Noto Serif KR'"},'Noto Serif KR'`
-    if (c.length === 4) { const g = ri * 0.7; x.font = `700 ${ri * 0.7}px ${cfont}`; [[1, 0], [1, 1], [0, 0], [0, 1]].forEach(([col, row], i) => draw(c[i], cx + (col - .5) * g, cy + (row - .5) * g + ri * 0.02)) }
-    else if (c.length >= 3) { const g = ri * 0.52; x.font = `700 ${ri * 0.5}px ${cfont}`; c.forEach((ch, i) => draw(ch, cx, cy + (i - (c.length - 1) / 2) * g + 2)) }
-    else { const g = ri * 0.8; x.font = `700 ${ri * 0.78}px ${cfont}`; c.forEach((ch, i) => draw(ch, cx, cy + (i - (c.length - 1) / 2) * g + ri * 0.03)) }
+    if (c.length === 4) { const g = ri * 0.7 * cs; x.font = `700 ${ri * 0.7 * cs}px ${cfont}`; [[1, 0], [1, 1], [0, 0], [0, 1]].forEach(([col, row], i) => draw(c[i], cx + (col - .5) * g, cy + (row - .5) * g + ri * 0.02)) }
+    else if (c.length >= 3) { const g = ri * 0.52 * cs; x.font = `700 ${ri * 0.5 * cs}px ${cfont}`; c.forEach((ch, i) => draw(ch, cx, cy + (i - (c.length - 1) / 2) * g + 2)) }
+    else { const g = ri * 0.8 * cs; x.font = `700 ${ri * 0.78 * cs}px ${cfont}`; c.forEach((ch, i) => draw(ch, cx, cy + (i - (c.length - 1) / 2) * g + ri * 0.03)) }
   } else {
     let chars = [...text.replace(/\s/g, '')].slice(0, 4)
     if (chars.length === 3 || chars.length === 1) chars.push('인')

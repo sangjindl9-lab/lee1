@@ -25,11 +25,16 @@ export default function StampTab({ onFinish, toast }) {
   const [color, setColor] = useState('#d1272e')
   const [centerFont, setCenterFont] = useState(CENTER_FONTS[0][0])
   const [thin, setThin] = useState(1)
+  const [innerR, setInnerR] = useState(0.55)
+  const [centerScale, setCenterScale] = useState(1)
+  const [ringScale, setRingScale] = useState(1)
   const [applied, setApplied] = useState(null)   // 만들기 눌렀을 때의 옵션
   const [sel, setSel] = useState(-1)
 
-  const generate = () => { setApplied({ kind, text: text.trim(), center, color, centerFont, thin }); setSel(-1) }
+  const generate = () => { setApplied({ kind, text: text.trim(), center, color, centerFont, thin, innerR, centerScale, ringScale }); setSel(-1) }
   useEffect(() => { generate() }, []) // 첫 진입 시 예시 생성
+  // 슬라이더·옵션은 만들기 없이 바로 반영
+  useEffect(() => { if (applied) setApplied(a => ({ ...a, color, centerFont, thin, innerR, centerScale, ringScale, center })) }, [color, centerFont, thin, innerR, centerScale, ringScale, center])
 
   const make = () => {
     if (sel < 0 || !applied) return toast('도장 모양을 먼저 선택하세요')
@@ -53,6 +58,13 @@ export default function StampTab({ onFinish, toast }) {
         <button type="button" className="btn" onClick={generate}>만들기</button>
       </div>
 
+      {kind === 'corp' && (
+        <div className="sliders">
+          <label>안쪽 원 크기 <span>{Math.round(innerR * 100)}%</span><input type="range" min="0.35" max="0.72" step="0.01" value={innerR} onChange={e => setInnerR(+e.target.value)} /></label>
+          <label>중앙 글자 크기 <span>{Math.round(centerScale * 100)}%</span><input type="range" min="0.5" max="1.4" step="0.02" value={centerScale} onChange={e => setCenterScale(+e.target.value)} /></label>
+          <label>둘레 글자 크기 <span>{Math.round(ringScale * 100)}%</span><input type="range" min="0.5" max="1.2" step="0.02" value={ringScale} onChange={e => setRingScale(+e.target.value)} /></label>
+        </div>
+      )}
       {kind === 'corp' && (
         <div className="sopt">
           <label>중앙 문구

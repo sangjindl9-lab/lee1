@@ -70,3 +70,6 @@ canvas{max-width:100%;height:auto;display:block;touch-action:none}
 .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:10px 16px;border-radius:999px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none}
 .toast.show{opacity:1}
 .upl{flex-direction:column;align-items:flex-start;gap:4px}.upl input{font-size:12px}
+
+.sliders{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px 18px;margin-top:12px;font-size:13px}
+.sliders label{display:grid;gap:2px;font-weight:700}.sliders span{color:var(--muted);font-weight:400;margin-left:6px}.sliders input{width:100%}
