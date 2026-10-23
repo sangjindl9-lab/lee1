@@ -266,7 +266,14 @@ def _template_matches(lid: int, tmpl_path: str, raster_path: str, meta: dict, ex
         return []
     img = cv2.imread(raster_path, cv2.IMREAD_GRAYSCALE)
     tm = cv2.imread(tmpl_path, cv2.IMREAD_GRAYSCALE)
-    if img is None or tm is None or tm.shape[0] < 8 or tm.shape[1] < 8:
+    if img is None or tm is None or tm.shape[0] < 10 or tm.shape[1] < 10:
+        return []
+    # 템플릿 여백 제거(잉크 bbox) 후 매칭 — 칸 전체가 아니라 기호만 비교
+    ys_, xs_ = np.where(tm < 128)
+    if len(xs_) < 20:
+        return []
+    tm = tm[max(0, ys_.min() - 2):ys_.max() + 3, max(0, xs_.min() - 2):xs_.max() + 3]
+    if tm.shape[0] < 10 or tm.shape[1] < 10:
         return []
     px_per_pt = meta["dpi"] / 72.0
     H = meta["h"]
@@ -276,7 +283,7 @@ def _template_matches(lid: int, tmpl_path: str, raster_path: str, meta: dict, ex
         if t.shape[0] >= img.shape[0] or t.shape[1] >= img.shape[1]:
             continue
         res = cv2.matchTemplate(img, t, cv2.TM_CCOEFF_NORMED)
-        ys, xs = np.where(res >= 0.75)
+        ys, xs = np.where(res >= 0.82)
         th, tw = t.shape
         for yy, xx in zip(ys, xs):
             score = float(res[yy, xx])

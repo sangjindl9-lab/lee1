@@ -170,7 +170,22 @@ def guess_sheet_meta(sd: SheetData) -> tuple[str | None, str | None, str | None,
             score = (t["x"] - bb["x0"]) / max(bb["x1"] - bb["x0"], 1) - (t["y"] - bb["y0"]) / max(bb["y1"] - bb["y0"], 1)
             cands.append((score, re.sub(r"\s+", "", s).upper()))
     if cands:
-        dno = max(cands)[1]
+        # '도면번호/SHEET NO/DWG NO' 라벨이 있으면 그 라벨 오른쪽·가까운 후보 우선
+        label = None
+        for t in sd.texts:
+            u = t["text"].replace(" ", "").upper()
+            if "도면번호" in u or "SHEETNO" in u or "DWGNO" in u or "DRAWINGNO" in u:
+                label = t
+                break
+        if label:
+            def dist(c):
+                return abs(c[2] - label["y"]) * 3 + max(0.0, label["x"] - c[1]) + 0.2 * abs(c[1] - label["x"])
+            cands2 = [(sc, re.sub(r"\s+", "", t["text"]).upper(), t["y"], t["x"]) for sc, t in
+                      [(0, t) for t in sd.texts if dno_re.match(t["text"].strip()) and len(t["text"].strip()) <= 14]]
+            if cands2:
+                dno = min(cands2, key=lambda c: dist((c[0], c[3], c[2])))[1]
+        if dno is None:
+            dno = max(cands)[1]
     if dno is None:
         # OCR 표제란: '도면번호 E - 20 - 001' 이 '번호는 20 001' 처럼 깨진 경우
         tb_re = re.compile(r"번호[^0-9A-Z]{0,4}([A-Z])?\s*[-–—]?\s*(\d{2})\s*[-–—]?\s*(\d{3})\b")

@@ -19,12 +19,12 @@ HEADER_KEYS = {
     "item": ["품명", "명칭", "품목", "자재명", "기기명", "장비명", "내용", "내역", "설명", "NAME", "DESCRIPTION", "ITEM", "DESC"],
     "disc": ["공종", "구분", "DIV"],
     "height": ["설치높이", "높이", "HEIGHT"],
-    "spec": ["규격", "사양", "형식", "SPEC", "TYPE", "SIZE"],
+    "spec": ["규격", "사양", "형식", "SPEC", "TYPE", "SIZE", "CABLESIZE", "간선규격", "케이블규격", "WIRE"],
     "unit": ["단위", "UNIT"],
     "qty": ["수량", "QTY", "Q'TY", "QUANTITY"],
     "from": ["FROM", "출발", "기점"],
     "to": ["TO", "도착", "종점"],
-    "conduit": ["전선관", "배관", "CONDUIT", "배관및배선"],
+    "conduit": ["전선관", "배관", "CONDUIT", "CONDUITSIZE", "배관및배선"],
     "no": ["NO", "NO.", "회로", "회로번호", "기호"],
     "note": ["비고", "REMARK", "REMARKS", "NOTE"],
 }
@@ -197,7 +197,7 @@ def _classify_header(row_texts: list[str]) -> dict[str, int] | None:
         if not n:
             continue
         for key, words in HEADER_KEYS.items():
-            if any(_norm(w) == n or (len(_norm(w)) >= 2 and _norm(w) in n and len(n) <= len(_norm(w)) + 2) for w in words):
+            if any(_norm(w) == n or (len(_norm(w)) >= 2 and _norm(w) in n and len(n) <= len(_norm(w)) + 5) for w in words):
                 cols.setdefault(key, i)
                 break
     # 품명 열이 OCR 로 깨져도 기호+단위/높이/비고 등 2개 이상이면 헤더로 인정 (품명 열은 위치로 추정)
@@ -281,10 +281,21 @@ def extract_legend(sheet: dict, title: dict, region: dict | None = None, ocr_cel
     header_cols = None
     header_x: dict[str, float] = {}
     data_rows = []
-    for r in rows:
+    skip_next = False
+    for ri_, r in enumerate(rows):
+        if skip_next:
+            skip_next = False
+            continue
         tx = [it for it in r if it["_kind"] == "text"]
         if header_cols is None and tx:
             hc = _classify_header([t["text"] for t in tx])
+            if not hc and ri_ + 1 < len(rows):
+                # 헤더가 글자 크기 차이로 두 줄로 나뉜 경우: 다음 행과 합쳐 재시도
+                tx2 = tx + [it for it in rows[ri_ + 1] if it["_kind"] == "text"]
+                tx2.sort(key=lambda t: t["_cx"])
+                hc2 = _classify_header([t["text"] for t in tx2])
+                if hc2 and len(hc2) >= 2:
+                    hc, tx, skip_next = hc2, tx2, True
             if hc:
                 header_cols = hc
                 header_x = {k: tx[i]["_cx"] for k, i in hc.items()}
@@ -409,6 +420,10 @@ def extract_legend(sheet: dict, title: dict, region: dict | None = None, ocr_cel
                 lr.symbol_name = " ".join(buckets["symbol"])
             if lr.spec is None and buckets.get("note") and SPEC_HINT_RE.search(" ".join(buckets["note"])):
                 lr.spec = " ".join(buckets["note"])
+            if "conduit" in header_cols and "from" not in header_cols:
+                lr.extra = {**lr.extra, "conduit": " ".join(buckets.get("conduit", []))}
+                if not lr.item_name and lr.spec:
+                    lr.item_name = "배선 " + lr.spec
             if "from" in header_cols and "to" in header_cols:
                 # 케이블 일람표(배관배선표): 회로번호 FROM TO 규격 전선관 → 케이블 품목 (경로·회선은 사용자가 지정)
                 no = " ".join(buckets.get("no", [])) or (lr.symbol_name or "")
@@ -523,9 +538,13 @@ def grid_tables(sheet: dict, ocr_cell, min_rows: int = 4) -> list[LegendResult]:
         if len(cols) < 2:
             continue
         rows = [(ys[i + 1], ys[i]) for i in range(len(ys) - 1) if ys[i] - ys[i + 1] > 4]
-        cells = []   # rows × cols 텍스트
+        cells = []   # rows × cols 텍스트 (기호 열로 보이는 좁은 첫 열은 OCR 생략)
         for (ry0, ry1) in rows[: min(len(rows), 60)]:
-            cells.append([ocr_cell({"x0": cols[c] + 1, "x1": cols[c + 1] - 1, "y0": ry0 + 1, "y1": ry1 - 1}) for c in range(len(cols) - 1)])
+            row = []
+            for c in range(len(cols) - 1):
+                narrow_first = c == 0 and (cols[1] - cols[0]) < 0.12 * (x1 - x0)
+                row.append("" if narrow_first and cells else ocr_cell({"x0": cols[c] + 1, "x1": cols[c + 1] - 1, "y0": ry0 + 1, "y1": ry1 - 1}))
+            cells.append(row)
         header_i, hc = None, None
         for i, row in enumerate(cells[:3]):
             hc = _classify_header(row)

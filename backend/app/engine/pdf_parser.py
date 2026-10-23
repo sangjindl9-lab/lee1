@@ -386,7 +386,10 @@ def ocr_cell(raster_path: str, dpi: float, page_h: float, region: dict, psm: int
         crop = img[max(0, y0):max(0, y1), max(0, x0):max(0, x1)]
         if crop.size == 0 or crop.shape[0] < 4:
             return ""
-        crop = cv2.resize(crop, None, fx=2.5, fy=2.5, interpolation=cv2.INTER_CUBIC)
+        # 잉크가 거의 없는 빈 칸은 OCR 생략 (스캔 범례표의 빈 행 수백 칸 → 수십 분 소요 방지)
+        if (crop < 128).mean() < 0.004:
+            return ""
+        crop = cv2.resize(crop, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
         crop = cv2.copyMakeBorder(crop, 12, 12, 12, 12, cv2.BORDER_CONSTANT, value=255)
         txt = pytesseract.image_to_string(crop, lang=lang, config=f"--psm {psm}")
         return " ".join(txt.split())
