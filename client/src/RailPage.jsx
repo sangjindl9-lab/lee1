@@ -39,9 +39,10 @@ const COLS = {
   ],
 };
 
-export default function RailPage() {
+export default function RailPage({ fixed }) {
   const saved = load('search:rail', {});
-  const [src, setSrc] = useState('kw-rst');
+  const [srcState, setSrc] = useState('kw-rst');
+  const src = fixed || srcState;
   const [q, setQ] = useState(saved.q || '');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -72,12 +73,12 @@ export default function RailPage() {
   const pages = Math.max(1, Math.ceil(s.total / 30));
   return (
     <section>
-      <div className="kind-tabs" role="tablist">
+      {!fixed && <div className="kind-tabs" role="tablist">
         {SOURCES.map((x) => (
           <button key={x.id} role="tab" aria-selected={src === x.id} className={src === x.id ? 'on' : ''}
             onClick={() => { setSrc(x.id); if (s.searched && !/^(kr|kw)-/.test(x.id)) run(1, x.id); }}>{x.label}</button>
         ))}
-      </div>
+      </div>}
       {src.startsWith('kw-') ? <KwaterPage key={src} mode={src === 'kw-rst' ? 'rst' : 'notice'} /> : src.startsWith('kr-') ? <KrResult key={src} type={src.slice(3)} /> : <>
 
       <div className="banner inline">

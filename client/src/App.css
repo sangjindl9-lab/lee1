@@ -234,3 +234,11 @@ table.sub tr.mine td { background: var(--mine); font-weight: 700; }
 
 .banner.inline { width: auto; margin: 0 0 10px; line-height: 1.6; }
 .kind-tabs.sub button { padding: 4px 14px; font-size: 13px; }
+
+/* 발주처 선택 */
+.org-tabs { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; margin-bottom: 12px; padding: 4px; background: var(--panel);
+  border: 1px solid var(--line); border-radius: 10px; width: fit-content; max-width: 100%; }
+.org-label { font-size: 12px; font-weight: 700; color: var(--ink-3); padding: 0 8px 0 6px; }
+.org-tabs button { border: 0; background: none; padding: 7px 14px; border-radius: 7px; font-weight: 600; color: var(--ink-2); cursor: pointer; }
+.org-tabs button.on { background: var(--accent); color: #fff; }
+.org-tabs button:not(.on):hover { background: var(--accent-soft); color: var(--accent); }

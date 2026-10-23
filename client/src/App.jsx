@@ -7,7 +7,17 @@ import { PAGES } from './pages.jsx';
 import { KINDS, load, save, shortDt, dday, wonShort } from './lib.js';
 import './App.css';
 
-const TABS = [...PAGES.map((p) => ({ id: p.id, label: p.title })), { id: 'rail', label: '기타기관' }, { id: 'star', label: '관심공고' }];
+const TABS = [...PAGES.map((p) => ({ id: p.id, label: p.title })), { id: 'star', label: '관심공고' }];
+
+// 메뉴별 발주처 선택: 나라장터 외 기관은 각 기관 데이터 화면을 같은 메뉴 안에서 보여줌
+const ORGS = {
+  bid: [['g2b', '나라장터'], ['kw-notice', '한국수자원공사'], ['kr', '국가철도공단'], ['korail', '한국철도공사']],
+  openg: [['g2b', '나라장터'], ['kr-openg', '국가철도공단']],
+  scs: [['g2b', '나라장터'], ['kw-rst', '한국수자원공사'], ['kr-award', '국가철도공단']],
+};
+const ORG_NOTE = {
+  korail: '한국철도공사는 공고 파일(2024년 기준)만 공개되어 있어 개찰·낙찰 결과는 없습니다.',
+};
 
 function Watchlist({ starred, onOpen, onStar }) {
   const list = Object.entries(starred).sort((a, b) => (b[1].savedAt || 0) - (a[1].savedAt || 0));
@@ -44,6 +54,9 @@ export default function App() {
   const [myBizno, setMyBizno] = useState(() => load('myBizno', ''));
   const [showSet, setShowSet] = useState(false);
   const [mock, setMock] = useState(false);
+  const [org, setOrgState] = useState(() => load('org', {}));
+  const orgOf = (t) => (ORGS[t]?.some(([id]) => id === org[t]) ? org[t] : 'g2b');
+  const setOrg = (t, v) => setOrgState((o) => { const n = { ...o, [t]: v }; save('org', n); return n; });
   const [company, setCompany] = useState(null);
   useEffect(() => {
     const h = (e) => setCompany(e.detail);
@@ -95,12 +108,24 @@ export default function App() {
       {mock && <div className="banner">⚠ 서버에 공공데이터 인증키(DATA_GO_KR_KEY)가 설정되지 않아 <b>샘플 데이터</b>를 보여주고 있습니다.</div>}
 
       <main>
-        {tab === 'rail' ? <RailPage /> : tab === 'star'
+        {tab === 'star'
           ? <Watchlist starred={starred} onOpen={setSel} onStar={onStar} />
-          : <SearchPage key={tab} page={page} onOpen={setSel} starred={starred} onStar={onStar} myBizno={myBizno} />}
+          : <>
+            <div className="org-tabs" role="tablist" aria-label="발주처">
+              <span className="org-label">발주처</span>
+              {ORGS[tab].map(([id, label]) => (
+                <button key={id} role="tab" aria-selected={orgOf(tab) === id} className={orgOf(tab) === id ? 'on' : ''}
+                  onClick={() => setOrg(tab, id)}>{label}</button>
+              ))}
+            </div>
+            {ORG_NOTE[orgOf(tab)] && <div className="banner inline">ⓘ {ORG_NOTE[orgOf(tab)]}</div>}
+            {orgOf(tab) === 'g2b'
+              ? <SearchPage key={tab} page={page} onOpen={setSel} starred={starred} onStar={onStar} myBizno={myBizno} />
+              : <RailPage key={`${tab}-${orgOf(tab)}`} fixed={orgOf(tab)} />}
+          </>}
       </main>
 
-      <footer className="foot">자료: 조달청 나라장터 (공공데이터포털 OpenAPI) · 실제 입찰 전 나라장터 원문을 꼭 확인하세요. · 버전 10.23-14시</footer>
+      <footer className="foot">자료: 조달청 나라장터 (공공데이터포털 OpenAPI) · 실제 입찰 전 나라장터 원문을 꼭 확인하세요. · 버전 10.23-15시</footer>
 
       {company && <CompanyCard info={company} onClose={closeCompany} />}
       {sel && <Detail sel={sel} onClose={close} onOpen={setSel} myBizno={myBizno} starred={starred} onStar={onStar} />}

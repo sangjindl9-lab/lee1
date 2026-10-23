@@ -349,35 +349,46 @@ async function extLoad(src) {
   if (hit && Date.now() - hit.t < 12 * 3600 * 1000) return hit;
   const files = await extFiles(cfg.ns);
   if (!files.length) throw new Error('파일 목록을 찾지 못했습니다');
-  const file = files[0]; // 가장 최근 기준일 파일
-  let rows = []; let page = 1; let total = Infinity;
-  while (rows.length < total && page <= 50) {
-    const u = `https://api.odcloud.kr/api${file.path}?page=${page}&perPage=1000&returnType=JSON&serviceKey=${encodeURIComponent(KEY)}`;
-    const r = await fetch(u, { signal: AbortSignal.timeout(30000) });
-    const text = await r.text();
-    let d;
-    try { d = JSON.parse(text); } catch { throw new Error(`응답 오류: ${text.slice(0, 120)}`); }
-    if (d.code && d.code < 0) throw new Error(`[${d.code}] ${d.msg || ''}`);
-    total = d.totalCount ?? d.matchCount ?? 0;
-    rows = rows.concat(d.data || []);
-    if (!d.data?.length) break;
-    page++;
+  // 기준일이 다른 파일 여러 개(예: 2023·2024·2026)를 모두 받아 합침. 최신 파일부터 읽어 같은 공고는 최신 상태를 남김
+  const raw = [];
+  for (const file of files) {
+    let page = 1; let total = Infinity; let got = 0;
+    while (got < total && page <= 50) {
+      const u = `https://api.odcloud.kr/api${file.path}?page=${page}&perPage=1000&returnType=JSON&serviceKey=${encodeURIComponent(KEY)}`;
+      const r = await fetch(u, { signal: AbortSignal.timeout(30000) });
+      const text = await r.text();
+      let d;
+      try { d = JSON.parse(text); } catch { console.log(`[ext] ${file.title} 응답 오류: ${text.slice(0, 120)}`); break; }
+      if (d.code && d.code < 0) { console.log(`[ext] ${file.title} [${d.code}] ${d.msg || ''}`); break; }
+      total = d.totalCount ?? d.matchCount ?? 0;
+      for (const x of d.data || []) raw.push({ x, file: file.title });
+      got += (d.data || []).length;
+      if (!d.data?.length) break;
+      page++;
+    }
   }
-  const norm = rows.map((x) => src === 'kr' ? {
-    org: cfg.name, bidNtceNo: '', bidNtceNm: pick(x, '공고명'), kindNm: pick(x, '공고구분'),
-    amount: String(pick(x, '설계금액')).replace(/[^0-9]/g, ''), prearng: pick(x, '예가방식'), method: pick(x, '계약방법'),
-    standard: pick(x, '심사기준'), lowerRate: pick(x, '낙찰하한율'), jv: pick(x, '공동수급협정서구성방식'),
-    ntceDt: normDate(pick(x, '공고게시일자')), beginDt: normDate(pick(x, '입찰서접수게시일자')),
-    clseDt: normDate(pick(x, '입찰서접수마감일자')), opengDt: normDate(pick(x, '개찰일자')),
-    status: pick(x, '진행상태'), officer: pick(x, '입찰담당관'), dept: pick(x, '소속'),
-  } : {
-    org: cfg.name, bidNtceNo: String(pick(x, '입찰공고번호')), bidNtceNm: pick(x, '입찰공고명'),
-    ntceDt: '', beginDt: normDate(pick(x, '입찰서접수개시일')), clseDt: normDate(pick(x, '입찰서접수마감일')),
-    opengDt: normDate(pick(x, '개찰일')),
-  });
-  const out = { t: Date.now(), rows: norm, file: file.title, files: files.map((f) => f.title) };
+  const norm = []; const seen = new Set();
+  for (const { x, file } of raw) {
+    const r = src === 'kr' ? {
+      org: cfg.name, bidNtceNo: '', bidNtceNm: pick(x, '공고명'), kindNm: pick(x, '공고구분'),
+      amount: String(pick(x, '설계금액')).replace(/[^0-9]/g, ''), prearng: pick(x, '예가방식'), method: pick(x, '계약방법'),
+      standard: pick(x, '심사기준'), lowerRate: pick(x, '낙찰하한율'), jv: pick(x, '공동수급협정서구성방식'),
+      ntceDt: normDate(pick(x, '공고게시일자')), beginDt: normDate(pick(x, '입찰서접수게시일자')),
+      clseDt: normDate(pick(x, '입찰서접수마감일자')), opengDt: normDate(pick(x, '개찰일자')),
+      status: pick(x, '진행상태'), officer: pick(x, '입찰담당관'), dept: pick(x, '소속'), file,
+    } : {
+      org: cfg.name, bidNtceNo: String(pick(x, '입찰공고번호')), bidNtceNm: pick(x, '입찰공고명'),
+      ntceDt: '', beginDt: normDate(pick(x, '입찰서접수개시일')), clseDt: normDate(pick(x, '입찰서접수마감일')),
+      opengDt: normDate(pick(x, '개찰일')), file,
+    };
+    const k = r.bidNtceNo || `${r.bidNtceNm}|${r.ntceDt}|${r.opengDt}`;
+    if (seen.has(k)) continue;
+    seen.add(k); norm.push(r);
+  }
+  if (!norm.length) throw new Error('파일 데이터를 받지 못했습니다');
+  const out = { t: Date.now(), rows: norm, file: files.map((f) => f.title.match(/(\d{8})\s*$/)?.[1] || f.title).join(' + '), files: files.map((f) => f.title) };
   extCache.set(src, out);
-  console.log(`[ext] ${cfg.name} ${file.title} → ${norm.length}건`);
+  console.log(`[ext] ${cfg.name} 파일 ${files.length}개 → 원본 ${raw.length}건, 중복 제거 후 ${norm.length}건`);
   return out;
 }
 
