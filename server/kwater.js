@@ -34,9 +34,16 @@ function parseXml(text) {
 }
 
 async function call(op, params, key) {
-  const qs = new URLSearchParams({ ...params, _type: 'json' });
-  const r = await fetch(`${BASE}/${op}?serviceKey=${encodeURIComponent(key)}&${qs}`, { signal: AbortSignal.timeout(30000) });
-  const text = await r.text();
+  const get = async (extra) => {
+    const qs = new URLSearchParams({ ...params, ...extra });
+    const res = await fetch(`${BASE}/${op}?serviceKey=${encodeURIComponent(key)}&${qs}`, { signal: AbortSignal.timeout(30000) });
+    return [res, await res.text()];
+  };
+  let [r, text] = await get({ _type: 'json' });
+  // 일부 오퍼레이션(servcList)은 _type=json 에 빈 본문을 줌 → 형식 지정 없이(XML) 재요청
+  if (!text.trim()) [r, text] = await get({});
+  if (!text.trim()) [r, text] = await get({ type: 'xml' });
+  if (!text.trim()) throw new Error(`수자원공사 ${op} 빈 응답 (HTTP ${r.status})`);
   if (r.status === 403) throw new Error('수자원공사 API 활용신청이 필요합니다 (403)');
   let j;
   try { j = JSON.parse(text); } catch {

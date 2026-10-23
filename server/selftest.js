@@ -1,6 +1,6 @@
 // SELFTEST=1: 수자원공사 용역·낙찰결과 점검
 export async function selfTest(base) {
-  for (const kind of ['servc', 'rst']) {
+  for (const kind of ['servc']) {
     try {
       const d = await fetch(`${base}/api/kwater/${kind}?numOfRows=3000&raw=1`).then((r) => r.json());
       if (d.error) { console.log(`[SELFTEST] kwater ${kind} ERROR ${d.error}`); continue; }
