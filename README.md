@@ -95,8 +95,8 @@ npm test      # 실제 PostgreSQL(erp_test DB)로 170개 항목 실행 (지시�
 
 ## 라이선스 발급 (판매자)
 
-```bash
-node tools/license/issue-license.js --licensee "㈜고객사" --bizno 1234567890 --users 20 --expires 2027-12-31
-```
+라이선스는 **라이선스 발급 관리 사이트**(이 저장소 `license-portal` 브랜치, https://ss-license-production.up.railway.app)에서 발급합니다. 고객 등록 → 신규 발급(1년) → 매년 연장 → 필요 시 사용자 수 변경·사용 중지까지 사이트에서 처리하고, 발급 대장이 자동으로 남습니다. 자세한 절차는 [docs/09_판매_운영매뉴얼.md](docs/09_판매_운영매뉴얼.md).
 
-출력된 문자열을 고객 관리자에게 전달하면 **관리 > 라이선스** 화면에서 등록합니다. `tools/license/keys/vendor-private.pem` 은 절대 외부에 유출하지 마세요 — 유출되면 누구나 라이선스를 만들 수 있습니다. 고객에게 소스를 줄 때는 `tools/license` 폴더를 빼고 전달하세요.
+- 판매자 서명 비밀키는 발급 사이트 서버의 환경변수와 판매자가 따로 보관한 백업 파일에만 있습니다. **절대 저장소에 올리지 마세요.**
+- `tools/license/issue-license.js` 는 사이트를 쓸 수 없을 때의 비상용 명령줄 발급기입니다 (`LICENSE_PRIVATE_KEY=비밀키파일 node tools/license/issue-license.js ...`).
+- 고객에게 소스를 줄 때는 `tools/license` 폴더를 빼고 전달하세요.

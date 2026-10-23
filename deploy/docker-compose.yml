@@ -37,6 +37,9 @@ services:
       TRUST_PROXY: "true"
       FILE_STORAGE_PATH: /data/storage
       LICENSE_PUBLIC_KEY: ${LICENSE_PUBLIC_KEY:-}
+      # 공급사 발급 서버 연결 (인터넷이 안 되는 서버는 LICENSE_SERVER_URL 을 비우고 라이선스를 직접 등록)
+      LICENSE_SERVER_URL: ${LICENSE_SERVER_URL-https://ss-license-production.up.railway.app}
+      LICENSE_ACTIVATION_CODE: ${LICENSE_ACTIVATION_CODE:-}
       INIT_COMPANY_NAME: ${INIT_COMPANY_NAME:-}
       INIT_COMPANY_BIZNO: ${INIT_COMPANY_BIZNO:-}
       INIT_COMPANY_CODE: ${INIT_COMPANY_CODE:-MAIN}
