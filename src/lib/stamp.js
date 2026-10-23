@@ -24,7 +24,8 @@ export function renderStamp(cv, o) {
     const ri = R2 * (o.innerR ?? 0.55); base.lineWidth = W * 0.015; base.beginPath(); base.arc(cx, cy, ri, 0, Math.PI * 2); base.stroke()
     const rr = R2 * 0.78, chars = [...text.replace(/\s/g, '')], n = chars.length
     const step = (Math.PI * 2) / (n + 1), top = -Math.PI / 2
-    base.beginPath(); base.arc(cx + rr * Math.cos(top), cy + rr * Math.sin(top), W * 0.022, 0, Math.PI * 2); base.fill()
+    const mark = o.mark ?? 'dot'   // 'dot' | 'none' | '1'~'9'
+    if (mark === 'dot') { base.beginPath(); base.arc(cx + rr * Math.cos(top), cy + rr * Math.sin(top), W * 0.022, 0, Math.PI * 2); base.fill() }
     // 글자를 띠(내원~외곽선)에 꽉 차게: 높이는 띠의 88%, 폭은 각 칸의 88%에 맞춰 가로 늘림/줄임
     const band = R2 - ri, fs = band * 0.88 * (o.ringScale ?? 1), slot = rr * step * 0.88 * (o.ringScale ?? 1)
     x.font = `700 ${fs}px ${font}`
@@ -33,6 +34,7 @@ export function renderStamp(cv, o) {
       const sx = Math.max(0.55, Math.min(1.6, slot / mw))
       x.save(); x.translate(cx + rr * Math.cos(a), cy + rr * Math.sin(a)); x.rotate(a + Math.PI / 2); x.scale(sx, 1); draw(ch, 0, fs * 0.04); x.restore()
     })
+    if (/^\d+$/.test(mark)) { x.font = `800 ${fs * 0.95}px 'Noto Sans KR',sans-serif`; x.save(); x.translate(cx, cy - rr); draw(mark, 0, fs * 0.04); x.restore() }
     const c = [...o.center], cs = o.centerScale ?? 1
     const cfont = `${o.centerFont || "'Noto Serif KR'"},'Noto Serif KR'`
     if (c.length === 4) { const g = ri * 0.7 * cs; x.font = `700 ${ri * 0.7 * cs}px ${cfont}`; [[1, 0], [1, 1], [0, 0], [0, 1]].forEach(([col, row], i) => draw(c[i], cx + (col - .5) * g, cy + (row - .5) * g + ri * 0.02)) }

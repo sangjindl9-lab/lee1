@@ -28,13 +28,14 @@ export default function StampTab({ onFinish, toast }) {
   const [innerR, setInnerR] = useState(0.55)
   const [centerScale, setCenterScale] = useState(1)
   const [ringScale, setRingScale] = useState(1)
+  const [mark, setMark] = useState('dot')
   const [applied, setApplied] = useState(null)   // 만들기 눌렀을 때의 옵션
   const [sel, setSel] = useState(-1)
 
-  const generate = () => { setApplied({ kind, text: text.trim(), center, color, centerFont, thin, innerR, centerScale, ringScale }); setSel(-1) }
+  const generate = () => { setApplied({ kind, text: text.trim(), center, color, centerFont, thin, innerR, centerScale, ringScale, mark }); setSel(-1) }
   useEffect(() => { generate() }, []) // 첫 진입 시 예시 생성
   // 슬라이더·옵션은 만들기 없이 바로 반영
-  useEffect(() => { if (applied) setApplied(a => ({ ...a, color, centerFont, thin, innerR, centerScale, ringScale, center })) }, [color, centerFont, thin, innerR, centerScale, ringScale, center])
+  useEffect(() => { if (applied) setApplied(a => ({ ...a, color, centerFont, thin, innerR, centerScale, ringScale, center, mark })) }, [color, centerFont, thin, innerR, centerScale, ringScale, center, mark])
 
   const make = () => {
     if (sel < 0 || !applied) return toast('도장 모양을 먼저 선택하세요')
@@ -69,6 +70,9 @@ export default function StampTab({ onFinish, toast }) {
         <div className="sopt">
           <label>중앙 문구
             <select value={center} onChange={e => setCenter(e.target.value)}>{CENTERS.map(c => <option key={c}>{c}</option>)}</select>
+          </label>
+          <label>상단 표시
+            <select value={mark} onChange={e => setMark(e.target.value)}><option value="dot">● 점</option><option value="none">없음</option>{[1,2,3,4,5,6,7,8,9].map(n => <option key={n} value={String(n)}>숫자 {n}</option>)}</select>
           </label>
           <label>한자 서체
             <select value={centerFont} onChange={e => setCenterFont(e.target.value)}>{CENTER_FONTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
