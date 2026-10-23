@@ -1,8 +1,8 @@
 // 도장 렌더러 — 도뉴 스타일: 가는 테두리, 둘레 회사명, 상단 점, 중앙 2x2 한자
 // 전서체(篆書體) 폰트 파일을 public/fonts/seal.woff2 로 넣으면 "SealKR" 이름으로 첫 번째 후보가 됩니다.
 // 중앙 한자용 서체 (사용자 제공 TTF → Unicode WOFF2 변환)
-export const CENTER_FONTS = [["'SealTT1001'", '전서 (篆書)'], ["'SealTT2'", '예서 (隸書)'], ["'SealTT9'", '해서 (楷書)'], ["'SealTT1'", '행서 (行書)'], ["'SealTT44'", '초서 (草書)'], ["'Noto Serif KR'", '명조']]
-export const STAMP_FONTS = ["'SealKR'", "'Gugi'", "'Song Myung'", "'Noto Serif KR'", "'Nanum Myeongjo'", "'Hahmlet'", "'Stylish'", "'Do Hyeon'", "'Jua'"]
+export const CENTER_FONTS = [["'SealTT2'", '예서 (隸書)'], ["'SealTT1001'", '전서 (篆書)'], ["'SealTT9'", '해서 (楷書)'], ["'SealTT1'", '행서 (行書)'], ["'SealTT44'", '초서 (草書)'], ["'Noto Serif KR'", '명조']]
+export const STAMP_FONTS = ["'HJSealA'", "'HJSealB'", "'SealKR'", "'Gugi'", "'Song Myung'", "'Noto Serif KR'", "'Nanum Myeongjo'", "'Hahmlet'", "'Stylish'", "'Do Hyeon'", "'Jua'"]
 
 export function renderStamp(cv, o) {
   const W = cv.width, x = cv.getContext('2d'), cx = W / 2, cy = W / 2, R = W / 2 - W * 0.027
