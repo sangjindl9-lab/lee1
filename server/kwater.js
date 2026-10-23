@@ -43,7 +43,9 @@ async function call(op, params, key) {
   // 일부 오퍼레이션(servcList)은 _type=json 에 빈 본문을 줌 → 형식 지정 없이(XML) 재요청
   if (!text.trim()) [r, text] = await get({});
   if (!text.trim()) [r, text] = await get({ type: 'xml' });
-  if (!text.trim()) throw new Error(`수자원공사 ${op} 빈 응답 (HTTP ${r.status})`);
+  if (!text.trim()) throw new Error(op === 'servcList'
+    ? '수자원공사 용역 공고 API가 현재 빈 응답만 보내고 있습니다(기관 서버 문제). 용역 낙찰 결과는 [수자원공사 낙찰결과] 탭에서 볼 수 있습니다.'
+    : `수자원공사 ${op} 빈 응답 (HTTP ${r.status})`);
   if (r.status === 403) throw new Error('수자원공사 API 활용신청이 필요합니다 (403)');
   let j;
   try { j = JSON.parse(text); } catch {
