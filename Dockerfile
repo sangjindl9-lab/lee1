@@ -18,6 +18,6 @@ COPY backend/requirements.txt backend/requirements.txt
 RUN pip install --no-cache-dir -r backend/requirements.txt
 COPY backend backend
 COPY frontend frontend
-ENV KET_STORAGE_DIR=/app/storage PYTHONPATH=/app/backend
+ENV KET_STORAGE_DIR=/app/storage PYTHONPATH=/app/backend OMP_THREAD_LIMIT=1
 EXPOSE 8000
 CMD uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --app-dir backend

@@ -8,6 +8,7 @@ PDF 좌표는 포인트(1/72 in). 축척은 도면 표기에서 추정하되 sca
 from __future__ import annotations
 
 import math
+import os
 import re
 import shutil
 from pathlib import Path
@@ -17,6 +18,10 @@ import pymupdf
 
 from .dxf_parser import SheetData
 from .geometry import arc_points, bbox_of, polyline_length
+
+# tesseract 는 기본으로 OpenMP 다중 스레드를 쓰는데, 서버(공유 vCPU)에서는 스레드 경합으로 오히려 3~4배 느려진다.
+# 페이지 단위 병렬 처리를 하므로 tesseract 내부 스레드는 1개로 고정한다. (자식 프로세스에 상속)
+os.environ.setdefault("OMP_THREAD_LIMIT", "1")
 
 try:
     import pytesseract
@@ -170,13 +175,69 @@ def _hex(c) -> str:
     return "#%02x%02x%02x" % tuple(int(round(v * 255)) for v in c[:3])
 
 
-def parse_pdf(path: Path, out_dir: Path) -> list[SheetData]:
+def _pdf_workers(n_pages: int) -> int:
+    try:
+        w = int(os.environ.get("KET_PDF_WORKERS", "0"))
+    except ValueError:
+        w = 0
+    if w <= 0:
+        try:
+            cpus = len(os.sched_getaffinity(0))
+        except AttributeError:  # pragma: no cover
+            cpus = os.cpu_count() or 1
+        w = min(cpus, 4)
+    return max(1, min(w, n_pages))
+
+
+def _parse_page_subprocess(path: str, pno: int, out_dir: str) -> SheetData:
+    """한 페이지를 독립 파이썬 프로세스에서 분석 (PyMuPDF 는 스레드 안전하지 않고, multiprocessing spawn 은
+    호출한 스크립트를 다시 import 하므로 사용하지 않는다). 결과는 pickle 파일로 받는다."""
+    import pickle
+    import subprocess
+    import sys
+    backend_dir = str(Path(__file__).resolve().parents[2])
+    res = Path(out_dir) / f".page_{pno}.pkl"
+    env = dict(os.environ)
+    env["PYTHONPATH"] = backend_dir + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
+    r = subprocess.run([sys.executable, "-m", "app.engine.pdf_page_worker", path, str(pno), out_dir, str(res)],
+                       env=env, cwd=backend_dir, capture_output=True, text=True, timeout=1800)
+    if r.returncode != 0 or not res.exists():
+        raise RuntimeError(f"page {pno} worker failed: {(r.stderr or '')[-500:]}")
+    try:
+        with open(res, "rb") as fp:
+            return pickle.load(fp)
+    finally:
+        res.unlink(missing_ok=True)
+
+
+def parse_pdf(path: Path, out_dir: Path, progress=None) -> list[SheetData]:
+    """페이지별 분석. 여러 페이지면 페이지 단위 프로세스 병렬(KET_PDF_WORKERS, 기본 min(CPU,4)). progress(done, total)."""
     doc = pymupdf.open(str(path))
-    sheets: list[SheetData] = []
+    n = len(doc)
     out_dir.mkdir(parents=True, exist_ok=True)
-    for pno, page in enumerate(doc, start=1):
-        sheets.append(_parse_page(page, pno, out_dir))
-    return sheets
+    workers = _pdf_workers(n)
+    results: dict[int, SheetData] = {}
+    if workers > 1:
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        try:
+            with ThreadPoolExecutor(max_workers=workers) as ex:
+                futs = {ex.submit(_parse_page_subprocess, str(path), pno, str(out_dir)): pno for pno in range(1, n + 1)}
+                for f in as_completed(futs):
+                    try:
+                        results[futs[f]] = f.result()
+                    except Exception:
+                        pass  # 실패한 페이지는 아래에서 순차 재처리
+                    if progress:
+                        progress(len(results), n)
+        except Exception:
+            pass
+    for pno in range(1, n + 1):
+        if pno not in results:
+            results[pno] = _parse_page(doc[pno - 1], pno, out_dir)
+            if progress:
+                progress(len(results), n)
+    doc.close()
+    return [results[p] for p in range(1, n + 1)]
 
 
 def parse_image(path: Path, out_dir: Path) -> list[SheetData]:

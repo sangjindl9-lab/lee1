@@ -124,7 +124,7 @@ def process_file(file_id: int):
         elif f.kind == "dxf":
             sheets = [parse_dxf(src)]
         elif f.kind == "pdf":
-            sheets = parse_pdf(src, proc_dir)
+            sheets = parse_pdf(src, proc_dir, progress=lambda d, n: _set(db, f, progress=30 + int(30 * d / n)))
         elif f.kind == "image":
             sheets = parse_image(src, proc_dir)
         elif f.kind == "xlsx":
