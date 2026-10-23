@@ -48,7 +48,7 @@ function Watchlist({ starred, onOpen, onStar }) {
 }
 
 export default function App() {
-  const [tab, setTab] = useState(() => load('tab', 'bid'));
+  const [tab, setTab] = useState(() => { const t = load('tab', 'bid'); return TABS.some((x) => x.id === t) ? t : 'bid'; }); // 없어진 메뉴가 저장돼 있으면 입찰공고로
   const [sel, setSel] = useState(null);
   const [starred, setStarred] = useState(() => load('starred', {}));
   const [myBizno, setMyBizno] = useState(() => load('myBizno', ''));
@@ -115,7 +115,7 @@ export default function App() {
           </>}
       </main>
 
-      <footer className="foot">자료: 조달청 나라장터 (공공데이터포털 OpenAPI) · 실제 입찰 전 나라장터 원문을 꼭 확인하세요. · 버전 10.23-16시</footer>
+      <footer className="foot">자료: 조달청 나라장터 (공공데이터포털 OpenAPI) · 실제 입찰 전 나라장터 원문을 꼭 확인하세요. · 버전 10.23-15시30</footer>
 
       {company && <CompanyCard info={company} onClose={closeCompany} />}
       {sel && <Detail sel={sel} onClose={close} onOpen={setSel} myBizno={myBizno} starred={starred} onStar={onStar} />}
