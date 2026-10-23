@@ -22,7 +22,20 @@ for r in (core.router, files.router, estimates.router, progress.router, changes.
 
 @app.on_event("startup")
 def _startup():
-    Base.metadata.create_all(engine)
+    import time
+    from sqlalchemy import text
+    # 여러 워커가 동시에 create_all 을 실행해도 안전하도록 (PostgreSQL 은 advisory lock, 실패 시 재시도)
+    for attempt in range(5):
+        try:
+            with engine.begin() as conn:
+                if engine.dialect.name == "postgresql":
+                    conn.execute(text("SELECT pg_advisory_xact_lock(728391)"))
+                Base.metadata.create_all(conn)
+            break
+        except Exception:  # noqa: BLE001
+            if attempt == 4:
+                raise
+            time.sleep(1.5)
     db = SessionLocal()
     try:
         ensure_admin_user(db)

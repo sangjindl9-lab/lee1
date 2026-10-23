@@ -17,4 +17,4 @@ COPY --from=fe /fe/dist ./frontend/dist
 WORKDIR /app/backend
 ENV STORAGE_DIR=/data/files
 EXPOSE 8000
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
