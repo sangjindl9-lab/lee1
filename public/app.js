@@ -84,7 +84,7 @@ async function pageHome() {
   const expRow = (c) => `<tr class="click" data-go="#/customers/${c.id}"><td>${esc(c.name)}</td><td class="num">${esc(c.current.expiresAt)}</td><td class="r num">${c.current.daysLeft < 0 ? '만료' : c.current.daysLeft + '일'}</td><td>${badge(STATE[c.state])}</td></tr>`;
   shell('home', `
     <div class="page-head"><div><h1>대시보드</h1><p>연간 구독 라이선스 현황입니다. 만료 30일 전부터 '만료 임박'에 나타납니다.</p></div>
-      <a class="btn primary" href="#/customers/new">+ 고객 등록</a></div>
+      <a class="btn primary" href="#/customers/new">+ 고객 등록 · 납품</a></div>
     <div class="grid cols-4" style="margin-bottom:16px">
       <div class="stat"><div class="label">전체 고객</div><div class="value">${s.customers}</div></div>
       <div class="stat"><div class="label">사용 중</div><div class="value">${s.active}</div></div>
@@ -138,18 +138,59 @@ function customerForm(c = {}) {
 }
 const formData = (form) => Object.fromEntries(new FormData(form).entries());
 
-function pageNewCustomer() {
+async function pageNewCustomer() {
+  loading('customers');
+  const rw = await api('/railway').catch(() => ({ connected: false }));
+  const start = today();
   shell('customers', `
-    <div class="page-head"><div><h1>고객 등록</h1><p>등록하면 고객 서버 연결용 설치 코드가 자동으로 만들어집니다.</p></div></div>
-    <form class="panel" id="cf"><div class="body">${customerForm()}</div>
-      <div class="body row end" style="border-top:1px solid var(--line)"><a class="btn" href="#/customers">취소</a><button class="btn primary">등록</button></div></form>`);
-  document.getElementById('cf').onsubmit = async (e) => {
+    <div class="page-head"><div><h1>고객 등록 · 납품</h1><p>고객 등록, 라이선스 발급, 고객 전용 서버 개설을 한 번에 진행합니다. 끝나면 고객에게 줄 납품서가 만들어집니다.</p></div></div>
+    <form id="cf">
+      <section class="panel"><header><h2>1. 고객 정보</h2></header><div class="body">${customerForm()}</div></section>
+      <section class="panel"><header><h2>2. 라이선스 (연간 구독)</h2></header><div class="body"><div class="form-grid">
+        <label class="f">사용자 수 *<input name="maxUsers" type="number" min="1" max="10000" value="10" required /></label>
+        <label class="f">금액 (원)<input name="amount" type="number" min="0" step="1000" placeholder="0" /><span class="hint">매출 집계용 · 공급가액 기준 권장</span></label>
+        <label class="f">시작일<input name="startsOn" type="date" value="${start}" /></label>
+        <label class="f">만료일<input name="expiresAt" type="date" value="${oneYear(start)}" /><span class="hint">기본 1년</span></label>
+        <label class="f wide">메모<input name="licMemo" placeholder="예: 2026년 계약, 견적서 번호" /></label>
+      </div></div></section>
+      <section class="panel" id="srvsec"><header><h2>3. 고객 전용 서버 (호스팅형)</h2>${rw.connected ? '' : '<span class="badge warn">Railway 연결 필요</span>'}</header><div class="body">
+        ${rw.connected ? '' : '<div class="note warn" style="margin-bottom:12px">서버를 자동으로 만들려면 먼저 <a href="#/settings">설정 &gt; Railway 연결</a>을 마쳐 주세요. 지금은 고객 등록과 라이선스만 진행됩니다.</div>'}
+        <div class="form-grid">
+          <label class="f">고객 관리자 아이디 *<input name="adminId" value="admin" pattern="[a-z0-9._\\-]{4,32}" required /><span class="hint">고객이 처음 로그인할 아이디 (영문 소문자·숫자 4~32자)</span></label>
+          <label class="f">회사 코드 *<input name="companyCode" placeholder="예: HN" pattern="[A-Za-z0-9]{2,10}" required /><span class="hint">ERP 문서번호 앞에 붙는 영문 약어 2~10자</span></label>
+        </div>
+        <p class="small muted" style="margin:10px 0 0">임시 비밀번호는 자동으로 만들어지고, 고객이 첫 로그인 때 바꾸게 됩니다. 서버는 다른 고객과 완전히 분리된 새 서버(데이터베이스 포함)로 만들어지며, 예시 데이터 없이 비어 있는 상태로 시작합니다.</p>
+      </div></section>
+      <div class="row end"><a class="btn" href="#/customers">취소</a><button class="btn primary" id="go">등록하고 납품 준비</button></div>
+    </form>`);
+  const form = document.getElementById('cf');
+  const srv = document.getElementById('srvsec');
+  const sync = () => {
+    const hosted = form.deployment.value === 'HOSTED';
+    srv.style.display = hosted ? '' : 'none';
+    form.adminId.required = hosted && rw.connected;
+    form.companyCode.required = hosted && rw.connected;
+  };
+  form.deployment.onchange = sync;
+  sync();
+  form.startsOn.onchange = () => { if (form.startsOn.value) form.expiresAt.value = oneYear(form.startsOn.value); };
+  form.onsubmit = async (e) => {
     e.preventDefault();
+    const f = formData(form);
+    const btn = document.getElementById('go');
+    btn.disabled = true;
+    let id;
     try {
-      const r = await api('/customers', { method: 'POST', json: formData(e.target) });
-      toast('고객을 등록했습니다');
-      location.hash = '#/customers/' + r.id;
-    } catch (err) { toast(err.message, 'error'); }
+      ({ id } = await api('/customers', { method: 'POST', json: f }));
+      await api(`/customers/${id}/licenses`, { method: 'POST', json: { kind: 'NEW', maxUsers: Number(f.maxUsers), amount: Number(f.amount || 0), startsOn: f.startsOn, expiresAt: f.expiresAt, memo: f.licMemo || undefined } });
+      if (f.deployment === 'HOSTED' && rw.connected) await api(`/customers/${id}/server`, { method: 'POST', json: { adminId: f.adminId, companyCode: f.companyCode } });
+      toast(f.deployment === 'HOSTED' && rw.connected ? '등록했습니다. 고객 서버를 만드는 중입니다' : '고객 등록과 라이선스 발급을 마쳤습니다');
+      location.hash = '#/customers/' + id;
+    } catch (err) {
+      toast(err.message, 'error');
+      btn.disabled = false;
+      if (id) location.hash = '#/customers/' + id;
+    }
   };
 }
 
@@ -187,6 +228,8 @@ async function pageCustomer(id) {
       </div></section>
     </div>
 
+    ${serverPanel(c)}
+
     <section class="panel"><header><h2>발급 이력</h2><span class="muted small">${c.licenses.length}건</span></header>
       ${c.licenses.length ? `<div class="table-wrap"><table><thead><tr><th>발급일시</th><th>종류</th><th class="r">사용자</th><th>기간</th><th class="r">금액</th><th class="hide-sm">메모</th><th></th></tr></thead><tbody>
         ${c.licenses.map((l, i) => `<tr><td class="num small">${dt(l.issuedAt)}${i === 0 ? ' <span class="badge steel">현재</span>' : ''}</td><td>${badge(KIND[l.kind])}</td><td class="r num">${l.maxUsers}</td>
@@ -200,6 +243,7 @@ async function pageCustomer(id) {
     </section>`);
 
   document.getElementById('copycode').onclick = () => copy(c.activationCode, '설치 코드를 복사했습니다');
+  bindServerPanel(c);
   document.getElementById('regen').onclick = async () => {
     if (!confirm('설치 코드를 새로 만들면 지금 연결된 고객 서버는 새 코드로 다시 연결해야 합니다. 계속할까요?')) return;
     try { await api(`/customers/${id}/code`, { method: 'POST' }); toast('설치 코드를 새로 만들었습니다'); pageCustomer(id); } catch (e) { toast(e.message, 'error'); }
@@ -213,6 +257,86 @@ async function pageCustomer(id) {
     e.preventDefault();
     try { await api('/customers/' + id, { method: 'PUT', json: formData(e.target) }); toast('저장했습니다'); pageCustomer(id); } catch (err) { toast(err.message, 'error'); }
   };
+}
+
+// ── 고객 서버 패널 ─────────────────────────────────────────────
+let pollTimer = null;
+function serverPanel(c) {
+  if (c.deployment !== 'HOSTED') return '';
+  const j = c.server;
+  if (!j) {
+    return `<section class="panel"><header><h2>고객 전용 서버</h2><span class="badge">미개설</span></header><div class="body">
+      ${c.serverUrl ? `<p style="margin-top:0">등록된 접속 주소: <a href="${esc(c.serverUrl)}" target="_blank" rel="noopener">${esc(c.serverUrl)}</a> (직접 만든 서버)</p>` : ''}
+      ${c.current && c.state !== 'SUSPENDED' ? `<form id="srvf"><div class="form-grid">
+        <label class="f">고객 관리자 아이디<input name="adminId" value="admin" required /></label>
+        <label class="f">회사 코드<input name="companyCode" placeholder="예: HN" required /></label></div>
+        <div class="row end" style="margin-top:12px"><button class="btn primary">서버 개설</button></div></form>`
+        : '<div class="note">라이선스를 먼저 발급해 주세요.</div>'}
+    </div></section>`;
+  }
+  const idx = j.steps.findIndex((s) => s.key === j.step);
+  const list = j.steps.map((s, i) => {
+    const done = j.status === 'DONE' || i < idx;
+    const now = j.status !== 'DONE' && i === idx;
+    const mark = done ? '✓' : now ? (j.status === 'FAILED' ? '✕' : '…') : '·';
+    const color = done ? 'var(--ok)' : now ? (j.status === 'FAILED' ? 'var(--seal)' : 'var(--steel)') : 'var(--muted)';
+    return `<li style="color:${color}"><span class="mono" style="display:inline-block;width:18px">${mark}</span>${esc(s.label)}</li>`;
+  }).join('');
+  const badgeT = { RUNNING: ['만드는 중', 'steel'], DONE: ['운영 중', 'ok'], FAILED: ['실패', 'seal'] }[j.status];
+  return `<section class="panel"><header><h2>고객 전용 서버</h2>${badge(badgeT)}</header><div class="body">
+    ${j.status === 'DONE' ? `<dl class="dl" style="margin-bottom:12px">
+        <div><dt>접속 주소</dt><dd><a href="${esc(j.url)}" target="_blank" rel="noopener">${esc(j.url)}</a></dd></div>
+        <div><dt>관리자 아이디</dt><dd class="mono">${esc(j.adminId)}</dd></div>
+        <div><dt>개설 완료</dt><dd class="small">${dt(j.finishedAt)}</dd></div></dl>
+      <div class="row"><a class="btn primary" href="#/customers/${c.id}/delivery">납품서 보기 · 인쇄</a></div>`
+    : `<ul style="list-style:none;padding:0;margin:0 0 10px;display:grid;gap:4px">${list}</ul>
+      ${j.status === 'RUNNING' ? '<p class="small muted" style="margin:0">처음 설치는 보통 5~10분 걸립니다. 이 화면을 닫아도 계속 진행됩니다.</p>' : ''}
+      ${j.status === 'FAILED' ? `<div class="note seal" style="margin-bottom:10px">${esc(j.error)}</div><button class="btn" id="srvretry">실패한 단계부터 다시 시도</button>` : ''}`}
+  </div></section>`;
+}
+function bindServerPanel(c) {
+  clearTimeout(pollTimer);
+  const f = document.getElementById('srvf');
+  if (f) f.onsubmit = async (e) => {
+    e.preventDefault();
+    try { await api(`/customers/${c.id}/server`, { method: 'POST', json: formData(f) }); toast('고객 서버를 만드는 중입니다'); pageCustomer(c.id); } catch (err) { toast(err.message, 'error'); }
+  };
+  const r = document.getElementById('srvretry');
+  if (r) r.onclick = async () => {
+    try { await api(`/customers/${c.id}/server/retry`, { method: 'POST' }); pageCustomer(c.id); } catch (err) { toast(err.message, 'error'); }
+  };
+  if (c.server?.status === 'RUNNING') {
+    pollTimer = setTimeout(() => { if (location.hash === '#/customers/' + c.id) pageCustomer(c.id); }, 10_000);
+  }
+}
+
+// ── 납품서 (인쇄용) ────────────────────────────────────────────
+async function pageDelivery(id) {
+  loading('customers');
+  const d = await api(`/customers/${id}/delivery`);
+  shell('customers', `
+    <div class="page-head noprint"><div><h1>납품서</h1><p>고객에게 전달할 접속 정보입니다. 임시 비밀번호가 들어 있으니 담당자에게만 전달하세요.</p></div>
+      <div class="row"><a class="btn" href="#/customers/${id}">돌아가기</a><button class="btn" id="cpall">문자로 복사</button><button class="btn primary" onclick="window.print()">인쇄 / PDF 저장</button></div></div>
+    <article class="panel sheet"><div class="body">
+      <h2 style="font-size:20px;margin-bottom:4px">SS-ERP 사용 안내</h2>
+      <p class="muted" style="margin:0 0 18px">${esc(d.name)} 귀중 · ${esc(d.issuedOn)}</p>
+      <table class="kv"><tbody>
+        <tr><th>접속 주소</th><td class="mono">${esc(d.url)}</td></tr>
+        <tr><th>관리자 아이디</th><td class="mono">${esc(d.adminId)}</td></tr>
+        <tr><th>임시 비밀번호</th><td class="mono">${esc(d.tempPassword)}</td></tr>
+        <tr><th>사용 회사</th><td>${esc(d.name)} (${biz(d.bizRegNo)})</td></tr>
+        <tr><th>라이선스</th><td>사용자 ${d.license.maxUsers}명 · ${esc(d.license.expiresAt)}까지</td></tr>
+      </tbody></table>
+      <h3 style="font-size:15px;margin:20px 0 6px">처음 사용하실 때</h3>
+      <ol style="margin:0;padding-left:20px;line-height:1.9">
+        <li>접속 주소로 들어가 관리자 아이디와 임시 비밀번호로 로그인합니다.</li>
+        <li>비밀번호를 새로 정하라는 화면이 나오면 본인만 아는 비밀번호로 바꿉니다.</li>
+        <li><b>관리 &gt; 회사 정보</b>에서 대표자·주소 등을 확인하고, <b>관리 &gt; 사용자</b>에서 직원 계정을 만듭니다.</li>
+        <li>라이선스는 이미 등록되어 있으며, 연간 계약을 연장하면 자동으로 갱신됩니다.</li>
+      </ol>
+      <p class="small muted" style="margin-top:20px">문의: ㈜에스에스전력 · 이 안내서는 보안을 위해 첫 로그인 후 폐기해 주세요.</p>
+    </div></article>`);
+  document.getElementById('cpall').onclick = () => copy(`[SS-ERP 사용 안내] ${d.name}\n접속 주소: ${d.url}\n관리자 아이디: ${d.adminId}\n임시 비밀번호: ${d.tempPassword}\n첫 로그인 후 비밀번호를 바꿔 주세요.`, '납품 정보를 복사했습니다');
 }
 
 // ── 발급 대화상자 ──────────────────────────────────────────────
@@ -315,7 +439,7 @@ async function pageAudit() {
 // ── 설정 ───────────────────────────────────────────────────────
 async function pageSettings() {
   loading('settings');
-  const me = await api('/me');
+  const [me, rw] = await Promise.all([api('/me'), api('/railway')]);
   shell('settings', `
     <div class="page-head"><div><h1>설정</h1><p>관리자 비밀번호와 판매자 서명키 정보입니다.</p></div></div>
     <section class="panel"><header><h2>관리자 비밀번호 변경</h2><span class="muted small">${me.passwordChangedAt ? '마지막 변경 ' + dt(me.passwordChangedAt) : '처음 받은 비밀번호 사용 중'}</span></header>
@@ -329,12 +453,27 @@ async function pageSettings() {
         <div class="row end" style="margin-top:12px"><button class="btn primary">비밀번호 변경</button></div>
       </form>
     </section>
+    <section class="panel"><header><h2>Railway 연결 (고객 서버 자동 개설)</h2>${rw.connected ? `<span class="badge ok">연결됨${rw.source === 'env' ? ' · 환경변수' : ''}</span>` : '<span class="badge warn">연결 안 됨</span>'}</header>
+      <form id="rwf" class="body" autocomplete="off">
+        <p class="muted" style="margin-top:0">호스팅형 고객의 서버를 이 사이트에서 바로 만들려면 Railway 토큰이 필요합니다. Railway 대시보드 → 계정 설정 → <b>Tokens</b>에서 워크스페이스를 선택해 토큰을 만든 뒤 아래에 붙여 넣으세요. 토큰은 암호화되어 저장되고 다시 화면에 나오지 않습니다.</p>
+        <div class="form-grid">
+          <label class="f">Railway 토큰<input type="password" name="token" placeholder="${rw.connected ? '바꿀 때만 입력' : '토큰 붙여 넣기'}" autocomplete="off" ${rw.connected ? '' : 'required'} /></label>
+          <label class="f">워크스페이스 ID<input name="workspaceId" value="${esc(rw.workspaceId ?? 'aa4da206-c537-4674-8bed-aac1be15cb20')}" required /><span class="hint">서버를 만들 Railway 워크스페이스</span></label>
+        </div>
+        <p class="small muted" style="margin:10px 0 0">서버 위치: 싱가포르 (${esc(rw.region)}) · 고객 서버 비용(고객당 월 약 $5~15)은 이 Railway 계정으로 청구됩니다.</p>
+        <div class="row end" style="margin-top:12px"><button class="btn primary">연결 확인 후 저장</button></div>
+      </form>
+    </section>
     <section class="panel"><header><h2>판매자 공개키</h2><button class="btn sm" id="cp">복사</button></header><div class="body">
       <p class="muted" style="margin-top:0">SS-ERP에 들어 있는 공개키와 같아야 이 사이트에서 발급한 라이선스가 인정됩니다. 공개키는 알려져도 괜찮습니다.</p>
       <div class="lic-text">${esc(me.publicKey)}</div>
       <div class="note warn" style="margin-top:12px">비밀키(서명키)는 이 서버의 환경변수에만 있고 화면에는 나오지 않습니다. 따로 보관한 백업 파일을 잃어버리지 마세요. 비밀키가 유출되면 누구나 라이선스를 만들 수 있으니 즉시 키를 교체해야 합니다.</div>
     </div></section>`);
   document.getElementById('cp').onclick = () => copy(me.publicKey, '공개키를 복사했습니다');
+  document.getElementById('rwf').onsubmit = async (e) => {
+    e.preventDefault();
+    try { await api('/railway', { method: 'PUT', json: formData(e.target) }); toast('Railway에 연결했습니다'); pageSettings(); } catch (err) { toast(err.message, 'error'); }
+  };
   document.getElementById('pwf').onsubmit = async (e) => {
     e.preventDefault();
     const f = formData(e.target);
@@ -353,7 +492,8 @@ async function route() {
   try {
     if (h === '#/' || h === '#') await pageHome();
     else if (h === '#/customers') await pageCustomers();
-    else if (h === '#/customers/new') pageNewCustomer();
+    else if (h === '#/customers/new') await pageNewCustomer();
+    else if (/^#\/customers\/[^/]+\/delivery$/.test(h)) await pageDelivery(h.split('/')[2]);
     else if (h.startsWith('#/customers/')) await pageCustomer(h.slice('#/customers/'.length));
     else if (h === '#/licenses') await pageLicenses();
     else if (h === '#/audit') await pageAudit();

@@ -142,3 +142,14 @@ dl.dl dd { margin: 2px 0 0; overflow-wrap: anywhere; }
   .cols-2, .form-grid, dl.dl { grid-template-columns: 1fr; }
   .hide-sm { display: none; }
 }
+
+/* 납품서 */
+table.kv th { width: 130px; background: var(--surface-2); color: var(--ink-2); font-size: 13px; }
+table.kv td, table.kv th { border: 1px solid var(--line); }
+@media print {
+  .side, .noprint, #toast { display: none !important; }
+  .shell { display: block; }
+  .main { padding: 0; max-width: none; }
+  body { background: #fff; }
+  .panel.sheet { border: 0; }
+}

@@ -14,12 +14,13 @@ const path = require('path');
 const express = require('express');
 const { createPool, migrate } = require('./lib/db');
 const L = require('./lib/license');
+const R = require('./lib/railway');
 
 const env = (k, d) => (process.env[k] ?? d);
 const PORT = Number(env('PORT', 8080));
 const PROD = env('NODE_ENV') === 'production';
 
-function buildApp({ pool, privateKey, adminPassword, sessionSecret }) {
+function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpoint, railwaySleep, railwayWaitMs, publicUrl = env('PUBLIC_URL', 'https://ss-license-production.up.railway.app') }) {
   const publicKey = crypto.createPublicKey(privateKey);
   const publicPem = L.publicKeyPem(privateKey);
   // ── 관리자 비밀번호 ──
@@ -249,7 +250,7 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret }) {
   admin.get('/customers/:id', wrap(async (req, res) => {
     const c = shapeCustomer(await loadCustomer(req.params.id));
     const lics = (await q(`select l.*, c.name as customer_name, c.biz_reg_no from license l join customer c on c.id = l.customer_id where l.customer_id = $1 order by l.issued_at desc`, [c.id])).rows.map(shapeLicense);
-    res.json({ ...c, licenses: lics });
+    res.json({ ...c, licenses: lics, server: shapeJob(await loadJob(c.id)) });
   }));
 
   admin.put('/customers/:id', wrap(async (req, res) => {
@@ -380,6 +381,150 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret }) {
     res.json((await q('select at, action, summary, ip from audit_log order by id desc limit 300')).rows);
   }));
 
+  // ── 고객 서버(호스팅형) 자동 개설 ─────────────────────────────────
+  //  비밀값(고객 DB 비밀번호·암호화 키·관리자 임시 비밀번호·Railway 토큰)은 판매자 서명키에서 만든 키로 암호화해 저장
+  const vaultKey = crypto.createHash('sha256').update('ss-license-vault:').update(privateKey.export({ type: 'pkcs8', format: 'der' })).digest();
+  const seal = (obj) => {
+    const iv = crypto.randomBytes(12);
+    const c = crypto.createCipheriv('aes-256-gcm', vaultKey, iv);
+    const enc = Buffer.concat([c.update(JSON.stringify(obj), 'utf8'), c.final()]);
+    return [iv, c.getAuthTag(), enc].map((b) => b.toString('base64url')).join('.');
+  };
+  const unseal = (text) => {
+    const [iv, tag, enc] = text.split('.').map((x) => Buffer.from(x, 'base64url'));
+    const d = crypto.createDecipheriv('aes-256-gcm', vaultKey, iv);
+    d.setAuthTag(tag);
+    return JSON.parse(Buffer.concat([d.update(enc), d.final()]).toString('utf8'));
+  };
+  const setting = async (k) => (await q('select value from portal_setting where key = $1', [k])).rows[0]?.value ?? null;
+  const putSetting = (k, v) => q(`insert into portal_setting(key, value) values ($1,$2) on conflict (key) do update set value = excluded.value, updated_at = now()`, [k, v]);
+  const REGION = env('RAILWAY_REGION', 'asia-southeast1-eqsg3a');
+  const railwayConf = async () => {
+    const envToken = env('RAILWAY_API_TOKEN');
+    const stored = await setting('railway_token');
+    const token = envToken || (stored ? unseal(stored).token : null);
+    return { token, source: envToken ? 'env' : stored ? 'db' : null, workspaceId: env('RAILWAY_WORKSPACE_ID') || (await setting('railway_workspace_id')) };
+  };
+
+  admin.get('/railway', wrap(async (req, res) => {
+    const c = await railwayConf();
+    res.json({ connected: !!c.token, source: c.source, workspaceId: c.workspaceId, region: REGION });
+  }));
+
+  admin.put('/railway', wrap(async (req, res) => {
+    const token = String(req.body?.token ?? '').trim();
+    const workspaceId = String(req.body?.workspaceId ?? '').trim();
+    if (!/^[0-9a-f-]{36}$/i.test(workspaceId)) throw bad('워크스페이스 ID 형식이 올바르지 않습니다');
+    const cur = await railwayConf();
+    const useToken = token || cur.token;
+    if (!useToken) throw bad('Railway 토큰을 입력해 주세요');
+    try {
+      const r = await R.client(useToken, railwayEndpoint)(`query($w: String!) { workspace(workspaceId: $w) { id name } }`, { w: workspaceId });
+      if (!r.workspace?.id) throw new Error('워크스페이스를 찾을 수 없습니다');
+    } catch (e) {
+      throw bad(`Railway 연결 확인 실패: ${e.message}`);
+    }
+    if (token) await putSetting('railway_token', seal({ token }));
+    await putSetting('railway_workspace_id', workspaceId);
+    audit(req, 'RAILWAY_CONNECT', 'Railway 연결 설정');
+    res.json({ ok: true });
+  }));
+
+  const shapeJob = (j) => j && ({
+    status: j.status, step: j.step, error: j.error, createdAt: j.created_at, finishedAt: j.finished_at,
+    url: j.data?.domain ? `https://${j.data.domain}` : null, adminId: j.input.adminId, companyCode: j.input.companyCode,
+    projectId: j.data?.projectId ?? null,
+    steps: R.STEPS.map(([key, label]) => ({ key, label })),
+  });
+  const loadJob = async (customerId) => (await q('select * from server_job where customer_id = $1', [customerId])).rows[0] ?? null;
+
+  const running = new Set();
+  async function runJob(customerId) {
+    if (running.has(customerId)) return;
+    running.add(customerId);
+    try {
+      const j = await loadJob(customerId);
+      if (!j || j.status !== 'RUNNING') return;
+      const conf = await railwayConf();
+      if (!conf.token) throw new Error('Railway 연결이 설정되지 않았습니다 (설정 > Railway 연결)');
+      const job = { data: j.data ?? {}, input: j.input, secrets: unseal(j.secrets) };
+      await R.provision(job, {
+        gql: R.client(conf.token, railwayEndpoint),
+        workspaceId: conf.workspaceId,
+        region: REGION,
+        repo: env('ERP_REPO', 'sangjindl9-lab/lee1'),
+        branch: env('ERP_BRANCH', 'ss-erp'),
+        dockerfilePath: 'deploy/render/Dockerfile',
+        licenseServerUrl: publicUrl,
+        sleep: railwaySleep,
+        waitTimeoutMs: railwayWaitMs,
+        onStep: (step, data) => q('update server_job set step = $2, data = $3, updated_at = now() where customer_id = $1', [customerId, step, data]),
+      });
+      await q(`update server_job set status = 'DONE', step = 'done', data = $2, error = null, updated_at = now(), finished_at = now() where customer_id = $1`, [customerId, job.data]);
+      await q('update customer set server_url = $2, updated_at = now() where id = $1', [customerId, `https://${job.data.domain}`]);
+      await q('insert into audit_log(action, summary) values ($1,$2)', ['SERVER_DONE', `고객 서버 개설 완료 ${j.input.companyName} https://${job.data.domain}`]);
+    } catch (e) {
+      console.error('고객 서버 개설 실패', e);
+      await q(`update server_job set status = 'FAILED', error = $2, updated_at = now() where customer_id = $1`, [customerId, String(e.message).slice(0, 1000)]).catch(() => undefined);
+    } finally {
+      running.delete(customerId);
+    }
+  }
+  app.locals.resumeJobs = async () => {
+    for (const r of (await q(`select customer_id from server_job where status = 'RUNNING'`)).rows) void runJob(r.customer_id);
+  };
+  app.locals.idle = async () => { while (running.size) await new Promise((r) => setTimeout(r, 20)); };
+
+  admin.get('/customers/:id/server', wrap(async (req, res) => {
+    const c = await loadCustomer(req.params.id);
+    res.json(shapeJob(await loadJob(c.id)));
+  }));
+
+  admin.post('/customers/:id/server', wrap(async (req, res) => {
+    const c = await loadCustomer(req.params.id);
+    if (c.deployment !== 'HOSTED') throw bad('호스팅형 고객만 서버를 개설할 수 있습니다');
+    if (!c.license_id) throw bad('먼저 라이선스를 발급해 주세요');
+    if (c.lic_kind === 'SUSPEND') throw bad('사용 중지된 고객입니다');
+    if (await loadJob(c.id)) throw bad('이미 서버 개설을 진행했습니다');
+    if (!(await railwayConf()).token) throw bad('먼저 설정 > Railway 연결을 마쳐 주세요');
+    const adminId = String(req.body?.adminId ?? 'admin').trim().toLowerCase();
+    if (!/^[a-z0-9._-]{4,32}$/.test(adminId)) throw bad('관리자 아이디는 영문 소문자·숫자·._- 4~32자입니다');
+    const companyCode = String(req.body?.companyCode ?? '').trim().toUpperCase();
+    if (!/^[A-Z0-9]{2,10}$/.test(companyCode)) throw bad('회사 코드는 영문 대문자·숫자 2~10자입니다 (예: HN)');
+    const slug = `erp-${companyCode.toLowerCase()}-${c.biz_reg_no.slice(-4)}`;
+    const input = { companyName: c.name, bizRegNo: c.biz_reg_no, companyCode, adminId, activationCode: c.activation_code, projectName: slug };
+    const secrets = { dbPassword: crypto.randomBytes(24).toString('base64url'), encryptionKey: crypto.randomBytes(32).toString('hex'), adminPassword: R.tempPassword() };
+    await q(`insert into server_job(customer_id, status, step, input, secrets) values ($1,'RUNNING','project',$2,$3)`, [c.id, input, seal(secrets)]);
+    audit(req, 'SERVER_START', `고객 서버 개설 시작 ${c.name} (관리자 ${adminId})`);
+    void runJob(c.id);
+    res.status(202).json(shapeJob(await loadJob(c.id)));
+  }));
+
+  admin.post('/customers/:id/server/retry', wrap(async (req, res) => {
+    const c = await loadCustomer(req.params.id);
+    const j = await loadJob(c.id);
+    if (!j) throw bad('개설 기록이 없습니다');
+    if (j.status !== 'FAILED') throw bad('실패한 개설만 다시 시도할 수 있습니다');
+    await q(`update server_job set status = 'RUNNING', error = null, updated_at = now() where customer_id = $1`, [c.id]);
+    audit(req, 'SERVER_RETRY', `고객 서버 개설 다시 시도 ${c.name}`);
+    void runJob(c.id);
+    res.status(202).json(shapeJob(await loadJob(c.id)));
+  }));
+
+  /** 납품서 — 고객에게 전달할 접속 정보 (임시 비밀번호 포함, 열람 기록 남김) */
+  admin.get('/customers/:id/delivery', wrap(async (req, res) => {
+    const c = await loadCustomer(req.params.id);
+    const j = await loadJob(c.id);
+    if (!j || j.status !== 'DONE') throw bad('서버 개설이 끝난 뒤에 볼 수 있습니다');
+    const sec = unseal(j.secrets);
+    audit(req, 'DELIVERY_VIEW', `납품서 열람 ${c.name}`);
+    const cur = shapeCustomer(c).current;
+    res.json({
+      name: c.name, bizRegNo: c.biz_reg_no, url: `https://${j.data.domain}`, adminId: j.input.adminId, tempPassword: sec.adminPassword,
+      companyCode: j.input.companyCode, license: cur, contact: { name: c.contact_name, phone: c.phone, email: c.email }, issuedOn: L.kstToday(),
+    });
+  }));
+
   app.use('/api/admin', admin);
 
   // ── 고객 서버용: 설치 코드로 최신 라이선스 받기 ───────────────────
@@ -437,6 +582,7 @@ async function main() {
     }
   }
   const app = buildApp({ pool, privateKey, adminPassword: process.env.ADMIN_PASSWORD, sessionSecret: process.env.SESSION_SECRET });
+  await app.locals.resumeJobs();
   app.listen(PORT, '0.0.0.0', () => console.log(`SS-ERP 라이선스 발급 관리 시작 :${PORT}\n판매자 공개키:\n${L.publicKeyPem(privateKey)}`));
 }
 
