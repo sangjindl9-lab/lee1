@@ -26,6 +26,9 @@ settings = Settings()
 # Railway/Heroku 식 postgres:// 보정
 if settings.database_url.startswith("postgres://"):
     settings.database_url = settings.database_url.replace("postgres://", "postgresql://", 1)
+# SQLAlchemy 2.1 은 postgresql:// 기본 드라이버가 psycopg(v3) 이므로 psycopg2 를 명시
+if settings.database_url.startswith("postgresql://"):
+    settings.database_url = settings.database_url.replace("postgresql://", "postgresql+psycopg2://", 1)
 settings.storage_dir.mkdir(parents=True, exist_ok=True)
 if settings.database_url.startswith("sqlite"):
     Path(settings.database_url.split("///")[-1]).parent.mkdir(parents=True, exist_ok=True)
