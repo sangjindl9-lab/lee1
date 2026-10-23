@@ -1,14 +1,19 @@
-// SELFTEST=1: 한국수자원공사 연동 점검 (각 구분 건수 + 원본 필드 샘플)
+// SELFTEST=1: 수자원공사 용역·낙찰결과 점검
 export async function selfTest(base) {
-  for (const kind of ['cntrwk', 'servc', 'gds', 'dmscpt', 'rst']) {
-    const t = Date.now();
+  for (const kind of ['servc', 'rst']) {
     try {
-      const d = await fetch(`${base}/api/kwater/${kind}?numOfRows=2&raw=1`).then((r) => r.json());
-      console.log(`[SELFTEST] kwater ${kind} → ${d.error ? `ERROR ${d.error}` : `total=${d.totalCount} (${d.from}~${d.to})`} ${Date.now() - t}ms`);
-      for (const r of d.items || []) {
-        const { raw, ...rest } = r;
-        console.log(`[SELFTEST]   ${JSON.stringify(rest).slice(0, 500)}`);
-        console.log(`[SELFTEST]   raw ${JSON.stringify(raw).slice(0, 1200)}`);
+      const d = await fetch(`${base}/api/kwater/${kind}?numOfRows=3000&raw=1`).then((r) => r.json());
+      if (d.error) { console.log(`[SELFTEST] kwater ${kind} ERROR ${d.error}`); continue; }
+      const items = d.items || [];
+      console.log(`[SELFTEST] kwater ${kind} total=${d.totalCount}`);
+      if (kind === 'servc') items.slice(0, 2).forEach((r) => console.log(`[SELFTEST]   ${r.bidNtceNm} | ${r.method} | ${r.status} | ${r.ntceDt}`));
+      if (kind === 'rst') {
+        const by = {}; for (const r of items) by[r.status] = (by[r.status] || 0) + 1;
+        const withW = items.filter((r) => r.winnerNm);
+        console.log(`[SELFTEST]   상태별 ${JSON.stringify(by)} 업체명있음=${withW.length}`);
+        withW.slice(0, 3).forEach((r) => console.log(`[SELFTEST]   ${r.status} ${r.bidNtceNm} | ${r.winnerNm} ${r.winnerAmt} | raw ${JSON.stringify(r.raw)}`));
+        const elec = items.filter((r) => /전기|통신/.test(r.bidNtceNm));
+        console.log(`[SELFTEST]   전기·통신 ${elec.length}건: ${elec.slice(0, 5).map((r) => `${r.bidNtceNm}/${r.status}/${r.winnerNm}`).join(' | ')}`);
       }
     } catch (e) { console.log(`[SELFTEST] kwater ${kind} EXC ${e.message}`); }
   }

@@ -19,6 +19,20 @@ export function kwDate(v) {
 }
 const amt = (v) => String(v ?? '').replace(/[^0-9]/g, '');
 
+const unx = (v) => v.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').trim();
+function parseXml(text) {
+  const code = (text.match(/<resultCode>([^<]*)</) || [])[1];
+  if (code && code !== '00' && code !== '03') {
+    throw new Error(`수자원공사 API 오류 [${code}] ${(text.match(/<resultMsg>([^<]*)</) || [])[1] || ''}`);
+  }
+  const items = [...text.matchAll(/<item>([\s\S]*?)<\/item>/g)].map((m) => {
+    const o = {};
+    for (const f of m[1].matchAll(/<(\w+)>([\s\S]*?)<\/\1>/g)) o[f[1]] = unx(f[2]);
+    return o;
+  });
+  return { items, total: Number((text.match(/<totalCount>(\d+)</) || [])[1] || items.length) };
+}
+
 async function call(op, params, key) {
   const qs = new URLSearchParams({ ...params, _type: 'json' });
   const r = await fetch(`${BASE}/${op}?serviceKey=${encodeURIComponent(key)}&${qs}`, { signal: AbortSignal.timeout(30000) });
@@ -26,8 +40,10 @@ async function call(op, params, key) {
   if (r.status === 403) throw new Error('수자원공사 API 활용신청이 필요합니다 (403)');
   let j;
   try { j = JSON.parse(text); } catch {
+    if (/<response>/.test(text)) return parseXml(text); // 일부 오퍼레이션은 _type=json 을 무시하고 XML 로 응답
     const code = (text.match(/<(?:returnReasonCode|resultCode)>([^<]+)</) || [])[1];
     const msg = (text.match(/<(?:returnAuthMsg|errMsg|resultMsg)>([^<]+)</) || [])[1];
+    console.log(`[kwater] ${op} 응답 해석 실패: ${text.replace(/\s+/g, ' ').slice(0, 300)}`);
     throw new Error(`수자원공사 API 오류 [${code || r.status}] ${msg || text.slice(0, 100)}`);
   }
   const eh = j.OpenAPI_ServiceResponse?.cmmMsgHeader;

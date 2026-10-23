@@ -233,3 +233,4 @@ table.sub tr.mine td { background: var(--mine); font-weight: 700; }
 .corp-dl .mini { font-size: 12px; margin-left: 6px; }
 
 .banner.inline { width: auto; margin: 0 0 10px; line-height: 1.6; }
+.kind-tabs.sub button { padding: 4px 14px; font-size: 13px; }

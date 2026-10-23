@@ -1,9 +1,12 @@
 import { useState } from 'react';
 import { won, wonShort, daysAgo, exportExcel, load, save } from './lib.js';
 import KrResult from './KrResult.jsx';
+import KwaterPage from './KwaterPage.jsx';
 
 // 철도기관 (국가철도공단·한국철도공사) — 공공데이터포털 파일데이터. 실시간이 아님.
 const SOURCES = [
+  { id: 'kw-notice', label: '수자원공사 입찰공고' },
+  { id: 'kw-rst', label: '수자원공사 낙찰결과' },
   { id: 'kr-openg', label: '철도공단 개찰결과' },
   { id: 'kr-award', label: '철도공단 낙찰결과' },
   { id: 'kr', label: '철도공단 입찰정보(파일)' },
@@ -38,7 +41,7 @@ const COLS = {
 
 export default function RailPage() {
   const saved = load('search:rail', {});
-  const [src, setSrc] = useState('kr-award');
+  const [src, setSrc] = useState('kw-rst');
   const [q, setQ] = useState(saved.q || '');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -72,10 +75,10 @@ export default function RailPage() {
       <div className="kind-tabs" role="tablist">
         {SOURCES.map((x) => (
           <button key={x.id} role="tab" aria-selected={src === x.id} className={src === x.id ? 'on' : ''}
-            onClick={() => { setSrc(x.id); if (s.searched && !x.id.startsWith('kr-')) run(1, x.id); }}>{x.label}</button>
+            onClick={() => { setSrc(x.id); if (s.searched && !/^(kr|kw)-/.test(x.id)) run(1, x.id); }}>{x.label}</button>
         ))}
       </div>
-      {src.startsWith('kr-') ? <KrResult key={src} type={src.slice(3)} /> : <>
+      {src.startsWith('kw-') ? <KwaterPage key={src} mode={src === 'kw-rst' ? 'rst' : 'notice'} /> : src.startsWith('kr-') ? <KrResult key={src} type={src.slice(3)} /> : <>
 
       <div className="banner inline">
         ⓘ 이 기관들은 실시간 API가 없어 <b>기관이 공공데이터포털에 올린 파일</b>을 보여줍니다.
