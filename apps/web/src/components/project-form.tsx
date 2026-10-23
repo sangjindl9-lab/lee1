@@ -214,7 +214,7 @@ export function ProjectForm({ initial, seed, submitLabel, onSubmit, onCancel, co
           <Field label="실제 준공일" error={err('actualEndDate')}><Input type="date" value={v.actualEndDate} onChange={(e) => set('actualEndDate', e.target.value)} aria-invalid={!!err('actualEndDate')} /></Field>
         </Section>
 
-        <Section title="계약금액·실행예산" description="부가세와 합계는 서버에서 다시 계산해 검증합니다. 실행예산은 2단계에서 공종·원가항목별로 나누어 관리합니다.">
+        <Section title="계약금액·실행예산" description="부가세와 합계는 서버에서 다시 계산해 검증합니다. 공종·원가항목별 실행예산은 현장관리 > 실행예산에서 나누어 관리합니다.">
           <Field label="계약 공급가액" required error={err('supplyAmount')} htmlFor="supply">
             <MoneyInput id="supply" value={v.supplyAmount} onChange={(d) => set('supplyAmount', d)} aria-invalid={!!err('supplyAmount')} />
           </Field>

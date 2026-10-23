@@ -12,7 +12,6 @@ import { Button, DL, Dialog, EmptyState, Input, PageHeader, Select, Skeleton, St
 import { api, ApiError } from '@/lib/api';
 import { daysUntil, pct, won } from '@/lib/format';
 import { CONTRACT_ROLE, SECTOR } from '@/lib/labels';
-import { STAGE_TITLE } from '@/lib/nav';
 import { useSession } from '@/lib/session';
 import type { ProjectDetail } from '@/lib/types';
 
@@ -230,7 +229,7 @@ export default function ProjectDetailPage() {
         />
         <div className="mt-4">
           {tab === 'overview' && (
-            <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+            <div className="grid gap-4">
               <div className="rounded-[6px] border border-line bg-surface p-4">
                 <DL
                   cols={3}
@@ -249,19 +248,6 @@ export default function ProjectDetailPage() {
                     { label: '메모', value: p.memo && <span className="whitespace-pre-wrap">{p.memo}</span>, wide: true },
                   ]}
                 />
-              </div>
-              <div className="rounded-[6px] border border-line bg-surface">
-                <p className="border-b border-line px-4 py-2.5 font-medium">이 현장에 연결될 업무</p>
-                <ul className="divide-y divide-line text-body">
-                  {[
-                    ['실행예산·현장 손익', 2], ['발주·검수·지급결의', 2], ['세금계산서 매입·매출', 3], ['기성청구·수금', 4], ['하도급·노무비', 4],
-                  ].map(([l, s]) => (
-                    <li key={l as string} className="flex items-center justify-between px-4 py-2">
-                      <span className="text-ink-2">{l}</span>
-                      <span className="text-meta text-faint" title={STAGE_TITLE[s as number]}>{s}단계</span>
-                    </li>
-                  ))}
-                </ul>
               </div>
             </div>
           )}

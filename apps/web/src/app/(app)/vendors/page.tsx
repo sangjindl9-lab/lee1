@@ -154,7 +154,7 @@ function VendorEditor({ id, onClose, onSaved }: { id: string | 'new'; onClose: (
                   <Input value={f.bizRegNo} onChange={(e) => set('bizRegNo', fmtBizInput(e.target.value))} inputMode="numeric" className="num" placeholder="000-00-00000" aria-invalid={!!(errors.bizRegNo || bizErr)} />
                 </Field>
                 {field('ceoName', '대표자')}
-                <Field label="사업자 상태" hint="3단계에서 국세청 상태조회로 자동 확인">
+                <Field label="사업자 상태" hint="외부 연동(사업자 상태조회)을 켜면 국세청 기준으로 자동 확인">
                   <Select value={f.bizStatus} onChange={(e) => set('bizStatus', e.target.value)}>
                     {(Object.keys(BIZ_STATUS) as BizStatus[]).map((t) => <option key={t} value={t}>{BIZ_STATUS[t].label}</option>)}
                   </Select>

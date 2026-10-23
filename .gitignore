@@ -9,5 +9,6 @@ deploy/.env
 deploy/backups/
 # 판매자 라이선스 서명키 — 저장소에 올리지 말고 별도 보관
 tools/license/keys/
-backups/
+/backups/
+/deploy/backups/
 *.dump
