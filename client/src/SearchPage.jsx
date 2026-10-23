@@ -3,6 +3,8 @@ import {
   KINDS, REGIONS, INDUSTRY_PRESETS, api, toApiDt, daysAgo, daysLater, load, save, exportExcel, bizno, parseCorpInfo,
 } from './lib.js';
 
+const ORG_NAMES = { g2b: '나라장터', kwater: '수자원공사', kr: '철도공단', korail: '철도공사', ext: '타기관' };
+
 const RANGES = [
   { label: '오늘', from: 0 }, { label: '3일', from: 2 }, { label: '1주', from: 6 }, { label: '2주', from: 13 }, { label: '1개월', from: 29 },
 ];
@@ -38,7 +40,7 @@ export default function SearchPage({ page, onOpen, starred, onStar, myBizno }) {
     const q = buildQuery(p, f.numOfRows);
     try {
       const d = await api(page.svc, page.op(f.kind), q);
-      setState({ loading: false, error: '', items: d.items, total: d.totalCount, mock: !!d.mock, joined: !!d.industryFiltered, truncated: !!d.truncated });
+      setState({ loading: false, error: '', items: d.items, total: d.totalCount, mock: !!d.mock, joined: !!d.industryFiltered, truncated: !!d.truncated, orgCounts: d.orgCounts || null });
     } catch (e) {
       setState({ loading: false, error: e.message, items: [], total: 0, mock: false });
     }
@@ -222,6 +224,9 @@ export default function SearchPage({ page, onOpen, starred, onStar, myBizno }) {
         <div>
           <strong>{kindLabel} {page.title}</strong>
           {searched && <span className="count">총 {state.total.toLocaleString()}건</span>}
+          {searched && state.orgCounts && Object.keys(state.orgCounts).some((k) => k !== 'g2b') && (
+            <span className="org-sum">{Object.entries(state.orgCounts).map(([k, n]) => `${ORG_NAMES[k] || k} ${n.toLocaleString()}`).join(' · ')}</span>
+          )}
           {state.mock && <span className="mock">샘플 데이터 (인증키 미설정)</span>}
           {state.joined && <span className="joined" title="조달청 개찰·낙찰 API의 업종 조건이 정상 동작하지 않아, 입찰공고의 업종(면허)제한 기준으로 걸렀습니다.">업종: 입찰공고 면허제한 기준{state.truncated ? ' · 기간이 길어 일부만 반영' : ''}</span>}
         </div>

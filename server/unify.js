@@ -1,0 +1,127 @@
+// 나라장터 외 기관(수자원공사·국가철도공단·한국철도공사) 결과를 나라장터 목록과 같은 형태로 변환해 합치기
+import { kwSearch } from './kwater.js';
+import { krResults } from './krbid.js';
+
+// 업종 체크박스 → 공고명 키워드 (다른 기관은 업종 정보가 없어 공고명으로 판단)
+const INDUSTRY_WORDS = [
+  [/전기/, ['전기', '전력', '배전', '변전', '조명', '태양광', '발전기', '수배전']],
+  [/정보통신|통신/, ['통신', '정보통신', 'CCTV', 'LTE', '네트워크', '방송', '영상감시', 'ICT']],
+  [/소방/, ['소방']],
+  [/기계/, ['기계', '설비', '공조', '배관']],
+  [/건축/, ['건축', '리모델링', '신축']],
+  [/토목/, ['토목', '도로', '포장', '하천', '정비사업']],
+  [/실내/, ['실내', '인테리어']],
+  [/조경/, ['조경']],
+];
+function industryMatch(title, indstrytyNm) {
+  const names = String(indstrytyNm || '').split(',').map((x) => x.trim()).filter(Boolean);
+  if (!names.length) return true;
+  return names.some((n) => {
+    const rule = INDUSTRY_WORDS.find(([re]) => re.test(n));
+    const words = rule ? rule[1] : [n.replace(/공사업|업$/g, '')];
+    return words.some((w) => title.includes(w));
+  });
+}
+
+const KIND_OF = (nm, title = '') => {
+  if (/공사/.test(nm)) return 'Cnstwk';
+  if (/용역/.test(nm)) return 'Servc';
+  if (/물품|구매|내자|외자/.test(nm)) return nm === '외자' ? 'Frgcpt' : 'Thng';
+  // 구분이 없는 자료(철도공사 파일)는 공고명으로 추정
+  if (/용역|감리|설계|진단|관리/.test(title)) return 'Servc';
+  if (/구매|구입|제조|납품/.test(title)) return 'Thng';
+  return 'Cnstwk';
+};
+
+const ymd = (s) => String(s || '').slice(0, 10);
+const inRange = (d, from, to) => { const x = ymd(d); return x && x >= from && x <= to; };
+const apiToIso = (s) => (s ? `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}` : '');
+
+function commonFilter(r, p) {
+  const words = String(p.bidNtceNm || '').split(/\s+/).filter(Boolean);
+  if (!words.every((w) => r.bidNtceNm.includes(w))) return false;
+  if (!industryMatch(r.bidNtceNm, p.indstrytyNm)) return false;
+  const inst = `${r.ntceInsttNm} ${r.dminsttNm}`;
+  if (p.dminsttNm && !inst.includes(p.dminsttNm)) return false;
+  if (p.ntceInsttNm && !inst.includes(p.ntceInsttNm)) return false;
+  const price = Number(r.presmptPrce) || 0;
+  if (p.presmptPrceBgn && (!price || price < Number(p.presmptPrceBgn))) return false;
+  if (p.presmptPrceEnd && (!price || price > Number(p.presmptPrceEnd))) return false;
+  return true;
+}
+
+// ── 입찰공고 ─────────────────────────────────────────────────────────────
+export async function extBids(kind, p, { key, extLoad }) {
+  const from = apiToIso(p.inqryBgnDt); const to = apiToIso(p.inqryEndDt);
+  if (!from || !to) return [];
+  const byOpeng = p.inqryDiv === '2';
+  const rows = [];
+  const jobs = [];
+  // 수자원공사 (실시간 API): 공고일 기준만 제공
+  if (!byOpeng) {
+    const kwKinds = { Cnstwk: ['cntrwk'], Servc: ['servc'], Thng: ['gds', 'dmscpt'], Frgcpt: [], Etc: [] }[kind] || [];
+    for (const k of kwKinds) {
+      jobs.push(kwSearch(k, { from, to }, key).then((list) => list.forEach((x) => rows.push({
+        _org: 'kwater', _orgNm: '수자원공사', _kind: kind, bidNtceNo: x.bidNtceNo, bidNtceOrd: '000', bidNtceNm: x.bidNtceNm,
+        ntceInsttNm: '한국수자원공사', dminsttNm: `한국수자원공사 ${x.dept}`.trim(), presmptPrce: x.plnprc !== '0' ? x.plnprc : '',
+        cntrctCnclsMthdNm: x.method, ntceKindNm: '등록공고', bidNtceDt: x.ntceDt, bidClseDt: x.clseDt, opengDt: '',
+        _status: x.status, _officer: x.officer, bidNtceDtlUrl: 'https://ebid.kwater.or.kr/',
+      }))).catch((e) => console.log(`[unify] 수자원공사 ${k} 실패: ${e.message}`)));
+    }
+  }
+  // 국가철도공단·한국철도공사 (공공데이터 파일)
+  for (const src of ['kr', 'korail']) {
+    jobs.push(extLoad(src).then((d) => d.rows.forEach((x) => {
+      if (KIND_OF(x.kindNm || '', x.bidNtceNm) !== kind) return;
+      const date = byOpeng ? x.opengDt : (x.ntceDt || x.beginDt);
+      if (!inRange(date, from, to)) return;
+      const orgNm = src === 'kr' ? '국가철도공단' : '한국철도공사';
+      rows.push({
+        _org: src, _orgNm: src === 'kr' ? '철도공단' : '철도공사', _kind: kind, bidNtceNo: x.bidNtceNo || '', bidNtceOrd: '000', bidNtceNm: x.bidNtceNm,
+        ntceInsttNm: orgNm, dminsttNm: `${orgNm} ${x.dept || ''}`.trim(), presmptPrce: x.amount || '',
+        cntrctCnclsMthdNm: x.method || '', ntceKindNm: '등록공고', bidNtceDt: x.ntceDt || x.beginDt, bidClseDt: x.clseDt, opengDt: x.opengDt,
+        sucsfbidLwltRate: x.lowerRate || '', _status: x.status || '', _officer: x.officer || '',
+        bidNtceDtlUrl: src === 'kr' ? 'https://ebid.kr.or.kr/' : 'https://ebid.korail.com/',
+      });
+    })).catch((e) => console.log(`[unify] ${src} 파일 실패: ${e.message}`)));
+  }
+  await Promise.all(jobs);
+  return rows.filter((r) => commonFilter(r, p));
+}
+
+// ── 낙찰정보 ─────────────────────────────────────────────────────────────
+export async function extAwards(kind, p, { key }) {
+  const from = apiToIso(p.inqryBgnDt); const to = apiToIso(p.inqryEndDt);
+  if (!from || !to || p.inqryDiv === '1') return []; // 다른 기관은 개찰(처리)일 기준만
+  const want = (k) => kind === 'All' || k === kind;
+  const rows = []; const jobs = [];
+  jobs.push(kwSearch('rst', { from, to }, key).then((list) => list.forEach((x) => {
+    const k = KIND_OF(x.kindNm, x.bidNtceNm);
+    if (!want(k)) return;
+    rows.push({
+      _org: 'kwater', _orgNm: '수자원공사', _kind: k, bidNtceNo: x.bidNtceNo, bidNtceOrd: '000', bidNtceNm: x.bidNtceNm,
+      ntceInsttNm: '한국수자원공사', dminsttNm: `한국수자원공사 ${x.dept}`.trim(), presmptPrce: '',
+      awardStatus: x.status === '낙찰' ? '낙찰확정' : '낙찰예정', bidwinnrNm: x.winnerNm, bidwinnrBizno: '', bidwinnrCeoNm: '',
+      sucsfbidAmt: x.winnerAmt, sucsfbidRate: '', prtcptCnum: '', opengDt: x.opengDt, rlOpengDt: x.opengDt,
+      cntrctCnclsMthdNm: x.method, _selection: x.selection, _officer: x.officer, bidNtceDtlUrl: 'https://ebid.kwater.or.kr/',
+    });
+  })).catch((e) => console.log(`[unify] 수자원공사 낙찰 실패: ${e.message}`)));
+  // 국가철도공단: 개찰결과 목록(1순위) — 처리상태가 낙찰이면 낙찰확정
+  jobs.push(krResults('openg', from, to, { page: 1, size: 400 }).then((d) => d.rows.forEach((x) => {
+    const k = KIND_OF(x.kindNm, x.bidNtceNm);
+    if (!want(k) || !x.winnerNm) return;
+    rows.push({
+      _org: 'kr', _orgNm: '철도공단', _kind: k, bidNtceNo: x.bidNtceNo, bidNtceOrd: '000', bidNtceNm: x.bidNtceNm,
+      ntceInsttNm: '국가철도공단', dminsttNm: '국가철도공단', presmptPrce: x.presmptPrce || x.amount,
+      awardStatus: /낙찰|계약/.test(x.status) ? '낙찰확정' : '1순위', bidwinnrNm: x.winnerNm, bidwinnrBizno: x.winnerBizno, bidwinnrCeoNm: x.winnerCeo,
+      sucsfbidAmt: x.winnerAmt, sucsfbidRate: x.winnerRate, prtcptCnum: '', opengDt: x.opengDt, rlOpengDt: x.opengDt,
+      sucsfbidLwltRate: x.lowerRate, cntrctCnclsMthdNm: x.method, _plnprc: x.plnprc, _krKey: x.key, bidNtceDtlUrl: 'https://ebid.kr.or.kr/',
+    });
+  })).catch((e) => console.log(`[unify] 철도공단 개찰 실패: ${e.message}`)));
+  await Promise.all(jobs);
+  return rows.filter((r) => {
+    if (!commonFilter(r, p)) return false;
+    if (p.bizno && r.bidwinnrBizno !== p.bizno.replaceAll('-', '')) return false;
+    return true;
+  });
+}

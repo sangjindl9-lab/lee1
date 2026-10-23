@@ -257,6 +257,44 @@ function OpengInfo({ item: r, kind, type }) {
   );
 }
 
+const ORG_SITE = { kwater: ['한국수자원공사 전자조달', 'https://ebid.kwater.or.kr/'], kr: ['국가철도공단 전자조달', 'https://ebid.kr.or.kr/'], korail: ['한국철도공사 전자조달', 'https://ebid.korail.com/'] };
+function ExtInfo({ r, type }) {
+  const [site, url] = ORG_SITE[r._org] || ['원문', '#'];
+  return (
+    <>
+      <p className="note">이 공고는 나라장터가 아닌 <b>{site}</b> 자료입니다. 상세 조건과 첨부파일은 기관 사이트에서 확인하세요.</p>
+      <h3>{type === 'bid' ? '공고 정보' : '결과'}</h3>
+      <dl className="grid">
+        <Field label="발주처">{r.ntceInsttNm}</Field>
+        <Field label="부서">{r.dminsttNm}</Field>
+        <Field label="공고번호">{r.bidNtceNo}</Field>
+        <Field label="계약방법">{r.cntrctCnclsMthdNm}</Field>
+        {type === 'bid' ? <>
+          <Field label="금액">{Number(r.presmptPrce) ? `${won(r.presmptPrce)}원` : '미공개'}</Field>
+          <Field label="낙찰하한율">{r.sucsfbidLwltRate ? `${r.sucsfbidLwltRate}%` : ''}</Field>
+          <Field label="공고일">{dt(r.bidNtceDt)}</Field>
+          <Field label="마감">{dt(r.bidClseDt)}</Field>
+          <Field label="개찰">{dt(r.opengDt)}</Field>
+          <Field label="상태">{r._status}</Field>
+          <Field label="담당자">{r._officer}</Field>
+        </> : <>
+          <Field label="상태">{r.awardStatus}</Field>
+          <Field label="낙찰(1순위)업체"><strong><CompanyName name={r.bidwinnrNm} bizno={r.bidwinnrBizno} ceo={r.bidwinnrCeoNm} /></strong></Field>
+          <Field label="금액">{Number(r.sucsfbidAmt) ? `${won(r.sucsfbidAmt)}원` : ''}</Field>
+          <Field label="투찰률">{r.sucsfbidRate ? `${r.sucsfbidRate}%` : ''}</Field>
+          {r._plnprc && <Field label="예정가격">{won(r._plnprc)}원</Field>}
+          {r.sucsfbidLwltRate && <Field label="낙찰하한율">{r.sucsfbidLwltRate}%</Field>}
+          <Field label="개찰(처리)일">{dt(r.opengDt)}</Field>
+          {r._selection && <Field label="낙찰자결정">{r._selection}</Field>}
+        </>}
+      </dl>
+      {r._org === 'kwater' && type !== 'bid' && <p className="muted small">수자원공사 결과에는 사업자번호가 없어 업체 연락처는 연결되지 않습니다.</p>}
+      {r._org === 'kr' && type !== 'bid' && <p className="muted small">국가철도공단은 개찰결과를 1순위 업체만 공개합니다.</p>}
+      <p className="links"><a href={url} target="_blank" rel="noreferrer">{site} 바로가기 ↗</a></p>
+    </>
+  );
+}
+
 function OpengFromBid({ b, kind, onOpen }) {
   // 입찰공고 상세에서 개찰결과가 나왔는지 확인 (조회구분 3: 입찰공고번호)
   const enabled = kind !== 'Etc' && b.opengDt && new Date(b.opengDt.replace(' ', 'T')) < new Date();
@@ -287,7 +325,7 @@ export default function Detail({ sel, onClose, onOpen, myBizno, starred, onStar 
       <aside className="drawer" onClick={(e) => e.stopPropagation()} aria-label="상세">
         <header>
           <div>
-            <span className="badge">{label}</span>
+            <span className="badge">{label}{r._orgNm ? ` · ${r._orgNm}` : ''}</span>
             <h2>{r.bidNtceNm}</h2>
             <p className="s">{r.bidNtceNo}-{r.bidNtceOrd} · {r.dminsttNm || r.ntceInsttNm}</p>
           </div>
@@ -297,7 +335,7 @@ export default function Detail({ sel, onClose, onOpen, myBizno, starred, onStar 
           </div>
         </header>
         <div className="drawer-body">
-          {type === 'bid' ? (
+          {r._org && r._org !== 'g2b' ? <ExtInfo r={r} type={type} /> : type === 'bid' ? (
             <>
               <BidInfo b={r} />
               <BidExtras b={r} kind={kind} />

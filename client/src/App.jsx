@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
 import SearchPage from './SearchPage.jsx';
-import RailPage from './RailPage.jsx';
 import Detail from './Detail.jsx';
 import CompanyCard from './Company.jsx';
 import { PAGES } from './pages.jsx';
@@ -111,21 +110,11 @@ export default function App() {
         {tab === 'star'
           ? <Watchlist starred={starred} onOpen={setSel} onStar={onStar} />
           : <>
-            <div className="org-tabs" role="tablist" aria-label="발주처">
-              <span className="org-label">발주처</span>
-              {ORGS[tab].map(([id, label]) => (
-                <button key={id} role="tab" aria-selected={orgOf(tab) === id} className={orgOf(tab) === id ? 'on' : ''}
-                  onClick={() => setOrg(tab, id)}>{label}</button>
-              ))}
-            </div>
-            {ORG_NOTE[orgOf(tab)] && <div className="banner inline">ⓘ {ORG_NOTE[orgOf(tab)]}</div>}
-            {orgOf(tab) === 'g2b'
-              ? <SearchPage key={tab} page={page} onOpen={setSel} starred={starred} onStar={onStar} myBizno={myBizno} />
-              : <RailPage key={`${tab}-${orgOf(tab)}`} fixed={orgOf(tab)} />}
+            <SearchPage key={tab} page={page} onOpen={setSel} starred={starred} onStar={onStar} myBizno={myBizno} />
           </>}
       </main>
 
-      <footer className="foot">자료: 조달청 나라장터 (공공데이터포털 OpenAPI) · 실제 입찰 전 나라장터 원문을 꼭 확인하세요. · 버전 10.23-15시</footer>
+      <footer className="foot">자료: 조달청 나라장터 (공공데이터포털 OpenAPI) · 실제 입찰 전 나라장터 원문을 꼭 확인하세요. · 버전 10.23-15시b</footer>
 
       {company && <CompanyCard info={company} onClose={closeCompany} />}
       {sel && <Detail sel={sel} onClose={close} onOpen={setSel} myBizno={myBizno} starred={starred} onStar={onStar} />}

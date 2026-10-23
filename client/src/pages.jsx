@@ -11,19 +11,20 @@ const Dday = ({ s }) => {
 
 const titleCell = (r, sub) => (
   <div className="title-cell">
-    <div className="t">{r.bidNtceNm}</div>
+    <div className="t">{r._org && r._org !== 'g2b' && <span className={`org-pill ${r._org}`}>{r._orgNm}</span>}{r.bidNtceNm}</div>
     <div className="s">{r.bidNtceNo}-{r.bidNtceOrd}{sub ? ` · ${sub}` : ''}</div>
   </div>
 );
 
 export const PAGES = [
   {
-    id: 'bid', title: '입찰공고', svc: 'bid', op: (k) => `getBidPblancListInfo${k}PPSSrch`,
+    id: 'bid', title: '입찰공고', svc: 'bids', op: (k) => k,
     dateDivs: [['1', '공고게시일'], ['2', '개찰일']],
     columns: [
       { key: 'bidNtceNm', label: '공고명', render: (r) => titleCell(r, [r.ntceKindNm !== '등록공고' && r.ntceKindNm, r.cntrctCnclsMthdNm].filter(Boolean).join(' · ')),
         excel: (r) => r.bidNtceNm, wch: 50 },
       { key: 'bidNtceNo', label: '공고번호', cls: 'hide', excel: (r) => `${r.bidNtceNo}-${r.bidNtceOrd}`, wch: 18 },
+      { key: '_orgNm', label: '발주처', cls: 'hide', excel: (r) => r._orgNm || '나라장터', wch: 10 },
       { key: 'dminsttNm', label: '수요기관', cls: 'org', wch: 24 },
       { key: 'presmptPrce', label: '추정가격', cls: 'num', render: (r) => wonShort(r.presmptPrce), sortVal: (r) => num(r.presmptPrce),
         excel: (r) => num(r.presmptPrce) },
@@ -62,6 +63,7 @@ export const PAGES = [
       { key: 'presmptPrce', label: '추정가격', cls: 'num', render: (r) => wonShort(r.presmptPrce), sortVal: (r) => num(r.presmptPrce),
         excel: (r) => num(r.presmptPrce) },
       { key: 'awardStatus', label: '상태', cls: 'mid', render: (r) => <span className={`pill ${r.awardStatus === '낙찰확정' ? 'ok' : ''}`}>{r.awardStatus}</span> },
+      { key: '_orgNm', label: '발주처', cls: 'hide', excel: (r) => r._orgNm || '나라장터', wch: 10 },
       { key: 'bidwinnrNm', label: '낙찰(1순위)업체', cls: 'corp strong', wch: 24,
         render: (r) => <><CompanyName name={r.bidwinnrNm} bizno={r.bidwinnrBizno} ceo={r.bidwinnrCeoNm} tel={r.bidwinnrTelNo} adrs={r.bidwinnrAdrs} />{r.bidwinnrTelNo && <div className="s">{r.bidwinnrTelNo}</div>}</> },
       { key: 'sucsfbidAmt', label: '금액', cls: 'num', render: (r) => <>{won(r.sucsfbidAmt)}<div className="s">{num(r.sucsfbidRate) ? `${r.sucsfbidRate}%` : ''}</div></>,

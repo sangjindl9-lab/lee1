@@ -8,6 +8,7 @@ import { mockResponse } from './mock.js';
 import { selfTest } from './selftest.js';
 import { krResults, krDetail } from './krbid.js';
 import { kwSearch, KW_OPS } from './kwater.js';
+import { extBids, extAwards } from './unify.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -459,6 +460,55 @@ app.get('/api/kwater/:kind', async (req, res) => {
   }
 });
 
+// ── 입찰공고 통합 (나라장터 + 다른 기관) ──────────────────────────────────
+app.get('/api/bids/:kind', async (req, res) => {
+  const { kind } = req.params;
+  const op = `getBidPblancListInfo${kind}PPSSrch`;
+  if (!ALLOWED.bid.has(op)) return res.status(404).json({ error: '알 수 없는 구분' });
+  const params = {};
+  for (const [k, v] of Object.entries(req.query)) if (PARAMS.has(k) && v !== '' && v != null) params[k] = String(v);
+  const size = Number(params.numOfRows || 30); const page = Number(params.pageNo || 1);
+  try {
+    const extP = (MOCK || !KEY || req.query.ext === '0') ? Promise.resolve([])
+      : extBids(kind, params, { key: KEY, extLoad }).catch((e) => { console.log(`[unify] bids 실패 ${e.message}`); return []; });
+    const multi = String(params.indstrytyNm || '').split(',').filter(Boolean).length > 1;
+    const first = multi ? null : await upstream('bid', op, { ...params, numOfRows: 1, pageNo: 1 });
+    const ext = await extP;
+    const dateOf = (r) => String((params.inqryDiv === '2' ? r.opengDt : r.bidNtceDt) || '');
+    let g2b; let g2bTotal;
+    if (multi || first.totalCount <= 3000) {
+      // 나라장터 결과가 많지 않으면 전부 받아 날짜순으로 섞음
+      if (multi) {
+        const { indstrytyNm, ...rest } = params;
+        const names = String(indstrytyNm).split(',').map((x) => x.trim()).filter(Boolean);
+        const parts = await Promise.all(names.map((n) => fetchAll('bid', op, { ...rest, indstrytyNm: n })));
+        const seen = new Set(); g2b = [];
+        for (const pt of parts) for (const b of pt.items) { const k = `${b.bidNtceNo}-${b.bidNtceOrd}`; if (!seen.has(k)) { seen.add(k); g2b.push(b); } }
+      } else g2b = (await fetchAll('bid', op, params)).items;
+      const all = g2b.map((r) => ({ ...r, _org: 'g2b' })).concat(ext).sort((a, b) => dateOf(b).localeCompare(dateOf(a)));
+      return res.json({ resultCode: '00', totalCount: all.length, items: all.slice((page - 1) * size, page * size), extCount: ext.length,
+        orgCounts: all.reduce((m, r) => { m[r._org] = (m[r._org] || 0) + 1; return m; }, {}), mock: MOCK || !KEY });
+    }
+    // 나라장터 결과가 아주 많으면: 다른 기관 결과를 앞에, 나라장터는 이어서 페이지 단위로
+    g2bTotal = first.totalCount;
+    ext.sort((a, b) => dateOf(b).localeCompare(dateOf(a)));
+    const start = (page - 1) * size; const end = start + size;
+    const items = ext.slice(start, end);
+    if (items.length < size) {
+      const gStart = Math.max(0, start - ext.length); const need = size - items.length;
+      const p1 = Math.floor(gStart / size) + 1;
+      const a = await upstream('bid', op, { ...params, numOfRows: size, pageNo: p1 });
+      let pool = a.items;
+      if ((gStart % size) + need > size) pool = pool.concat((await upstream('bid', op, { ...params, numOfRows: size, pageNo: p1 + 1 })).items);
+      items.push(...pool.slice(gStart % size, (gStart % size) + need).map((r) => ({ ...r, _org: 'g2b' })));
+    }
+    res.json({ resultCode: '00', totalCount: g2bTotal + ext.length, items, extCount: ext.length, orgCounts: { g2b: g2bTotal, ext: ext.length } });
+  } catch (err) {
+    const msg = err.name === 'TimeoutError' ? '공공데이터 API 응답 지연 (잠시 후 다시 시도)' : err.message;
+    res.status(502).json({ error: msg.startsWith('[') ? msg : `공공데이터 API 호출 실패: ${msg}` });
+  }
+});
+
 app.get('/api/award/:kind', async (req, res) => {
   const { kind } = req.params;
   const kinds = kind === 'All' ? AWARD_KINDS : AWARD_KINDS.includes(kind) ? [kind] : null;
@@ -467,14 +517,20 @@ app.get('/api/award/:kind', async (req, res) => {
   for (const [k, v] of Object.entries(req.query)) if (PARAMS.has(k) && v !== '' && v != null) params[k] = String(v);
   if (!params.inqryBgnDt || !params.inqryEndDt) return res.status(400).json({ error: '조회 기간을 입력하세요' });
   try {
-    const parts = await Promise.all(kinds.map((k) => awardForKind(k, params)));
-    const rows = parts.flatMap((p) => p.rows).sort((a, b) => String(b.opengDt).localeCompare(String(a.opengDt)));
+    const withExt = req.query.ext !== '0' && !(MOCK || !KEY);
+    const [parts, ext] = await Promise.all([
+      Promise.all(kinds.map((k) => awardForKind(k, params))),
+      withExt ? extAwards(kind, params, { key: KEY }).catch((e) => { console.log(`[unify] award 실패 ${e.message}`); return []; }) : [],
+    ]);
+    const rows = parts.flatMap((p) => p.rows).map((r) => ({ ...r, _org: 'g2b' })).concat(ext)
+      .sort((a, b) => String(b.opengDt).localeCompare(String(a.opengDt)));
     const size = Number(params.numOfRows || 20); const page = Number(params.pageNo || 1);
     res.json({
       resultCode: '00', totalCount: rows.length, pageNo: page, numOfRows: size,
       items: rows.slice((page - 1) * size, page * size),
       industryFiltered: !!(params.indstrytyNm || params.indstrytyCd),
       truncated: parts.some((p) => p.truncated), mock: parts.some((p) => p.mock),
+      extCount: ext.length, orgCounts: rows.reduce((m, r) => { m[r._org] = (m[r._org] || 0) + 1; return m; }, {}),
     });
   } catch (err) {
     const msg = err.name === 'TimeoutError' ? '공공데이터 API 응답 지연 (잠시 후 다시 시도)' : err.message;
