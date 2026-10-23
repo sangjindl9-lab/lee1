@@ -1,0 +1,31 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: naeyeok
+      POSTGRES_PASSWORD: naeyeok
+      POSTGRES_DB: naeyeok
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U naeyeok"]
+      interval: 5s
+      retries: 10
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://naeyeok:naeyeok@db:5432/naeyeok
+      SECRET_KEY: ${SECRET_KEY:-change-me-to-a-long-random-string}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin1234}
+      STORAGE_DIR: /data/files
+    volumes:
+      - appdata:/data
+    depends_on:
+      db:
+        condition: service_healthy
+volumes:
+  pgdata:
+  appdata:
