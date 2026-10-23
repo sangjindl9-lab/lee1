@@ -466,3 +466,19 @@ class AuditLog(Base):
     action: Mapped[str] = mapped_column(String(100))
     detail: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+
+
+class Job(Base):
+    """오래 걸리는 작업(범례 자동 인식·자동 물량산출) — 웹 요청 타임아웃 방지용 백그라운드 실행 기록."""
+    __tablename__ = "jobs"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    kind: Mapped[str] = mapped_column(String(30))      # takeoff | legend_auto
+    status: Mapped[str] = mapped_column(String(15), default="queued")   # queued|running|done|failed
+    progress: Mapped[int] = mapped_column(Integer, default=0)
+    message: Mapped[str | None] = mapped_column(String(300))
+    result: Mapped[dict] = mapped_column(JSON, default=dict)
+    error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime)

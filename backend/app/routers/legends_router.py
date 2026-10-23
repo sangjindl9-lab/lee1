@@ -31,9 +31,12 @@ def list_legends(pid: int, user: User = Depends(current_user), db: Session = Dep
 
 
 @router.post("/auto")
-def auto_detect(pid: int, user: User = Depends(require_role(*EDIT_ROLES)), db: Session = Depends(get_db)):
-    """모든 시트에서 범례표 자동 탐색 → 회사 라이브러리로 보강."""
+def auto_detect(pid: int, wait: bool = False, user: User = Depends(require_role(*EDIT_ROLES)), db: Session = Depends(get_db)):
+    """모든 시트에서 범례표 자동 탐색 → 회사 라이브러리로 보강. 기본 백그라운드 실행(job_id 반환), wait=1 이면 동기."""
     get_project_or_403(db, user, pid)
+    if not wait:
+        from ..jobs import submit_job
+        return {"job_id": submit_job(pid, user.id, "legend_auto")}
     created = services.auto_detect_legends(db, pid)
     n = services.apply_library(db, pid, user.company_id)
     audit(db, user, "legend_auto", pid, tables=len(created), library_hits=n)

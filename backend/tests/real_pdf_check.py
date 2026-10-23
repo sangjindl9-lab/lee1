@@ -36,21 +36,25 @@ with TestClient(app) as c:
     for w in f["warnings"][:12]:
         print("  WARN", w)
     t0 = time.time()
-    r = c.post(f"/api/projects/{pid}/legends/auto", headers=h).json()
+    r = c.post(f"/api/projects/{pid}/legends/auto?wait=1", headers=h).json()
     print("LEGEND tables", len(r["created"]), "%.0fs" % (time.time() - t0))
     for t in c.get(f"/api/projects/{pid}/legends", headers=h).json():
         print(" TABLE", t["title"], "sheet", t["sheet_id"], len(t["symbols"]))
         for s in t["symbols"]:
             print("   ", s["row_no"], s["item_name"], "|", s["category"], s["layer_hint"], s["status"], (s["fingerprint"] or {}).get("dash"))
     c.post(f"/api/projects/{pid}/legends/approve-all", headers=h)
-    # 축척 확정: 1/400 (A3 기준) → 1pt = 25.4/72 mm × 400
-    for s in f["sheets"]:
-        if s["drawing_type"] == "평면도" or (s["drawing_title"] or "").find("평면") >= 0:
-            c.post(f"/api/projects/{pid}/sheets/{s['id']}/scale", headers=h, json={"scale_factor": 25.4 / 72 / 1000 * 400})
+    r = c.post(f"/api/projects/{pid}/sheets/confirm-scales", headers=h).json()
+    print("SCALES confirmed", r)
+    for s in c.get(f"/api/projects/{pid}/files", headers=h).json()[0]["sheets"]:
+        if s["scale_factor"]:
+            print("  scale", s["drawing_no"], s["drawing_title"], "1/%d" % round(s["scale_factor"] / (25.4 / 72 / 1000)), s["scale_confirmed"])
     t0 = time.time()
-    r = c.post(f"/api/projects/{pid}/takeoff/run", headers=h).json()
+    r = c.post(f"/api/projects/{pid}/takeoff/run?wait=1", headers=h).json()
     print("RUN", r, "%.0fs" % (time.time() - t0))
     for q in c.get(f"/api/projects/{pid}/takeoff/items", headers=h).json():
-        print("  ITEM", q["item_name"], "|", q["spec"], q["unit"], q["qty_total"], q["status"], q["drawing_nos"], (q["formula"] or "")[:60])
+        print("  ITEM", q["item_name"], "|", q["spec"], q["unit"], q["qty_total"], q["status"], q["drawing_nos"], (q["formula"] or "")[:90])
+    for rt in c.get(f"/api/projects/{pid}/takeoff/routes", headers=h).json():
+        if rt["horizontal_m"] and rt["horizontal_m"] > 5:
+            print("  ROUTE", rt["name"], rt["kind"], rt["segment_count"], round(rt["horizontal_m"], 1), rt["status"])
     for i in c.get(f"/api/projects/{pid}/takeoff/issues", headers=h).json()[:8]:
         print("  ISSUE", i["code"], i["message"][:80])

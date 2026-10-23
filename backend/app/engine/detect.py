@@ -9,6 +9,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
+from .anchor import anchor_matches, is_sample
 from .geometry import bbox_of, bitmap_signature, bitmap_similarity, cluster_prims, fingerprint_similarity, in_region, prim_bbox
 
 EXISTING_WORDS = ["기존", "EXIST", "EXISTING", "EX-", "EX_", "현황"]
@@ -74,7 +75,18 @@ def detect_in_sheet(sheet: dict, legend_symbols: list[dict], exclude_regions: li
                             dets.append(Detection(lid, e["x"], e["y"], e.get("bbox"), "fingerprint", round(0.6 + 0.3 * sim, 2), e["h"],
                                                   install_type_of(e.get("layer"), bn), "review" if sim < 1.0 else "auto"))
             # 폭발 도형 / 벡터 PDF: 비트맵 지문이 있으면 일반 클러스터 비교, 없으면 원 중심 클러스터 비교
-            if not bname or sheet.get("_force_cluster"):
+            if (not bname or sheet.get("_force_cluster")) and fp.get("anchor"):
+                # 외곽 도형 + 내부 내용 (주 방식). 학습된 변형(variants)도 같은 방식으로
+                for variant in [fp] + list(fp.get("variants") or []):
+                    ad = variant.get("anchor")
+                    if not ad:
+                        continue
+                    for c in anchor_matches(ad, sheet):
+                        if c["sim"] < 0.7 or _excluded(c["x"], c["y"], exclude_regions):
+                            continue
+                        dets.append(Detection(lid, c["x"], c["y"], c["bbox"], "anchor", round(0.5 + 0.5 * c["sim"], 3), c["handle"],
+                                              "new", "auto" if c["sim"] >= 0.85 else "review"))
+            elif not bname or sheet.get("_force_cluster"):
                 if fp.get("bm"):
                     for variant in [fp] + list(fp.get("variants") or []):
                         if variant.get("bm"):
@@ -92,7 +104,15 @@ def detect_in_sheet(sheet: dict, legend_symbols: list[dict], exclude_regions: li
         if raster_path and ls.get("image_path") and raster_meta:
             dets.extend(_template_matches(lid, ls["image_path"], raster_path, raster_meta, exclude_regions))
 
-    return dedupe(dets, sheet)
+    # 범례·주기사항 안 견본 기호(오른쪽에 품명 설명이 붙은 기호) 제외
+    names = {ls["id"]: ls.get("item_name") or "" for ls in legend_symbols}
+    kept = []
+    for d in dets:
+        size = max(d.bbox["x1"] - d.bbox["x0"], d.bbox["y1"] - d.bbox["y0"]) if d.bbox else 5.0
+        if names.get(d.legend_symbol_id) and is_sample((d.x, d.y), size, names[d.legend_symbol_id], texts):
+            continue
+        kept.append(d)
+    return dedupe(kept, sheet)
 
 
 def _vector_cluster_matches(lid: int, fp: dict, prims: list[dict], exclude_regions: list[dict], sheet: dict) -> list[Detection]:

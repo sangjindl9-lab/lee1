@@ -366,8 +366,9 @@ def extract_legend(sheet: dict, title: dict, region: dict | None = None, ocr_cel
                     segs = sorted(lines_only, key=lambda p: p["_bb"]["x0"])
                     lens = sorted(max(p["_bb"]["x1"] - p["_bb"]["x0"], p["_bb"]["y1"] - p["_bb"]["y0"]) for p in segs)
                     gaps = sorted(max(0.0, b["_bb"]["x0"] - a["_bb"]["x1"]) for a, b in zip(segs, segs[1:]))
+                    from .linetype import classify_pattern
                     lr.fingerprint["dash"] = {"n": len(segs), "seg": lens[len(lens) // 2], "gap": (gaps[len(gaps) // 2] if gaps else 0.0),
-                                              "total": cbb["x1"] - cbb["x0"]}
+                                              "total": cbb["x1"] - cbb["x0"], "pattern": classify_pattern(lens), "pieces": [round(x, 2) for x in lens]}
                 else:
                     # 앵커(닫힌 도형·원·작은 채움) = 가장 큰 닫힌 도형. 그 중심 기준으로 방향 정규화한 비트맵 지문
                     anc = []
@@ -377,6 +378,13 @@ def extract_legend(sheet: dict, title: dict, region: dict | None = None, ocr_cel
                         if closed and d > 0:
                             anc.append((d, p))
                     lr.fingerprint.update(bitmap_signature([{"t": p["t"], "p": p["p"]} for p in cl]))
+                    # 외곽 도형 + 내부 내용 서술자 (칸 테두리 자체가 닫힌 도형으로 잡히지 않도록 칸보다 작은 것만)
+                    from .anchor import anchor_descriptor
+                    cw, chh = sx1 - sx0, row_bb["y1"] - row_bb["y0"]
+                    inner_cl = [p for p in cl if (p["_bb"]["x1"] - p["_bb"]["x0"]) < 0.9 * cw and (p["_bb"]["y1"] - p["_bb"]["y0"]) < 0.9 * chh]
+                    ad = anchor_descriptor(inner_cl)
+                    if ad:
+                        lr.fingerprint["anchor"] = ad
                     if anc:
                         d, ap = max(anc, key=lambda t: t[0])
                         lr.fingerprint["anchor_bm"] = bitmap_signature([{"t": ap["t"], "p": ap["p"]}]).get("bm")
@@ -461,7 +469,7 @@ def extract_legend(sheet: dict, title: dict, region: dict | None = None, ocr_cel
         if not (lr.block_name or (lr.fingerprint and (lr.fingerprint.get("n", 0) > 0 or lr.fingerprint.get("schedule"))) or lr.symbol_name):
             # 기호 없는 행(비고/주석) → 제외
             continue
-        if lr.item_name and not re.search(r"[가-힣A-Za-z]{2,}", lr.item_name):
+        if lr.item_name and (not re.search(r"[가-힣]{2,}|[A-Za-z]{3,}", lr.item_name) or re.search(r"(.)\1{5,}", lr.item_name)):
             lr.item_name = None   # 격자 노이즈('00000', '_')
             lr.status = "unresolved"
         fp = lr.fingerprint or {}
@@ -596,6 +604,10 @@ def auto_detect_legends(sheet: dict, ocr_cell=None) -> list[LegendResult]:
         res = extract_legend(sheet, title, ocr_cell=ocr_cell)
         # 근거 없는 표(헤더도 격자도 없음)는 제외 — 주기사항 본문 오탐 방지
         with_sym = sum(1 for r in res.rows if r.block_name or (r.fingerprint and (r.fingerprint.get("bm") or r.fingerprint.get("dash") or r.fingerprint.get("schedule"))))
+        # 기호 칸이 사실은 글자(도면번호 001, 002 …)인 표 = 도면목록표·일람표 → 범례 아님
+        text_sym = sum(1 for r in res.rows if r.symbol_name and re.fullmatch(r"[0-9A-Za-z\-_. ]{2,}", r.symbol_name.strip()))
+        if res.rows and text_sym >= max(2, len(res.rows) // 2) and not any(r.fingerprint and r.fingerprint.get("schedule") for r in res.rows):
+            continue
         # 기호(도형) 가 있는 행이 있어야 범례표 — 도면목록표·일람표 같은 문자 표 배제
         if res.rows and with_sym >= 1 and (res.header_found or (res.region_from_grid and with_sym >= max(2, len(res.rows) // 2))):
             results.append(res)

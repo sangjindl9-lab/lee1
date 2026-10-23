@@ -44,3 +44,6 @@ td.num{text-align:right}tr.sel{background:#fff3e6}tr:hover{background:#f6f8fb}
 .sym-img{width:60px;height:36px;object-fit:contain;border:1px solid var(--line);background:#fff}
 canvas.mini{width:60px;height:36px;border:1px solid var(--line);background:#fff}
 .legend-edit input{width:100%}
+
+.jobbox{position:fixed;left:50%;top:60px;transform:translateX(-50%);background:#fff;border:1px solid var(--line);box-shadow:0 4px 16px rgba(0,0,0,.2);border-radius:6px;padding:10px 14px;z-index:98;min-width:320px}
+.jobbox .prog{margin:6px 0}

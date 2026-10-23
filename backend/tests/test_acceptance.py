@@ -29,7 +29,7 @@ def project(client, auth, fixtures):
 
 def test_1_legend_recognition(client, auth, project):
     """서로 다른 CCTV 기호 2종 → 서로 다른 품목으로 식별."""
-    r = client.post(f"/api/projects/{project}/legends/auto", headers=auth)
+    r = client.post(f"/api/projects/{project}/legends/auto?wait=1", headers=auth)
     assert r.status_code == 200, r.text
     tables = client.get(f"/api/projects/{project}/legends", headers=auth).json()
     assert tables, "범례표가 자동 검출되지 않음"
@@ -49,7 +49,7 @@ def test_1_legend_recognition(client, auth, project):
 
 def test_2_quantity_detection(client, auth, project):
     """고정형 12대, PTZ 3대 — 범례표 안 참조 기호·기존 시설 제외."""
-    r = client.post(f"/api/projects/{project}/takeoff/run", headers=auth)
+    r = client.post(f"/api/projects/{project}/takeoff/run?wait=1", headers=auth)
     assert r.status_code == 200, r.text
     items = client.get(f"/api/projects/{project}/takeoff/items", headers=auth).json()
     by = {(q["item_name"], q["install_type"], q["drawing_nos"][0] if q["drawing_nos"] else None): q for q in items}
@@ -91,9 +91,9 @@ def test_3b_duplicate_segment_detected(client, auth, fixtures):
     pid = r.json()["id"]
     _upload(client, auth, pid, fixtures / "test_cctv_plan_dup.dxf")
     wait_done(client, auth, pid)
-    client.post(f"/api/projects/{pid}/legends/auto", headers=auth)
+    client.post(f"/api/projects/{pid}/legends/auto?wait=1", headers=auth)
     client.post(f"/api/projects/{pid}/legends/approve-all", headers=auth)
-    client.post(f"/api/projects/{pid}/takeoff/run", headers=auth)
+    client.post(f"/api/projects/{pid}/takeoff/run?wait=1", headers=auth)
     issues = client.get(f"/api/projects/{pid}/takeoff/issues", headers=auth).json()
     assert any(i["code"] == "DUPLICATE_SEGMENT" for i in issues), issues
     routes = [r for r in client.get(f"/api/projects/{pid}/takeoff/routes", headers=auth).json() if r["kind"] == "conduit"]
@@ -133,7 +133,7 @@ def test_5_edit_and_recompute(client, auth, project):
     fix_new = [q for q in items if "고정형" in q["item_name"] and q["install_type"] == "new" and "C-01" in q["drawing_nos"]][0]
     assert fix_new["qty_total"] == 11
     # 자동 재분석이 사용자 수정을 초기화하지 않음
-    client.post(f"/api/projects/{project}/takeoff/run", headers=auth)
+    client.post(f"/api/projects/{project}/takeoff/run?wait=1", headers=auth)
     items = client.get(f"/api/projects/{project}/takeoff/items", headers=auth).json()
     fix_new = [q for q in items if "고정형" in q["item_name"] and q["install_type"] == "new" and "C-01" in q["drawing_nos"]][0]
     assert fix_new["qty_total"] == 11
@@ -221,7 +221,7 @@ def test_8_scanned_pdf_requires_scale(client, auth, fixtures):
                          json={"sheet_id": sheet["id"], "region": {"x0": 0, "y0": 0, "x1": 100, "y1": 100}, "title": "수동"}).json()
     client.post(f"/api/projects/{pid}/legends/{tables['id']}/symbols", headers=auth,
                 json={"symbol_name": "CD", "item_name": "전선관", "spec": "CD 22", "unit": "m", "category": "conduit", "layer_hint": "PDF"})
-    client.post(f"/api/projects/{pid}/takeoff/run", headers=auth)
+    client.post(f"/api/projects/{pid}/takeoff/run?wait=1", headers=auth)
     issues = client.get(f"/api/projects/{pid}/takeoff/issues", headers=auth).json()
     assert any(i["code"] == "SCALE_UNCONFIRMED" for i in issues), issues
     items = client.get(f"/api/projects/{pid}/takeoff/items", headers=auth).json()
@@ -229,7 +229,7 @@ def test_8_scanned_pdf_requires_scale(client, auth, fixtures):
     # 축척 확정(기준거리 100pt = 10m) 후에는 길이 산출
     r = client.post(f"/api/projects/{pid}/sheets/{sheet['id']}/scale", headers=auth, json={"ref_points": [[0, 0], [100, 0]], "ref_length_m": 10})
     assert r.json()["scale_confirmed"] is True and abs(r.json()["scale_factor"] - 0.1) < 1e-9
-    client.post(f"/api/projects/{pid}/takeoff/run", headers=auth)
+    client.post(f"/api/projects/{pid}/takeoff/run?wait=1", headers=auth)
     items = client.get(f"/api/projects/{pid}/takeoff/items", headers=auth).json()
     assert all(q["qty_total"] is not None for q in items if q["unit"] == "m" and q["item_name"] == "전선관"), items
 
@@ -241,13 +241,13 @@ def test_9_vector_pdf_fingerprint(client, auth, fixtures):
     _upload(client, auth, pid, fixtures / "test_vector.pdf")
     files = wait_done(client, auth, pid)
     assert files[0]["sheets"][0]["source_kind"] == "pdf_vector"
-    client.post(f"/api/projects/{pid}/legends/auto", headers=auth)
+    client.post(f"/api/projects/{pid}/legends/auto?wait=1", headers=auth)
     tables = client.get(f"/api/projects/{pid}/legends", headers=auth).json()
     assert tables and tables[0]["symbols"], tables
     s = tables[0]["symbols"][0]
     assert s["item_name"] == "WALL LIGHT" and s["fingerprint"]["circles"] >= 1
     client.post(f"/api/projects/{pid}/legends/approve-all", headers=auth)
-    client.post(f"/api/projects/{pid}/takeoff/run", headers=auth)
+    client.post(f"/api/projects/{pid}/takeoff/run?wait=1", headers=auth)
     items = client.get(f"/api/projects/{pid}/takeoff/items", headers=auth).json()
     wl = [q for q in items if q["item_name"] == "WALL LIGHT"]
     assert wl and wl[0]["qty_total"] == 5, items
@@ -311,3 +311,16 @@ def test_12_refdata_excel_import(client, auth):
     r = client.post("/api/refdata/materials/import", headers=auth, files=[("file", ("m.xlsx", b.getvalue(), "application/octet-stream"))])
     assert r.status_code == 200 and r.json()["imported"] == 1
     assert any(x["item_name"] == "LAN 케이블" and x["price"] == 1200 for x in client.get("/api/materials", headers=auth).json())
+
+
+def test_13_background_job(client, auth, project):
+    """웹 타임아웃 방지: 산출은 백그라운드 작업으로 실행되고 진행률을 조회할 수 있어야 한다."""
+    r = client.post(f"/api/projects/{project}/takeoff/run", headers=auth).json()
+    assert "job_id" in r
+    for _ in range(120):
+        j = client.get(f"/api/projects/{project}/jobs/{r['job_id']}", headers=auth).json()
+        if j["status"] in ("done", "failed"):
+            break
+        time.sleep(0.5)
+    assert j["status"] == "done", j
+    assert j["progress"] == 100 and j["result"]["items"] > 0

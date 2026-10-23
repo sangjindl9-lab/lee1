@@ -27,6 +27,71 @@ def submit_process_file(file_id: int):
         _executor.submit(process_file, file_id)
 
 
+def submit_job(project_id: int, user_id: int | None, kind: str) -> int:
+    """백그라운드 작업 등록 → job id 즉시 반환. 같은 프로젝트에서 같은 종류가 실행 중이면 그 id 를 돌려준다."""
+    from .models import Job
+    db = SessionLocal()
+    try:
+        running = db.query(Job).filter(Job.project_id == project_id, Job.kind == kind, Job.status.in_(["queued", "running"])).first()
+        if running:
+            return running.id
+        j = Job(project_id=project_id, user_id=user_id, kind=kind, status="queued", message="대기 중")
+        db.add(j)
+        db.commit()
+        jid = j.id
+    finally:
+        db.close()
+    _executor.submit(run_job, jid)
+    return jid
+
+
+def run_job(job_id: int):
+    from datetime import datetime
+    from . import services
+    from .models import Job, Project, User
+    from .auth import audit
+    db = SessionLocal()
+    try:
+        j = db.get(Job, job_id)
+        j.status, j.progress, j.message = "running", 1, "시작"
+        db.commit()
+
+        def progress(p: int, msg: str):
+            j.progress, j.message = max(1, min(99, int(p))), msg[:300]
+            db.commit()
+
+        if j.kind == "takeoff":
+            d = services.run_detection(db, j.project_id, progress=lambda p, m: progress(5 + p * 0.55, m))
+            progress(62, "배관·케이블 선로 분석")
+            r = services.run_routes(db, j.project_id)
+            progress(85, "물량 집계")
+            items = services.recompute_quantities(db, j.project_id)
+            progress(93, "교차 검증")
+            issues = services.cross_validate(db, j.project_id)
+            j.result = {"detection": d, "routes": r, "items": len(items), "cross_issues": len(issues)}
+        elif j.kind == "legend_auto":
+            created = services.auto_detect_legends(db, j.project_id, progress=lambda p, m: progress(5 + p * 0.9, m))
+            proj = db.get(Project, j.project_id)
+            n = services.apply_library(db, j.project_id, proj.company_id)
+            j.result = {"created": len(created), "rows": sum(len(t.symbols) for t in created), "library_hits": n}
+        else:
+            raise ValueError(f"알 수 없는 작업: {j.kind}")
+        user = db.get(User, j.user_id) if j.user_id else None
+        audit(db, user, f"job_{j.kind}", j.project_id, **{k: v for k, v in j.result.items() if not isinstance(v, (dict, list))})
+        j.status, j.progress, j.message, j.finished_at = "done", 100, "완료", datetime.utcnow()
+        db.commit()
+    except Exception as ex:
+        log.error("job %s failed: %s\n%s", job_id, ex, traceback.format_exc())
+        db.rollback()
+        j = db.get(Job, job_id)
+        if j:
+            from datetime import datetime as _dt
+            j.status, j.error, j.message, j.finished_at = "failed", f"{type(ex).__name__}: {ex}"[:1000], "실패", _dt.utcnow()
+            db.commit()
+    finally:
+        db.close()
+
+
 def _set(db, f: DrawingFile, **kw):
     for k, v in kw.items():
         setattr(f, k, v)
@@ -125,9 +190,11 @@ DISC_KEYS = {
 }
 TYPE_KEYS = {
     "범례": ["범례", "LEGEND", "SYMBOL"],
-    "계통도": ["계통도", "계통", "RISER", "DIAGRAM", "결선도"],
-    "일람표": ["일람표", "SCHEDULE", "LIST"],
-    "평면도": ["평면도", "배치도", "PLAN", "LAYOUT"],
+    "계통도": ["계통도", "계통", "RISER", "DIAGRAM", "결선도", "구성도"],
+    "일람표": ["일람표", "SCHEDULE", "LIST", "목록"],
+    "평면도": ["평면도", "배치도", "PLAN", "LAYOUT", "포설도"],
+    "상세도": ["상세도", "DETAIL", "외형도", "단면도", "설치도"],
+    "기타": ["개요", "현황", "표지", "주기사항", "곡선도"],
 }
 
 
@@ -153,7 +220,7 @@ def guess_sheet_meta(sd: SheetData) -> tuple[str | None, str | None, str | None,
         for k, keys in TYPE_KEYS.items():
             if k not in found and any(x in up for x in keys):
                 found[k] = t["text"].strip()
-    for k in ("평면도", "계통도", "일람표", "범례"):
+    for k in ("평면도", "상세도", "계통도", "일람표", "범례", "기타"):
         if k in found:
             if k == "범례" and big and found[k] != big[0]["text"].strip():
                 continue

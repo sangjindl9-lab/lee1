@@ -136,7 +136,7 @@ def make_vector_pdf(path: Path):
     """벡터 PDF: 원형 기호 5개 + 'LEGEND' 표 (벡터 지문 매칭 테스트)."""
     pdf = pymupdf.open()
     page = pdf.new_page(width=842, height=595)
-    page.insert_text((40, 40), "[TEST DRAWING] VECTOR PDF  SCALE 1/200", fontsize=12)
+    page.insert_text((40, 40), "[TEST DRAWING] LIGHTING PLAN  SCALE 1/200", fontsize=12)
     page.insert_text((40, 60), "E-01", fontsize=10)
     for i in range(5):
         c = pymupdf.Point(150 + i * 100, 300)

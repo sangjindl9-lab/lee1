@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from .config import settings
 from .engine import legend as legend_engine
 from .engine.detect import detect_in_sheet
-from .engine.geometry import in_region
+from .engine.geometry import in_region, polyline_length
 from .engine.routes import build_routes, match_segments_for_symbol
 from .models import (Circuit, DetectedSymbol, DetectStatus, DrawingFile, DrawingSheet, LegendSymbol, LegendTable,
                      Project, QuantityEvidence, QuantityItem, QuantityStatus, ReviewIssue, Route, RouteKind,
@@ -95,10 +95,15 @@ def _ocr_cell_fn(s: DrawingSheet):
     return lambda region: ocr_cell(s.raster_path, dpi, H, region)
 
 
-def auto_detect_legends(db: Session, pid: int) -> list[LegendTable]:
+def auto_detect_legends(db: Session, pid: int, progress=None) -> list[LegendTable]:
     """모든 시트에서 범례표 자동 탐색. 이미 같은 시트·영역에 승인된 범례가 있으면 건너뜀."""
     created = []
-    for s in project_sheets(db, pid):
+    sheets_ = project_sheets(db, pid)
+    for si, s in enumerate(sheets_):
+        if progress:
+            progress(100 * si / max(len(sheets_), 1), f"범례표 탐색 {si + 1}/{len(sheets_)} ({s.drawing_no or s.sheet_name})")
+        if "목록" in (s.drawing_title or "").replace(" ", ""):
+            continue   # 도면목록표는 범례 탐색 대상 아님
         geo = load_geometry(s)
         existing = db.query(LegendTable).filter_by(project_id=pid, sheet_id=s.id).all()
         for res in legend_engine.auto_detect_legends(geo, _ocr_cell_fn(s)):
@@ -163,17 +168,20 @@ def legend_exclude_regions(db: Session, pid: int, sheet_id: int) -> list[dict]:
 
 
 # ---------------- 기호 검출 ----------------
-def run_detection(db: Session, pid: int, sheet_ids: list[int] | None = None) -> dict:
+def run_detection(db: Session, pid: int, sheet_ids: list[int] | None = None, progress=None) -> dict:
     """프로젝트 전체(또는 지정 시트) 기호 검출. 사용자 잠금(user_locked) 행은 보존."""
     symbols = [ls for ls in db.query(LegendSymbol).filter_by(project_id=pid).all()
                if ls.category == "device" and ls.status != SymbolStatus.unresolved]
     sym_dicts = [{"id": s.id, "block_name": s.block_name, "fingerprint": s.fingerprint, "symbol_name": s.symbol_name,
-                  "category": s.category, "image_path": s.image_path} for s in symbols]
+                  "category": s.category, "image_path": s.image_path, "item_name": s.item_name} for s in symbols]
     summary = {"sheets": 0, "detected": 0, "preserved": 0}
     _clear_evidence(db, pid)
-    for s in project_sheets(db, pid):
+    sheets_ = project_sheets(db, pid)
+    for si, s in enumerate(sheets_):
         if sheet_ids and s.id not in sheet_ids:
             continue
+        if progress:
+            progress(100 * si / max(len(sheets_), 1), f"기호 검출 {si + 1}/{len(sheets_)} ({s.drawing_no or s.sheet_name})")
         geo = load_geometry(s)
         excl = legend_exclude_regions(db, pid, s.id)
         # 도면종류=범례 시트의 검출은 설치 수량·교차검증에서 제외된다 (recompute/cross_validate 참고)
@@ -197,9 +205,13 @@ def run_detection(db: Session, pid: int, sheet_ids: list[int] | None = None) -> 
             if any(math.dist((L.x, L.y), (d.x, d.y)) <= size * 0.5 for L in locked):
                 continue
             seq[d.legend_symbol_id] += 1
+            st = DetectStatus(d.status)
+            note = None
+            if not s.drawing_type:
+                st, note = DetectStatus.review, "도면 종류 미확정 시트 — 평면도이면 시트 종류를 지정하십시오"
             db.add(DetectedSymbol(project_id=pid, sheet_id=s.id, legend_symbol_id=d.legend_symbol_id, entity_handle=d.handle,
                                   method=d.method, x=d.x, y=d.y, bbox=d.bbox, confidence=d.confidence, seq_no=seq[d.legend_symbol_id],
-                                  status=DetectStatus(d.status), install_type=d.install_type, floor_zone=s.floor_zone))
+                                  status=st, install_type=d.install_type, floor_zone=s.floor_zone, note=note))
             summary["detected"] += 1
         summary["sheets"] += 1
     db.commit()
@@ -238,7 +250,15 @@ def run_routes(db: Session, pid: int, sheet_ids: list[int] | None = None) -> dic
             db.flush()   # 세그먼트·회선 먼저 삭제 (FK)
             db.delete(r)
         db.flush()
-        for ls in line_syms:
+        if s.source_kind != "dxf":
+            # PDF: 선종(실선/파선/일점쇄선) + 기호 접속 기반 선로 (레이어가 없는 도면)
+            n_r, n_s = _pdf_routes(db, pid, s, geo, excl, scale, line_syms, carry)
+            summary["routes"] += n_r
+            summary["segments"] += n_s
+            line_syms_this = []
+        else:
+            line_syms_this = line_syms
+        for ls in line_syms_this:
             geo["bbox"] = s.bbox
             segs = match_segments_for_symbol(geo, {"id": ls.id, "layer_hint": ls.layer_hint, "symbol_name": ls.symbol_name,
                                                    "spec": ls.spec, "item_name": ls.item_name}, excl)
@@ -283,6 +303,79 @@ def run_routes(db: Session, pid: int, sheet_ids: list[int] | None = None) -> dic
     return summary
 
 
+def _pdf_routes(db: Session, pid: int, s: DrawingSheet, geo: dict, excl: list[dict], scale, line_syms, carry) -> tuple[int, int]:
+    from .engine.linetype import classify_pattern, pdf_route_groups
+    if not line_syms or not s.drawing_type or s.drawing_type in NON_INSTALL_TYPES:
+        return 0, 0   # 선로 길이는 평면도 계열에서만
+    bb = s.bbox or {"x0": 0, "y0": 0, "x1": 1, "y1": 1}
+    page_dim = max(bb["x1"] - bb["x0"], bb["y1"] - bb["y0"])
+    syms = [{"bbox": d.bbox or {"x0": d.x - 2, "y0": d.y - 2, "x1": d.x + 2, "y1": d.y + 2}}
+            for d in db.query(DetectedSymbol).filter_by(project_id=pid, sheet_id=s.id).all() if d.status != DetectStatus.excluded]
+    groups = pdf_route_groups(geo["prims"], excl, page_dim, syms)
+    # 조각이 적은 그룹은 같은 스타일 전체의 선종을 따른다 (모서리 사선 조각 등)
+    # 스타일 대표 선종: 그 스타일의 긴 그룹들(조각 5개 이상) 길이의 80% 이상이 한 선종일 때만 짧은 그룹에 적용
+    style_len = defaultdict(lambda: defaultdict(float))
+    for g in groups:
+        if len(g["pieces"]) >= 5:
+            style_len[g["style"]][g["pattern"]] += g["length"]
+    style_pat = {}
+    for st, d in style_len.items():
+        tot = sum(d.values())
+        pat, L = max(d.items(), key=lambda kv: kv[1])
+        if tot > 0 and L / tot >= 0.8:
+            style_pat[st] = pat
+    sizes = sorted(max(sb["bbox"]["x1"] - sb["bbox"]["x0"], sb["bbox"]["y1"] - sb["bbox"]["y0"]) for sb in syms) or [5.0]
+    min_len = max(3.0, 1.5 * sizes[len(sizes) // 2])   # 기호 크기보다 짧은 선 조각은 선로로 보지 않는다
+    n_r = n_s = 0
+
+    def long_dash(pieces_lens):
+        L = sorted(pieces_lens)
+        top = L[len(L) // 2:] or L
+        return top[len(top) // 2] if top else 0.0
+
+    # 그룹 → 범례 배정: 선종이 같은 범례 중 범주(배관/케이블/트레이)별로 대시 길이가 가장 가까운 1개
+    assign: dict[int, list] = defaultdict(list)
+    for g in groups:
+        gp = g["pattern"] if len(g["pieces"]) >= 5 else style_pat.get(g["style"], g["pattern"])
+        if g["length"] < min_len or g["touches"] < 1:
+            continue   # 짧은 조각, 어떤 기호에도 닿지 않는 선(표 칸·치수선·견본 선) 은 선로가 아님
+        gd = long_dash([math.dist(p["p"][0], p["p"][-1]) for p in g["pieces"]])
+        by_cat = defaultdict(list)
+        for ls in line_syms:
+            dash = (ls.fingerprint or {}).get("dash") or {}
+            if dash.get("pattern") == gp:
+                by_cat[ls.category].append((ls, long_dash(dash.get("pieces") or [dash.get("seg") or 0])))
+        for cat, cands in by_cat.items():
+            if gp == "solid" or len(cands) == 1 or gd <= 0:
+                best = cands[0][0]
+            else:
+                best = min(cands, key=lambda c: abs(math.log(max(gd, 1e-3) / max(c[1], 1e-3))))[0]
+            assign[best.id].append(g)
+    for ls in line_syms:
+        mine = assign.get(ls.id, [])
+        for ri, g in enumerate(sorted(mine, key=lambda g: -g["length"]), start=1):
+            lm = g["length"] * scale if scale else None
+            route = Route(project_id=pid, sheet_id=s.id, legend_symbol_id=ls.id, kind=RouteKind(ls.category),
+                          name=f"{(ls.item_name or '')[:12]}-{s.drawing_no or s.page_no}-{ri}", horizontal_m=lm,
+                          segment_count=len(g["pieces"]), status=DetectStatus.review if scale is None else DetectStatus.auto)
+            db.add(route)
+            db.flush()
+            for cable_id, n, note in carry.pop((s.id, ls.id, route.name), []):
+                db.add(Circuit(project_id=pid, route_id=route.id, cable_symbol_id=cable_id, circuit_count=n, confirmed=True, note=note))
+            for p in g["pieces"]:
+                L = math.dist(p["p"][0], p["p"][-1]) if len(p["p"]) == 2 else polyline_length(p["p"])
+                db.add(RouteSegment(project_id=pid, sheet_id=s.id, legend_symbol_id=ls.id, route_id=route.id,
+                                    entity_handle=p.get("h"), layer=g["style"], points=p["p"], length_du=L,
+                                    length_m=(L * scale) if scale else None))
+            n_r += 1
+            n_s += len(g["pieces"])
+    db.flush()
+    return n_r, n_s
+
+
+NON_INSTALL_TYPES = {"계통도", "일람표", "범례", "상세도", "기타"}
+
+
 def _clear_evidence(db: Session, pid: int):
     """검출/선로 재생성 전 근거 연결 제거 (집계는 recompute 에서 다시 만든다)."""
     ids = [q.id for q in db.query(QuantityItem.id).filter_by(project_id=pid).all()]
@@ -312,7 +405,8 @@ def recompute_quantities(db: Session, pid: int) -> list[QuantityItem]:
     syms = {s.id: s for s in db.query(LegendSymbol).filter_by(project_id=pid).all()}
 
     # 1) 기구 수량 — 계통도·일람표·범례 시트의 기호는 설치 수량이 아니라 교차검증용이므로 제외
-    non_install = {"계통도", "일람표", "범례"}
+    non_install = NON_INSTALL_TYPES
+    untyped: dict[tuple, int] = defaultdict(int)
     groups: dict[tuple, list[DetectedSymbol]] = defaultdict(list)
     for d in db.query(DetectedSymbol).filter_by(project_id=pid).all():
         if d.status == DetectStatus.excluded or d.legend_symbol_id not in syms:
@@ -320,6 +414,9 @@ def recompute_quantities(db: Session, pid: int) -> list[QuantityItem]:
         sh = sheets.get(d.sheet_id)
         if sh is not None and (sh.drawing_type or "") in non_install:
             continue
+        if sh is not None and not sh.drawing_type and d.status not in (DetectStatus.verified, DetectStatus.edited, DetectStatus.manual):
+            untyped[(sh.drawing_no or sh.sheet_name, d.legend_symbol_id)] += 1
+            continue   # 종류 미상 시트의 자동 검출은 합계에서 빼고 검토 목록으로
         groups[(d.legend_symbol_id, d.install_type, d.floor_zone)].append(d)
     for (lid, itype, fz), ds in groups.items():
         ls = syms[lid]
@@ -342,6 +439,11 @@ def recompute_quantities(db: Session, pid: int) -> list[QuantityItem]:
             db.add(QuantityEvidence(item_id=q.id, sheet_id=d.sheet_id, detected_symbol_id=d.id, value=1.0))
         items.append(q)
 
+    for (sname, lid), n in untyped.items():
+        ls = syms.get(lid)
+        _issue(db, pid, None, "UNTYPED_SHEET", "warn",
+               f"시트 '{sname}' 에서 '{ls.item_name if ls else lid}' {n}개가 검출되었으나 도면 종류가 미확정이라 수량에서 제외했습니다. "
+               f"평면도이면 시트 종류를 '평면도'로 지정하거나 검출 기호를 승인하십시오.")
     # 2) 전선관·트레이 길이
     routes = db.query(Route).filter_by(project_id=pid).all()
     for kind in (RouteKind.conduit, RouteKind.tray):
@@ -490,61 +592,56 @@ def cross_validate(db: Session, pid: int) -> list[ReviewIssue]:
 
 
 def sample_symbol_from_sheet(db: Session, ls: LegendSymbol, sheet: DrawingSheet, x: float, y: float, radius: float | None = None) -> dict:
-    """사용자가 도면에서 클릭한 위치의 도형 묶음을 이 범례 기호의 지문으로 등록 (범례 그림과 도면 기호가 다를 때).
-    같은 스타일의 프리미티브를 클릭점 주변 창에서 모아 비트맵 지문을 만든다."""
-    from .engine.geometry import bbox_of, bitmap_signature, prim_bbox, shape_fingerprint
+    """도면 위 기호 1개를 클릭 → 그 기호의 외곽 도형 + 내부 내용을 이 범례 기호의 검색 지문으로 학습.
+    기존 지문은 변형(variants)으로 보존되어, 같은 품목이 여러 모양으로 그려져도 모두 검색된다."""
+    from .engine.anchor import _interior, _interior_desc, _aspect, _color, _sheet_index
+    from .engine.geometry import bbox_of, bitmap_signature, prim_bbox
     import math
     geo = load_geometry(sheet)
     prims = geo["prims"]
+    closed, grid, cell = _sheet_index(geo)
     bb = sheet.bbox or {"x0": 0, "y0": 0, "x1": 1, "y1": 1}
-    r = radius or max(bb["x1"] - bb["x0"], bb["y1"] - bb["y0"]) * 0.008
-    # 1) 클릭점에 가장 가까운 닫힌 도형/원 → 앵커, 없으면 가장 가까운 프리미티브
+    r = radius or max(bb["x1"] - bb["x0"], bb["y1"] - bb["y0"]) * 0.01
+    # 클릭점을 포함하거나 가장 가까운 닫힌 도형(원·사각형·조립 사각형)
+    def greyness(col: str) -> float:
+        try:
+            v = [int(col[i:i + 2], 16) / 255 for i in (1, 3, 5)]
+            return sum(v) / 3   # 0=검정, 1=흰색
+        except Exception:
+            return 0.0
+
     best = None
-    for p in prims:
-        if p.get("t") in ("h", "ld") or (p.get("t") == "f" and len(p["p"]) > 12) or len(p["p"]) < 2:
-            continue
-        b = prim_bbox(p)
-        if max(b["x1"] - b["x0"], b["y1"] - b["y0"]) > 4 * r:
+    for (i, k, b, s_, asp, col, dashed) in closed:
+        if s_ > 6 * r or s_ < 1.5:
             continue
         cx, cy = (b["x0"] + b["x1"]) / 2, (b["y0"] + b["y1"]) / 2
-        d = math.dist((cx, cy), (x, y))
-        closed = p.get("t") in ("c", "f") or (len(p["p"]) >= 4 and math.dist(p["p"][0], p["p"][-1]) < 0.3)
-        score = d - (r if closed else 0)
-        if d <= 2 * r and (best is None or score < best[0]):
-            best = (score, p, b)
+        inside = b["x0"] - 0.5 <= x <= b["x1"] + 0.5 and b["y0"] - 0.5 <= y <= b["y1"] + 0.5
+        d = 0.0 if inside else math.dist((cx, cy), (x, y))
+        if d > 2 * r:
+            continue
+        # 우선순위: 회색 배경선(건축 참조) 보다 진한 기호선 → 클릭을 포함 → 포함하는 것 중 가장 작은 도형
+        score = (greyness(col) > 0.45, d, s_)
+        if best is None or score < best[0]:
+            best = (score, i, k, b, s_, col, dashed)
     if not best:
-        return {"ok": False, "error": "클릭 위치 근처에서 기호 도형을 찾지 못했습니다."}
-    _, ap, ab = best
-    layers = {ap.get("layer")}
-    size0 = max(ab["x1"] - ab["x0"], ab["y1"] - ab["y0"])
-    half = max(size0 * 0.9, r * 0.6)
-    acx, acy = (ab["x0"] + ab["x1"]) / 2, (ab["y0"] + ab["y1"]) / 2
-    cl = []
-    for p in prims:
-        if p.get("t") in ("h", "ld") or (p.get("t") == "f" and len(p["p"]) > 12) or len(p["p"]) < 2:
-            continue
-        # 앵커와 같은 스타일(선굵기·색) 또는 채움만 — 바탕 지도(얇은 회색선) 등 다른 스타일은 제외
-        if p.get("layer") != ap.get("layer") and p.get("t") != "f":
-            continue
-        b = prim_bbox(p)
-        if b["x0"] >= acx - half and b["x1"] <= acx + half and b["y0"] >= acy - half and b["y1"] <= acy + half:
-            cl.append(p)
-    styles = {p.get("layer") for p in cl if not p.get("t") == "f"}
-    fp = shape_fingerprint([{"t": p["t"], "p": p["p"], "r": p.get("r")} for p in cl], [])
-    fp.update(bitmap_signature([{"t": p["t"], "p": p["p"]} for p in cl]))
-    fp["layers"] = sorted(s for s in styles | {p.get("layer") for p in cl if p.get("t") == "f"} if s)
-    fp["anchor_ratio"] = round(size0 / (fp.get("size") or size0 or 1), 3)
-    fp["anchor_bm"] = bitmap_signature([{"t": ap["t"], "p": ap["p"]}]).get("bm")
-    fp["sampled_from"] = {"sheet_id": sheet.id, "x": x, "y": y}
-    # 학습: 기존 지문은 변형(variants)으로 보존 — 같은 품목이 도면에서 여러 모양으로 그려질 때 모두 검색
+        return {"ok": False, "error": "클릭 위치에서 원·사각형 같은 닫힌 도형을 찾지 못했습니다. 기호 바깥 테두리를 클릭하십시오."}
+    _, i, k, b, s_, col, dashed = best
+    near = set()
+    for gx in range(int(b["x0"] // cell), int(b["x1"] // cell) + 1):
+        for gy in range(int(b["y0"] // cell), int(b["y1"] // cell) + 1):
+            near.update(grid.get((gx, gy), ()))
+    inner = _interior(((j, prims[j]) for j in near), i, b, col)
+    anchor = {"kind": k, "size": round(s_, 3), "aspect": _aspect(b), "color": col, "dashed": bool(dashed),
+              "interior": _interior_desc(inner, b), "outer_ratio": 1.0, "sampled": True}
+    fp = {"n": 1 + len(inner), "anchor": anchor, "size": round(s_, 3), "sampled_from": {"sheet_id": sheet.id, "x": x, "y": y}}
     old = ls.fingerprint or {}
     variants = list(old.get("variants") or [])
-    if old.get("bm"):
-        variants.append({k: v for k, v in old.items() if k != "variants"})
+    if old.get("anchor") or old.get("bm"):
+        variants.append({k2: v for k2, v in old.items() if k2 != "variants"})
     fp["variants"] = variants[-8:]
     ls.fingerprint = fp
-    ls.block_name = ap.get("blk") or ls.block_name
     ls.status = SymbolStatus.edited
     ls.confidence = 1.0
     db.commit()
-    return {"ok": True, "prims": len(cl), "size": fp.get("size"), "layers": fp["layers"], "bbox": bbox_of([q for p in cl for q in p["p"]])}
+    return {"ok": True, "kind": k, "size": round(s_, 2), "dashed": bool(dashed), "interior_empty": anchor["interior"]["empty"],
+            "prims": len(inner) + 1, "layers": [col], "bbox": b}

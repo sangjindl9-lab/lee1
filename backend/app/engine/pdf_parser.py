@@ -27,6 +27,16 @@ except ImportError:  # pragma: no cover
 
 SCALE_RE = re.compile(r"(?:S\s*[=:：]|SCALE\s*[=:：]?|축\s*척\s*[=:：]?|A3\s*[=:：]|A1\s*[=:：])\s*1\s*[/:：]\s*(\d{2,5})", re.I)
 RENDER_DPI = 150
+PAPER_SCALE_RE = re.compile(r"(A[0-4])[:：=]?(?:S=)?1[/:：](\d{2,5})")
+PAPERS = {"A0": (1189, 841), "A1": (841, 594), "A2": (594, 420), "A3": (420, 297), "A4": (297, 210)}
+
+
+def _paper_of(w_pt: float, h_pt: float) -> str | None:
+    w, h = sorted((w_pt * 25.4 / 72, h_pt * 25.4 / 72), reverse=True)
+    for name, (pw, ph) in PAPERS.items():
+        if abs(w - pw) / pw < 0.04 and abs(h - ph) / ph < 0.04:
+            return name
+    return None
 OCR_DPI = 300
 
 
@@ -342,19 +352,27 @@ def _parse_page(page: pymupdf.Page, pno: int, out_dir: Path) -> SheetData:
                 texts.append({"h": handle, "text": o["text"], "x": x, "y": H - y - h, "layer": "OCR", "height": h, "bbox": bb, "conf": o["conf"]})
                 entities.append({"h": handle, "t": "OCRTEXT", "layer": "OCR", "text": o["text"], "x": x, "y": H - y - h, "bbox": bb, "conf": o["conf"]})
 
-    # --- 축척 추정 (확정 아님). 여러 값이면 가장 큰 분모(작은 축척 = 출력 용지 기준일 가능성) 를 후보로 두고 경고 ---
+    # --- 축척 추정 (확정 아님) ---
+    # 한국 도면 표제란은 'A1: 1/200  A3: 1/400' 처럼 출력 용지별 축척을 함께 적는다.
+    # PDF 페이지 크기로 용지를 판정해 그 용지의 축척을 고르고, 근거를 경고에 남긴다.
+    paper = _paper_of(W, H)
+    tagged: dict[str, int] = {}
     denoms = []
     for t in texts:
-        for m in SCALE_RE.finditer(t["text"].replace(" ", "")):
+        raw = t["text"].replace(" ", "").upper()
+        for m in PAPER_SCALE_RE.finditer(raw):
+            tagged.setdefault(m.group(1), int(m.group(2)))
+        for m in SCALE_RE.finditer(raw):
             denoms.append(int(m.group(1)))
-    scale_guess = None
-    if denoms:
-        denom = max(denoms, key=denoms.count)
+    scale_guess, basis = None, None
+    if paper and paper in tagged:
+        denom, basis = tagged[paper], f"용지 {paper} 기준 표기 'A{paper[1:]}: 1/{tagged[paper]}'"
+    elif denoms:
+        denom = max(set(denoms), key=denoms.count)
+        basis = f"도면 표기 1/{denom}" + (f" (여러 값 {sorted(set(denoms))} 중 최빈값)" if len(set(denoms)) > 1 else "")
+    if basis:
         scale_guess = (25.4 / 72.0) / 1000.0 * denom
-        if len(set(denoms)) > 1:
-            warnings.append(f"축척 표기가 여러 개입니다({', '.join('1/' + str(x) for x in sorted(set(denoms)))}). 1/{denom} 을 후보로 두었으니 출력 용지 기준으로 확인·확정하십시오.")
-        else:
-            warnings.append(f"도면 문자에서 축척 1/{denom} 을(를) 추정했습니다. 산출 전 확인·승인이 필요합니다.")
+        warnings.append(f"축척 1/{denom} 추정 — {basis}, PDF 용지 {paper or '비표준'} ({W * 25.4 / 72:.0f}×{H * 25.4 / 72:.0f}mm). 확인 후 확정하십시오.")
     else:
         warnings.append("축척 표기를 찾지 못했습니다. 길이 산출 전 축척 또는 기준거리를 입력하십시오.")
 

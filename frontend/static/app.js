@@ -108,7 +108,8 @@ function renderLeft() {
 }
 
 function leftFiles() {
-  let h = `<div class="drop" ondragover="event.preventDefault()" ondrop="dropFiles(event)">DWG·DXF·PDF·JPG·PNG·XLSX 파일을 끌어다 놓거나<br><input type="file" multiple onchange="uploadFiles(this.files)"></div><div class="list">`;
+  const unconf = W.sheets.filter(s => !s.scale_confirmed && s.scale_factor).length;
+  let h = (unconf ? `<div class="warnbox">추정 축척이 있는 시트 ${unconf}장이 아직 확정되지 않았습니다. 시트별 경고의 근거(용지·표기)를 확인한 뒤 <button class="sm ok" onclick="api('/api/projects/${W.pid}/sheets/confirm-scales',{method:'POST'}).then(r=>{toast(r.confirmed+'장 축척 확정');refreshAll()})">추정 축척 일괄 확정</button></div>` : "") + `<div class="drop" ondragover="event.preventDefault()" ondrop="dropFiles(event)">DWG·DXF·PDF·JPG·PNG·XLSX 파일을 끌어다 놓거나<br><input type="file" multiple onchange="uploadFiles(this.files)"></div><div class="list">`;
   for (const f of W.files) {
     h += `<div class="item" style="flex-direction:column;align-items:stretch"><div class="row" style="justify-content:space-between"><span>${esc(f.name)} <span class="badge ${f.status}">${KO[f.status] || f.status}</span></span><span><button class="sm" onclick="api('/api/projects/${W.pid}/files/${f.id}/reprocess',{method:'POST'}).then(refreshAll)">재분석</button><button class="sm err" onclick="if(confirm('삭제?'))api('/api/projects/${W.pid}/files/${f.id}',{method:'DELETE'}).then(refreshAll)">×</button></span></div>`;
     if (["queued", "processing"].includes(f.status)) h += `<div class="prog"><i style="width:${f.progress}%"></i></div>`;
@@ -126,7 +127,7 @@ function leftFiles() {
 function toggleLayer(n) { W.hidden.has(n) ? W.hidden.delete(n) : W.hidden.add(n); draw(); }
 
 function leftLegend() {
-  let h = `<div class="row"><button class="primary sm" onclick="api('/api/projects/${W.pid}/legends/auto',{method:'POST'}).then(r=>{toast('범례표 '+r.created.length+'개 인식, 라이브러리 보강 '+r.library_hits+'건');refreshAll()})">🔍 범례표 자동 인식</button><button class="sm ok" onclick="api('/api/projects/${W.pid}/legends/approve-all',{method:'POST'}).then(r=>{toast(r.approved+'건 승인');refreshAll()})">품명 있는 항목 일괄 승인</button></div><div class="small muted">자동 인식 실패 시 상단 '범례 영역 지정' 으로 도면에서 표를 드래그하십시오.</div>`;
+  let h = `<div class="row"><button class="primary sm" onclick="runLegendAuto()">🔍 범례표 자동 인식</button><button class="sm ok" onclick="api('/api/projects/${W.pid}/legends/approve-all',{method:'POST'}).then(r=>{toast(r.approved+'건 승인');refreshAll()})">품명 있는 항목 일괄 승인</button></div><div class="small muted">자동 인식 실패 시 상단 '범례 영역 지정' 으로 도면에서 표를 드래그하십시오.</div>`;
   if (!W.legends.length) h += `<p class="muted">인식된 범례가 없습니다.</p>`;
   for (const t of W.legends) {
     h += `<div class="card" style="padding:8px"><div class="row" style="justify-content:space-between"><b>${esc(t.title)}</b><span><span class="badge">${t.source}</span> ${(t.confidence * 100).toFixed(0)}% <button class="sm" onclick="if(t=W.sheets.find(s=>s.id==${t.sheet_id}))openSheet(${t.sheet_id},${JSON.stringify(t.region)})">위치</button><button class="sm err" onclick="if(confirm('범례표 삭제?'))api('/api/projects/${W.pid}/legends/${t.id}',{method:'DELETE'}).then(refreshAll)">×</button></span></div>`;
@@ -304,7 +305,28 @@ async function updDet(id, json) { await api(`/api/projects/${W.pid}/takeoff/symb
 async function bulk(status) { const d = W.dets.find(x => x.id === W.sel.id); const ids = W.dets.filter(x => x.legend_symbol_id === d.legend_symbol_id && x.status !== "excluded").map(x => x.id); await api(`/api/projects/${W.pid}/takeoff/symbols/bulk?status=${status}`, { method: "POST", json: ids }); refreshAll(); }
 async function segStatus(id, status) { await api(`/api/projects/${W.pid}/takeoff/segments/${id}?status=${status}`, { method: "PUT" }); refreshAll(); }
 async function saveLegend(id, status) { await api(`/api/projects/${W.pid}/legends/symbols/${id}`, { method: "PUT", json: { symbol_name: $("#g_sym").value || null, block_name: $("#g_blk").value || null, item_name: $("#g_item").value || null, spec: $("#g_spec").value || null, unit: $("#g_unit").value || null, discipline: $("#g_disc").value || null, category: $("#g_cat").value, layer_hint: $("#g_layer").value || null, status, save_to_library: $("#g_lib").checked } }); refreshAll(); }
-async function runTakeoff() { toast("자동 물량산출 실행 중…"); const r = await api(`/api/projects/${W.pid}/takeoff/run`, { method: "POST" }); toast(`검출 ${r.detection.detected}개 (보존 ${r.detection.preserved}), 선로 ${r.routes.routes}개, 물량 ${r.items}행, 교차검증 이슈 ${r.cross_issues}건`); refreshAll(); }
+async function waitJob(jobId, label) {
+  const box = document.createElement("div"); box.className = "jobbox"; document.body.appendChild(box);
+  try {
+    for (;;) {
+      const j = await api(`/api/projects/${W.pid}/jobs/${jobId}`);
+      box.innerHTML = `<b>${esc(label)}</b> ${j.progress}% <div class="prog"><i style="width:${j.progress}%"></i></div><span class="small">${esc(j.message || "")}</span>`;
+      if (j.status === "done") return j.result;
+      if (j.status === "failed") { toast(`${label} 실패: ${j.error}`, true); throw new Error(j.error); }
+      await new Promise(r => setTimeout(r, 1500));
+    }
+  } finally { box.remove(); }
+}
+async function runTakeoff() {
+  const { job_id } = await api(`/api/projects/${W.pid}/takeoff/run`, { method: "POST" });
+  const r = await waitJob(job_id, "자동 물량산출");
+  toast(`검출 ${r.detection.detected}개 (보존 ${r.detection.preserved}), 선로 ${r.routes.routes}개, 물량 ${r.items}행, 교차검증 이슈 ${r.cross_issues}건`); refreshAll();
+}
+async function runLegendAuto() {
+  const { job_id } = await api(`/api/projects/${W.pid}/legends/auto`, { method: "POST" });
+  const r = await waitJob(job_id, "범례표 자동 인식");
+  toast(`범례표 ${r.created}개 (${r.rows}행) 인식, 라이브러리 보강 ${r.library_hits}건`); refreshAll();
+}
 function exportXlsx() { dl(`/api/projects/${W.pid}/export/xlsx`, `물량산출조서_${W.project.name}.xlsx`); }
 async function dl(url, name) { const r = await fetch(url, { headers: { Authorization: "Bearer " + S.token } }); if (!r.ok) return toast("출력 실패: " + r.status, true); const a = document.createElement("a"); a.href = URL.createObjectURL(await r.blob()); a.download = name; a.click(); }
 async function loadAuthImages() { for (const im of document.querySelectorAll("img[data-src]")) { const u = im.dataset.src; delete im.dataset.src; try { const r = await fetch(u, { headers: { Authorization: "Bearer " + S.token } }); if (r.ok) im.src = URL.createObjectURL(await r.blob()); } catch (e) { } } }

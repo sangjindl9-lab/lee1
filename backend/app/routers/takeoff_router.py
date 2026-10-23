@@ -38,9 +38,13 @@ def _item_out(db: Session, q: QuantityItem) -> dict:
 
 
 @router.post("/run")
-def run_all(pid: int, user: User = Depends(require_role(*EDIT_ROLES)), db: Session = Depends(get_db)):
-    """기호 검출 → 선로 → 집계 → 교차검증. 사용자 수정은 보존."""
+def run_all(pid: int, wait: bool = False, user: User = Depends(require_role(*EDIT_ROLES)), db: Session = Depends(get_db)):
+    """기호 검출 → 선로 → 집계 → 교차검증. 사용자 수정은 보존.
+    기본은 백그라운드 작업으로 실행하고 {job_id} 를 즉시 반환 (GET /api/jobs/{id} 로 진행률 확인). wait=1 이면 끝까지 기다림."""
     get_project_or_403(db, user, pid)
+    if not wait:
+        from ..jobs import submit_job
+        return {"job_id": submit_job(pid, user.id, "takeoff")}
     d = services.run_detection(db, pid)
     r = services.run_routes(db, pid)
     items = services.recompute_quantities(db, pid)

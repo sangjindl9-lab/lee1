@@ -251,3 +251,44 @@ def set_scale(pid: int, sid: int, body: ScaleIn, user: User = Depends(require_ro
     audit(db, user, "confirm_scale", pid, sheet=sid, scale=s.scale_factor)
     db.commit()
     return _sheet_out(s)
+
+
+
+@router.get("/{pid}/jobs/{jid}")
+def get_job(pid: int, jid: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    from ..models import Job
+    get_project_or_403(db, user, pid)
+    j = db.get(Job, jid)
+    if not j or j.project_id != pid:
+        raise HTTPException(404)
+    return {"id": j.id, "kind": j.kind, "status": j.status, "progress": j.progress, "message": j.message,
+            "result": j.result or {}, "error": j.error, "created_at": j.created_at.isoformat(),
+            "finished_at": j.finished_at.isoformat() if j.finished_at else None}
+
+
+@router.get("/{pid}/jobs")
+def list_jobs(pid: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    from ..models import Job
+    get_project_or_403(db, user, pid)
+    return [{"id": j.id, "kind": j.kind, "status": j.status, "progress": j.progress, "message": j.message}
+            for j in db.query(Job).filter_by(project_id=pid).order_by(Job.id.desc()).limit(10)]
+
+
+
+@router.post("/{pid}/sheets/confirm-scales")
+def confirm_scales(pid: int, only_plans: bool = True, user: User = Depends(require_role(*EDIT_ROLES)), db: Session = Depends(get_db)):
+    """추정 축척이 있는 시트를 한 번에 확정 (도면마다 하나씩 누르지 않도록). 평면도 계열만 기본."""
+    from .. import services
+    n = 0
+    for s in services.project_sheets(db, pid):
+        if s.scale_confirmed or not s.scale_factor:
+            continue
+        if only_plans and (s.drawing_type or "") in ("계통도", "일람표", "범례"):
+            continue
+        s.scale_confirmed = True
+        n += 1
+        for issue in db.query(ReviewIssue).filter_by(sheet_id=s.id, code="SCALE_UNCONFIRMED").all():
+            issue.resolved = True
+    audit(db, user, "confirm_scales", pid, count=n)
+    db.commit()
+    return {"confirmed": n}

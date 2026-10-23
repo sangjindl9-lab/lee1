@@ -203,7 +203,7 @@ def cluster_prims(prims: list[dict], max_size: float, link: float) -> list[list[
     return list(groups.values())
 
 
-def bitmap_signature(prims: list[dict], n: int = BM_N, center: Point | None = None) -> dict:
+def bitmap_signature(prims: list[dict], n: int = BM_N, center: Point | None = None, frame: dict | None = None) -> dict:
     """프리미티브 묶음을 정사각 n×n 비트맵으로 래스터화 (bbox 정규화, 종횡비 유지).
     center(앵커 중심)가 주어지면 앵커에서 가장 먼 점이 +x 축을 향하도록 회전시켜 방향을 정규화한다
     (화살표 방향이 제각각인 등기구 기호 등). 90° 회전·반전은 비교 시 추가로 처리."""
@@ -213,7 +213,7 @@ def bitmap_signature(prims: list[dict], n: int = BM_N, center: Point | None = No
     except ImportError:
         return {}
     pts = [q for pr in prims for q in pr["p"]]
-    if not pts:
+    if not pts and frame is None:
         return {}
     if center is not None:
         far = max(pts, key=lambda q: math.dist(q, center))
@@ -223,7 +223,7 @@ def bitmap_signature(prims: list[dict], n: int = BM_N, center: Point | None = No
                          center[1] + (q[0] - center[0]) * sa + (q[1] - center[1]) * ca)
         prims = [{**pr, "p": [rot(q) for q in pr["p"]]} for pr in prims]
         pts = [q for pr in prims for q in pr["p"]]
-    bb = bbox_of(pts)
+    bb = frame or bbox_of(pts)   # frame: 바깥 도형(앵커) 기준으로 정규화 — 내부 글자 위치·크기까지 비교
     w, h = bb["x1"] - bb["x0"], bb["y1"] - bb["y0"]
     size = max(w, h, 1e-9)
     img = np.zeros((n, n), np.uint8)
