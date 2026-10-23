@@ -24,10 +24,11 @@ export default function StampTab({ onFinish, toast }) {
   const [center, setCenter] = useState('代表理事')
   const [color, setColor] = useState('#d1272e')
   const [centerFont, setCenterFont] = useState(CENTER_FONTS[0][0])
+  const [thin, setThin] = useState(1)
   const [applied, setApplied] = useState(null)   // 만들기 눌렀을 때의 옵션
   const [sel, setSel] = useState(-1)
 
-  const generate = () => { setApplied({ kind, text: text.trim(), center, color, centerFont }); setSel(-1) }
+  const generate = () => { setApplied({ kind, text: text.trim(), center, color, centerFont, thin }); setSel(-1) }
   useEffect(() => { generate() }, []) // 첫 진입 시 예시 생성
 
   const make = () => {
@@ -60,6 +61,9 @@ export default function StampTab({ onFinish, toast }) {
           <label>한자 서체
             <select value={centerFont} onChange={e => setCenterFont(e.target.value)}>{CENTER_FONTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
           </label>
+          <label>획 굵기
+            <select value={thin} onChange={e => setThin(+e.target.value)}><option value={1}>아주 가늘게</option><option value={0.6}>가늘게</option><option value={0.3}>보통</option><option value={0}>굵게 (원본)</option></select>
+          </label>
           <label>색상
             <select value={color} onChange={e => setColor(e.target.value)}>{COLORS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
           </label>
@@ -67,6 +71,9 @@ export default function StampTab({ onFinish, toast }) {
       )}
       {kind !== 'corp' && (
         <div className="sopt">
+          <label>획 굵기
+            <select value={thin} onChange={e => setThin(+e.target.value)}><option value={1}>아주 가늘게</option><option value={0.6}>가늘게</option><option value={0.3}>보통</option><option value={0}>굵게 (원본)</option></select>
+          </label>
           <label>색상
             <select value={color} onChange={e => setColor(e.target.value)}>{COLORS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
           </label>
