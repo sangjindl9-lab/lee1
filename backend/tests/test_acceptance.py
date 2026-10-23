@@ -324,3 +324,22 @@ def test_13_background_job(client, auth, project):
         time.sleep(0.5)
     assert j["status"] == "done", j
     assert j["progress"] == 100 and j["result"]["items"] > 0
+
+
+def test_14_dwg_upload_converts(client, auth):
+    """DWG 업로드 → 내장 LibreDWG 로 DXF 변환 → 시트·레이어·블록 생성. 변환기가 없으면 '변환기 필요' 로 명확히 표시."""
+    from app.engine.dxf_parser import find_dwg2dxf
+    r = client.post("/api/projects", headers=auth, json={"name": "[테스트] DWG 업로드"})
+    pid = r.json()["id"]
+    samples = Path(__file__).parent / "dwg_samples"
+    _upload(client, auth, pid, samples / "example_2018.dwg", samples / "example_2007.dwg")
+    files = wait_done(client, auth, pid)
+    for f in files:
+        if find_dwg2dxf() is None:
+            assert f["status"] == "needs_converter" and "변환기" in f["error"]
+            continue
+        assert f["status"] == "done", f
+        s = f["sheets"][0]
+        assert s["source_kind"] == "dxf" and s["units"] == "mm" and s["scale_confirmed"]
+        assert s["stats"]["inserts"] == 10 and s["stats"]["entities"] >= 40
+        assert any("LibreDWG" in w for w in f["warnings"])

@@ -111,13 +111,16 @@ def process_file(file_id: int):
 
         sheets: list[SheetData] = []
         if f.kind == "dwg":
+            _set(db, f, progress=10, error=None)
             try:
-                dxf = convert_dwg_to_dxf(src, proc_dir / "converted")
+                dxf, conv_warn = convert_dwg_to_dxf(src, proc_dir / "converted")
             except ConversionError as ex:
-                _set(db, f, status=FileStatus.needs_converter, error=str(ex), progress=0)
+                _set(db, f, status=FileStatus.needs_converter if "설치되어 있지 않습니다" in str(ex) else FileStatus.failed,
+                     error=str(ex), progress=0)
                 return
             _set(db, f, progress=30)
             sheets = [parse_dxf(dxf)]
+            sheets[0].warnings = conv_warn + sheets[0].warnings
         elif f.kind == "dxf":
             sheets = [parse_dxf(src)]
         elif f.kind == "pdf":

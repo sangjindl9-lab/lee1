@@ -42,20 +42,57 @@ class ConversionError(Exception):
     pass
 
 
-def convert_dwg_to_dxf(dwg_path: Path, out_dir: Path) -> Path:
-    """적법한 외부 변환기(KET_DWG_CONVERTER_CMD)로 변환. 명령에 {in} {out_dir} 자리표시자 사용.
-    미설정이면 ConversionError — 성공한 척 하지 않는다."""
-    if not settings.dwg_converter_cmd:
-        raise ConversionError("DWG 변환기가 설정되지 않았습니다. KET_DWG_CONVERTER_CMD 를 설정하거나 DXF 로 저장해 업로드하십시오.")
+DWG_VERSIONS = {b"AC1012": "R13", b"AC1014": "R14", b"AC1015": "AutoCAD 2000", b"AC1018": "AutoCAD 2004",
+                b"AC1021": "AutoCAD 2007", b"AC1024": "AutoCAD 2010", b"AC1027": "AutoCAD 2013", b"AC1032": "AutoCAD 2018"}
+
+
+def find_dwg2dxf() -> str | None:
+    import shutil
+    for cand in ("dwg2dxf", "/opt/libredwg/bin/dwg2dxf", "/usr/local/bin/dwg2dxf"):
+        p = shutil.which(cand) or (cand if Path(cand).exists() else None)
+        if p:
+            return p
+    return None
+
+
+def convert_dwg_to_dxf(dwg_path: Path, out_dir: Path) -> tuple[Path, list[str]]:
+    """DWG → DXF. 1) KET_DWG_CONVERTER_CMD (예: ODA File Converter) 가 설정되면 그것을, 2) 없으면 내장 LibreDWG(dwg2dxf, GPL 별도 실행)를 쓴다.
+    변환기가 없거나 실패하면 ConversionError — 성공한 척 하지 않는다. 반환: (dxf 경로, 경고 목록)"""
     out_dir.mkdir(parents=True, exist_ok=True)
-    cmd = settings.dwg_converter_cmd.format(**{"in": str(dwg_path), "out_dir": str(out_dir)})
-    proc = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=600)
-    if proc.returncode != 0:
-        raise ConversionError(f"DWG 변환 실패(code {proc.returncode}): {proc.stderr[:500]}")
-    cands = list(out_dir.glob("*.dxf")) + list(out_dir.glob("*.DXF"))
-    if not cands:
-        raise ConversionError("DWG 변환기가 DXF 파일을 생성하지 않았습니다.")
-    return cands[0]
+    warnings: list[str] = []
+    head = dwg_path.read_bytes()[:6]
+    ver = DWG_VERSIONS.get(head)
+    if not head.startswith(b"AC10"):
+        raise ConversionError("DWG 파일 형식이 아닙니다(헤더 불일치). 파일이 손상되었는지 확인하십시오.")
+    if settings.dwg_converter_cmd:
+        cmd = settings.dwg_converter_cmd.format(**{"in": str(dwg_path), "out_dir": str(out_dir)})
+        proc = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=900)
+        if proc.returncode != 0:
+            raise ConversionError(f"DWG 변환 실패(code {proc.returncode}): {proc.stderr[:500]}")
+        cands = list(out_dir.glob("*.dxf")) + list(out_dir.glob("*.DXF"))
+        if not cands:
+            raise ConversionError("DWG 변환기가 DXF 파일을 생성하지 않았습니다.")
+        return cands[0], warnings
+    exe = find_dwg2dxf()
+    if not exe:
+        raise ConversionError("서버에 DWG 변환기(LibreDWG dwg2dxf)가 설치되어 있지 않습니다. 관리자에게 문의하거나 CAD 에서 DXF 로 저장해 업로드하십시오.")
+    if ver is None:
+        warnings.append(f"DWG 버전 코드 {head.decode(errors='replace')} — 지원 범위(R13~2018 형식) 밖일 수 있습니다.")
+    out = out_dir / (dwg_path.stem + ".dxf")
+    if out.exists():
+        out.unlink()
+    import os
+    env = {**os.environ, "LD_LIBRARY_PATH": "/opt/libredwg/lib:" + os.environ.get("LD_LIBRARY_PATH", "")}
+    try:
+        proc = subprocess.run([exe, "-y", "-o", str(out), str(dwg_path)], capture_output=True, text=True, timeout=900, env=env)
+    except subprocess.TimeoutExpired:
+        raise ConversionError("DWG 변환이 15분 안에 끝나지 않았습니다. 도면을 나누거나 DXF 로 저장해 업로드하십시오.")
+    if not out.exists() or out.stat().st_size < 200:
+        err = (proc.stderr or proc.stdout or "")[-500:]
+        raise ConversionError(f"DWG 변환 실패({ver or '버전 미상'}): {err or '출력 파일 없음'}")
+    warnings.append(f"DWG({ver or '버전 미상'}) 를 LibreDWG 로 DXF 변환했습니다. 표(ACAD_TABLE)·와이프아웃·호 치수 객체는 변환되지 않을 수 있습니다"
+                    " — 범례가 CAD '표' 객체로 그려진 경우 범례 영역을 수동 지정하거나 DXF 로 저장해 올리십시오.")
+    return out, warnings
 
 
 def _v(p) -> tuple[float, float]:
@@ -147,7 +184,12 @@ def block_fingerprint(doc, block_name: str, depth: int = 0) -> tuple[dict, list[
 
 def parse_dxf(path: Path, layout: str = "Model") -> SheetData:
     try:
-        doc = ezdxf.readfile(str(path))
+        try:
+            doc = ezdxf.readfile(str(path))
+        except ezdxf.DXFStructureError:
+            # 변환기 출력 등 약간 어긋난 DXF 는 복구 모드로 읽는다
+            from ezdxf import recover
+            doc, _aud = recover.readfile(str(path))
     except ezdxf.DXFStructureError as ex:
         raise ConversionError(f"DXF 구조 오류: {ex}")
     except Exception as ex:  # 인코딩 등
