@@ -509,6 +509,87 @@ app.get('/api/bids/:kind', async (req, res) => {
   }
 });
 
+// ── 업체검색 ─────────────────────────────────────────────────────────────
+// 사업자번호: 등록업체 기본정보 + 업종(면허) + 최근 낙찰이력
+// 업체명: 사용자정보서비스는 업체명 검색에 등록일 기간(최대 1년)이 필요 → 2000년부터 1년씩 나눠 병렬 조회
+const corpSearchCache = new Map();
+function corpRow(c) {
+  const adrs = [c.adrs, c.dtlAdrs].filter(Boolean).join(' ').replace(/\s*\(\s*\)/g, '').replace(/(\d)-0(?![0-9])/g, '$1').replace(/\s*,\s*/g, ', ').replace(/\s+/g, ' ').trim();
+  return { bizno: String(c.bizno), name: c.corpNm, ceo: c.ceoNm, adrs, tel: c.telNo, fax: c.faxNo, rgnNm: c.rgnNm,
+    bsns: c.corpBsnsDivNm, hdoffce: c.hdoffceDivNm, emplyeNum: c.emplyeNum, opbizDt: String(c.opbizDt || '').slice(0, 10),
+    rgstDt: String(c.rgstDt || '').slice(0, 10), homepage: c.hmpgAdrs, mnfct: c.mnfctDivNm };
+}
+async function pool(tasks, n = 6) {
+  const out = []; let i = 0;
+  await Promise.all(Array.from({ length: n }, async () => { while (i < tasks.length) { const k = i++; out[k] = await tasks[k]().catch((e) => ({ error: e.message })); } }));
+  return out;
+}
+
+app.get('/api/corps/search', async (req, res) => {
+  const q = String(req.query.q || '').trim();
+  if (q.replace(/[^0-9]/g, '').length === 10 && /^[0-9-\s]+$/.test(q)) {
+    const b = q.replace(/[^0-9]/g, '');
+    try {
+      const d = await upstream('usr', 'getPrcrmntCorpBasicInfo02', { inqryDiv: '3', bizno: b, numOfRows: 5, pageNo: 1 });
+      return res.json({ items: (d.items || []).map(corpRow), totalCount: d.items?.length || 0 });
+    } catch (e) { return res.status(502).json({ error: e.message }); }
+  }
+  if (q.length < 2) return res.status(400).json({ error: '업체명은 2글자 이상 입력하세요' });
+  if (MOCK || !KEY) return res.json({ items: [], totalCount: 0, mock: true });
+  const hit = corpSearchCache.get(q);
+  if (hit && Date.now() - hit.t < 24 * 3600 * 1000) return res.json(hit.data);
+  const nowY = new Date(Date.now() + 9 * 3600 * 1000).getUTCFullYear();
+  const years = []; for (let y = nowY; y >= 2000; y--) years.push(y);
+  const results = await pool(years.map((y) => async () => {
+    const items = [];
+    for (let p = 1; p <= 3; p++) {
+      const d = await upstream('usr', 'getPrcrmntCorpBasicInfo02', { inqryDiv: '1', inqryBgnDt: `${y}01010000`, inqryEndDt: `${y}12312359`, corpNm: q, numOfRows: 100, pageNo: p });
+      items.push(...(d.items || []));
+      if (items.length >= d.totalCount || !(d.items || []).length) break;
+    }
+    return { items };
+  }));
+  const seen = new Set(); const rows = [];
+  const errors = results.filter((r) => r?.error).length;
+  for (const r of results) for (const c of r?.items || []) { const b = String(c.bizno); if (!seen.has(b)) { seen.add(b); rows.push(corpRow(c)); } }
+  const norm = (x) => String(x || '').replace(/\(주\)|㈜|주식회사|\(유\)|유한회사|\(합\)|합자회사|\s/g, '');
+  const nq = norm(q);
+  rows.sort((a, b) => (norm(b.name) === nq) - (norm(a.name) === nq) || norm(a.name).localeCompare(norm(b.name), 'ko'));
+  const data = { items: rows.slice(0, 300), totalCount: rows.length, partial: errors > 0 };
+  if (!errors) corpSearchCache.set(q, { t: Date.now(), data });
+  if (corpSearchCache.size > 300) corpSearchCache.delete(corpSearchCache.keys().next().value);
+  res.json(data);
+});
+
+app.get('/api/corps/:bizno/detail', async (req, res) => {
+  const b = String(req.params.bizno).replace(/[^0-9]/g, '');
+  if (b.length !== 10) return res.status(400).json({ error: '사업자번호 10자리가 필요합니다' });
+  try {
+    const kst = new Date(Date.now() + 9 * 3600 * 1000);
+    const months = [0, 1, 2, 3, 4, 5].map((m) => {
+      const end = new Date(Date.UTC(kst.getUTCFullYear(), kst.getUTCMonth() - m + 1, 0));
+      const start = new Date(Date.UTC(kst.getUTCFullYear(), kst.getUTCMonth() - m, 1));
+      const f = (d) => d.toISOString().slice(0, 10).replaceAll('-', '');
+      return [f(start), m === 0 ? f(kst) : f(end)];
+    });
+    const [basic, ind, wins] = await Promise.all([
+      upstream('usr', 'getPrcrmntCorpBasicInfo02', { inqryDiv: '3', bizno: b, numOfRows: 5, pageNo: 1 }).catch((e) => ({ error: e.message })),
+      upstream('usr', 'getPrcrmntCorpIndstrytyInfo02', { inqryDiv: '1', bizno: b, numOfRows: 100, pageNo: 1 }).catch((e) => ({ error: e.message })),
+      pool(months.flatMap(([f, t]) => ['Cnstwk', 'Servc', 'Thng'].map((k) => () =>
+        upstream('scs', `getScsbidListSttus${k}PPSSrch`, { inqryDiv: '2', inqryBgnDt: `${f}0000`, inqryEndDt: `${t}2359`, bizno: b, numOfRows: 100, pageNo: 1 })
+          .then((d) => (d.items || []).filter((x) => String(x.bidwinnrBizno) === b).map((x) => ({ ...x, _kind: k }))))), 6),
+    ]);
+    const c = basic.items?.[0];
+    const industries = (ind.items || []).map((x) => ({ name: x.indstrytyNm, code: x.indstrytyCd, main: x.rprsntIndstrytyYn === 'Y',
+      rgstDt: String(x.rgstDt || '').slice(0, 10), expire: String(x.vldPrdExprtDt || '').slice(0, 10), state: x.indstrytyStatsNm }));
+    const awards = wins.flatMap((w) => (Array.isArray(w) ? w : [])).map((x) => ({ _kind: x._kind, bidNtceNo: x.bidNtceNo, bidNtceOrd: x.bidNtceOrd,
+      bidNtceNm: x.bidNtceNm, dminsttNm: x.dminsttNm, sucsfbidAmt: x.sucsfbidAmt, sucsfbidRate: x.sucsfbidRate, prtcptCnum: x.prtcptCnum, opengDt: x.rlOpengDt }))
+      .sort((a, b2) => String(b2.opengDt).localeCompare(String(a.opengDt)));
+    const seen = new Set();
+    res.json({ basic: c ? corpRow(c) : null, basicError: basic.error || '', industries, awards: awards.filter((a) => { const k = `${a.bidNtceNo}-${a.bidNtceOrd}`; if (seen.has(k)) return false; seen.add(k); return true; }) });
+  } catch (e) { res.status(502).json({ error: e.message }); }
+});
+
 app.get('/api/award/:kind', async (req, res) => {
   const { kind } = req.params;
   const kinds = kind === 'All' ? AWARD_KINDS : AWARD_KINDS.includes(kind) ? [kind] : null;
@@ -584,5 +665,9 @@ app.get(/^\/(?!api).*/, (_req, res) => {
 
 app.listen(PORT, () => {
   console.log(`입찰정보 서버 :${PORT} ${MOCK || !KEY ? '(샘플데이터 모드)' : ''}`);
+  // 무료 플랜 잠들기 방지: 10분마다 자기 주소 호출 (Render가 RENDER_EXTERNAL_URL 자동 제공)
+  if (process.env.RENDER_EXTERNAL_URL && process.env.KEEPALIVE !== '0') {
+    setInterval(() => fetch(`${process.env.RENDER_EXTERNAL_URL}/api/health`).catch(() => {}), 10 * 60 * 1000);
+  }
   if (process.env.SELFTEST === '1') setTimeout(() => selfTest(`http://localhost:${PORT}`).catch((e) => console.log('[SELFTEST] fail', e.message)), 1000);
 });

@@ -1,29 +1,11 @@
-// SELFTEST=1: 업체명 검색 허용 기간 확인
-const one = (s) => s.replace(/\s+/g, ' ');
-export async function selfTest() {
-  const KEY = process.env.DATA_GO_KR_KEY;
-  const base = 'https://apis.data.go.kr/1230000/ao/UsrInfoService02/getPrcrmntCorpBasicInfo02';
-  const tries = [
-    ['3개월', '202607230000', '202610232359'], ['6개월', '202604230000', '202610232359'], ['1년', '202510240000', '202610232359'],
-    ['2년', '202410240000', '202610232359'], ['5년', '202110240000', '202610232359'],
-  ];
-  for (const [label, b, e] of tries) {
+// SELFTEST=1: 업체검색 점검
+export async function selfTest(base) {
+  for (const q of ['서화통신', '에스에스전력', '2258113758']) {
     const t = Date.now();
-    try {
-      const qs = new URLSearchParams({ inqryDiv: '1', inqryBgnDt: b, inqryEndDt: e, corpNm: '전력', type: 'json', numOfRows: '3', pageNo: '1' });
-      const r = await fetch(`${base}?serviceKey=${encodeURIComponent(KEY)}&${qs}`, { signal: AbortSignal.timeout(40000) });
-      const txt = await r.text();
-      const total = (txt.match(/"totalCount"\s*:\s*(\d+)/) || [])[1];
-      const err = (txt.match(/"resultMsg"\s*:\s*"([^"]+)"/) || [])[1];
-      console.log(`[CORPDBG2] ${label} → total=${total} msg=${err} ${Date.now() - t}ms`);
-    } catch (x) { console.log(`[CORPDBG2] ${label} EXC ${x.message} ${Date.now() - t}ms`); }
+    const d = await fetch(`${base}/api/corps/search?q=${encodeURIComponent(q)}`).then((r) => r.json()).catch((e) => ({ error: e.message }));
+    console.log(`[SELFTEST] corps '${q}' → ${d.error || `${d.totalCount}곳 partial=${d.partial}`} ${Date.now() - t}ms :: ${(d.items || []).slice(0, 4).map((c) => `${c.name}/${c.ceo}/${c.tel}/${c.rgnNm}`).join(' | ')}`);
   }
-  // 서화통신 등록일 찾기: 연도별
-  for (const y of ['2002', '2003', '2005', '2010']) {
-    try {
-      const qs = new URLSearchParams({ inqryDiv: '1', inqryBgnDt: `${y}01010000`, inqryEndDt: `${y}12312359`, corpNm: '서화통신', type: 'json', numOfRows: '3', pageNo: '1' });
-      const txt = await fetch(`${base}?serviceKey=${encodeURIComponent(KEY)}&${qs}`, { signal: AbortSignal.timeout(40000) }).then((r) => r.text());
-      console.log(`[CORPDBG2] 서화통신 ${y} → ${one(txt).slice(0, 300)}`);
-    } catch (x) { console.log(`[CORPDBG2] 서화통신 ${y} EXC ${x.message}`); }
-  }
+  const t = Date.now();
+  const d = await fetch(`${base}/api/corps/2258113758/detail`).then((r) => r.json()).catch((e) => ({ error: e.message }));
+  console.log(`[SELFTEST] corp detail → ${d.error || ''} ${Date.now() - t}ms basic=${d.basic?.name} 업종=${(d.industries || []).map((x) => x.name).join(',')} 낙찰=${d.awards?.length} :: ${(d.awards || []).slice(0, 3).map((a) => `${a.bidNtceNm}/${a.sucsfbidAmt}`).join(' | ')}`);
 }
