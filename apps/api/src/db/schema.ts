@@ -74,6 +74,28 @@ export const userSessions = pgTable('user_session', {
   revokedAt: ts('revoked_at'),
 }, (t) => [index('user_session_user_idx').on(t.userId)]);
 
+// ───────────── 도장 ─────────────
+/** COMPANY: 회사 직인, CEO: 대표자 도장, USER: 사용자 개인 도장 */
+export const sealKind = pgEnum('seal_kind', ['COMPANY', 'CEO', 'USER']);
+
+/**
+ * 도장 이미지 (PNG, 배경 투명). 바꿀 때는 새 행을 넣고 이전 행은 retiredAt 으로 보관만 한다.
+ * 결재 단계는 그 순간의 도장 행을 가리키므로, 나중에 도장을 바꿔도 지난 결재란은 그대로 남는다.
+ */
+export const sealImages = pgTable('seal_image', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  kind: sealKind('kind').notNull(),
+  companyId: uuid('company_id').references(() => companies.id),
+  userId: uuid('user_id').references(() => users.id),
+  mime: text('mime').notNull(),
+  data: text('data').notNull(), // base64
+  width: integer('width'),
+  height: integer('height'),
+  createdAt: ts('created_at').notNull().defaultNow(),
+  createdById: uuid('created_by_id'),
+  retiredAt: ts('retired_at'),
+}, (t) => [index('seal_company_idx').on(t.companyId, t.kind), index('seal_user_idx').on(t.userId, t.kind)]);
+
 // ───────────── 소속·역할·권한 ─────────────
 export const dataScope = pgEnum('data_scope', ['COMPANY', 'ASSIGNED', 'CONFIRMED_ONLY']);
 
@@ -356,6 +378,7 @@ export const approvalSteps = pgTable('approval_step', {
   state: stepState('state').notNull().default('WAITING'),
   actedById: uuid('acted_by_id'),
   actedByName: text('acted_by_name'),
+  actedStampId: uuid('acted_stamp_id'), // 처리 순간의 개인 도장 (없으면 이름 도장으로 표시)
   actedAt: ts('acted_at'),
   comment: text('comment'),
 }, (t) => [uniqueIndex('approval_step_uq').on(t.approvalId, t.stepNo)]);

@@ -11,6 +11,7 @@ import { D, moneyStr } from '../common/money';
 import { ZodPipe } from '../common/zod.pipe';
 import { DB, DB_TOKEN, Tx } from '../db/db';
 import { approvalLines, approvals, approvalSteps, memberships, membershipRoles, roles, users } from '../db/schema';
+import { activeUserStampId } from '../admin/seals';
 
 export const DOC_TYPES = ['PURCHASE_ORDER', 'PAYMENT_REQUEST', 'BUDGET', 'CLAIM', 'CONTRACT_CHANGE', 'SUBCONTRACT', 'SUB_CLAIM', 'TAX_ISSUE'] as const;
 export type DocType = (typeof DOC_TYPES)[number];
@@ -157,8 +158,9 @@ export class ApprovalsService {
       .values({ companyId: ctx.companyId!, docType: doc.docType, docId: doc.docId, docCode: doc.docCode, title: doc.title, amount: moneyStr(doc.amount), projectId: doc.projectId ?? null, drafterId: ctx.user.id, drafterName: ctx.user.name, currentStep: 1 })
       .returning();
     const now = new Date();
+    const drafterStamp = await activeUserStampId(tx, ctx.user.id);
     await tx.insert(approvalSteps).values([
-      { approvalId: a.id, stepNo: 0, title: '담당', state: 'APPROVED', actedById: ctx.user.id, actedByName: ctx.user.name, actedAt: now, approverNames: ctx.user.name },
+      { approvalId: a.id, stepNo: 0, title: '담당', state: 'APPROVED', actedById: ctx.user.id, actedByName: ctx.user.name, actedStampId: drafterStamp, actedAt: now, approverNames: ctx.user.name },
       ...resolved.map((s, i) => ({ approvalId: a.id, stepNo: i + 1, title: s.title, roleKey: s.roleKey ?? null, approverUserId: s.userId ?? null, approverNames: s.approverNames, state: 'WAITING' as const })),
     ]);
     await this.audit.fromCtx(ctx, { action: 'SUBMIT', resource: 'approval', resourceId: doc.docId, summary: `${DOC_LABEL[doc.docType]} 결재 상신 ${doc.docCode} (${resolved.map((s) => `${s.title} ${s.approverNames}`).join(' → ')}${custom ? ', 결재선 직접 지정' : ''})` }, tx);
@@ -203,7 +205,7 @@ export class ApprovalsService {
       const state = dto.action === 'approve' ? 'APPROVED' : dto.action === 'reject' ? 'REJECTED' : 'HOLD';
       const [upd] = await tx
         .update(approvalSteps)
-        .set({ state, actedById: ctx.user.id, actedByName: ctx.user.name, actedAt: now, comment: dto.comment ?? null })
+        .set({ state, actedById: ctx.user.id, actedByName: ctx.user.name, actedStampId: state === 'HOLD' ? null : await activeUserStampId(tx, ctx.user.id), actedAt: now, comment: dto.comment ?? null })
         .where(and(eq(approvalSteps.id, cur.id), inArray(approvalSteps.state, ['WAITING', 'HOLD'])))
         .returning({ id: approvalSteps.id });
       if (!upd) throw new ConflictException({ code: 'ALREADY_ACTED', message: '이미 처리된 단계입니다' });

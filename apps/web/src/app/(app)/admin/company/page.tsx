@@ -6,6 +6,7 @@ import { Button, EmptyState, Field, Input, PageHeader, Skeleton, useToast } from
 import { api, ApiError } from '@/lib/api';
 import { bizNo } from '@/lib/format';
 import { useSession } from '@/lib/session';
+import { CompanySealsPanel } from '@/components/seal-bits';
 
 interface Company { id: string; code: string; name: string; bizRegNo: string; ceoName: string | null; address: string | null; phone: string | null; email: string | null; businessType: string | null; businessItem: string | null; version: number }
 
@@ -59,6 +60,7 @@ export default function CompanyPage() {
           {editable && <div className="flex justify-end border-t border-line px-4 py-3"><Button type="submit" variant="primary" loading={busy}>저장</Button></div>}
         </form>
       )}
+      <CompanySealsPanel />
     </>
   );
 }

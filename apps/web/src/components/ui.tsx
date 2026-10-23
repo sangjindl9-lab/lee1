@@ -233,7 +233,17 @@ export function DL({ items, cols = 2 }: { items: { label: string; value: ReactNo
 
 /* ─────────────── 결재 도장 ─────────────── */
 /** 인주색 원형 도장. 결재란·무결성 확인 등 '확정'의 순간에만 쓴다 */
-export function Seal({ name, date, size = 56, rejected, animate, label }: { name: string; date?: string; size?: number; rejected?: boolean; animate?: boolean; label?: string }) {
+export function Seal({ name, date, size = 56, rejected, animate, label, image }: { name: string; date?: string; size?: number; rejected?: boolean; animate?: boolean; label?: string; image?: string | null }) {
+  if (image) {
+    // 등록한 도장 이미지 — 날짜는 아래에 작게
+    return (
+      <span role="img" aria-label={label ?? `${name} ${rejected ? '반려' : '승인'} ${date ?? ''}`} className={clsx('relative inline-flex shrink-0 flex-col items-center text-seal', animate && 'animate-stamp')} style={{ width: size }}>
+        <img src={image} alt="" draggable={false} className="block object-contain select-none" style={{ width: size * 0.92, height: size * 0.78 }} />
+        {date && <span className="num leading-none" style={{ fontSize: Math.max(8, size * 0.15) }}>{date}</span>}
+        {rejected && <span aria-hidden className="absolute inset-x-1 top-[40%] h-0.5 -rotate-45 bg-current" />}
+      </span>
+    );
+  }
   return (
     <span
       role="img"
@@ -251,7 +261,7 @@ export function Seal({ name, date, size = 56, rejected, animate, label }: { name
 }
 
 /** 종이 결재란 형태: 담당 | 검토 | 승인 */
-export function ApprovalBox({ steps }: { steps: { title: string; name?: string; date?: string; state: 'done' | 'rejected' | 'waiting' | 'empty' }[] }) {
+export function ApprovalBox({ steps }: { steps: { title: string; name?: string; date?: string; image?: string | null; state: 'done' | 'rejected' | 'waiting' | 'empty' }[] }) {
   return (
     <table className="border-collapse text-center text-meta">
       <tbody>
@@ -264,7 +274,7 @@ export function ApprovalBox({ steps }: { steps: { title: string; name?: string; 
         <tr>
           {steps.map((s, i) => (
             <td key={i} className="h-[68px] border border-line-strong align-middle">
-              {s.state === 'done' || s.state === 'rejected' ? <Seal name={s.name ?? ''} date={s.date} size={52} rejected={s.state === 'rejected'} /> : s.state === 'waiting' ? <span className="text-faint">{s.name ?? '대기'}</span> : null}
+              {s.state === 'done' || s.state === 'rejected' ? <Seal name={s.name ?? ''} date={s.date} size={52} rejected={s.state === 'rejected'} image={s.image} /> : s.state === 'waiting' ? <span className="text-faint">{s.name ?? '대기'}</span> : null}
             </td>
           ))}
         </tr>

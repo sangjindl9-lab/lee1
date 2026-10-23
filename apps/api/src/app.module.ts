@@ -48,6 +48,7 @@ import { ApiKeysController, ApiKeysService, IdempotencyInterceptor } from './pla
 import { WebhooksController, WebhooksService } from './platform/webhooks';
 import { ReportsController, ReportsService } from './reports/reports';
 import { BackupsController, BackupsService } from './admin/backups';
+import { SealsController, SealsService } from './admin/seals';
 
 @Module({
   imports: [
@@ -58,12 +59,12 @@ import { BackupsController, BackupsService } from './admin/backups';
   controllers: [
     HealthController, AuthController, CompaniesController, UsersController, MembersController, RolesController,
     ProjectsController, VendorsController, MaterialsController, PurchaseController, PurchaseRequestsController, ApprovalsController,
-    JournalsController, LedgerReportsController, ClosingController, BankAccountsController, PaymentsController, BudgetController, IntegrationsController, TaxInvoicesController, DocumentsController, ContractRevisionsController, ClaimsController, SubcontractsController, LaborController, SettlementController, BankTransactionsController, CashController, ApiKeysController, WebhooksController, ReportsController, BackupsController, FilesController, DashboardController, AuditController, LicenseController, TaxRateController,
+    JournalsController, LedgerReportsController, ClosingController, BankAccountsController, PaymentsController, BudgetController, IntegrationsController, TaxInvoicesController, DocumentsController, ContractRevisionsController, ClaimsController, SubcontractsController, LaborController, SettlementController, BankTransactionsController, CashController, ApiKeysController, WebhooksController, ReportsController, BackupsController, FilesController, DashboardController, AuditController, LicenseController, TaxRateController, SealsController,
   ],
   providers: [
     AuditService, AccessService, AuthService, LicenseService, NumberingService, TaxRateService,
     CompaniesService, UsersService, RolesService, ProjectsService, VendorsService, MaterialsService, ApprovalsService, PurchaseService, PurchaseRequestsService,
-    LedgerService, JournalsService, LedgerReportsService, ClosingService, BankAccountsService, PaymentsService, BudgetService, IntegrationsService, TaxInvoicesService, HometaxCollectService, DocumentsService, ContractRevisionsService, ClaimsService, SubcontractsService, LaborService, SettlementService, BankTransactionsService, CashService, ApiKeysService, WebhooksService, ReportsService, BackupsService, FilesService, DashboardService,
+    LedgerService, JournalsService, LedgerReportsService, ClosingService, BankAccountsService, PaymentsService, BudgetService, IntegrationsService, TaxInvoicesService, HometaxCollectService, DocumentsService, ContractRevisionsService, ClaimsService, SubcontractsService, LaborService, SettlementService, BankTransactionsService, CashService, ApiKeysService, WebhooksService, ReportsService, BackupsService, FilesService, DashboardService, SealsService,
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: ErpGuard },
     { provide: APP_FILTER, useClass: AllExceptionsFilter },

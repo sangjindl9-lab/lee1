@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { ShieldCheck, ShieldOff } from 'lucide-react';
 import { FormEvent, useState } from 'react';
 import { Badge, Button, Field, Input, PageHeader, Panel, useToast } from '@/components/ui';
+import { MyStampCard } from '@/components/seal-bits';
 import { api, ApiError } from '@/lib/api';
 import { useSession } from '@/lib/session';
 
@@ -100,6 +101,8 @@ export default function AccountPage() {
             </div>
           )}
         </Panel>
+
+        <MyStampCard />
       </div>
     </>
   );

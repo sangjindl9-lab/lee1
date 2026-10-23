@@ -8,7 +8,7 @@ import clsx from 'clsx';
 import { useQueryClient } from '@tanstack/react-query';
 import { Check, Pause, X } from 'lucide-react';
 import { ReactNode, useCallback, useState } from 'react';
-import { stampSteps } from './po-bits';
+import { sealUrl, stampSteps } from './po-bits';
 import { ApprovalBox, Badge, Button, Dialog, Field, Seal, Textarea, useToast } from './ui';
 import { api, ApiError } from '@/lib/api';
 import { dateTime, won } from '@/lib/format';
@@ -72,7 +72,7 @@ export function ApprovalActionPanel({ approval, summary, onDone }: { approval: A
 export function JustApproved({ approval, text }: { approval: Approval | null; text: string }) {
   return (
     <section className="mb-4 flex items-center gap-4 rounded-[6px] border border-line bg-surface p-4">
-      <Seal name={approval?.steps[approval.steps.length - 1]?.actedByName ?? '승인'} date={new Date().toLocaleDateString('ko-KR', { month: '2-digit', day: '2-digit' }).replace(/\. /g, '.').replace(/\.$/, '')} size={64} animate />
+      <Seal image={sealUrl(approval?.steps[approval.steps.length - 1]?.actedStampId)} name={approval?.steps[approval.steps.length - 1]?.actedByName ?? '승인'} date={new Date().toLocaleDateString('ko-KR', { month: '2-digit', day: '2-digit' }).replace(/\. /g, '.').replace(/\.$/, '')} size={64} animate />
       <div><p className="font-semibold">결재가 끝났습니다</p><p className="text-muted">{text}</p></div>
     </section>
   );

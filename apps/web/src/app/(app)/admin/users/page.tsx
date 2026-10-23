@@ -7,6 +7,7 @@ import { Copy, KeyRound, Lock, LogOut, Plus, ShieldCheck, Unlock } from 'lucide-
 import { FormEvent, useMemo, useState } from 'react';
 import { DataTable } from '@/components/data-table';
 import { Badge, Button, Checkbox, Dialog, Drawer, EmptyState, Field, Input, PageHeader, useConfirm, useToast } from '@/components/ui';
+import { MemberStampCard } from '@/components/seal-bits';
 import { api, ApiError } from '@/lib/api';
 import { relative } from '@/lib/format';
 import { SCOPE_LABEL, TRADE } from '@/lib/labels';
@@ -138,6 +139,7 @@ function UserEditor({ member, roles, onClose, onSaved }: { member: Member | null
           </ul>
         </fieldset>
       </form>
+      {!isNew && <div className="mt-5 border-t border-line pt-5"><MemberStampCard membershipId={member!.membershipId} name={member!.name} editable={can('user:update')} /></div>}
     </Drawer>
   );
 }

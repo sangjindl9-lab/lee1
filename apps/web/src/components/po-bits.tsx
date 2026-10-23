@@ -14,6 +14,9 @@ export function ApprovalStatusBadge({ status }: { status: Approval['status'] }) 
   return <Badge tone={s.tone}>{s.label}</Badge>;
 }
 
+/** 등록한 도장 이미지 주소 */
+export const sealUrl = (id: string | null | undefined) => (id ? `/api/v1/seals/${id}/image` : null);
+
 /** 결재 단계 → 결재란 표시값 */
 export function stampSteps(a: Approval | null, fallback: { title: string; name?: string }[] = [{ title: '담당' }, { title: '승인', name: '대표이사' }]) {
   if (!a) return fallback.map((f) => ({ title: f.title, name: f.name, state: 'empty' as const }));
@@ -26,6 +29,7 @@ export function stampSteps(a: Approval | null, fallback: { title: string; name?:
     title: s.title,
     name: s.state === 'APPROVED' || s.state === 'REJECTED' ? s.actedByName ?? '' : s.state === 'HOLD' ? '보류' : s.approverNames ?? undefined,
     date: md(s.actedAt),
+    image: (s.state === 'APPROVED' || s.state === 'REJECTED') && s.actedStampId ? sealUrl(s.actedStampId) : null,
     state: s.state === 'APPROVED' ? ('done' as const) : s.state === 'REJECTED' ? ('rejected' as const) : a.status === 'CANCELLED' ? ('empty' as const) : ('waiting' as const),
   }));
 }

@@ -37,7 +37,7 @@ export interface Material {
 
 export interface ApprovalStep {
   id: string; stepNo: number; title: string; roleKey: string | null; approverNames: string | null;
-  state: 'WAITING' | 'APPROVED' | 'REJECTED' | 'HOLD' | 'SKIPPED'; actedByName: string | null; actedAt: string | null; comment: string | null;
+  state: 'WAITING' | 'APPROVED' | 'REJECTED' | 'HOLD' | 'SKIPPED'; actedByName: string | null; actedStampId?: string | null; actedAt: string | null; comment: string | null;
 }
 export interface Approval {
   id: string; docType: string; docLabel?: string; href?: string | null; docId: string; docCode: string | null; title: string; amount: string; projectId: string | null;

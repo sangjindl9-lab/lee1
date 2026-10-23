@@ -7,7 +7,8 @@ import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Ban, Check, ChevronLeft, CircleSlash, FileDown, Lock, PackageCheck, Pause, Pencil, RotateCcw, Send, Truck, Undo2, X } from 'lucide-react';
 import { ReactNode, useState } from 'react';
-import { PoStatusBadge, stampSteps } from '@/components/po-bits';
+import { PoStatusBadge, sealUrl, stampSteps } from '@/components/po-bits';
+import { CompanySignature } from '@/components/seal-bits';
 import { ApprovalBox, Badge, Button, Dialog, EmptyState, Field, Input, Seal, Skeleton, Textarea, useToast } from '@/components/ui';
 import { api, ApiError } from '@/lib/api';
 import { bizNo, dateTime, won } from '@/lib/format';
@@ -139,8 +140,7 @@ function PaperDocument({ po }: { po: PoDetailFull }) {
       <div className="mt-6 text-center">
         <p>위와 같이 발주합니다.</p>
         <p className="num mt-2">{po.orderDate.slice(0, 4)}년 {Number(po.orderDate.slice(5, 7))}월 {Number(po.orderDate.slice(8, 10))}일</p>
-        <p className="mt-2 text-[14px] font-bold">{po.company.name}</p>
-        <p className="mt-0.5">대표이사 {po.company.ceoName} (인)</p>
+        <CompanySignature name={po.company.name} ceoName={po.company.ceoName} stamped={approved} />
       </div>
     </div>
   );
@@ -339,7 +339,7 @@ export default function PoDetailPage() {
       )}
       {justApproved && po.status === 'APPROVED' && (
         <section className="mb-4 flex items-center gap-4 rounded-[6px] border border-line bg-surface p-4">
-          <Seal name={a?.steps[a.steps.length - 1]?.actedByName ?? '승인'} date={new Date().toLocaleDateString('ko-KR', { month: '2-digit', day: '2-digit' }).replace(/\. /g, '.').replace(/\.$/, '')} size={64} animate />
+          <Seal image={sealUrl(a?.steps[a.steps.length - 1]?.actedStampId)} name={a?.steps[a.steps.length - 1]?.actedByName ?? '승인'} date={new Date().toLocaleDateString('ko-KR', { month: '2-digit', day: '2-digit' }).replace(/\. /g, '.').replace(/\.$/, '')} size={64} animate />
           <div><p className="font-semibold">결재가 끝났습니다</p><p className="text-muted">이제 발주서 PDF를 거래처에 보내고, 납품되면 검수를 등록하세요.</p></div>
         </section>
       )}

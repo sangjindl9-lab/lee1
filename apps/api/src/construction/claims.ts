@@ -23,6 +23,7 @@ import { DB, DB_TOKEN, Tx } from '../db/db';
 import { bankAccounts, collections, companies, progressClaimLines, progressClaims, projects, taxInvoices, vendors } from '../db/schema';
 import { TaxInvoicesService } from '../taxinvoices/taxinvoices.service';
 import { renderClaimPdf } from './claim-pdf';
+import { sealsForPdf } from '../admin/seals';
 import { contractNow, dateStr, loadProject, optDate, optText, posAmt, rateIn, ReasonDto, VersionDto } from './common';
 
 export const CLAIM_STATUS_LABEL = { DRAFT: '작성중', PENDING: '결재중', APPROVED: '승인(미발행)', REJECTED: '반려', INVOICED: '계산서 발행', PARTIAL: '일부 수금', COLLECTED: '수금 완료', CANCELLED: '취소' } as const;
@@ -309,10 +310,13 @@ export class ClaimsService implements OnModuleInit {
   async pdf(ctx: AccessContext, id: string) {
     const d = await this.get(ctx, id);
     const [co] = await this.db.select().from(companies).where(eq(companies.id, ctx.companyId!));
+    const approval = d.approval && d.approval.status !== 'CANCELLED' ? d.approval : null;
+    const seals = await sealsForPdf(this.db, ctx.companyId!, approval?.steps.map((st: { actedStampId?: string | null }) => st.actedStampId) ?? []);
     const buf = await renderClaimPdf({
+      seals,
       ...d, client: { name: d.vendor.name, bizRegNo: d.vendor.bizRegNo, ceoName: d.vendor.ceoName, address: d.vendor.address },
       company: { name: co.name, bizRegNo: co.bizRegNo, ceoName: co.ceoName, address: co.address, phone: co.phone },
-      approval: d.approval && d.approval.status !== 'CANCELLED' ? d.approval : null, printedBy: ctx.user.name,
+      approval, printedBy: ctx.user.name,
     });
     await this.audit.fromCtx(ctx, { action: 'EXPORT', resource: 'claim', resourceId: id, summary: `기성청구서 PDF 출력 ${d.code}` });
     return { buf, name: `기성청구서_${d.code}_${d.project.name}.pdf` };

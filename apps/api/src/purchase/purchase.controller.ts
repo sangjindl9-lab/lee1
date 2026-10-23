@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, Put, Query, Res } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Inject, Param, ParseUUIDPipe, Post, Put, Query, Res } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { z } from 'zod';
@@ -7,13 +7,15 @@ import { AuditService } from '../audit/audit.service';
 import { buildExcel, sendExcel } from '../common/excel';
 import { ZodPipe } from '../common/zod.pipe';
 import { renderPoPdf } from './po-pdf';
+import { sealsForPdf } from '../admin/seals';
+import { DB, DB_TOKEN } from '../db/db';
 import { CreatePoDto, ListPoQuery, ListReceiptQuery, ReasonDto, ReceiptDto, UpdatePoDto, VersionDto } from './purchase.dto';
 import { PO_STATUS_LABEL, PurchaseService } from './purchase.service';
 
 @ApiTags('발주서')
 @Controller('purchase-orders')
 export class PurchaseController {
-  constructor(private readonly svc: PurchaseService, private readonly audit: AuditService) {}
+  constructor(private readonly svc: PurchaseService, private readonly audit: AuditService, @Inject(DB_TOKEN) private readonly db: DB) {}
 
   @Get()
   @RequirePermission('purchase', 'read')
@@ -75,7 +77,9 @@ export class PurchaseController {
   @RequirePermission('purchase', 'export')
   async pdf(@Ctx() ctx: AccessContext, @Param('id', ParseUUIDPipe) id: string, @Res() res: Response) {
     const po = await this.svc.get(ctx, id);
-    const buf = await renderPoPdf({ ...po, approval: po.approval && po.approval.status !== 'CANCELLED' ? po.approval : null, printedBy: ctx.user.name });
+    const approval = po.approval && po.approval.status !== 'CANCELLED' ? po.approval : null;
+    const seals = await sealsForPdf(this.db, ctx.companyId!, approval?.steps.map((st: { actedStampId?: string | null }) => st.actedStampId) ?? []);
+    const buf = await renderPoPdf({ ...po, approval, printedBy: ctx.user.name, seals });
     await this.audit.fromCtx(ctx, { action: 'EXPORT', resource: 'purchase_order', resourceId: id, summary: `발주서 PDF 출력 ${po.code} (${PO_STATUS_LABEL[po.status]})` });
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(`발주서_${po.code}_${po.vendor.name}.pdf`)}`);

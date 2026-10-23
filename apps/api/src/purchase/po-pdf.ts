@@ -14,6 +14,7 @@ import PDFDocument from 'pdfkit';
 import path from 'path';
 import fs from 'fs';
 import { D } from '../common/money';
+import { drawSignature, drawStepStamp, NO_SEALS, PdfSeals } from '../common/pdf-seal';
 
 const FONT_DIR = [path.join(__dirname, '../../assets/fonts'), path.join(__dirname, '../../../assets/fonts'), path.join(process.cwd(), 'assets/fonts')].find((p) => fs.existsSync(p))!;
 const C = { ink: '#17202B', muted: '#5B6573', line: '#9AA3AE', soft: '#EEF1F4', seal: '#C42B1C', steel: '#2B4C6F' };
@@ -73,8 +74,9 @@ export interface PoPdfData {
   vendor: { name: string; bizRegNo: string | null; ceoName: string | null; address: string | null; contactName: string | null; contactPhone: string | null; phone: string | null; email: string | null };
   project: { code: string; name: string; siteAddress: string | null };
   lines: { lineNo: number; name: string; spec: string | null; unit: string; qty: string; unitPrice: string; supplyAmount: string; vatAmount: string; taxType: string; memo: string | null }[];
-  approval: { steps: { stepNo: number; title: string; state: string; actedByName: string | null; actedAt: Date | null; approverNames: string | null }[] } | null;
+  approval: { steps: { stepNo: number; title: string; state: string; actedByName: string | null; actedAt: Date | null; approverNames: string | null; actedStampId?: string | null }[] } | null;
   printedBy: string;
+  seals?: PdfSeals;
 }
 
 const bz = (v: string | null) => (v && v.length === 10 ? `${v.slice(0, 3)}-${v.slice(3, 5)}-${v.slice(5)}` : v ?? '');
@@ -92,20 +94,10 @@ export function renderPoPdf(d: PoPdfData): Promise<Buffer> {
   const W = doc.page.width - 80; // 515
   const approved = ['APPROVED', 'SENT', 'PARTIAL', 'RECEIVED', 'CLOSED'].includes(d.status);
 
-  /* 결재란 그리기 (오른쪽 위) */
-  const drawStamp = (cx: number, cy: number, name: string, date: string, rejected = false) => {
-    doc.save();
-    doc.translate(cx, cy).rotate(-8);
-    doc.lineWidth(1.6).strokeColor(C.seal).circle(0, 0, 21).stroke();
-    doc.lineWidth(0.6).circle(0, 0, 18).stroke();
-    doc.fillColor(C.seal).font('B').fontSize(name.length > 3 ? 8 : 10).text(name, -18, -8, { width: 36, align: 'center', lineBreak: false });
-    doc.font('M').fontSize(6.5).text(date, -18, 4, { width: 36, align: 'center', lineBreak: false });
-    if (rejected) doc.lineWidth(1.4).moveTo(-17, 13).lineTo(17, -13).stroke();
-    doc.restore();
-  };
+  const seals = d.seals ?? NO_SEALS;
   const steps = d.approval?.steps ?? [
-    { stepNo: 0, title: '담당', state: 'WAITING', actedByName: null, actedAt: null, approverNames: null },
-    { stepNo: 1, title: '승인', state: 'WAITING', actedByName: null, actedAt: null, approverNames: '대표이사' },
+    { stepNo: 0, title: '담당', state: 'WAITING', actedByName: null, actedAt: null, approverNames: null, actedStampId: null },
+    { stepNo: 1, title: '승인', state: 'WAITING', actedByName: null, actedAt: null, approverNames: '대표이사', actedStampId: null },
   ];
   const drawApprovalBox = () => {
     const colW = 58;
@@ -124,7 +116,7 @@ export function renderPoPdf(d: PoPdfData): Promise<Buffer> {
       doc.rect(cx, y + 16, colW, 54).stroke();
       doc.fillColor(C.ink).font('M').fontSize(8).text(s.title, cx, y + 4.5, { width: colW, align: 'center' });
       if ((s.state === 'APPROVED' || s.state === 'REJECTED') && s.actedByName) {
-        drawStamp(cx + colW / 2, y + 43, s.actedByName, md(s.actedAt), s.state === 'REJECTED');
+        drawStepStamp(doc, cx + colW / 2, y + 43, s.actedByName, md(s.actedAt), { rejected: s.state === 'REJECTED', image: s.actedStampId ? seals.stamps.get(s.actedStampId) : null });
       } else {
         doc.fillColor(C.muted).font('R').fontSize(7).text(s.state === 'HOLD' ? '보류' : s.stepNo === 0 ? '' : '', cx, y + 40, { width: colW, align: 'center' });
       }
@@ -302,9 +294,7 @@ export function renderPoPdf(d: PoPdfData): Promise<Buffer> {
   y += 22;
   doc.font('R').fontSize(9.5).text(`${d.orderDate.slice(0, 4)}년  ${Number(d.orderDate.slice(5, 7))}월  ${Number(d.orderDate.slice(8, 10))}일`, L, y, { width: W, align: 'center' });
   y += 22;
-  doc.font('B').fontSize(11).text(`${d.company.name}`, L, y, { width: W, align: 'center' });
-  y += 16;
-  doc.font('R').fontSize(9.5).text(`대표이사  ${d.company.ceoName ?? ''}   (인)`, L, y, { width: W, align: 'center' });
+  drawSignature(doc, L, W, y, d.company, seals, approved);
 
   /* 워터마크·바닥글 (모든 쪽) */
   const range = doc.bufferedPageRange();

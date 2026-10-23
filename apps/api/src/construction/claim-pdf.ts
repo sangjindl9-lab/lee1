@@ -9,6 +9,7 @@ import path from 'path';
 import fs from 'fs';
 import { D } from '../common/money';
 import { koreanAmount } from '../purchase/po-pdf';
+import { drawSignature, drawStepStamp, NO_SEALS, PdfSeals } from '../common/pdf-seal';
 
 const FONT_DIR = [path.join(__dirname, '../../assets/fonts'), path.join(__dirname, '../../../assets/fonts'), path.join(process.cwd(), 'assets/fonts')].find((p) => fs.existsSync(p))!;
 const C = { ink: '#17202B', muted: '#5B6573', line: '#9AA3AE', soft: '#EEF1F4', seal: '#C42B1C', steel: '#2B4C6F' };
@@ -25,8 +26,9 @@ export interface ClaimPdfData {
   client: { name: string; bizRegNo: string | null; ceoName: string | null; address: string | null };
   project: { code: string; name: string; siteAddress: string | null; contractDate: string | null; startDate: string | null; plannedEndDate: string | null };
   lines: { lineNo: number; name: string; spec: string | null; contractAmount: string; prevAmount: string; thisAmount: string; cumulativeAmount: string }[];
-  approval: { steps: { stepNo: number; title: string; state: string; actedByName: string | null; actedAt: Date | null }[] } | null;
+  approval: { steps: { stepNo: number; title: string; state: string; actedByName: string | null; actedAt: Date | null; actedStampId?: string | null }[] } | null;
   printedBy: string;
+  seals?: PdfSeals;
 }
 
 export function renderClaimPdf(d: ClaimPdfData): Promise<Buffer> {
@@ -41,6 +43,7 @@ export function renderClaimPdf(d: ClaimPdfData): Promise<Buffer> {
   const W = doc.page.width - 80;
   const approved = ['APPROVED', 'INVOICED', 'PARTIAL', 'COLLECTED'].includes(d.status);
 
+  const seals = d.seals ?? NO_SEALS;
   /* 결재란 */
   const steps = d.approval?.steps ?? [{ stepNo: 0, title: '담당', state: 'WAITING', actedByName: null, actedAt: null }, { stepNo: 1, title: '승인', state: 'WAITING', actedByName: null, actedAt: null }];
   const colW = 58, labelW = 16, boxW = labelW + colW * steps.length, bx = L + W - boxW, by = 40;
@@ -54,11 +57,7 @@ export function renderClaimPdf(d: ClaimPdfData): Promise<Buffer> {
     doc.rect(cx, by + 16, colW, 50).stroke();
     doc.fillColor(C.ink).font('M').fontSize(8).text(s.title, cx, by + 4.5, { width: colW, align: 'center' });
     if ((s.state === 'APPROVED' || s.state === 'REJECTED') && s.actedByName) {
-      doc.save().translate(cx + colW / 2, by + 41).rotate(-8);
-      doc.lineWidth(1.6).strokeColor(C.seal).circle(0, 0, 20).stroke().lineWidth(0.6).circle(0, 0, 17).stroke();
-      doc.fillColor(C.seal).font('B').fontSize(s.actedByName.length > 3 ? 8 : 9.5).text(s.actedByName, -17, -8, { width: 34, align: 'center', lineBreak: false });
-      doc.font('M').fontSize(6.5).text(md(s.actedAt), -17, 4, { width: 34, align: 'center', lineBreak: false });
-      doc.restore();
+      drawStepStamp(doc, cx + colW / 2, by + 41, s.actedByName, md(s.actedAt), { r: 20, rejected: s.state === 'REJECTED', image: s.actedStampId ? seals.stamps.get(s.actedStampId) : null });
     }
   });
   doc.fillColor(C.ink).font('B').fontSize(23).text(d.isFinal ? '준 공 기 성 청 구 서' : '기 성 청 구 서', L, 50, { width: W - boxW - 10 });
@@ -183,10 +182,7 @@ export function renderClaimPdf(d: ClaimPdfData): Promise<Buffer> {
   y += 22;
   doc.font('R').fontSize(9.5).text(`${d.claimDate.slice(0, 4)}년  ${Number(d.claimDate.slice(5, 7))}월  ${Number(d.claimDate.slice(8, 10))}일`, L, y, { width: W, align: 'center' });
   y += 22;
-  doc.font('B').fontSize(11).text(d.company.name, L, y, { width: W, align: 'center' });
-  y += 16;
-  doc.font('R').fontSize(9.5).text(`대표이사  ${d.company.ceoName ?? ''}   (인)`, L, y, { width: W, align: 'center' });
-  y += 24;
+  y = drawSignature(doc, L, W, y, d.company, seals, approved) + 6;
   doc.font('M').fontSize(10).text(`${d.client.name}  귀하`, L, y, { width: W, align: 'left' });
 
   const range = doc.bufferedPageRange();
