@@ -6,7 +6,7 @@ from .. import services
 from ..auth import EDIT_ROLES, audit, current_user, get_project_or_403, require_role
 from ..db import get_db
 from ..models import Approval, DetectedSymbol, DrawingSheet, LegendSymbol, LegendTable, SymbolMapping, SymbolStatus, User
-from ..schemas import LegendRegionIn, LegendSymbolIn
+from ..schemas import LegendRegionIn, LegendSymbolIn, ManualSymbolIn
 
 router = APIRouter(prefix="/api/projects/{pid}/legends", tags=["legends"])
 
@@ -153,3 +153,19 @@ def library(pid: int, user: User = Depends(current_user), db: Session = Depends(
     return [{"id": m.id, "block_name": m.block_name, "symbol_name": m.symbol_name, "item_name": m.item_name, "spec": m.spec,
              "unit": m.unit, "discipline": m.discipline, "category": m.category}
             for m in db.query(SymbolMapping).filter_by(company_id=user.company_id).all()]
+
+
+@router.post("/symbols/{sid}/sample")
+def sample_symbol(pid: int, sid: int, body: ManualSymbolIn, user: User = Depends(require_role(*EDIT_ROLES)), db: Session = Depends(get_db)):
+    """도면 위 기호 1개를 클릭해 이 범례 기호의 검색 지문으로 등록 (범례 그림과 도면 기호가 다를 때, 미인식 기호 등록)."""
+    get_project_or_403(db, user, pid)
+    s = db.get(LegendSymbol, sid)
+    sh = db.get(DrawingSheet, body.sheet_id)
+    if not s or s.project_id != pid or not sh:
+        raise HTTPException(404)
+    r = services.sample_symbol_from_sheet(db, s, sh, body.x, body.y)
+    if not r.get("ok"):
+        raise HTTPException(400, r.get("error"))
+    audit(db, user, "legend_sample", pid, symbol=sid, sheet=sh.id)
+    db.commit()
+    return {**r, "symbol": _sym_out(db, s)}

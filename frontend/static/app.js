@@ -77,7 +77,7 @@ async function renderWorkspace(pid) {
   $("#app").innerHTML = `<div class="ws"><aside id="left"></aside><section class="center" id="center"><canvas id="cv"></canvas>
     <div class="vtools">
       <button id="m_pan" class="on" onclick="setMode('pan')">이동/선택</button><button id="m_region" onclick="setMode('region')">범례 영역 지정</button>
-      <button id="m_measure" onclick="setMode('measure')">거리 측정/축척</button><button id="m_add" onclick="setMode('add')">기호 수동 추가</button>
+      <button id="m_measure" onclick="setMode('measure')">거리 측정/축척</button><button id="m_add" onclick="setMode('add')">기호 수동 추가</button><button id="m_sample" onclick="setMode('sample')">도면에서 기호 지정</button>
       <button onclick="fitView()">전체보기</button><button onclick="toggle('showDets')">기호표시</button><button onclick="toggle('showRoutes')">선로표시</button>
       <button class="primary" onclick="runTakeoff()">▶ 자동 물량산출 실행</button>
       <button onclick="exportXlsx()">Excel</button><button onclick="dl('/api/projects/${pid}/export/pdf','물량집계표.pdf')">PDF</button>
@@ -274,7 +274,7 @@ function renderRight() {
     <div class="kv"><b>신뢰도</b><span>${(s.confidence * 100).toFixed(0)}%</span><b>도면 검출</b><span>${s.detected_count}개</span><b>지문</b><span class="small">${s.fingerprint ? `선${s.fingerprint.lines} 원${s.fingerprint.circles} 호${s.fingerprint.arcs} 문자${(s.fingerprint.texts || []).join("")}` : "-"}</span><b>원문</b><span class="small muted">${esc((s.extra.texts || []).join(" | "))}</span></div>
     <div class="row"><label><input type="checkbox" id="g_lib"> 회사 공통 라이브러리에도 저장</label></div>
     <div class="row"><button class="primary" onclick="saveLegend(${s.id},'edited')">수정 저장</button><button class="ok" onclick="saveLegend(${s.id},'approved')">승인</button><button class="err" onclick="if(confirm('삭제?'))api('/api/projects/${W.pid}/legends/symbols/${s.id}',{method:'DELETE'}).then(refreshAll)">삭제</button></div>
-    <div class="small muted">수정 후 '자동 물량산출 실행' 을 다시 누르면 재산출됩니다. 사용자가 승인/제외한 검출은 보존됩니다.</div>`;
+    <div class="small muted">수정 후 '자동 물량산출 실행' 을 다시 누르면 재산출됩니다. 사용자가 승인/제외한 검출은 보존됩니다.<br>범례 그림과 도면 기호 모양이 다르면 상단 <b>'도면에서 기호 지정'</b> 으로 도면 위 기호를 한 번 클릭해 등록하십시오.</div>`;
     return;
   }
   if (sel.type === "item") {
@@ -319,11 +319,11 @@ function initViewer() {
   V.cv.addEventListener("wheel", e => { e.preventDefault(); const f = e.deltaY < 0 ? 1.15 : 1 / 1.15; const [mx, my] = [e.offsetX, e.offsetY]; V.tx = mx - (mx - V.tx) * f; V.ty = my - (my - V.ty) * f; V.scale *= f; draw(); }, { passive: false });
   V.cv.addEventListener("mousedown", e => { V.drag = { x: e.offsetX, y: e.offsetY, tx: V.tx, ty: V.ty, moved: false, start: toWorld(e.offsetX, e.offsetY) }; });
   V.cv.addEventListener("mousemove", e => { V.mouse = toWorld(e.offsetX, e.offsetY); if (V.drag && W.mode === "pan") { V.tx = V.drag.tx + e.offsetX - V.drag.x; V.ty = V.drag.ty + e.offsetY - V.drag.y; if (Math.abs(e.offsetX - V.drag.x) + Math.abs(e.offsetY - V.drag.y) > 3) V.drag.moved = true; } draw(); });
-  V.cv.addEventListener("mouseup", e => { const d = V.drag; V.drag = null; if (!d) return; const p = toWorld(e.offsetX, e.offsetY); if (W.mode === "pan" && !d.moved) pick(p); else if (W.mode === "region") finishRegion(d.start, p); else if (W.mode === "measure") measureClick(p); else if (W.mode === "add") addSymbolAt(p); });
+  V.cv.addEventListener("mouseup", e => { const d = V.drag; V.drag = null; if (!d) return; const p = toWorld(e.offsetX, e.offsetY); if (W.mode === "pan" && !d.moved) pick(p); else if (W.mode === "region") finishRegion(d.start, p); else if (W.mode === "measure") measureClick(p); else if (W.mode === "add") addSymbolAt(p); else if (W.mode === "sample") sampleSymbolAt(p); });
 }
 function toWorld(px, py) { return [(px - V.tx) / V.scale, -(py - V.ty) / V.scale]; }
 function toScreen(x, y) { return [x * V.scale + V.tx, -y * V.scale + V.ty]; }
-function setMode(m) { W.mode = m; W.pts = []; document.querySelectorAll(".vtools button[id^=m_]").forEach(b => b.classList.toggle("on", b.id === "m_" + m)); V.cv.style.cursor = m === "pan" ? "grab" : "crosshair"; $("#vinfo").textContent = { pan: "클릭: 기호·선로 선택 / 드래그: 이동 / 휠: 확대", region: "표 영역을 드래그하여 범례로 등록", measure: "두 점을 클릭 → 실제 거리(m) 입력 시 축척 확정", add: "범례 기호를 선택한 뒤 도면을 클릭하면 기호가 추가됩니다" }[m]; }
+function setMode(m) { W.mode = m; W.pts = []; document.querySelectorAll(".vtools button[id^=m_]").forEach(b => b.classList.toggle("on", b.id === "m_" + m)); V.cv.style.cursor = m === "pan" ? "grab" : "crosshair"; $("#vinfo").textContent = { pan: "클릭: 기호·선로 선택 / 드래그: 이동 / 휠: 확대", region: "표 영역을 드래그하여 범례로 등록", measure: "두 점을 클릭 → 실제 거리(m) 입력 시 축척 확정", add: "범례 기호를 선택한 뒤 도면을 클릭하면 기호가 추가됩니다", sample: "범례 탭에서 기호를 선택한 뒤, 도면 위 실제 기호 하나를 클릭 → 그 모양으로 전체 검색" }[m]; }
 function fitView() { const b = W.sheet && W.sheet.bbox; if (!b) return; const w = b.x1 - b.x0 || 1, h = b.y1 - b.y0 || 1; V.scale = Math.min(V.cv.width / w, V.cv.height / h) * 0.92; V.tx = (V.cv.width - w * V.scale) / 2 - b.x0 * V.scale; V.ty = (V.cv.height + h * V.scale) / 2 + b.y0 * V.scale; draw(); }
 async function openSheet(id, focusRegion) {
   const s = W.sheets.find(x => x.id === id); if (!s) return;
@@ -382,6 +382,11 @@ async function measureClick(p) {
   const m = prompt(`두 점 거리 = ${d.toFixed(2)} 도면단위${W.sheet.scale_factor ? ` (현재 축척으로 ${(d * W.sheet.scale_factor).toFixed(2)} m)` : ""}\n실제 거리(m)를 입력하면 이 시트의 축척을 확정합니다. 취소하면 측정만 합니다.`);
   if (m && +m > 0) { await api(`/api/projects/${W.pid}/sheets/${W.sheet.id}/scale`, { method: "POST", json: { ref_points: W.pts, ref_length_m: +m } }); toast("축척 확정. '자동 물량산출 실행' 으로 길이를 재산출하십시오."); }
   W.pts = []; refreshAll();
+}
+async function sampleSymbolAt(p) {
+  if (!(W.sel && W.sel.type === "legend")) return toast("먼저 범례 탭에서 기호를 선택하십시오.", true);
+  const r = await api(`/api/projects/${W.pid}/legends/symbols/${W.sel.id}/sample`, { method: "POST", json: { sheet_id: W.sheet.id, legend_symbol_id: W.sel.id, x: p[0], y: p[1] } });
+  toast(`기호 등록: 도형 ${r.prims}개, 스타일 ${(r.layers || []).join(", ")} — '자동 물량산출 실행' 으로 검색하십시오`); setMode("pan"); refreshAll();
 }
 async function addSymbolAt(p) {
   if (!(W.sel && W.sel.type === "legend")) return toast("먼저 범례 탭에서 추가할 기호를 선택하십시오.", true);

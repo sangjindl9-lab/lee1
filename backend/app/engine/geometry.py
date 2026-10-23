@@ -164,3 +164,124 @@ def fingerprint_similarity(a: dict | None, b: dict | None) -> float:
     ta, tb = set(a.get("texts", [])), set(b.get("texts", []))
     score += 1.0 if ta == tb else (len(ta & tb) / len(ta | tb) if (ta | tb) else 1.0)
     return round(score / 5.0, 3)
+
+
+# ---------- 벡터 클러스터 + 비트맵 지문 (벡터 PDF / 폭발 블록 기호) ----------
+BM_N = 24
+
+
+def prim_bbox(pr: dict) -> dict:
+    if "_bb" not in pr:
+        pr["_bb"] = bbox_of(pr["p"])
+    return pr["_bb"]
+
+
+def cluster_prims(prims: list[dict], max_size: float, link: float) -> list[list[int]]:
+    """bbox 최대변이 max_size 이하인 프리미티브를, bbox 간격이 link 이하면 같은 묶음으로 (grid + Union-Find)."""
+    idx = [i for i, pr in enumerate(prims) if len(pr["p"]) >= 2 and max(prim_bbox(pr)["x1"] - prim_bbox(pr)["x0"], prim_bbox(pr)["y1"] - prim_bbox(pr)["y0"]) <= max_size]
+    if not idx:
+        return []
+    cell = max(link, 1e-6) * 2
+    grid: dict[tuple[int, int], list[int]] = defaultdict(list)
+    for i in idx:
+        b = prim_bbox(prims[i])
+        for gx in range(int(b["x0"] // cell), int(b["x1"] // cell) + 1):
+            for gy in range(int(b["y0"] // cell), int(b["y1"] // cell) + 1):
+                grid[(gx, gy)].append(i)
+    pos = {i: k for k, i in enumerate(idx)}
+    uf = UnionFind(len(idx))
+    for cellidx in grid.values():
+        for a in range(len(cellidx)):
+            ba = prim_bbox(prims[cellidx[a]])
+            for b in range(a + 1, len(cellidx)):
+                bb = prim_bbox(prims[cellidx[b]])
+                if ba["x0"] - link <= bb["x1"] and bb["x0"] - link <= ba["x1"] and ba["y0"] - link <= bb["y1"] and bb["y0"] - link <= ba["y1"]:
+                    uf.union(pos[cellidx[a]], pos[cellidx[b]])
+    groups: dict[int, list[int]] = defaultdict(list)
+    for i in idx:
+        groups[uf.find(pos[i])].append(i)
+    return list(groups.values())
+
+
+def bitmap_signature(prims: list[dict], n: int = BM_N, center: Point | None = None) -> dict:
+    """프리미티브 묶음을 정사각 n×n 비트맵으로 래스터화 (bbox 정규화, 종횡비 유지).
+    center(앵커 중심)가 주어지면 앵커에서 가장 먼 점이 +x 축을 향하도록 회전시켜 방향을 정규화한다
+    (화살표 방향이 제각각인 등기구 기호 등). 90° 회전·반전은 비교 시 추가로 처리."""
+    try:
+        import cv2
+        import numpy as np
+    except ImportError:
+        return {}
+    pts = [q for pr in prims for q in pr["p"]]
+    if not pts:
+        return {}
+    if center is not None:
+        far = max(pts, key=lambda q: math.dist(q, center))
+        ang = math.atan2(far[1] - center[1], far[0] - center[0])
+        ca, sa = math.cos(-ang), math.sin(-ang)
+        rot = lambda q: (center[0] + (q[0] - center[0]) * ca - (q[1] - center[1]) * sa,  # noqa: E731
+                         center[1] + (q[0] - center[0]) * sa + (q[1] - center[1]) * ca)
+        prims = [{**pr, "p": [rot(q) for q in pr["p"]]} for pr in prims]
+        pts = [q for pr in prims for q in pr["p"]]
+    bb = bbox_of(pts)
+    w, h = bb["x1"] - bb["x0"], bb["y1"] - bb["y0"]
+    size = max(w, h, 1e-9)
+    img = np.zeros((n, n), np.uint8)
+    pad = 1
+    s = (n - 2 * pad - 1) / size
+    ox = pad + ((n - 2 * pad - 1) - w * s) / 2
+    oy = pad + ((n - 2 * pad - 1) - h * s) / 2
+    for pr in prims:
+        arr = np.array([[ox + (x - bb["x0"]) * s, oy + (bb["y1"] - y) * s] for x, y in pr["p"]], np.int32).reshape(-1, 1, 2)
+        if pr.get("t") == "f" and len(pr["p"]) >= 3:
+            cv2.fillPoly(img, [arr], 255)
+        else:
+            cv2.polylines(img, [arr], False, 255, 1)
+    bits = np.packbits(img.flatten() > 0).tobytes().hex()
+    return {"bm": bits, "n": n, "size": round(size, 3), "aspect": round(min(w, h) / size, 3)}
+
+
+_BM_CACHE: dict = {}
+
+
+def _bm_arrays(sig: dict, dil: int = 1):
+    import cv2
+    import numpy as np
+    key = (sig["bm"], dil)
+    if key in _BM_CACHE:
+        return _BM_CACHE[key]
+    n = sig["n"]
+    A = np.unpackbits(np.frombuffer(bytes.fromhex(sig["bm"]), np.uint8))[: n * n].reshape(n, n)
+    k = np.ones((2 * dil + 1, 2 * dil + 1), np.uint8)
+    variants = []
+    for flip in (False, True):
+        Af = np.fliplr(A) if flip else A
+        for r in range(4):
+            Ar = np.ascontiguousarray(np.rot90(Af, r))
+            variants.append((Ar.astype(bool), cv2.dilate(Ar, k).astype(bool), float(Ar.sum())))
+    if len(_BM_CACHE) > 4096:
+        _BM_CACHE.clear()
+    val = (A.astype(bool), cv2.dilate(A, k).astype(bool), float(A.sum()), variants)
+    _BM_CACHE[key] = val
+    return val
+
+
+def bitmap_similarity(a: dict | None, b: dict | None, dil: int = 1) -> float:
+    """a(범례) 의 8개 변형(회전·반전) 과 b(후보) 의 양방향 포함률 기하평균 × IoU 보정. 최대값. dil=허용 오차 픽셀."""
+    if not a or not b or not a.get("bm") or not b.get("bm") or a.get("n") != b.get("n"):
+        return 0.0
+    try:
+        import numpy as np
+        _, _, _, variants = _bm_arrays(a, dil)
+        B, Bd, bsum = _bm_arrays(b, dil)[:3]
+    except ImportError:
+        return 0.0
+    best = 0.0
+    for Ar, Ard, asum in variants:
+        a_in_b = float(np.logical_and(Ar, Bd).sum()) / max(asum, 1.0)
+        b_in_a = float(np.logical_and(B, Ard).sum()) / max(bsum, 1.0)
+        plain = float(np.logical_and(Ar, B).sum()) / max(float(np.logical_or(Ar, B).sum()), 1.0)
+        score = (a_in_b * b_in_a) ** 0.5 * (0.6 + 0.4 * plain)
+        if score > best:
+            best = score
+    return round(min(best, 1.0), 3)

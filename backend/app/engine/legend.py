@@ -10,22 +10,28 @@ import math
 import re
 from dataclasses import dataclass, field
 
-from .geometry import bbox_of, in_region, shape_fingerprint
+from .geometry import bbox_of, bitmap_signature, in_region, shape_fingerprint
 
 TITLE_KEYS = ["범례표", "범례", "전기설비범례", "통신설비범례", "설비기호", "LEGEND", "SYMBOLLEGEND", "SYMBOL", "기호및약어",
-              "장비일람표", "케이블일람표", "기기일람표", "조명기구일람표", "SCHEDULE"]
+              "장비일람표", "케이블일람표", "기기일람표", "조명기구일람표", "SCHEDULE", "CABLESCHEDULE", "배관배선표", "케이블일람"]
 HEADER_KEYS = {
-    "symbol": ["기호", "심벌", "심볼", "SYMBOL", "SYM", "MARK"],
-    "item": ["품명", "명칭", "품목", "자재명", "기기명", "장비명", "NAME", "DESCRIPTION", "ITEM", "DESC"],
+    "symbol": ["기호", "심벌", "심볼", "심불", "SYMBOL", "SYM", "MARK", "범례"],
+    "item": ["품명", "명칭", "품목", "자재명", "기기명", "장비명", "내용", "내역", "설명", "NAME", "DESCRIPTION", "ITEM", "DESC"],
+    "disc": ["공종", "구분", "DIV"],
+    "height": ["설치높이", "높이", "HEIGHT"],
     "spec": ["규격", "사양", "형식", "SPEC", "TYPE", "SIZE"],
     "unit": ["단위", "UNIT"],
     "qty": ["수량", "QTY", "Q'TY", "QUANTITY"],
+    "from": ["FROM", "출발", "기점"],
+    "to": ["TO", "도착", "종점"],
+    "conduit": ["전선관", "배관", "CONDUIT", "배관및배선"],
+    "no": ["NO", "NO.", "회로", "회로번호", "기호"],
     "note": ["비고", "REMARK", "REMARKS", "NOTE"],
 }
 UNIT_RE = re.compile(r"^(대|개|조|식|SET|EA|M|m|㎡|m²|본|련|회선|포트|PORT|KG|kg|조|면|개소|공|구|련|매|매|롤|ROLL|라인|LOT)$", re.I)
 SPEC_HINT_RE = re.compile(r"(\d+\s*(mm|㎜|MM|m|M|C|P|W|A|V|KW|kW|㎟|SQ|sq|인치|\")|×|x|X|CAT\.?\s*\d|SM|MM|HFIX|F-CV|CV|HIV|CD|ELP|PE|W\d+|UTP|STP|PTZ|LED|IP\d{2}|MP|배|CH|TB|GB)")
-LINE_WORDS = ["관", "케이블", "트레이", "전선", "배선", "덕트", "CABLE", "TRAY", "CONDUIT", "WIRE", "DUCT", "UTP", "광", "FIBER", "배관", "PIPE"]
-CABLE_WORDS = ["케이블", "전선", "배선", "CABLE", "WIRE", "UTP", "광", "FIBER", "HFIX", "F-CV", "CV", "HIV", "FR-8", "동축", "COAX"]
+LINE_WORDS = ["관", "케이블", "트레이", "전선", "배선", "덕트", "CABLE", "TRAY", "CONDUIT", "WIRE", "DUCT", "UTP", "광케이블", "FIBER", "배관", "PIPE"]
+CABLE_WORDS = ["케이블", "전선", "배선", "CABLE", "WIRE", "UTP", "광케이블", "광섬유", "FIBER", "HFIX", "F-CV", "CV ", "HIV", "FR-8", "동축", "COAX"]
 TRAY_WORDS = ["트레이", "TRAY", "덕트", "DUCT", "래더", "LADDER"]
 
 
@@ -44,6 +50,11 @@ class LegendRow:
     region: dict | None = None
     texts: list[str] = field(default_factory=list)
     status: str = "auto"
+    discipline: str | None = None
+    install_height: str | None = None
+    symbol_cell: dict | None = None
+    extra: dict = field(default_factory=dict)
+    _cbb: dict | None = None
 
 
 @dataclass
@@ -54,6 +65,7 @@ class LegendResult:
     confidence: float
     header_found: bool
     title_handle: str | None = None
+    region_from_grid: bool = False
 
 
 def _norm(s: str) -> str:
@@ -64,7 +76,7 @@ def find_title_texts(texts: list[dict]) -> list[dict]:
     out = []
     for t in texts:
         n = _norm(t["text"])
-        if not n or len(n) > 24:
+        if not n or len(n) > 12:
             continue
         for k in TITLE_KEYS:
             if _norm(k) in n:
@@ -93,29 +105,29 @@ def estimate_region(title: dict, texts: list[dict], prims: list[dict]) -> dict:
     tb = title.get("bbox") or {"x0": title["x"], "y0": title["y"], "x1": title["x"] + h, "y1": title["y"] + h}
     tcx = (tb["x0"] + tb["x1"]) / 2
     ty = tb["y0"]
-    tw = max(tb["x1"] - tb["x0"], h)
+    tw = min(max(tb["x1"] - tb["x0"], h), 12 * h)   # 긴(가상) 제목은 폭 조건을 완화
     hl = [L for L in _horizontal_lines(prims) if L[2] <= ty + 2 * h and L[2] >= ty - 400 * h
           and (L[1] - L[0]) >= 2 * tw
           and (L[0] - 10 * h <= tcx <= L[1] + 10 * h or (L[0] <= tb["x1"] and L[1] >= tb["x0"]))]
     if len(hl) >= 2:
-        # 연속된 격자만: 제목 바로 아래 첫 선을 기준으로, x 범위가 60% 이상 겹치고 간격 20h 이하인 선만 채택
+        # 기준선 = 제목(또는 헤더) 바로 아래 첫 수평선. 표 폭은 기준선 폭으로 고정하고,
+        # 그 폭 안(±2h)에 들어오는 선만 아래로 이어 붙인다 (페이지 외곽선·표제란 배제)
         hl.sort(key=lambda L: -L[2])
-        ref = hl[0]
-
-        def overlap(L):
-            inter = min(L[1], ref[1]) - max(L[0], ref[0])
-            return inter / max(min(L[1] - L[0], ref[1] - ref[0]), 1e-9)
+        below = [L for L in hl if L[2] <= ty + 0.5 * h]
+        ref = below[0] if below else hl[0]
         chain = [ref]
-        for L in hl[1:]:
-            if chain[-1][2] - L[2] <= 20 * h and overlap(L) >= 0.6:
-                chain.append(L)
-            elif chain[-1][2] - L[2] > 20 * h:
+        for L in hl:
+            if L is ref or L[2] > ref[2]:
+                continue
+            inside = L[0] >= ref[0] - 2 * h and L[1] <= ref[1] + 2 * h and (L[1] - L[0]) >= 0.5 * (ref[1] - ref[0])
+            if chain[-1][2] - L[2] > 20 * h:
                 break
-        x0 = min(L[0] for L in chain)
-        x1 = max(L[1] for L in chain)
+            if inside:
+                chain.append(L)
+        x0, x1 = ref[0], ref[1]
         y0 = min(L[2] for L in chain)
         y1 = max(tb["y1"], max(L[2] for L in chain))
-        return {"x0": x0 - 0.5 * h, "y0": y0 - 0.5 * h, "x1": x1 + 0.5 * h, "y1": y1 + 0.5 * h}
+        return {"x0": x0 - 0.5 * h, "y0": y0 - 0.5 * h, "x1": x1 + 0.5 * h, "y1": y1 + 0.5 * h, "_grid": len(chain)}
     # 문자 정렬 fallback
     cand = [t for t in texts if t is not title and t["y"] < tb["y1"] and tb["x0"] - 8 * h <= t["x"] <= tb["x0"] + 80 * h]
     cand.sort(key=lambda t: -t["y"])
@@ -130,6 +142,39 @@ def estimate_region(title: dict, texts: list[dict], prims: list[dict]) -> dict:
     bbs = [r.get("bbox") or {"x0": r["x"], "y0": r["y"], "x1": r["x"] + h, "y1": r["y"] + h} for r in rows]
     return {"x0": min(b["x0"] for b in bbs) - 6 * h, "y0": min(b["y0"] for b in bbs) - h,
             "x1": max(b["x1"] for b in bbs) + 2 * h, "y1": tb["y1"] + h}
+
+
+def _vertical_xs(prims: list[dict], region: dict) -> list[float]:
+    """영역 높이의 30% 이상인 세로 선의 x 좌표 (표 칸 경계)."""
+    rh = region["y1"] - region["y0"]
+    xs = []
+    for pr in prims:
+        if pr.get("t") not in ("l",) or pr.get("blk"):
+            continue
+        pts = pr["p"]
+        for i in range(len(pts) - 1):
+            (x0, y0), (x1, y1) = pts[i], pts[i + 1]
+            if abs(x0 - x1) < 1e-6 and abs(y1 - y0) >= 0.3 * rh and region["x0"] - 1 <= x0 <= region["x1"] + 1:
+                xs.append(x0)
+    xs.sort()
+    out: list[float] = []
+    for x in xs:
+        if not out or x - out[-1] > 2.0:
+            out.append(x)
+    return out
+
+
+def _cell_bounds(c: float, vxs: list[float], region: dict) -> tuple[float, float]:
+    left = max([x for x in vxs if x < c], default=region["x0"])
+    right = min([x for x in vxs if x > c], default=region["x1"])
+    return left, right
+
+
+def _overlap_ratio(a: dict, b: dict) -> float:
+    ix = max(0.0, min(a["x1"], b["x1"]) - max(a["x0"], b["x0"]))
+    iy = max(0.0, min(a["y1"], b["y1"]) - max(a["y0"], b["y0"]))
+    area = min((a["x1"] - a["x0"]) * (a["y1"] - a["y0"]), (b["x1"] - b["x0"]) * (b["y1"] - b["y0"])) or 1e-9
+    return ix * iy / area
 
 
 def _cluster_rows(items: list[dict], tol: float) -> list[list[dict]]:
@@ -149,10 +194,16 @@ def _classify_header(row_texts: list[str]) -> dict[str, int] | None:
     cols = {}
     for i, s in enumerate(row_texts):
         n = _norm(s)
+        if not n:
+            continue
         for key, words in HEADER_KEYS.items():
-            if any(_norm(w) == n or (_norm(w) in n and len(n) <= len(_norm(w)) + 2) for w in words):
+            if any(_norm(w) == n or (len(_norm(w)) >= 2 and _norm(w) in n and len(n) <= len(_norm(w)) + 2) for w in words):
                 cols.setdefault(key, i)
-    return cols if len(cols) >= 2 else None
+                break
+    # 품명 열이 OCR 로 깨져도 기호+단위/높이/비고 등 2개 이상이면 헤더로 인정 (품명 열은 위치로 추정)
+    if "from" in cols and "to" in cols:
+        return cols   # 케이블 일람표 / 배관배선표
+    return cols if (len(cols) >= 2 and ("item" in cols or "symbol" in cols)) else None
 
 
 def _category(item: str | None, spec: str | None, unit: str | None, has_line_symbol: bool) -> str:
@@ -168,7 +219,8 @@ def _category(item: str | None, spec: str | None, unit: str | None, has_line_sym
     return "device"
 
 
-def extract_legend(sheet: dict, title: dict, region: dict | None = None) -> LegendResult:
+def extract_legend(sheet: dict, title: dict, region: dict | None = None, ocr_cell=None) -> LegendResult:
+    """ocr_cell(region)->str : 셀 단위 재인식 콜백(래스터가 있는 PDF). 희소 OCR 이 비면 품명/규격 칸을 다시 읽는다."""
     """sheet: geometry json (prims, texts, entities, blocks). title: 제목 문자 dict (수동 영역 지정 시 region 필수, title 은 가상)."""
     texts, prims, entities, blocks = sheet["texts"], sheet["prims"], sheet["entities"], sheet.get("blocks", {})
     h = float(title.get("height") or 3.0)
@@ -211,6 +263,20 @@ def extract_legend(sheet: dict, title: dict, region: dict | None = None) -> Lege
 
     tol = max(h * 0.8, 1e-6)
     rows = _cluster_rows(rtexts + rblocks, tol)
+    # OCR 줄 분리로 한 행이 둘로 나뉜 경우: 행 간격 중앙값의 45% 이내면 합친다
+    if len(rows) >= 3:
+        cys = [r[0]["_cy"] for r in rows]
+        gaps = sorted(abs(a - b) for a, b in zip(cys, cys[1:]) if abs(a - b) > 1e-6)
+        med = gaps[len(gaps) // 2] if gaps else tol
+        merged: list[list[dict]] = []
+        for r in rows:
+            if merged and abs(merged[-1][0]["_cy"] - r[0]["_cy"]) < 0.45 * med:
+                merged[-1].extend(r)
+                merged[-1].sort(key=lambda t: t["_cx"])
+            else:
+                merged.append(r)
+        rows = merged
+        tol = max(tol, 0.45 * med)
 
     header_cols = None
     header_x: dict[str, float] = {}
@@ -222,10 +288,19 @@ def extract_legend(sheet: dict, title: dict, region: dict | None = None) -> Lege
             if hc:
                 header_cols = hc
                 header_x = {k: tx[i]["_cx"] for k, i in hc.items()}
+                if "item" not in header_x:
+                    # 품명 열 = 기호 열 오른쪽의 첫 헤더 열 사이 (헤더 문자가 깨진 경우)
+                    sc = header_x.get("symbol", region["x0"])
+                    right = min([v for v in header_x.values() if v > sc], default=region["x1"])
+                    header_x["item"] = (sc + right) / 2 if right != region["x1"] else sc + 0.3 * (region["x1"] - region["x0"])
+                    header_cols["item"] = -1
                 continue
         data_rows.append(r)
 
     out_rows: list[LegendRow] = []
+    last_disc = [None]
+    last_no = [None]
+    vxs = _vertical_xs(prims, region)
     region_h = region["y1"] - region["y0"]
     for idx, r in enumerate(data_rows, start=1):
         tx = [it for it in r if it["_kind"] == "text"]
@@ -247,19 +322,56 @@ def extract_legend(sheet: dict, title: dict, region: dict | None = None) -> Lege
             if b.get("texts"):
                 lr.symbol_name = " ".join(b["texts"])[:50]
         else:
-            # 행 밴드 안 좌측 도형 클러스터 → 지문
-            cl = [p for p in rprims if row_bb["y0"] <= p["_cy"] <= row_bb["y1"] and (sym_x_limit is None or p["_cx"] < sym_x_limit)]
+            # 행 밴드 안 기호 열(헤더가 있으면 심벌 열 범위, 없으면 품명 열 왼쪽) 도형 클러스터 → 지문
+            sx0, sx1 = region["x0"], (sym_x_limit if sym_x_limit is not None else region["x1"])
+            if "symbol" in header_x:
+                if vxs:
+                    sx0, sx1 = _cell_bounds(header_x["symbol"], vxs, region)
+                else:
+                    cols_sorted = sorted(header_x.values())
+                    sc = header_x["symbol"]
+                    left = max([c for c in cols_sorted if c < sc], default=region["x0"])
+                    right = min([c for c in cols_sorted if c > sc], default=region["x1"])
+                    sx0, sx1 = (left + sc) / 2 if left != region["x0"] else region["x0"], (sc + right) / 2
+            lr.symbol_cell = {"x0": sx0, "x1": sx1, "y0": row_bb["y0"], "y1": row_bb["y1"]}
+            cl = [p for p in rprims if row_bb["y0"] <= p["_cy"] <= row_bb["y1"] and sx0 <= p["_cx"] <= sx1
+                  and p["_bb"]["y0"] >= row_bb["y0"] - tol and p["_bb"]["y1"] <= row_bb["y1"] + tol
+                  and p.get("layer") != "RASTER-LINE"]
             if cl:
                 lr.fingerprint = shape_fingerprint([{"t": p["t"], "p": p["p"], "r": p.get("r")} for p in cl], [])
                 cbb = bbox_of([q for p in cl for q in p["p"]])
-                # 선형 기호(가로선)인지 — 행 문자 높이 기준
+                lr.fingerprint["_cbb"] = cbb
+                lr.region = {"x0": cbb["x0"] - h, "y0": min(row_bb["y0"], cbb["y0"] - h), "x1": max(row_bb["x1"], cbb["x1"] + h), "y1": max(row_bb["y1"], cbb["y1"] + h)}
                 hs = sorted(float(t.get("height") or h) for t in tx) or [h]
                 hr = hs[len(hs) // 2]
-                if (cbb["x1"] - cbb["x0"]) > 4 * hr and (cbb["y1"] - cbb["y0"]) < 1.5 * hr:
+                lines_only = [p for p in cl if p["t"] in ("l", "a")]
+                no_shapes = not any(p["t"] == "c" for p in cl) and all((p["_bb"]["y1"] - p["_bb"]["y0"]) < 1.5 * hr for p in cl)
+                if (cbb["x1"] - cbb["x0"]) > 4 * hr and (cbb["y1"] - cbb["y0"]) < 1.5 * hr and lines_only and no_shapes:
+                    # 선형 기호: 스타일(레이어) + 파선 패턴 서명
                     lr.fingerprint["line_symbol"] = True
-                    layers = {p.get("layer") for p in cl if p.get("layer")}
+                    layers = {p.get("layer") for p in lines_only if p.get("layer")}
                     if len(layers) == 1:
                         lr.layer_hint = layers.pop()
+                    segs = sorted(lines_only, key=lambda p: p["_bb"]["x0"])
+                    lens = sorted(max(p["_bb"]["x1"] - p["_bb"]["x0"], p["_bb"]["y1"] - p["_bb"]["y0"]) for p in segs)
+                    gaps = sorted(max(0.0, b["_bb"]["x0"] - a["_bb"]["x1"]) for a, b in zip(segs, segs[1:]))
+                    lr.fingerprint["dash"] = {"n": len(segs), "seg": lens[len(lens) // 2], "gap": (gaps[len(gaps) // 2] if gaps else 0.0),
+                                              "total": cbb["x1"] - cbb["x0"]}
+                else:
+                    # 앵커(닫힌 도형·원·작은 채움) = 가장 큰 닫힌 도형. 그 중심 기준으로 방향 정규화한 비트맵 지문
+                    anc = []
+                    for p in cl:
+                        d = max(p["_bb"]["x1"] - p["_bb"]["x0"], p["_bb"]["y1"] - p["_bb"]["y0"])
+                        closed = p["t"] == "c" or (p["t"] == "f" and 3 <= len(p["p"]) <= 12) or (len(p["p"]) >= 4 and math.dist(p["p"][0], p["p"][-1]) <= 0.05 * max(d, 1e-9))
+                        if closed and d > 0:
+                            anc.append((d, p))
+                    lr.fingerprint.update(bitmap_signature([{"t": p["t"], "p": p["p"]} for p in cl]))
+                    if anc:
+                        d, ap = max(anc, key=lambda t: t[0])
+                        lr.fingerprint["anchor_bm"] = bitmap_signature([{"t": ap["t"], "p": ap["p"]}]).get("bm")
+                    lr.fingerprint["layers"] = sorted({p.get("layer") for p in cl if p.get("layer")})
+                    sz = lr.fingerprint.get("size") or 1.0
+                    lr.fingerprint["anchor_ratio"] = round(max(a[0] for a in anc) / sz, 3) if anc else None
                 conf += 0.25
         # 기호명: 좌측(품명 열 이전) 짧은 문자
         if lr.symbol_name is None:
@@ -279,8 +391,40 @@ def extract_legend(sheet: dict, title: dict, region: dict | None = None) -> Lege
             lr.item_name = " ".join(buckets.get("item", [])) or None
             lr.spec = " ".join(buckets.get("spec", [])) or None
             lr.unit = " ".join(buckets.get("unit", [])) or None
+            lr.install_height = " ".join(buckets.get("height", [])) or None
+            if ocr_cell and "item" in header_x:
+                # 품명/규격 칸 재인식 — 세로 격자선으로 칸 경계를 잡는다
+                for key in ("item", "spec"):
+                    if key not in header_x:
+                        continue
+                    left, right = _cell_bounds(header_x[key], vxs, region)
+                    better = ocr_cell({"x0": left + 1, "x1": right - 1, "y0": row_bb["y0"], "y1": row_bb["y1"]})
+                    cur_v = getattr(lr, "item_name" if key == "item" else "spec")
+                    if better and (not cur_v or len(better) > len(cur_v)):
+                        setattr(lr, "item_name" if key == "item" else "spec", better)
+            if buckets.get("disc"):
+                last_disc[0] = " ".join(buckets["disc"])
+            lr.discipline = last_disc[0]
             if lr.symbol_name is None and buckets.get("symbol"):
                 lr.symbol_name = " ".join(buckets["symbol"])
+            if lr.spec is None and buckets.get("note") and SPEC_HINT_RE.search(" ".join(buckets["note"])):
+                lr.spec = " ".join(buckets["note"])
+            if "from" in header_cols and "to" in header_cols:
+                # 케이블 일람표(배관배선표): 회로번호 FROM TO 규격 전선관 → 케이블 품목 (경로·회선은 사용자가 지정)
+                no = " ".join(buckets.get("no", [])) or (lr.symbol_name or "")
+                if no:
+                    last_no[0] = no
+                lr.symbol_name = last_no[0] or None
+                lr.extra = {"from": " ".join(buckets.get("from", [])), "to": " ".join(buckets.get("to", [])),
+                            "conduit": " ".join(buckets.get("conduit", [])), "schedule": True}
+                if not lr.spec and lr.item_name and SPEC_HINT_RE.search(lr.item_name):
+                    lr.spec, lr.item_name = lr.item_name, None
+                lr.item_name = lr.item_name or ("케이블 " + (lr.spec or "")).strip()
+                lr.unit = lr.unit or "m"
+                lr.category = "cable"
+                lr.fingerprint = {"n": 0, "schedule": True}
+                if lr.extra["conduit"]:
+                    lr.extra["conduit_item"] = lr.extra["conduit"]
             conf += 0.2
         else:
             rest = [t["text"] for t in tx]
@@ -294,41 +438,159 @@ def extract_legend(sheet: dict, title: dict, region: dict | None = None) -> Lege
             conf += 0.05
 
         has_line = bool(lr.fingerprint and lr.fingerprint.get("line_symbol"))
-        lr.category = _category(lr.item_name, lr.spec, lr.unit, has_line)
+        if not (lr.fingerprint and lr.fingerprint.get("schedule")):
+            lr.category = _category(lr.item_name, lr.spec, lr.unit, has_line)
         if not lr.item_name:
             lr.status = "unresolved"
             conf = min(conf, 0.3)
-        if not (lr.block_name or (lr.fingerprint and lr.fingerprint.get("n", 0) > 0) or lr.symbol_name):
+        if not (lr.block_name or (lr.fingerprint and (lr.fingerprint.get("n", 0) > 0 or lr.fingerprint.get("schedule"))) or lr.symbol_name):
             # 기호 없는 행(비고/주석) → 제외
             continue
+        if lr.item_name and not re.search(r"[가-힣A-Za-z]{2,}", lr.item_name):
+            lr.item_name = None   # 격자 노이즈('00000', '_')
+            lr.status = "unresolved"
+        fp = lr.fingerprint or {}
+        if not lr.item_name and not lr.block_name and not (fp.get("bm") or fp.get("dash") or fp.get("schedule")):
+            continue   # 빈 행 (OCR 노이즈 기호명만 있는 행 포함)
+        if fp.get("schedule") and not lr.spec:
+            continue
+        if sheet.get("_raster") and lr.item_name and lr.symbol_cell and not fp.get("bm"):
+            fp = lr.fingerprint = {**fp, "raster_cell": True, "n": 1}   # 스캔 도면: 기호는 이미지 크롭으로 매칭
+        # 같은 기호 묶음이 두 행으로 쪼개진 경우(OCR 줄 분리) 중복 제거: 기호 bbox 60% 이상 겹침
+        cbb = fp.get("_cbb")
+        if out_rows and cbb and out_rows[-1]._cbb and _overlap_ratio(cbb, out_rows[-1]._cbb) > 0.6:
+            prev = out_rows[-1]
+            if not prev.item_name and lr.item_name:
+                prev.item_name, prev.spec, prev.unit, prev.status = lr.item_name, lr.spec, lr.unit, "auto"
+            continue
+        lr._cbb = cbb
+        fp.pop("_cbb", None)
         lr.confidence = round(min(conf, 0.98), 2)
         out_rows.append(lr)
 
     total_conf = round(sum(r.confidence for r in out_rows) / len(out_rows), 2) if out_rows else 0.0
+    from_grid = int(region.pop("_grid", 0) or 0) >= 4
     return LegendResult(title=title["text"], region=region, rows=out_rows, confidence=total_conf,
-                        header_found=header_cols is not None, title_handle=title.get("h"))
+                        header_found=header_cols is not None, title_handle=title.get("h"), region_from_grid=from_grid)
 
 
-def auto_detect_legends(sheet: dict) -> list[LegendResult]:
+def find_header_rows(texts: list[dict]) -> list[dict]:
+    """제목 키워드가 없어도 '기호|품명(내용)|...' 헤더 행이 있으면 범례표로 본다. 가상 제목(헤더 바로 위)을 돌려준다."""
+    items = []
+    for t in texts:
+        h = float(t.get("height") or 3.0)
+        bb = t.get("bbox") or {"x0": t["x"], "y0": t["y"], "x1": t["x"] + h, "y1": t["y"] + h}
+        items.append({**t, "_cx": (bb["x0"] + bb["x1"]) / 2, "_cy": (bb["y0"] + bb["y1"]) / 2, "_bb": bb, "_h": h})
+    hs = sorted(i["_h"] for i in items) or [3.0]
+    rows = _cluster_rows(items, hs[len(hs) // 2] * 0.8)
+    out = []
+    for r in rows:
+        if _classify_header([t["text"] for t in r]):
+            x0 = min(t["_bb"]["x0"] for t in r)
+            x1 = max(t["_bb"]["x1"] for t in r)
+            y1 = max(t["_bb"]["y1"] for t in r)
+            h = max(t["_h"] for t in r)
+            out.append({"text": "범례(헤더 인식)", "x": x0, "y": y1, "height": h, "h": "__hdr__",
+                        "bbox": {"x0": x0, "y0": y1, "x1": x1, "y1": y1 + h}, "_hdr_row": r})
+    return out
+
+
+def grid_tables(sheet: dict, ocr_cell, min_rows: int = 4) -> list[LegendResult]:
+    """스캔 도면용 '격자 우선' 범례 추출: 래스터에서 뽑은 가로선 묶음(같은 폭, 5줄 이상)을 표로 보고
+    행(가로선 사이)·열(세로선)을 만든 뒤 칸마다 OCR 한다. 헤더 행에 기호/명칭 열이 있으면 범례표로 채택."""
+    hl = [(x0, x1, y) for (x0, x1, y, layer) in _horizontal_lines(sheet["prims"]) if layer == "RASTER-LINE" and x1 - x0 > 40]
+    if not hl or ocr_cell is None:
+        return []
+    groups: list[list[tuple]] = []
+    for L in sorted(hl, key=lambda t: -(t[1] - t[0])):   # 긴 선부터: 그룹 대표 폭 = 가장 긴 선
+        for g in groups:
+            w = g[0][1] - g[0][0]
+            if abs(g[0][0] - L[0]) <= 0.02 * w + 4 and (L[1] - L[0]) >= 0.45 * w and L[1] <= g[0][1] + 0.02 * w + 4:
+                g.append(L)
+                break
+        else:
+            groups.append([L])
+    out = []
+    for g in groups:
+        ys = sorted({round(y, 1) for _, _, y in g}, reverse=True)
+        if len(ys) < min_rows:
+            continue
+        x0 = min(a for a, _, _ in g)
+        x1 = g[0][1]
+        region = {"x0": x0, "y0": ys[-1], "x1": x1, "y1": ys[0]}
+        vxs = _vertical_xs([pr for pr in sheet["prims"] if pr.get("layer") == "RASTER-LINE"], region)
+        cols = sorted({round(x, 1) for x in vxs if x0 - 3 <= x <= x1 + 3})
+        if len(cols) < 2:
+            continue
+        rows = [(ys[i + 1], ys[i]) for i in range(len(ys) - 1) if ys[i] - ys[i + 1] > 4]
+        cells = []   # rows × cols 텍스트
+        for (ry0, ry1) in rows[: min(len(rows), 60)]:
+            cells.append([ocr_cell({"x0": cols[c] + 1, "x1": cols[c + 1] - 1, "y0": ry0 + 1, "y1": ry1 - 1}) for c in range(len(cols) - 1)])
+        header_i, hc = None, None
+        for i, row in enumerate(cells[:3]):
+            hc = _classify_header(row)
+            if hc:
+                header_i = i
+                break
+        if hc is None:
+            continue
+        # 열 인덱스: 기호 열은 헤더에 없으면 0열
+        sym_c = hc.get("symbol", 0)
+        item_c = hc.get("item")
+        if item_c is None or item_c == sym_c:
+            item_c = sym_c + 1 if sym_c + 1 < len(cols) - 1 else sym_c
+        lrows: list[LegendRow] = []
+        for i, row in enumerate(cells):
+            if i <= header_i:
+                continue
+            ry0, ry1 = rows[i]
+            item = row[item_c] if item_c < len(row) else ""
+            if not item or not re.search(r"[가-힣A-Za-z]{2,}", item):
+                continue
+            spec = row[hc["spec"]] if "spec" in hc and hc["spec"] < len(row) else None
+            if spec is None:
+                m = re.search(r"\(([^()]{2,40})\)", item)
+                spec = m.group(1) if m else None
+            lr = LegendRow(row_no=len(lrows) + 1, item_name=item.strip(), spec=spec, unit=(row[hc["unit"]] if "unit" in hc and hc["unit"] < len(row) else None),
+                           install_height=(row[hc["height"]] if "height" in hc and hc["height"] < len(row) else None),
+                           symbol_cell={"x0": cols[sym_c], "x1": cols[sym_c + 1], "y0": ry0, "y1": ry1},
+                           region={"x0": x0, "x1": x1, "y0": ry0, "y1": ry1}, confidence=0.7, texts=[c for c in row if c])
+            lr.fingerprint = {"raster_cell": True, "n": 1}
+            lr.category = _category(lr.item_name, lr.spec, lr.unit, False)
+            lrows.append(lr)
+        if lrows:
+            out.append(LegendResult(title="범례(격자 인식)", region=region, rows=lrows, confidence=0.7, header_found=True, region_from_grid=True))
+    return out
+
+
+def auto_detect_legends(sheet: dict, ocr_cell=None) -> list[LegendResult]:
     results = []
     used: list[dict] = []
-    for title in find_title_texts(sheet["texts"]):
+    if sheet.get("_raster"):
+        for res in grid_tables(sheet, ocr_cell):
+            results.append(res)
+            used.append(res.region)
+    cands = find_title_texts(sheet["texts"]) + find_header_rows(sheet["texts"])
+    for title in cands:
         if any(in_region(title["x"], title["y"], u) for u in used):
             continue
-        res = extract_legend(sheet, title)
-        if res.rows:
+        res = extract_legend(sheet, title, ocr_cell=ocr_cell)
+        # 근거 없는 표(헤더도 격자도 없음)는 제외 — 주기사항 본문 오탐 방지
+        with_sym = sum(1 for r in res.rows if r.block_name or (r.fingerprint and (r.fingerprint.get("bm") or r.fingerprint.get("dash") or r.fingerprint.get("schedule"))))
+        # 기호(도형) 가 있는 행이 있어야 범례표 — 도면목록표·일람표 같은 문자 표 배제
+        if res.rows and with_sym >= 1 and (res.header_found or (res.region_from_grid and with_sym >= max(2, len(res.rows) // 2))):
             results.append(res)
             used.append(res.region)
     return results
 
 
-def legend_from_region(sheet: dict, region: dict, title: str = "사용자 지정 범례") -> LegendResult:
+def legend_from_region(sheet: dict, region: dict, title: str = "사용자 지정 범례", ocr_cell=None) -> LegendResult:
     """사용자가 마우스로 지정한 영역. 가상 제목을 영역 상단에 둔다."""
     hs = [float(t.get("height") or 0) for t in sheet["texts"] if in_region(t["x"], t["y"], region)]
     h = sorted(hs)[len(hs) // 2] if hs else 3.0
     vt = {"text": title, "x": region["x0"], "y": region["y1"], "height": h, "h": "__manual__",
           "bbox": {"x0": region["x0"], "y0": region["y1"], "x1": region["x1"], "y1": region["y1"] + h}}
-    return extract_legend(sheet, vt, region)
+    return extract_legend(sheet, vt, region, ocr_cell=ocr_cell)
 
 
 def legend_from_xlsx(path: str) -> list[LegendRow]:

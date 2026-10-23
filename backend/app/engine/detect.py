@@ -9,7 +9,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from .geometry import bbox_of, fingerprint_similarity, in_region
+from .geometry import bbox_of, bitmap_signature, bitmap_similarity, cluster_prims, fingerprint_similarity, in_region, prim_bbox
 
 EXISTING_WORDS = ["기존", "EXIST", "EXISTING", "EX-", "EX_", "현황"]
 REMOVE_WORDS = ["철거", "DEMO", "REMOVE", "DEL"]
@@ -73,9 +73,14 @@ def detect_in_sheet(sheet: dict, legend_symbols: list[dict], exclude_regions: li
                         if e["block"] == bn and not _excluded(e["x"], e["y"], exclude_regions):
                             dets.append(Detection(lid, e["x"], e["y"], e.get("bbox"), "fingerprint", round(0.6 + 0.3 * sim, 2), e["h"],
                                                   install_type_of(e.get("layer"), bn), "review" if sim < 1.0 else "auto"))
-            # 폭발 도형 / 벡터 PDF: 원(circle) 중심 클러스터 비교
+            # 폭발 도형 / 벡터 PDF: 비트맵 지문이 있으면 일반 클러스터 비교, 없으면 원 중심 클러스터 비교
             if not bname or sheet.get("_force_cluster"):
-                dets.extend(_cluster_matches(lid, fp, prims, exclude_regions))
+                if fp.get("bm"):
+                    for variant in [fp] + list(fp.get("variants") or []):
+                        if variant.get("bm"):
+                            dets.extend(_vector_cluster_matches(lid, variant, prims, exclude_regions, sheet))
+                else:
+                    dets.extend(_cluster_matches(lid, fp, prims, exclude_regions))
         # 3) 문자 라벨 (블록·지문 없이 엑셀 등에서 등록된 기호명)
         sname = (ls.get("symbol_name") or "").strip()
         if sname and not bname and not (fp and fp.get("n", 0) > 0) and len(sname) <= 8:
@@ -88,6 +93,143 @@ def detect_in_sheet(sheet: dict, legend_symbols: list[dict], exclude_regions: li
             dets.extend(_template_matches(lid, ls["image_path"], raster_path, raster_meta, exclude_regions))
 
     return dedupe(dets, sheet)
+
+
+def _vector_cluster_matches(lid: int, fp: dict, prims: list[dict], exclude_regions: list[dict], sheet: dict) -> list[Detection]:
+    """비트맵 지문 기반 검출.
+    닫힌 도형·원·작은 채움(앵커)을 중심으로 범례 기호 크기의 창을 잡아 같은 스타일의 프리미티브를 모으고,
+    회전·반전 IoU 로 비교한다. 선로가 기호에 붙어 들어온 경우를 대비해 프리미티브를 최대 3개까지 빼 보며 최적을 찾는다."""
+    size = float(fp.get("size") or 0)
+    if size <= 0:
+        return []
+    layers = set(fp.get("layers") or ())
+    fill_ok = any(L.startswith("FILL") for L in layers)
+
+    def style_ok(p):
+        if p.get("t") == "f" and len(p["p"]) > 12:
+            return False
+        return (not layers) or p.get("layer") in layers or (p.get("t") == "f" and fill_ok)
+
+    # 스타일별 공간 격자 (시트당 1회)
+    cache = sheet.setdefault("_grid_cache", {})
+    gkey = (tuple(sorted(layers)), round(size, 1))
+    if gkey not in cache:
+        cell = max(size, 1e-6)
+        grid: dict[tuple[int, int], list[int]] = {}
+        for i, p in enumerate(prims):
+            if not style_ok(p) or len(p["p"]) < 2:
+                continue
+            b = prim_bbox(p)
+            if max(b["x1"] - b["x0"], b["y1"] - b["y0"]) > 1.4 * size:
+                continue
+            for gx in range(int(b["x0"] // cell), int(b["x1"] // cell) + 1):
+                for gy in range(int(b["y0"] // cell), int(b["y1"] // cell) + 1):
+                    grid.setdefault((gx, gy), []).append(i)
+        cache[gkey] = (grid, cell)
+    grid, cell = cache[gkey]
+
+    ar = fp.get("anchor_ratio")
+    lo, hi = (0.25 * size, 1.4 * size) if not ar else (0.6 * ar * size, 1.6 * ar * size)
+
+    def is_anchor(p):
+        b = prim_bbox(p)
+        d = max(b["x1"] - b["x0"], b["y1"] - b["y0"])
+        if not (lo <= d <= hi):
+            return False
+        if p.get("t") == "c":
+            return True
+        if p.get("t") == "f" and 3 <= len(p["p"]) <= 12:
+            return True
+        pts = p["p"]
+        return len(pts) >= 4 and math.dist(pts[0], pts[-1]) <= 0.05 * size
+
+    half = 0.8 * size
+    thr = 0.86 if (fp.get("lines", 0) + fp.get("circles", 0) + fp.get("arcs", 0) <= 2) else 0.78
+    out = []
+    seen: set[tuple[int, int]] = set()
+    for i, p in enumerate(prims):
+        if not style_ok(p) or not is_anchor(p):
+            continue
+        b = prim_bbox(p)
+        cx, cy = (b["x0"] + b["x1"]) / 2, (b["y0"] + b["y1"]) / 2
+        if _excluded(cx, cy, exclude_regions):
+            continue
+        key = (int(cx // (size * 0.5)), int(cy // (size * 0.5)))
+        if key in seen:
+            continue
+        win = {"x0": cx - half, "y0": cy - half, "x1": cx + half, "y1": cy + half}
+        members = set()
+        for gx in range(int(win["x0"] // cell), int(win["x1"] // cell) + 1):
+            for gy in range(int(win["y0"] // cell), int(win["y1"] // cell) + 1):
+                for j in grid.get((gx, gy), ()):
+                    bj = prim_bbox(prims[j])
+                    inside = bj["x0"] >= win["x0"] and bj["x1"] <= win["x1"] and bj["y0"] >= win["y0"] and bj["y1"] <= win["y1"]
+                    # 창 안에 완전히 들어오거나, 앵커에 붙어 있으면서(화살표 등) 기호 크기의 1.2배 이하인 부속
+                    touch = bj["x0"] <= b["x1"] + 0.1 * size and bj["x1"] >= b["x0"] - 0.1 * size and bj["y0"] <= b["y1"] + 0.1 * size and bj["y1"] >= b["y0"] - 0.1 * size \
+                        and max(bj["x1"] - bj["x0"], bj["y1"] - bj["y0"]) <= 1.2 * size
+                    if inside or touch:
+                        members.add(j)
+        members.add(i)
+        mem = list(members)
+        if len(mem) > 40:   # 글자·해치 밀집 구역은 기호가 아님
+            continue
+        best_sim, best_mem = _best_subset(fp, prims, mem, i, thr, (cx, cy))
+        # 2단계: 전체 모양은 다르지만(화살표 방향·길이가 제각각 등) 앵커 도형이 같으면 '추가 검토' 로 후보 등록
+        review_only = False
+        if best_sim < thr and fp.get("anchor_bm") and best_sim >= 0.5:
+            asig = bitmap_signature([{"t": p["t"], "p": p["p"]}])
+            if bitmap_similarity({"bm": fp["anchor_bm"], "n": asig.get("n")}, asig, dil=2) >= 0.8:
+                review_only = True
+        if best_sim >= thr or review_only:
+            seen.add(key)
+            pts = [q for j in best_mem for q in prims[j]["p"]]
+            bb = bbox_of(pts)
+            csize = max(bb["x1"] - bb["x0"], bb["y1"] - bb["y0"])
+            if not (0.55 * size <= csize <= 1.7 * size):
+                continue
+            out.append(Detection(lid, (bb["x0"] + bb["x1"]) / 2, (bb["y0"] + bb["y1"]) / 2, bb, "fingerprint",
+                                 round(0.5 + 0.5 * best_sim, 2), p.get("h"), "new",
+                                 "auto" if (best_sim >= 0.9 and not review_only) else "review"))
+    return out
+
+
+def _rotated(prims_sel: list[dict], center, deg: float) -> list[dict]:
+    if deg == 0:
+        return prims_sel
+    ca, sa = math.cos(math.radians(deg)), math.sin(math.radians(deg))
+    cx, cy = center
+    return [{**pr, "p": [(cx + (x - cx) * ca - (y - cy) * sa, cy + (x - cx) * sa + (y - cy) * ca) for x, y in pr["p"]]} for pr in prims_sel]
+
+
+def _best_subset(fp: dict, prims: list[dict], mem: list[int], anchor: int, thr: float, center=None) -> tuple[float, list[int]]:
+    """후보 묶음에서 범례 지문과 가장 비슷한 부분집합(최대 4개 제거)·회전각(15° 단위) 을 찾는다."""
+    def sim_of(ids):
+        sel = [{"t": prims[j]["t"], "p": prims[j]["p"]} for j in ids]
+        best = bitmap_similarity(fp, bitmap_signature(sel))
+        if best < thr and center is not None:
+            for deg in range(15, 90, 15):
+                best = max(best, bitmap_similarity(fp, bitmap_signature(_rotated(sel, center, deg))))
+                if best >= thr:
+                    break
+        return best
+    cur = list(mem)
+    best = sim_of(cur)
+    for _ in range(4):
+        if best >= thr or len(cur) <= 1:
+            break
+        trial = None
+        for j in cur:
+            if j == anchor:
+                continue
+            ids = [k for k in cur if k != j]
+            sm = sim_of(ids)
+            if trial is None or sm > trial[0]:
+                trial = (sm, ids)
+        if trial and trial[0] > best:
+            best, cur = trial
+        else:
+            break
+    return best, cur
 
 
 def _cluster_matches(lid: int, fp: dict, prims: list[dict], exclude_regions: list[dict]) -> list[Detection]:

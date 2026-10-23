@@ -38,7 +38,19 @@ def match_segments_for_symbol(sheet: dict, ls: dict, exclude_regions: list[dict]
     def inside(pr):
         return any(in_region(x, y, r) for r in exclude_regions for x, y in (pr["p"][0], pr["p"][-1]))
 
-    cands = [pr for pr in prims if pr.get("t") in ("l", "a") and not pr.get("blk") and len(pr["p"]) >= 2 and not inside(pr)]
+    import math as _m
+    bb = sheet.get("bbox") or {}
+    page_dim = max(bb.get("x1", 0) - bb.get("x0", 0), bb.get("y1", 0) - bb.get("y0", 0)) if bb else 0
+
+    def plausible(pr):
+        pts = pr["p"]
+        if len(pts) >= 4 and _m.dist(pts[0], pts[-1]) < 1e-6:
+            return False   # 닫힌 도형(사각형·표 칸) 은 선로가 아님
+        if page_dim and polyline_length(pts) > 0.4 * page_dim:
+            return False   # 도면 외곽선·표제란 긴 선 제외
+        return True
+
+    cands = [pr for pr in prims if pr.get("t") in ("l", "a") and not pr.get("blk") and len(pr["p"]) >= 2 and not inside(pr) and plausible(pr)]
     if layer_hint:
         out = [pr for pr in cands if (pr.get("layer") or "").upper() == layer_hint]
     if not out and label_keys:
@@ -76,14 +88,33 @@ def _pt_seg_dist(p, a, b) -> float:
     return math.dist(p, (ax + t * dx, ay + t * dy))
 
 
-def build_routes(segments: list[dict], scale_factor: float | None, tol: float) -> list[RouteOut]:
-    """연결된 선분을 경로로 묶고 길이를 계산. 반환은 범례기호 1개 기준 (여러 경로)."""
+def build_routes(segments: list[dict], scale_factor: float | None, tol: float, dash: dict | None = None, dup_tol: float | None = None) -> list[RouteOut]:
+    """연결된 선분을 경로로 묶고 길이를 계산. 반환은 범례기호 1개 기준 (여러 경로).
+    dash: 범례 선형 기호의 파선 서명 {n, seg, gap}. 주어지면 묶음의 선분 길이 패턴이 맞는 경로만 남긴다
+    (PDF 처럼 레이어 대신 선 굵기·색만 있을 때 실선/파선/일점쇄선을 구분)."""
     pts_list = [s["p"] for s in segments]
-    dups = find_duplicate_segments(pts_list, tol)
+    dups = find_duplicate_segments(pts_list, dup_tol if dup_tol is not None else tol)
     dup_of: dict[int, int] = {}
     for a, b in dups:
         dup_of[b] = a
     groups = group_connected(pts_list, tol)
+    if dash:
+        seg_len = float(dash.get("seg") or 0)
+        dashed = int(dash.get("n") or 1) > 1
+        kept = []
+        for g in groups:
+            lens = sorted(polyline_length(pts_list[i]) for i in g)
+            med = lens[len(lens) // 2] if lens else 0
+            total = sum(lens)
+            if total < 2.5 * float(dash.get("total") or seg_len):
+                continue   # 범례 그림보다 짧은 토막은 선로가 아님
+            if dashed:
+                if len(g) >= 3 and seg_len > 0 and 0.4 * seg_len <= med <= 2.5 * seg_len:
+                    kept.append(g)
+            else:
+                if med >= 0.5 * seg_len:
+                    kept.append(g)
+        groups = kept
     routes = []
     for g in groups:
         r = RouteOut(legend_symbol_id=0)

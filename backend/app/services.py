@@ -20,7 +20,10 @@ from .models import (Circuit, DetectedSymbol, DetectStatus, DrawingFile, Drawing
 
 def load_geometry(sheet: DrawingSheet) -> dict:
     with open(sheet.geometry_path, encoding="utf-8") as fp:
-        return json.load(fp)
+        geo = json.load(fp)
+    geo["_raster"] = sheet.source_kind in ("pdf_raster", "pdf_mixed", "image")
+    geo["bbox"] = sheet.bbox
+    return geo
 
 
 def project_sheets(db: Session, pid: int) -> list[DrawingSheet]:
@@ -64,12 +67,13 @@ def _save_legend(db: Session, pid: int, sheet: DrawingSheet | None, res: legend_
     for r in res.rows:
         img = None
         if sheet and sheet.source_kind in ("pdf_raster", "pdf_mixed", "image") and r.region:
-            img = crop_symbol_image(sheet, _symbol_cell(r.region, res.region), settings.processed_dir / str(pid) / "legend" / f"{tbl.id}_{r.row_no}.png")
+            cell = r.symbol_cell or _symbol_cell(r.region, res.region)
+            img = crop_symbol_image(sheet, cell, settings.processed_dir / str(pid) / "legend" / f"{tbl.id}_{r.row_no}.png")
         db.add(LegendSymbol(table_id=tbl.id, project_id=pid, row_no=r.row_no, symbol_name=r.symbol_name, block_name=r.block_name,
                             fingerprint=r.fingerprint, image_path=img, item_name=r.item_name, spec=r.spec, unit=r.unit,
-                            discipline=(sheet.discipline if sheet else None), category=r.category, layer_hint=r.layer_hint,
+                            discipline=(r.discipline or (sheet.discipline if sheet else None)), category=r.category, layer_hint=r.layer_hint,
                             confidence=r.confidence, status=SymbolStatus(r.status), region=r.region,
-                            extra={"texts": r.texts}))
+                            extra={"texts": r.texts, "install_height": r.install_height, **(r.extra or {})}))
     return tbl
 
 
@@ -79,13 +83,25 @@ def _symbol_cell(row_region: dict, table_region: dict) -> dict:
     return {"x0": table_region["x0"], "x1": table_region["x0"] + 0.18 * w, "y0": row_region["y0"], "y1": row_region["y1"]}
 
 
+def _ocr_cell_fn(s: DrawingSheet):
+    if not s.raster_path or not Path(s.raster_path).exists() or not s.bbox:
+        return None
+    # 실제 텍스트 레이어가 있는 벡터 PDF 는 셀 OCR 불필요 (오히려 정확한 문자를 덮어쓴다)
+    if s.source_kind == "pdf_vector" and not (s.stats or {}).get("outline_text"):
+        return None
+    from .engine.pdf_parser import ocr_cell
+    dpi = ((s.stats or {}).get("render") or {}).get("dpi", 150)
+    H = s.bbox["y1"] - s.bbox["y0"]
+    return lambda region: ocr_cell(s.raster_path, dpi, H, region)
+
+
 def auto_detect_legends(db: Session, pid: int) -> list[LegendTable]:
     """모든 시트에서 범례표 자동 탐색. 이미 같은 시트·영역에 승인된 범례가 있으면 건너뜀."""
     created = []
     for s in project_sheets(db, pid):
         geo = load_geometry(s)
         existing = db.query(LegendTable).filter_by(project_id=pid, sheet_id=s.id).all()
-        for res in legend_engine.auto_detect_legends(geo):
+        for res in legend_engine.auto_detect_legends(geo, _ocr_cell_fn(s)):
             if any(_overlap(e.region, res.region) > 0.5 for e in existing if e.region):
                 continue
             created.append(_save_legend(db, pid, s, res, "auto"))
@@ -103,7 +119,7 @@ def auto_detect_legends(db: Session, pid: int) -> list[LegendTable]:
 
 def legend_from_region(db: Session, pid: int, sheet: DrawingSheet, region: dict, title: str | None) -> LegendTable:
     geo = load_geometry(sheet)
-    res = legend_engine.legend_from_region(geo, region, title or "사용자 지정 범례")
+    res = legend_engine.legend_from_region(geo, region, title or "사용자 지정 범례", _ocr_cell_fn(sheet))
     tbl = _save_legend(db, pid, sheet, res, "manual")
     db.commit()
     return tbl
@@ -223,12 +239,17 @@ def run_routes(db: Session, pid: int, sheet_ids: list[int] | None = None) -> dic
             db.delete(r)
         db.flush()
         for ls in line_syms:
+            geo["bbox"] = s.bbox
             segs = match_segments_for_symbol(geo, {"id": ls.id, "layer_hint": ls.layer_hint, "symbol_name": ls.symbol_name,
                                                    "spec": ls.spec, "item_name": ls.item_name}, excl)
             if not segs:
                 continue
             kind = RouteKind(ls.category)
-            for ri, ro in enumerate(build_routes(segs, scale, tol), start=1):
+            dash = (ls.fingerprint or {}).get("dash")
+            seg_tol = tol
+            if dash and s.source_kind != "dxf":
+                seg_tol = max(tol, float(dash.get("gap") or 0) * 1.6 + 0.5)   # 파선 간격을 건너 연결
+            for ri, ro in enumerate(build_routes(segs, scale, seg_tol, dash if s.source_kind != "dxf" else None, dup_tol=tol), start=1):
                 route = Route(project_id=pid, sheet_id=s.id, legend_symbol_id=ls.id, kind=kind,
                               name=f"{ls.symbol_name or ls.item_name}-{s.drawing_no or s.page_no}-{ri}",
                               horizontal_m=ro.length_m, segment_count=len(ro.segments),
@@ -466,3 +487,64 @@ def cross_validate(db: Session, pid: int) -> list[ReviewIssue]:
             _issue(db, pid, None, "CROSS_CHECK", "warn", msg, {"legend_symbol_id": lid, "counts": dict(by)})
     db.commit()
     return db.query(ReviewIssue).filter_by(project_id=pid, code="CROSS_CHECK", resolved=False).all()
+
+
+def sample_symbol_from_sheet(db: Session, ls: LegendSymbol, sheet: DrawingSheet, x: float, y: float, radius: float | None = None) -> dict:
+    """사용자가 도면에서 클릭한 위치의 도형 묶음을 이 범례 기호의 지문으로 등록 (범례 그림과 도면 기호가 다를 때).
+    같은 스타일의 프리미티브를 클릭점 주변 창에서 모아 비트맵 지문을 만든다."""
+    from .engine.geometry import bbox_of, bitmap_signature, prim_bbox, shape_fingerprint
+    import math
+    geo = load_geometry(sheet)
+    prims = geo["prims"]
+    bb = sheet.bbox or {"x0": 0, "y0": 0, "x1": 1, "y1": 1}
+    r = radius or max(bb["x1"] - bb["x0"], bb["y1"] - bb["y0"]) * 0.008
+    # 1) 클릭점에 가장 가까운 닫힌 도형/원 → 앵커, 없으면 가장 가까운 프리미티브
+    best = None
+    for p in prims:
+        if p.get("t") in ("h", "ld") or (p.get("t") == "f" and len(p["p"]) > 12) or len(p["p"]) < 2:
+            continue
+        b = prim_bbox(p)
+        if max(b["x1"] - b["x0"], b["y1"] - b["y0"]) > 4 * r:
+            continue
+        cx, cy = (b["x0"] + b["x1"]) / 2, (b["y0"] + b["y1"]) / 2
+        d = math.dist((cx, cy), (x, y))
+        closed = p.get("t") in ("c", "f") or (len(p["p"]) >= 4 and math.dist(p["p"][0], p["p"][-1]) < 0.3)
+        score = d - (r if closed else 0)
+        if d <= 2 * r and (best is None or score < best[0]):
+            best = (score, p, b)
+    if not best:
+        return {"ok": False, "error": "클릭 위치 근처에서 기호 도형을 찾지 못했습니다."}
+    _, ap, ab = best
+    layers = {ap.get("layer")}
+    size0 = max(ab["x1"] - ab["x0"], ab["y1"] - ab["y0"])
+    half = max(size0 * 0.9, r * 0.6)
+    acx, acy = (ab["x0"] + ab["x1"]) / 2, (ab["y0"] + ab["y1"]) / 2
+    cl = []
+    for p in prims:
+        if p.get("t") in ("h", "ld") or (p.get("t") == "f" and len(p["p"]) > 12) or len(p["p"]) < 2:
+            continue
+        # 앵커와 같은 스타일(선굵기·색) 또는 채움만 — 바탕 지도(얇은 회색선) 등 다른 스타일은 제외
+        if p.get("layer") != ap.get("layer") and p.get("t") != "f":
+            continue
+        b = prim_bbox(p)
+        if b["x0"] >= acx - half and b["x1"] <= acx + half and b["y0"] >= acy - half and b["y1"] <= acy + half:
+            cl.append(p)
+    styles = {p.get("layer") for p in cl if not p.get("t") == "f"}
+    fp = shape_fingerprint([{"t": p["t"], "p": p["p"], "r": p.get("r")} for p in cl], [])
+    fp.update(bitmap_signature([{"t": p["t"], "p": p["p"]} for p in cl]))
+    fp["layers"] = sorted(s for s in styles | {p.get("layer") for p in cl if p.get("t") == "f"} if s)
+    fp["anchor_ratio"] = round(size0 / (fp.get("size") or size0 or 1), 3)
+    fp["anchor_bm"] = bitmap_signature([{"t": ap["t"], "p": ap["p"]}]).get("bm")
+    fp["sampled_from"] = {"sheet_id": sheet.id, "x": x, "y": y}
+    # 학습: 기존 지문은 변형(variants)으로 보존 — 같은 품목이 도면에서 여러 모양으로 그려질 때 모두 검색
+    old = ls.fingerprint or {}
+    variants = list(old.get("variants") or [])
+    if old.get("bm"):
+        variants.append({k: v for k, v in old.items() if k != "variants"})
+    fp["variants"] = variants[-8:]
+    ls.fingerprint = fp
+    ls.block_name = ap.get("blk") or ls.block_name
+    ls.status = SymbolStatus.edited
+    ls.confidence = 1.0
+    db.commit()
+    return {"ok": True, "prims": len(cl), "size": fp.get("size"), "layers": fp["layers"], "bbox": bbox_of([q for p in cl for q in p["p"]])}

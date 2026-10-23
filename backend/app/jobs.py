@@ -142,11 +142,10 @@ def guess_discipline(s: str | None) -> str | None:
 
 
 def guess_sheet_meta(sd: SheetData) -> tuple[str | None, str | None, str | None, str | None]:
-    """도면 문자에서 도면명·도면번호·종류·공종 추정 (표제란 위치 무관, 키워드 기반)."""
+    """도면 문자에서 도면명·도면번호·종류·공종 추정 (OCR 문자도 고려: 큰 글씨 우선, 표제란(우하단) 우선)."""
     import re
     title = dno = dtype = disc = None
-    dno_re = re.compile(r"^(?:[A-Z]{1,3}[-_ ]?\d{1,4}(?:[-_]\d{1,3})?|E[-]?\d+|T[-]?\d+|C[-]?\d+)$", re.I)
-    # 도면 종류는 큰 글씨(제목) 우선. 범례는 다른 종류 키워드가 없을 때만 (평면도 안의 범례표 제목 오판 방지)
+    dno_re = re.compile(r"^(?:[A-Z]{1,3}\s*[-_]\s*\d{1,3}\s*[-_]\s*\d{1,4}|[A-Z]{1,3}\s*[-_]\s*\d{2,4})$", re.I)
     big = sorted(sd.texts, key=lambda t: -(float(t.get("height") or 0)))[:8]
     found = {}
     for t in big:
@@ -156,17 +155,35 @@ def guess_sheet_meta(sd: SheetData) -> tuple[str | None, str | None, str | None,
                 found[k] = t["text"].strip()
     for k in ("평면도", "계통도", "일람표", "범례"):
         if k in found:
-            # '범례' 는 범례 제목이 시트에서 가장 큰 글씨일 때만 (평면도 안의 범례표 오판 방지)
             if k == "범례" and big and found[k] != big[0]["text"].strip():
                 continue
             dtype, title = k, found[k]
             break
+    bb = sd.bbox or {"x0": 0, "y0": 0, "x1": 1, "y1": 1}
+    cands = []
     for t in sd.texts:
         s = t["text"].strip()
         if disc is None:
             disc = guess_discipline(s)
-        if dno is None and dno_re.match(s) and len(s) <= 12:
-            dno = s
-    if title is None and big:
-        title = big[0]["text"].strip()[:120]
+        if dno_re.match(s) and len(s) <= 14:
+            # 우하단(표제란)에 가까울수록 우선
+            score = (t["x"] - bb["x0"]) / max(bb["x1"] - bb["x0"], 1) - (t["y"] - bb["y0"]) / max(bb["y1"] - bb["y0"], 1)
+            cands.append((score, re.sub(r"\s+", "", s).upper()))
+    if cands:
+        dno = max(cands)[1]
+    if dno is None:
+        # OCR 표제란: '도면번호 E - 20 - 001' 이 '번호는 20 001' 처럼 깨진 경우
+        tb_re = re.compile(r"번호[^0-9A-Z]{0,4}([A-Z])?\s*[-–—]?\s*(\d{2})\s*[-–—]?\s*(\d{3})\b")
+        for t in sd.texts:
+            m = tb_re.search(t["text"].upper())
+            if m:
+                letter = m.group(1) or {"전기": "E", "정보통신": "T", "소방전기": "F"}.get(disc or "", "")
+                dno = f"{letter}-{m.group(2)}-{m.group(3)}" if letter else f"{m.group(2)}-{m.group(3)}"
+                break
+    if title is None:
+        for t in big:
+            s = t["text"].strip()
+            if len(re.findall(r"[가-힣]", s)) >= 3 and len(s) <= 40:
+                title = s
+                break
     return title, dno, dtype, disc
