@@ -18,7 +18,7 @@ export const PW = 'Test!pass2026';
 
 /** 판매자 키로 서명한 테스트 라이선스 (실제 발급기와 같은 형식) */
 export function signLicense(payload: object) {
-  const key = createPrivateKey(fs.readFileSync(path.resolve(process.cwd(), '../../tools/license/keys/vendor-private.pem')));
+  const key = createPrivateKey(fs.readFileSync(path.resolve(process.cwd(), 'test/fixtures/test-license-private.pem')));
   const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
   return `${body}.${sign(null, Buffer.from(body), key).toString('base64url')}`;
 }

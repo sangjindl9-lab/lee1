@@ -216,7 +216,7 @@ describe('[필수14] 엑셀 출력 — 실제 숫자 셀과 합계 수식', () =
 });
 
 describe('라이선스 — 서명 검증', () => {
-  const key = createPrivateKey(fs.readFileSync(path.resolve(process.cwd(), '../../tools/license/keys/vendor-private.pem')));
+  const key = createPrivateKey(fs.readFileSync(path.resolve(process.cwd(), 'test/fixtures/test-license-private.pem')));
   const make = (payload: object, k = key) => {
     const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
     return `${body}.${sign(null, Buffer.from(body), k).toString('base64url')}`;
@@ -248,6 +248,69 @@ describe('라이선스 — 서명 검증', () => {
     await a.post('/license', { license: make({ ...base, expiresAt: '2030-01-01' }) });
     expect((await a.post('/projects', { name: '갱신 후 등록', tradeType: 'ELECTRIC', supplyAmount: '1' })).status).toBe(201);
     delete process.env.LICENSE_ENFORCE;
+  });
+
+  it('다른 회사(사업자번호) 라이선스는 등록되지 않는다', async () => {
+    const a = await agentFor(w, 'a.admin', w.A.id);
+    const other = await a.post('/license', { license: make({ ...base, licensee: '남의회사', bizRegNo: '1208147521', expiresAt: '2099-12-31' }) });
+    expect(other.status).toBe(400);
+    expect(String(other.body.message)).toMatch(/전용입니다/);
+    // 이 서버에 있는 회사(B: 한누리통신) 사업자번호면 등록된다
+    expect((await a.post('/license', { license: make({ ...base, bizRegNo: '2148839612', expiresAt: '2030-01-01' }) })).status).toBe(200);
+  });
+
+  it('만료 30일 이내면 갱신 안내 상태가 된다', async () => {
+    const a = await agentFor(w, 'a.admin', w.A.id);
+    const soon = new Date(Date.now() + 10 * 86400000 + 9 * 3600000).toISOString().slice(0, 10);
+    const r = await a.post('/license', { license: make({ ...base, expiresAt: soon }) });
+    expect(r.status).toBe(200);
+    expect(r.body.renewSoon).toBe(true);
+    expect(r.body.writable).toBe(true);
+  });
+
+  it('발급 서버에 설치 코드로 연결하면 새 라이선스를 받고, 중지(만료일 지난 재발급)도 반영된다', async () => {
+    const http = await import('http');
+    const { config } = await import('../src/config');
+    let served = make({ ...base, licenseId: 'online-1', issuedAt: '2026-10-20T00:00:00.000Z', expiresAt: '2031-12-31', maxUsers: 40 });
+    let lastBody: any = null;
+    const srv = http.createServer((req, res) => {
+      let raw = '';
+      req.on('data', (c) => (raw += c));
+      req.on('end', () => {
+        lastBody = JSON.parse(raw || '{}');
+        res.setHeader('content-type', 'application/json');
+        if (lastBody.code !== 'SS-TEST-CODE-1') {
+          res.statusCode = 404;
+          return res.end(JSON.stringify({ message: '설치 코드를 찾을 수 없습니다' }));
+        }
+        res.end(JSON.stringify({ license: served }));
+      });
+    });
+    await new Promise<void>((r) => srv.listen(0, '127.0.0.1', () => r()));
+    const port = (srv.address() as any).port;
+    const prev = config.LICENSE_SERVER_URL;
+    (config as any).LICENSE_SERVER_URL = `http://127.0.0.1:${port}`;
+    try {
+      const a = await agentFor(w, 'a.admin', w.A.id);
+      expect((await a.post('/license/connect', { code: 'WRONG-CODE-99' })).status).toBe(400);
+      const ok = await a.post('/license/connect', { code: 'ss-test-code-1' });
+      expect(ok.status).toBe(200);
+      expect(ok.body).toMatchObject({ mode: 'LICENSED', maxUsers: 40, expiresAt: '2031-12-31' });
+      expect(lastBody.bizRegNos).toContain('1018117536');
+      expect(typeof lastBody.activeUsers).toBe('number');
+      // 공급사가 사용 중지 → 만료일이 지난 라이선스를 더 늦게 발급
+      served = make({ ...base, licenseId: 'online-1', issuedAt: '2026-10-21T00:00:00.000Z', expiresAt: '2026-01-01', maxUsers: 40 });
+      const s2 = await a.post('/license/sync', {});
+      expect(s2.status).toBe(200);
+      expect(s2.body.mode).toBe('EXPIRED');
+      // 더 예전에 발급된 라이선스는 받지 않는다
+      served = make({ ...base, licenseId: 'online-0', issuedAt: '2025-01-01T00:00:00.000Z', expiresAt: '2099-12-31', maxUsers: 999 });
+      const s3 = await a.post('/license/sync', {});
+      expect(s3.body.mode).toBe('EXPIRED');
+    } finally {
+      (config as any).LICENSE_SERVER_URL = prev;
+      srv.close();
+    }
   });
 
   it('라이선스 사용자 수를 넘으면 사용자를 추가할 수 없다', async () => {

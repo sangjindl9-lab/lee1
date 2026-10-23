@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Inject, Post, Query } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, HttpCode, Inject, Post, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { sql } from 'drizzle-orm';
 import { z } from 'zod';
@@ -42,6 +42,7 @@ export class AuditController {
 }
 
 const LicenseDto = z.object({ license: z.string().min(20).max(4000) });
+const ConnectDto = z.object({ code: z.string().min(8).max(40) });
 
 @ApiTags('라이선스')
 @Controller('license')
@@ -61,6 +62,26 @@ export class LicenseController {
     const p = await this.license.install(dto.license);
     await this.audit.fromCtx(ctx, { action: 'LICENSE_INSTALL', resource: 'license', summary: `라이선스 등록 ${p.licensee} ~${p.expiresAt} ${p.maxUsers}명` });
     return this.license.status(true);
+  }
+
+  /** 공급사 발급 서버에 설치 코드로 연결 — 이후 갱신 라이선스를 자동으로 받는다 */
+  @Post('connect')
+  @HttpCode(200)
+  @RequirePermission('license', 'update')
+  async connect(@Ctx() ctx: AccessContext, @Body(new ZodPipe(ConnectDto)) dto: z.infer<typeof ConnectDto>) {
+    const r = await this.license.connect(dto.code);
+    await this.audit.fromCtx(ctx, { action: 'LICENSE_CONNECT', resource: 'license', summary: `라이선스 발급 서버 연결 — ${r.message}` });
+    return this.license.status(true);
+  }
+
+  /** 지금 바로 발급 서버에서 최신 라이선스 확인 */
+  @Post('sync')
+  @HttpCode(200)
+  @RequirePermission('license', 'update')
+  async sync() {
+    const r = await this.license.sync();
+    if (!r.ok) throw new BadRequestException({ code: 'LICENSE_SYNC_FAILED', message: r.message });
+    return { ...(await this.license.status(true)), syncMessage: r.message };
   }
 }
 

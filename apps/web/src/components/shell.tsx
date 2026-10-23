@@ -488,6 +488,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             <UserMenu />
           </div>
         </header>
+        <LicenseBanner />
         <main id="main" className="min-w-0 flex-1 px-3 pt-4 pb-24 sm:px-6 sm:pt-5 lg:pb-10">{children}</main>
       </div>
 
@@ -506,6 +507,28 @@ export function AppShell({ children }: { children: ReactNode }) {
         })}
       </nav>
       <CommandSearch open={cmd} onClose={() => setCmd(false)} />
+    </div>
+  );
+}
+
+/** 라이선스 만료 임박·만료·확인 불가일 때 모든 화면 위에 안내 (관리자는 라이선스 화면으로 바로 이동) */
+function LicenseBanner() {
+  const { can } = useSession();
+  const q = useQuery({
+    queryKey: ['license'],
+    queryFn: () => api<{ mode: string; renewSoon: boolean; daysLeft: number; message: string }>('/license', { noCompany: true }),
+    refetchInterval: 30 * 60_000,
+    staleTime: 5 * 60_000,
+  });
+  const s = q.data;
+  if (!s) return null;
+  const blocked = s.mode === 'EXPIRED' || s.mode === 'INVALID';
+  if (!blocked && !s.renewSoon) return null;
+  return (
+    <div role="status" className={clsx('flex flex-wrap items-center gap-x-3 gap-y-1 border-b px-3 py-2 text-meta sm:px-6', blocked ? 'border-seal/30 bg-seal-soft text-seal' : 'border-warn/30 bg-warn-soft text-warn')}>
+      <span className="font-medium">{blocked ? (s.mode === 'TRIAL' ? '평가판 종료' : '라이선스 확인 필요') : '라이선스 갱신 안내'}</span>
+      <span className="min-w-0 flex-1">{s.message}</span>
+      {can('license:read') && <Link href="/admin/license" className="font-medium underline underline-offset-2">라이선스 관리</Link>}
     </div>
   );
 }

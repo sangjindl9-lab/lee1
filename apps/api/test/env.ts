@@ -5,3 +5,6 @@ process.env.APP_ENCRYPTION_KEY = 'a'.repeat(64);
 process.env.COOKIE_SECURE = 'false';
 process.env.FILE_STORAGE_PATH = require('path').join(require('os').tmpdir(), 'ss-erp-test-storage');
 process.env.WEB_ORIGIN = 'http://localhost:3000';
+// 라이선스 서명 검증용 테스트 키 (운영 판매자 키와 별개 — test/fixtures 에만 있음)
+process.env.LICENSE_PUBLIC_KEY = Buffer.from(require('fs').readFileSync(require('path').join(__dirname, '..', '..', 'test', 'fixtures', 'test-license-public.pem'))).toString('base64');
+process.env.LICENSE_SERVER_URL = '';

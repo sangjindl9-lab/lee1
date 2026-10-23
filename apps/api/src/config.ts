@@ -18,6 +18,10 @@ const schema = z.object({
   FILE_MAX_MB: z.coerce.number().positive().default(20),
   /** 판매자 라이선스 검증용 Ed25519 공개키(PEM, base64). 비어 있으면 평가판 모드 */
   LICENSE_PUBLIC_KEY: z.string().optional(),
+  /** 공급사 라이선스 발급 서버 주소. 비워 두면 온라인 갱신을 쓰지 않는다(오프라인 설치형) */
+  LICENSE_SERVER_URL: z.string().default('https://ss-license-production.up.railway.app'),
+  /** 발급 서버 연결용 설치 코드 (화면 '관리 > 라이선스'에서 넣어도 됨) */
+  LICENSE_ACTIVATION_CODE: z.string().optional(),
   TRUST_PROXY: z.enum(['true', 'false']).default('false').transform((v) => v === 'true'),
 });
 
