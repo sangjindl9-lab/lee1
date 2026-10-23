@@ -525,6 +525,46 @@ async function pool(tasks, n = 6) {
   return out;
 }
 
+// 업체명 검색 — 결과를 연도별로 오는 대로 바로 흘려보냄 (NDJSON). 첫 결과가 1~2초 안에 보임
+app.get('/api/corps/stream', async (req, res) => {
+  const q = String(req.query.q || '').trim();
+  res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('X-Accel-Buffering', 'no');
+  const send = (o) => res.write(JSON.stringify(o) + '\n');
+  if (q.length < 2) { send({ type: 'error', error: '업체명은 2글자 이상 입력하세요' }); return res.end(); }
+  const idx = corpIndexSearch?.(q);
+  if (idx) { send({ type: 'rows', items: idx.items, done: 1, total: 1, fromIndex: true }); send({ type: 'end', totalCount: idx.totalCount, fromIndex: true }); return res.end(); }
+  const hit = corpSearchCache.get(q);
+  if (hit && Date.now() - hit.t < 24 * 3600 * 1000) { send({ type: 'rows', items: hit.data.items, done: 1, total: 1 }); send({ type: 'end', totalCount: hit.data.totalCount }); return res.end(); }
+  if (MOCK || !KEY) { send({ type: 'end', totalCount: 0 }); return res.end(); }
+  const nowY = new Date(Date.now() + 9 * 3600 * 1000).getUTCFullYear();
+  const years = []; for (let y = nowY; y >= 2000; y--) years.push(y);
+  const seen = new Set(); const all = []; let done = 0; let errors = 0; let closed = false;
+  req.on('close', () => { closed = true; });
+  send({ type: 'start', total: years.length });
+  await pool(years.map((y) => async () => {
+    if (closed) return;
+    try {
+      const items = [];
+      for (let p = 1; p <= 3; p++) {
+        const d = await upstream('usr', 'getPrcrmntCorpBasicInfo02', { inqryDiv: '1', inqryBgnDt: `${y}01010000`, inqryEndDt: `${y}12312359`, corpNm: q, numOfRows: 100, pageNo: p });
+        items.push(...(d.items || []));
+        if (items.length >= d.totalCount || !(d.items || []).length) break;
+      }
+      const fresh = [];
+      for (const c of items) { const b = String(c.bizno); if (!seen.has(b)) { seen.add(b); const r = corpRow(c); fresh.push(r); all.push(r); } }
+      done++;
+      if (!closed) send({ type: 'rows', items: fresh, done, total: years.length });
+    } catch (e) { errors++; done++; if (!closed) send({ type: 'progress', done, total: years.length }); }
+  }), 12);
+  if (!errors) corpSearchCache.set(q, { t: Date.now(), data: { items: all.slice(0, 300), totalCount: all.length } });
+  if (corpSearchCache.size > 300) corpSearchCache.delete(corpSearchCache.keys().next().value);
+  send({ type: 'end', totalCount: all.length, partial: errors > 0 });
+  res.end();
+});
+let corpIndexSearch = null; // 등록업체 전체 색인이 준비되면 즉시 검색 함수로 바뀜
+
 app.get('/api/corps/search', async (req, res) => {
   const q = String(req.query.q || '').trim();
   if (q.replace(/[^0-9]/g, '').length === 10 && /^[0-9-\s]+$/.test(q)) {

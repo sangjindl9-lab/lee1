@@ -103,19 +103,54 @@ export default function CompanyPage() {
   const [sel, setSel] = useState(null);
   const [s, setS] = useState({ loading: false, error: '', items: [], total: 0, searched: false, partial: false });
 
+  const norm = (x) => String(x || '').replace(/\(주\)|㈜|주식회사|\(유\)|유한회사|\(합\)|합자회사|\s/g, '');
+  const sortRows = (rows, v) => {
+    const nq = norm(v);
+    return [...rows].sort((a, b) => (norm(b.name) === nq) - (norm(a.name) === nq)
+      || (norm(b.name).startsWith(nq)) - (norm(a.name).startsWith(nq)) || norm(a.name).localeCompare(norm(b.name), 'ko'));
+  };
+
   async function run(e) {
     e?.preventDefault();
     const v = q.trim();
     if (!v) return;
     save('corpQ', v);
-    setS((x) => ({ ...x, loading: true, error: '' }));
+    setS({ loading: true, error: '', items: [], total: 0, searched: true, partial: false, done: 0, of: 0 });
+    // 사업자번호는 한 번에 바로
+    if (/^[0-9-\s]+$/.test(v) && v.replace(/[^0-9]/g, '').length === 10) {
+      try {
+        const d = await fetch(`/api/corps/search?q=${encodeURIComponent(v)}`).then((r) => r.json());
+        if (d.error) throw new Error(d.error);
+        setS({ loading: false, error: '', items: d.items, total: d.totalCount, searched: true });
+        if (d.items.length === 1) setSel(d.items[0].bizno);
+      } catch (err) { setS({ loading: false, error: err.message, items: [], total: 0, searched: true }); }
+      return;
+    }
+    // 업체명은 결과가 오는 대로 바로 표시
     try {
-      const d = await fetch(`/api/corps/search?q=${encodeURIComponent(v)}`).then((r) => r.json());
-      if (d.error) throw new Error(d.error);
-      setS({ loading: false, error: '', items: d.items, total: d.totalCount, searched: true, partial: d.partial });
-      if (d.items.length === 1) setSel(d.items[0].bizno);
+      const res = await fetch(`/api/corps/stream?q=${encodeURIComponent(v)}`);
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      let buf = ''; let rows = [];
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const lines = buf.split('\n'); buf = lines.pop();
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          const m = JSON.parse(line);
+          if (m.type === 'error') throw new Error(m.error);
+          if (m.type === 'rows') rows = rows.concat(m.items);
+          if (m.type === 'end') {
+            setS({ loading: false, error: '', items: sortRows(rows, v).slice(0, 300), total: m.totalCount, searched: true, partial: m.partial });
+          } else {
+            setS((x) => ({ ...x, items: sortRows(rows, v).slice(0, 300), total: rows.length, done: m.done ?? x.done, of: m.total ?? x.of }));
+          }
+        }
+      }
     } catch (err) {
-      setS({ loading: false, error: err.message, items: [], total: 0, searched: true });
+      setS((x) => ({ ...x, loading: false, error: err.message }));
     }
   }
 
@@ -130,13 +165,14 @@ export default function CompanyPage() {
             <button type="submit" className="primary" disabled={s.loading}>{s.loading ? '검색 중…' : '검색'}</button>
           </div>
         </div>
-        <p className="muted small" style={{ margin: 0 }}>나라장터에 등록된 모든 업체를 찾습니다. 업체명 검색은 2000년 이후 등록 연도를 모두 뒤져서 5~10초 걸립니다. 일부만 입력해도 됩니다(예: "서화").</p>
+        <p className="muted small" style={{ margin: 0 }}>나라장터에 등록된 모든 업체를 찾습니다. 업체명 검색은 찾는 대로 바로 보여주고, 전체를 다 찾을 때까지 몇 초 더 걸립니다. 일부만 입력해도 됩니다(예: "서화").</p>
       </form>
 
       <div className="result-head">
         <div>
           <strong>업체검색</strong>
           {s.searched && <span className="count">{s.total.toLocaleString()}곳{s.total > 300 ? ' (상위 300곳 표시)' : ''}</span>}
+          {s.loading && s.of > 0 && <span className="org-sum">찾는 중… {Math.round((s.done / s.of) * 100)}%</span>}
           {s.partial && <span className="mock">일부 연도 조회 실패 — 다시 검색해 보세요</span>}
         </div>
         {s.items.length > 0 && (
@@ -156,7 +192,7 @@ export default function CompanyPage() {
         <table className="list">
           <thead><tr><th>업체명</th><th className="mid">대표자</th><th className="org">주소</th><th className="mid">전화</th><th className="mid hide-sm">구분</th></tr></thead>
           <tbody>
-            {!items.length && <tr><td colSpan={5} className="empty">{s.loading ? '나라장터 등록업체를 찾는 중…' : s.searched ? '찾는 업체가 없습니다.' : '업체명이나 사업자번호를 입력하고 [검색]을 누르세요.'}</td></tr>}
+            {!items.length && <tr><td colSpan={5} className="empty">{s.loading ? '나라장터 등록업체를 찾는 중… (찾는 대로 바로 표시됩니다)' : s.searched ? '찾는 업체가 없습니다.' : '업체명이나 사업자번호를 입력하고 [검색]을 누르세요.'}</td></tr>}
             {items.map((c) => (
               <tr key={c.bizno} onClick={() => setSel(c.bizno)}>
                 <td><div className="title-cell"><div className="t">{c.name}</div><div className="s">{fmtBizno(c.bizno)}</div></div></td>
