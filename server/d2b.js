@@ -71,7 +71,7 @@ const kindOf = (busi, title = '') => {
 export function d2bNoticeRow(x, src) {
   const title = x.cntrwkNm || x.bidNm || x.prdlstNm || x.reprsntPrdlstNm || x.pblancNm || '';
   return {
-    _org: 'd2b', _orgNm: '방위사업청', _kind: src === 'dmstc' ? 'Thng' : kindOf(x.busiDivs, title),
+    _org: 'd2b', _orgNm: '방위사업청', _kind: src === 'dmstc' && !x.busiDivs ? 'Thng' : kindOf(x.busiDivs, title),
     bidNtceNo: x.g2bPblancNo || x.pblancNo || x.cntrwkNo || '', bidNtceOrd: String(x.pblancOdr || '1').padStart(3, '0'),
     bidNtceNm: title, ntceInsttNm: x.ornt || '방위사업청', dminsttNm: x.ornt || x.dmndInsttNm || '',
     presmptPrce: String(x.baseAmnt || x.bsicExpt || x.budgetAmount || '').replace(/[^0-9]/g, ''),

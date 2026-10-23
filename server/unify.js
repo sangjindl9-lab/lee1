@@ -105,7 +105,15 @@ export async function extBids(kind, p, { key, extLoad }) {
     })).catch((e) => console.log(`[unify] ${src} 파일 실패: ${e.message}`)));
   }
   await Promise.all(jobs);
-  return rows.filter((r) => commonFilter(r, p));
+  // 같은 공고의 정정·재공고는 마지막 차수만 남김 (방위사업청)
+  const latest = new Map();
+  for (const r of rows) {
+    if (r._org !== 'd2b') continue;
+    const k = r._raw?.cntrwkNo || r.bidNtceNo;
+    const prev = latest.get(k);
+    if (!prev || Number(r.bidNtceOrd) >= Number(prev.bidNtceOrd)) latest.set(k, r);
+  }
+  return rows.filter((r) => (r._org !== 'd2b' || latest.get(r._raw?.cntrwkNo || r.bidNtceNo) === r) && commonFilter(r, p));
 }
 
 // ── 낙찰정보 ─────────────────────────────────────────────────────────────
