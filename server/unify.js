@@ -2,6 +2,7 @@
 import { kwSearch } from './kwater.js';
 import { krResults } from './krbid.js';
 import { kepcoNotices } from './kepco.js';
+import { d2bRows, d2bNoticeRow, d2bResultRow } from './d2b.js';
 
 // 업종 체크박스 → 공고명 키워드 (다른 기관은 업종 정보가 없어 공고명으로 판단)
 const INDUSTRY_WORDS = [
@@ -76,6 +77,17 @@ export async function extBids(kind, p, { key, extLoad }) {
       if (x._kind === kind && inRange(x.bidNtceDt, from, to)) rows.push(x);
     })).catch((e) => console.log(`[unify] 한전 실패: ${e.message}`)));
   }
+  // 방위사업청 (시설=공사·용역, 국내=물품). 최근 60일 보관본에서 거름
+  for (const [key, src] of [['fcltyNotice', 'fclty'], ['dmstcNotice', 'dmstc']]) {
+    if (src === 'fclty' && !['Cnstwk', 'Servc'].includes(kind)) continue;
+    if (src === 'dmstc' && kind !== 'Thng') continue;
+    jobs.push(d2bRows(key, process.env.DATA_GO_KR_KEY).then((list) => list.forEach((x) => {
+      const r = d2bNoticeRow(x, src);
+      if (r._kind !== kind || /취소/.test(r.ntceKindNm)) return;
+      if (!inRange(byOpeng ? r.opengDt : r.bidNtceDt, from, to)) return;
+      rows.push(r);
+    })).catch((e) => console.log(`[unify] 방위사업청 공고 실패: ${e.message}`)));
+  }
   // 국가철도공단·한국철도공사 (공공데이터 파일)
   for (const src of ['kr', 'korail']) {
     jobs.push(extLoad(src).then((d) => d.rows.forEach((x) => {
@@ -113,6 +125,14 @@ export async function extAwards(kind, p, { key }) {
       cntrctCnclsMthdNm: x.method, _selection: x.selection, _officer: x.officer, bidNtceDtlUrl: 'https://ebid.kwater.or.kr/',
     });
   })).catch((e) => console.log(`[unify] 수자원공사 낙찰 실패: ${e.message}`)));
+  // 방위사업청 입찰결과 (낙찰업체는 상세 API 확인 전까지 비어 있음)
+  for (const [key, src] of [['fcltyResult', 'fclty'], ['dmstcResult', 'dmstc']]) {
+    jobs.push(d2bRows(key, process.env.DATA_GO_KR_KEY).then((list) => list.forEach((x) => {
+      const r = d2bResultRow(x, src);
+      if (!want(r._kind) || !inRange(r.opengDt, from, to)) return;
+      rows.push(r);
+    })).catch((e) => console.log(`[unify] 방위사업청 결과 실패: ${e.message}`)));
+  }
   // 국가철도공단: 개찰결과 목록(1순위) — 처리상태가 낙찰이면 낙찰확정
   jobs.push(krResults('openg', from, to, { page: 1, size: 400 }).then((d) => d.rows.forEach((x) => {
     const k = KIND_OF(x.kindNm, x.bidNtceNm);

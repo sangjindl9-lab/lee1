@@ -257,7 +257,7 @@ function OpengInfo({ item: r, kind, type }) {
   );
 }
 
-const ORG_SITE = { kepco: ['한전 전자조달(SRM)', 'https://srm.kepco.net/'], kwater: ['한국수자원공사 전자조달', 'https://ebid.kwater.or.kr/'], kr: ['국가철도공단 전자조달', 'https://ebid.kr.or.kr/'], korail: ['한국철도공사 전자조달', 'https://ebid.korail.com/'] };
+const ORG_SITE = { d2b: ['국방전자조달(d2b)', 'https://www.d2b.go.kr/'], kepco: ['한전 전자조달(SRM)', 'https://srm.kepco.net/'], kwater: ['한국수자원공사 전자조달', 'https://ebid.kwater.or.kr/'], kr: ['국가철도공단 전자조달', 'https://ebid.kr.or.kr/'], korail: ['한국철도공사 전자조달', 'https://ebid.korail.com/'] };
 function ExtInfo({ r, type }) {
   const [site, url] = ORG_SITE[r._org] || ['원문', '#'];
   return (
@@ -270,7 +270,7 @@ function ExtInfo({ r, type }) {
         <Field label="공고번호">{r.bidNtceNo}</Field>
         <Field label="계약방법">{r.cntrctCnclsMthdNm}</Field>
         {type === 'bid' ? <>
-          <Field label="금액">{Number(r.presmptPrce) ? `${won(r.presmptPrce)}원` : '미공개'}</Field>
+          <Field label={r._basicLabel || '금액'}>{Number(r.presmptPrce) ? `${won(r.presmptPrce)}원` : '미공개'}</Field>
           <Field label="낙찰하한율">{r.sucsfbidLwltRate ? `${r.sucsfbidLwltRate}%` : ''}</Field>
           <Field label="공고일">{dt(r.bidNtceDt)}</Field>
           <Field label="마감">{dt(r.bidClseDt)}</Field>
@@ -289,10 +289,12 @@ function ExtInfo({ r, type }) {
           {r.sucsfbidLwltRate && <Field label="낙찰하한율">{r.sucsfbidLwltRate}%</Field>}
           <Field label="개찰(처리)일">{dt(r.opengDt)}</Field>
           {r._selection && <Field label="낙찰자결정">{r._selection}</Field>}
+          {r._bidMth && <Field label="입찰방법">{r._bidMth}</Field>}
         </>}
       </dl>
       {r._files?.length > 0 && <><h3>첨부파일</h3><ul className="files">{r._files.map((f, i) => <li key={i}><a href={f.url} target="_blank" rel="noreferrer">{f.name}</a></li>)}</ul></>}
       {r._org === 'kwater' && type !== 'bid' && <p className="muted small">수자원공사 결과에는 사업자번호가 없어 업체 연락처는 연결되지 않습니다.</p>}
+      {r._org === 'd2b' && type !== 'bid' && !r.bidwinnrNm && <p className="muted small">방위사업청 결과는 개찰 상태까지만 연결돼 있습니다. 낙찰업체·투찰금액은 국방전자조달에서 확인하세요.</p>}
       {r._org === 'kr' && type !== 'bid' && <p className="muted small">국가철도공단은 개찰결과를 1순위 업체만 공개합니다.</p>}
       <p className="links"><a href={url} target="_blank" rel="noreferrer">{site} 바로가기 ↗</a></p>
     </>
