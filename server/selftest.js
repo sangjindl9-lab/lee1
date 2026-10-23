@@ -1,20 +1,21 @@
-// SELFTEST=1: 업체명 스트리밍 검색 — 첫 결과까지 걸리는 시간
-export async function selfTest(base) {
-  for (const q of ['에스에스전력', '한빛전기', '서화통신']) {
-    const t = Date.now(); let first = 0; let n = 0; let end = null;
+// SELFTEST=1: 방위사업청 입찰공고·결과 API 형식 확인 (호출 한도 하루 100회 → 최소 호출)
+const one = (s) => s.replace(/\s+/g, ' ');
+export async function selfTest() {
+  const KEY = process.env.DATA_GO_KR_KEY;
+  const B = 'https://apis.data.go.kr/1690000/BidPblancInfoService';
+  const R = 'https://apis.data.go.kr/1690000/BidResultInfoService';
+  const tries = [
+    [`${B}/getFcltyCmpetBidPblancList`, { anmtDateBegin: '20261016', anmtDateEnd: '20261023' }],
+    [`${R}/getFcltyCmpetBidResultList`, { opengDateBegin: '20261016', opengDateEnd: '20261023' }],
+    [`${R}/getFcltyCmpetBidResultList`, { anmtDateBegin: '20261001', anmtDateEnd: '20261023' }],
+    [`${R}/getFcltyCmpetBidResultList`, {}],
+  ];
+  for (const [u, p] of tries) {
     try {
-      const res = await fetch(`${base}/api/corps/stream?q=${encodeURIComponent(q)}`);
-      const text = await new Promise(async (resolve) => {
-        const reader = res.body.getReader(); const dec = new TextDecoder(); let buf = '';
-        for (;;) {
-          const { value, done } = await reader.read(); if (done) break;
-          buf += dec.decode(value, { stream: true });
-          const lines = buf.split('\n'); buf = lines.pop();
-          for (const l of lines) { if (!l) continue; const m = JSON.parse(l); if (m.type === 'rows' && m.items.length && !first) first = Date.now() - t; if (m.type === 'rows') n += m.items.length; if (m.type === 'end') end = m; }
-        }
-        resolve();
-      });
-      console.log(`[SELFTEST] stream '${q}' 첫결과 ${first}ms, 전체 ${Date.now() - t}ms, ${n}곳 partial=${end?.partial}`);
-    } catch (e) { console.log(`[SELFTEST] stream '${q}' EXC ${e.message}`); }
+      const qs = new URLSearchParams({ ...p, numOfRows: '3', pageNo: '1' });
+      const r = await fetch(`${u}?serviceKey=${encodeURIComponent(KEY)}&${qs}`, { signal: AbortSignal.timeout(30000) });
+      const t = await r.text();
+      console.log(`[D2BDBG] ${u.split('/').pop()} ${JSON.stringify(p)} → ${r.status} ${one(t).slice(0, 2500)}`);
+    } catch (e) { console.log(`[D2BDBG] ${u} EXC ${e.message}`); }
   }
 }
