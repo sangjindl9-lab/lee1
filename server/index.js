@@ -321,6 +321,7 @@ app.get('/api/companies', async (req, res) => {
 const EXT = {
   kr: { name: '국가철도공단', ns: '3070357/v1' },
   korail: { name: '한국철도공사', ns: '15136102/v1' },
+  d2bfac: { name: '방위사업청 시설공사 경쟁 입찰결과', ns: '15050927/v1' },
 };
 const extCache = new Map(); // src → {t, rows, files}
 
@@ -370,7 +371,17 @@ async function extLoad(src) {
   }
   const norm = []; const seen = new Set();
   for (const { x, file } of raw) {
-    const r = src === 'kr' ? {
+    const r = src === 'd2bfac' ? {
+      org: '방위사업청', bidNtceNo: String(pick(x, '입찰공고번호')), bidNtceOrd: String(pick(x, '입찰공고차수') || '1'),
+      bidNtceNm: pick(x, '입찰공고명'), kindNm: pick(x, '업무구분명'), method: pick(x, '계약체결방법명'), selection: pick(x, '낙찰자결정방법명'),
+      ntceInstt: pick(x, '공고기관명'), dminstt: pick(x, '수요기관명'), lowerRate: String(pick(x, '낙찰하한율')),
+      plnprc: String(pick(x, '예정가격')).replace(/[^0-9]/g, ''), basic: String(pick(x, '기초금액')).replace(/[^0-9]/g, ''),
+      amount: String(pick(x, '추정가격')).replace(/[^0-9]/g, ''),
+      opengDt: normDate(pick(x, '개찰일시') || `${pick(x, '개찰일자')}${String(pick(x, '개찰시각')).replace(/[^0-9]/g, '').padStart(4, '0').slice(0, 4)}`),
+      status: pick(x, '개찰결과구분명'), rate: String(pick(x, '최종낙찰율')), fnlDate: normDate(pick(x, '최종낙찰일자')),
+      winnerNm: pick(x, '최종낙찰업체명'), winnerCeo: pick(x, '최종낙찰업체대표자명'),
+      winnerBizno: String(pick(x, '최종낙찰업체사업자등록번호')).replace(/[^0-9]/g, ''), winnerAdrs: pick(x, '최종낙찰업체주소'), file,
+    } : src === 'kr' ? {
       org: cfg.name, bidNtceNo: '', bidNtceNm: pick(x, '공고명'), kindNm: pick(x, '공고구분'),
       amount: String(pick(x, '설계금액')).replace(/[^0-9]/g, ''), prearng: pick(x, '예가방식'), method: pick(x, '계약방법'),
       standard: pick(x, '심사기준'), lowerRate: pick(x, '낙찰하한율'), jv: pick(x, '공동수급협정서구성방식'),
@@ -382,7 +393,7 @@ async function extLoad(src) {
       ntceDt: '', beginDt: normDate(pick(x, '입찰서접수개시일')), clseDt: normDate(pick(x, '입찰서접수마감일')),
       opengDt: normDate(pick(x, '개찰일')), file,
     };
-    const k = r.bidNtceNo || `${r.bidNtceNm}|${r.ntceDt}|${r.opengDt}`;
+    const k = src === 'd2bfac' ? `${r.bidNtceNo}-${r.bidNtceOrd}` : (r.bidNtceNo || `${r.bidNtceNm}|${r.ntceDt}|${r.opengDt}`);
     if (seen.has(k)) continue;
     seen.add(k); norm.push(r);
   }
@@ -638,14 +649,23 @@ app.get('/api/corps/:bizno/detail', async (req, res) => {
         upstream('scs', `getScsbidListSttus${k}PPSSrch`, { inqryDiv: '2', inqryBgnDt: `${f}0000`, inqryEndDt: `${t}2359`, bizno: b, numOfRows: 100, pageNo: 1 })
           .then((d) => (d.items || []).filter((x) => String(x.bidwinnrBizno) === b).map((x) => ({ ...x, _kind: k }))))), 6),
     ]);
+    // 방위사업청 시설공사 낙찰(파일 데이터, 2022~2025) — 사업자번호로 거름
+    let d2bAwards = [];
+    try {
+      const f = await extLoad('d2bfac');
+      d2bAwards = f.rows.filter((r) => r.winnerBizno === b).map((r) => ({ _kind: /용역/.test(r.kindNm) ? 'Servc' : 'Cnstwk', _org: 'd2b',
+        bidNtceNo: r.bidNtceNo, bidNtceOrd: r.bidNtceOrd, bidNtceNm: r.bidNtceNm, dminsttNm: r.dminstt || r.ntceInstt,
+        sucsfbidAmt: '', sucsfbidRate: r.rate, prtcptCnum: '', opengDt: r.opengDt }));
+    } catch (e) { console.log(`[corp] 방위사업청 파일 실패 ${e.message}`); }
     const c = basic.items?.[0];
     const industries = (ind.items || []).map((x) => ({ name: x.indstrytyNm, code: x.indstrytyCd, main: x.rprsntIndstrytyYn === 'Y',
       rgstDt: String(x.rgstDt || '').slice(0, 10), expire: String(x.vldPrdExprtDt || '').slice(0, 10), state: x.indstrytyStatsNm }));
     const awards = wins.flatMap((w) => (Array.isArray(w) ? w : [])).map((x) => ({ _kind: x._kind, bidNtceNo: x.bidNtceNo, bidNtceOrd: x.bidNtceOrd,
       bidNtceNm: x.bidNtceNm, dminsttNm: x.dminsttNm, sucsfbidAmt: x.sucsfbidAmt, sucsfbidRate: x.sucsfbidRate, prtcptCnum: x.prtcptCnum, opengDt: x.rlOpengDt }))
+      .concat(d2bAwards)
       .sort((a, b2) => String(b2.opengDt).localeCompare(String(a.opengDt)));
     const seen = new Set();
-    res.json({ basic: c ? corpRow(c) : null, basicError: basic.error || '', industries, awards: awards.filter((a) => { const k = `${a.bidNtceNo}-${a.bidNtceOrd}`; if (seen.has(k)) return false; seen.add(k); return true; }) });
+    res.json({ basic: c ? corpRow(c) : null, basicError: basic.error || '', industries, d2bCount: d2bAwards.length, awards: awards.filter((a) => { const k = `${a.bidNtceNo}-${a.bidNtceOrd}`; if (seen.has(k)) return false; seen.add(k); return true; }) });
   } catch (e) { res.status(502).json({ error: e.message }); }
 });
 
@@ -660,7 +680,7 @@ app.get('/api/award/:kind', async (req, res) => {
     const withExt = req.query.ext !== '0' && !(MOCK || !KEY);
     const [parts, ext] = await Promise.all([
       Promise.all(kinds.map((k) => awardForKind(k, params))),
-      withExt ? extAwards(kind, params, { key: KEY }).catch((e) => { console.log(`[unify] award 실패 ${e.message}`); return []; }) : [],
+      withExt ? extAwards(kind, params, { key: KEY, extLoad }).catch((e) => { console.log(`[unify] award 실패 ${e.message}`); return []; }) : [],
     ]);
     const rows = parts.flatMap((p) => p.rows).map((r) => ({ ...r, _org: 'g2b' })).concat(ext)
       .sort((a, b) => String(b.opengDt).localeCompare(String(a.opengDt)));

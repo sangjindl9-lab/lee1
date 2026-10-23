@@ -117,7 +117,7 @@ export async function extBids(kind, p, { key, extLoad }) {
 }
 
 // ── 낙찰정보 ─────────────────────────────────────────────────────────────
-export async function extAwards(kind, p, { key }) {
+export async function extAwards(kind, p, { key, extLoad }) {
   const from = apiToIso(p.inqryBgnDt); const to = apiToIso(p.inqryEndDt);
   if (!from || !to || p.inqryDiv === '1') return []; // 다른 기관은 개찰(처리)일 기준만
   const want = (k) => kind === 'All' || k === kind;
@@ -133,6 +133,22 @@ export async function extAwards(kind, p, { key }) {
       cntrctCnclsMthdNm: x.method, _selection: x.selection, _officer: x.officer, bidNtceDtlUrl: 'https://ebid.kwater.or.kr/',
     });
   })).catch((e) => console.log(`[unify] 수자원공사 낙찰 실패: ${e.message}`)));
+  // 방위사업청 시설공사 경쟁 입찰결과 파일(2022~2025): 최종낙찰업체·사업자번호·낙찰율 포함
+  if (extLoad && from <= '2025-12-31') {
+    jobs.push(extLoad('d2bfac').then((d) => d.rows.forEach((x) => {
+      const k = /용역/.test(x.kindNm) ? 'Servc' : 'Cnstwk';
+      if (!want(k) || !inRange(x.opengDt, from, to)) return;
+      const rate = Number(x.rate) || 0; const pln = Number(x.plnprc) || 0;
+      rows.push({
+        _org: 'd2b', _orgNm: '방위사업청', _kind: k, bidNtceNo: x.bidNtceNo, bidNtceOrd: String(x.bidNtceOrd).padStart(3, '0'), bidNtceNm: x.bidNtceNm,
+        ntceInsttNm: x.ntceInstt || '방위사업청', dminsttNm: x.dminstt || x.ntceInstt, presmptPrce: x.amount,
+        awardStatus: x.winnerNm ? '낙찰확정' : (x.status || '개찰'), bidwinnrNm: x.winnerNm, bidwinnrBizno: x.winnerBizno, bidwinnrCeoNm: x.winnerCeo,
+        bidwinnrAdrs: x.winnerAdrs, sucsfbidAmt: rate && pln ? String(Math.round((pln * rate) / 100)) : '', sucsfbidRate: x.rate, prtcptCnum: '',
+        opengDt: x.opengDt, rlOpengDt: x.opengDt, sucsfbidLwltRate: x.lowerRate, cntrctCnclsMthdNm: x.method, _selection: x.selection,
+        _plnprc: x.plnprc, _basic: x.basic, _amtEstimated: !!(rate && pln), bidNtceDtlUrl: 'https://www.d2b.go.kr/',
+      });
+    })).catch((e) => console.log(`[unify] 방위사업청 파일 실패: ${e.message}`)));
+  }
   // 방위사업청 입찰결과 (낙찰업체는 상세 API 확인 전까지 비어 있음)
   for (const [key, src] of [['fcltyResult', 'fclty'], ['dmstcResult', 'dmstc']]) {
     jobs.push(d2bRows(key, process.env.DATA_GO_KR_KEY).then((list) => list.forEach((x) => {

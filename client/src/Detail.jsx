@@ -283,7 +283,8 @@ function ExtInfo({ r, type }) {
         </> : <>
           <Field label="상태">{r.awardStatus}</Field>
           <Field label="낙찰(1순위)업체"><strong><CompanyName name={r.bidwinnrNm} bizno={r.bidwinnrBizno} ceo={r.bidwinnrCeoNm} /></strong></Field>
-          <Field label="금액">{Number(r.sucsfbidAmt) ? `${won(r.sucsfbidAmt)}원` : ''}</Field>
+          <Field label={r._amtEstimated ? '낙찰금액(추정)' : '금액'}>{Number(r.sucsfbidAmt) ? `${won(r.sucsfbidAmt)}원` : ''}</Field>
+          {r._basic && <Field label="기초금액">{won(r._basic)}원</Field>}
           <Field label="투찰률">{r.sucsfbidRate ? `${r.sucsfbidRate}%` : ''}</Field>
           {r._plnprc && <Field label="예정가격">{won(r._plnprc)}원</Field>}
           {r.sucsfbidLwltRate && <Field label="낙찰하한율">{r.sucsfbidLwltRate}%</Field>}
@@ -294,6 +295,7 @@ function ExtInfo({ r, type }) {
       </dl>
       {r._files?.length > 0 && <><h3>첨부파일</h3><ul className="files">{r._files.map((f, i) => <li key={i}><a href={f.url} target="_blank" rel="noreferrer">{f.name}</a></li>)}</ul></>}
       {r._org === 'kwater' && type !== 'bid' && <p className="muted small">수자원공사 결과에는 사업자번호가 없어 업체 연락처는 연결되지 않습니다.</p>}
+      {r._amtEstimated && <p className="muted small">방위사업청 파일 데이터에는 투찰금액이 없어 예정가격 × 최종낙찰율로 계산한 추정 금액입니다.</p>}
       {r._org === 'd2b' && type !== 'bid' && !r.bidwinnrNm && <p className="muted small">방위사업청 결과는 개찰 상태까지만 연결돼 있습니다. 낙찰업체·투찰금액은 국방전자조달에서 확인하세요.</p>}
       {r._org === 'kr' && type !== 'bid' && <p className="muted small">국가철도공단은 개찰결과를 1순위 업체만 공개합니다.</p>}
       <p className="links"><a href={url} target="_blank" rel="noreferrer">{site} 바로가기 ↗</a></p>

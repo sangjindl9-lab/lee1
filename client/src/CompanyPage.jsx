@@ -60,7 +60,7 @@ function CorpDetail({ b, onClose }) {
                   ))}
                 </div>
               )}
-              <h3>최근 6개월 낙찰이력 (나라장터) <small>({s.d.awards.length}건{total ? ` · 합계 ${wonShort(total)}` : ''})</small>
+              <h3>낙찰이력 <small>나라장터 최근 6개월 · 방위사업청 시설공사 2022~2025</small> <small>({s.d.awards.length}건{total ? ` · 합계 ${wonShort(total)}` : ''})</small>
                 {s.d.awards.length > 0 && (
                   <button className="ghost xs" onClick={() => exportExcel(s.d.awards, [
                     { key: '_kind', label: '구분', excel: (r) => KIND[r._kind] || '' }, { key: 'bidNtceNo', label: '공고번호', wch: 16 },
@@ -70,7 +70,7 @@ function CorpDetail({ b, onClose }) {
                   ], `${c?.name || b}_낙찰이력.xlsx`)}>엑셀</button>
                 )}
               </h3>
-              {!s.d.awards.length ? <p className="muted">최근 6개월 동안 낙찰이 확정된 나라장터 건이 없습니다.</p> : (
+              {!s.d.awards.length ? <p className="muted">낙찰 이력이 없습니다 (나라장터 최근 6개월, 방위사업청 시설공사 2022~2025 기준).</p> : (
                 <div className="table-wrap tight">
                   <table className="sub">
                     <thead><tr><th className="hide-sm">구분</th><th>공고명</th><th className="num">낙찰금액</th><th className="num hide-sm">낙찰률</th><th className="hide-sm">개찰일</th></tr></thead>
@@ -78,7 +78,7 @@ function CorpDetail({ b, onClose }) {
                       {s.d.awards.map((a, i) => (
                         <tr key={i}>
                           <td className="hide-sm">{KIND[a._kind]}</td>
-                          <td>{a.bidNtceNm}<div className="s">{a.dminsttNm} · {String(a.opengDt || '').slice(0, 10)}</div></td>
+                          <td>{a._org === 'd2b' && <span className="org-pill d2b">방위사업청</span>}{a.bidNtceNm}<div className="s">{a.dminsttNm} · {String(a.opengDt || '').slice(0, 10)}</div></td>
                           <td className="num">{won(a.sucsfbidAmt)}<div className="s show-sm">{a.sucsfbidRate ? `${a.sucsfbidRate}%` : ''}</div></td>
                           <td className="num hide-sm">{a.sucsfbidRate ? `${a.sucsfbidRate}%` : '-'}</td>
                           <td className="rmrk hide-sm">{String(a.opengDt || '').slice(0, 10)}</td>
