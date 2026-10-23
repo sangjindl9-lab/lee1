@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+storage/
+backend/tests/_tmp/
+backend/tests/fixtures/
+.env
