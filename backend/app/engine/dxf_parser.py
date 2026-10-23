@@ -90,10 +90,46 @@ def convert_dwg_to_dxf(dwg_path: Path, out_dir: Path) -> tuple[Path, list[str]]:
     if not out.exists() or out.stat().st_size < 200:
         err = (proc.stderr or proc.stdout or "")[-500:]
         raise ConversionError(f"DWG 변환 실패({ver or '버전 미상'}): {err or '출력 파일 없음'}")
+    fixed = repair_dxf_text_breaks(out)
+    if fixed:
+        warnings.append(f"변환된 DXF 에서 줄바꿈이 섞인 문자열 {fixed}곳을 복구했습니다 (여러 줄 문자).")
     warnings.append(f"DWG({ver or '버전 미상'}) 를 LibreDWG 로 DXF 변환했습니다. 표(ACAD_TABLE)·와이프아웃·호 치수 객체는 변환되지 않을 수 있습니다"
                     " — 범례가 CAD '표' 객체로 그려진 경우 범례 영역을 수동 지정하거나 DXF 로 저장해 올리십시오.")
     return out, warnings
 
+
+
+def _is_group_code(line: bytes) -> bool:
+    t = line.strip()
+    if t[:1] == b"-":
+        t = t[1:]
+    return 0 < len(t) <= 4 and t.isdigit()
+
+
+def repair_dxf_text_breaks(path: Path) -> int:
+    """LibreDWG 는 여러 줄 문자(MTEXT/속성)의 줄바꿈을 그대로 써서 DXF '코드/값' 짝을 깨뜨린다.
+    그룹코드 자리에 숫자가 아닌 줄이 오면 앞 값의 이어지는 줄로 보고 '\\P'(MTEXT 줄바꿈)로 합친다. 복구 건수 반환."""
+    data = path.read_bytes()
+    lines = data.split(b"\n")
+    out: list[bytes] = []
+    i, n, fixed = 0, len(lines), 0
+    while i < n:
+        code = lines[i].rstrip(b"\r")
+        if not _is_group_code(code):
+            if not code.strip() and i == n - 1:
+                break
+            if out:
+                out[-1] = out[-1] + b"\\P" + code
+                fixed += 1
+                i += 1
+                continue
+        out.append(code)
+        if i + 1 < n:
+            out.append(lines[i + 1].rstrip(b"\r"))
+        i += 2
+    if fixed:
+        path.write_bytes(b"\r\n".join(out) + b"\r\n")
+    return fixed
 
 def _v(p) -> tuple[float, float]:
     return (float(p[0]), float(p[1]))

@@ -72,6 +72,7 @@ async function delProject(id) { if (confirm("프로젝트와 모든 도면·산�
 /* ---------------- 작업 공간 ---------------- */
 const W = {};   // workspace state
 async function renderWorkspace(pid) {
+  clearTimeout(W.pollTimer);
   Object.assign(W, { pid, tab: "files", sheet: null, geo: null, img: null, hidden: new Set(), dets: [], routes: [], legends: [], items: [], issues: [], sel: null, mode: "pan", pts: [], view: null, showRoutes: true, showDets: true, legendsVisible: true });
   W.project = await api(`/api/projects/${pid}`);
   $("#app").innerHTML = `<div class="ws"><aside id="left"></aside><section class="center" id="center"><canvas id="cv"></canvas>
@@ -86,12 +87,39 @@ async function renderWorkspace(pid) {
   await refreshAll();
 }
 function toggle(k) { W[k] = !W[k]; draw(); }
+const busyFiles = files => (files || []).some(f => ["queued", "processing"].includes(f.status));
+function userEditing() {   // 입력 중이거나 목록을 펼친 상태면 화면을 다시 그리지 않는다
+  const a = document.activeElement;
+  return a && ["INPUT", "SELECT", "TEXTAREA"].includes(a.tagName) && a.type !== "file";
+}
 async function refreshAll() {
-  [W.files, W.legends, W.items, W.issues] = await Promise.all([api(`/api/projects/${W.pid}/files`), api(`/api/projects/${W.pid}/legends`), api(`/api/projects/${W.pid}/takeoff/items`), api(`/api/projects/${W.pid}/takeoff/issues`)]);
+  clearTimeout(W.pollTimer); W.pollTimer = null;
+  const pid = W.pid;
+  [W.files, W.legends, W.items, W.issues] = await Promise.all([api(`/api/projects/${pid}/files`), api(`/api/projects/${pid}/legends`), api(`/api/projects/${pid}/takeoff/items`), api(`/api/projects/${pid}/takeoff/issues`)]);
   W.sheets = W.files.flatMap(f => f.sheets.map(s => ({ ...s, file: f })));
-  if (W.sheet) { W.dets = await api(`/api/projects/${W.pid}/takeoff/symbols?sheet_id=${W.sheet.id}`); W.routes = await api(`/api/projects/${W.pid}/takeoff/routes?sheet_id=${W.sheet.id}`); }
+  if (W.sheet) { W.dets = await api(`/api/projects/${pid}/takeoff/symbols?sheet_id=${W.sheet.id}`); W.routes = await api(`/api/projects/${pid}/takeoff/routes?sheet_id=${W.sheet.id}`); }
   renderLeft(); renderRight(); draw();
-  if (W.files.some(f => ["queued", "processing"].includes(f.status))) setTimeout(refreshAll, 1500);
+  if (busyFiles(W.files)) schedulePoll();
+}
+// 도면 처리 중에는 파일 상태만 가볍게 확인 (타이머 1개만 유지). 진행률이 바뀔 때만 도면 목록을 다시 그리고,
+// 처리가 끝나면 전체 갱신 1회.
+function schedulePoll() {
+  clearTimeout(W.pollTimer);
+  const pid = W.pid;
+  W.pollTimer = setTimeout(async () => {
+    if (W.pid !== pid || !document.getElementById("left")) return;
+    let files;
+    try { files = await api(`/api/projects/${pid}/files`); } catch (e) { schedulePoll(); return; }
+    if (W.pid !== pid) return;
+    const sig = fs => JSON.stringify((fs || []).map(f => [f.id, f.status, f.progress]));
+    const changed = sig(files) !== sig(W.files);
+    if (!busyFiles(files)) { W.files = files; refreshAll(); return; }
+    if (changed) {
+      W.files = files; W.sheets = files.flatMap(f => f.sheets.map(s => ({ ...s, file: f })));
+      if (W.tab === "files" && !userEditing()) renderLeft();
+    }
+    schedulePoll();
+  }, 2500);
 }
 
 function renderLeft() {

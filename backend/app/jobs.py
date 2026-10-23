@@ -98,6 +98,32 @@ def _set(db, f: DrawingFile, **kw):
     db.commit()
 
 
+
+def _purge_sheets(db, sheet_ids: list[int]) -> None:
+    """재분석 전 기존 시트와 그 시트를 참조하는 산출 데이터를 FK 순서대로 삭제.
+    범례표(사용자 승인 데이터)는 보존하고 시트 연결만 끊는다."""
+    from sqlalchemy import delete, select, update
+    from .models import (CADLayer, Circuit, DetectedEntity, DetectedSymbol, LegendTable, QuantityEvidence,
+                         ReviewIssue, Route, RouteSegment)
+    if not sheet_ids:
+        return
+    sym_ids = select(DetectedSymbol.id).where(DetectedSymbol.sheet_id.in_(sheet_ids))
+    route_ids = select(Route.id).where(Route.sheet_id.in_(sheet_ids))
+    seg_ids = select(RouteSegment.id).where(RouteSegment.sheet_id.in_(sheet_ids))
+    db.execute(delete(QuantityEvidence).where(
+        QuantityEvidence.sheet_id.in_(sheet_ids) | QuantityEvidence.detected_symbol_id.in_(sym_ids)
+        | QuantityEvidence.route_id.in_(route_ids) | QuantityEvidence.segment_id.in_(seg_ids)))
+    db.execute(delete(Circuit).where(Circuit.route_id.in_(route_ids)))
+    db.execute(delete(RouteSegment).where(RouteSegment.sheet_id.in_(sheet_ids) | RouteSegment.route_id.in_(route_ids)))
+    db.execute(delete(Route).where(Route.sheet_id.in_(sheet_ids)))
+    db.execute(delete(DetectedSymbol).where(DetectedSymbol.sheet_id.in_(sheet_ids)))
+    db.execute(delete(DetectedEntity).where(DetectedEntity.sheet_id.in_(sheet_ids)))
+    db.execute(delete(CADLayer).where(CADLayer.sheet_id.in_(sheet_ids)))
+    db.execute(delete(ReviewIssue).where(ReviewIssue.sheet_id.in_(sheet_ids)))
+    db.execute(update(LegendTable).where(LegendTable.sheet_id.in_(sheet_ids)).values(sheet_id=None))
+    db.execute(delete(DrawingSheet).where(DrawingSheet.id.in_(sheet_ids)))
+    db.flush()
+
 def process_file(file_id: int):
     db = SessionLocal()
     try:
@@ -142,9 +168,8 @@ def process_file(file_id: int):
             db.add(rev)
             db.flush()
         # 재처리 시 기존 시트 제거 (사용자 수정 데이터는 sheet 와 별도 테이블의 user_locked 로 보존)
-        for old in list(rev.sheets):
-            db.delete(old)
-        db.flush()
+        _purge_sheets(db, [s.id for s in rev.sheets])
+        db.expire(rev)
 
         all_warnings = []
         for i, sd in enumerate(sheets, start=1):

@@ -343,3 +343,18 @@ def test_14_dwg_upload_converts(client, auth):
         assert s["source_kind"] == "dxf" and s["units"] == "mm" and s["scale_confirmed"]
         assert s["stats"]["inserts"] == 10 and s["stats"]["entities"] >= 40
         assert any("LibreDWG" in w for w in f["warnings"])
+
+
+def test_15_reprocess_after_takeoff(client, auth, project):
+    """산출·범례 승인 후 '재분석' 해도 FK 오류 없이 다시 처리되고, 승인된 범례는 보존되며 재산출이 된다."""
+    client.post(f"/api/projects/{project}/takeoff/run?wait=1", headers=auth)
+    n_leg = len(client.get(f"/api/projects/{project}/legends", headers=auth).json())
+    files = client.get(f"/api/projects/{project}/files", headers=auth).json()
+    for f in files:
+        r = client.post(f"/api/projects/{project}/files/{f['id']}/reprocess", headers=auth)
+        assert r.status_code == 200, r.text
+    files = wait_done(client, auth, project)
+    assert all(f["status"] == "done" for f in files), [(f["name"], f["error"]) for f in files]
+    assert len(client.get(f"/api/projects/{project}/legends", headers=auth).json()) == n_leg
+    r = client.post(f"/api/projects/{project}/takeoff/run?wait=1", headers=auth).json()
+    assert r["items"] > 0
