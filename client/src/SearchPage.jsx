@@ -3,7 +3,7 @@ import {
   KINDS, REGIONS, INDUSTRY_PRESETS, api, toApiDt, daysAgo, daysLater, load, save, exportExcel, bizno, parseCorpInfo,
 } from './lib.js';
 
-const ORG_NAMES = { g2b: '나라장터', kwater: '수자원공사', kr: '철도공단', korail: '철도공사', ext: '타기관' };
+const ORG_NAMES = { g2b: '나라장터', kwater: '수자원공사', kr: '철도공단', korail: '철도공사', kepco: '한전계열', ext: '타기관' };
 
 const RANGES = [
   { label: '오늘', from: 0 }, { label: '3일', from: 2 }, { label: '1주', from: 6 }, { label: '2주', from: 13 }, { label: '1개월', from: 29 },

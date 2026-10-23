@@ -1,6 +1,7 @@
 // 나라장터 외 기관(수자원공사·국가철도공단·한국철도공사) 결과를 나라장터 목록과 같은 형태로 변환해 합치기
 import { kwSearch } from './kwater.js';
 import { krResults } from './krbid.js';
+import { kepcoNotices } from './kepco.js';
 
 // 업종 체크박스 → 공고명 키워드 (다른 기관은 업종 정보가 없어 공고명으로 판단)
 const INDUSTRY_WORDS = [
@@ -68,6 +69,12 @@ export async function extBids(kind, p, { key, extLoad }) {
         _status: x.status, _officer: x.officer, bidNtceDtlUrl: 'https://ebid.kwater.or.kr/',
       }))).catch((e) => console.log(`[unify] 수자원공사 ${k} 실패: ${e.message}`)));
     }
+  }
+  // 한전 + 발전 자회사 (전력데이터 개방포털, 별도 키 KEPCO_API_KEY)
+  if (!byOpeng && process.env.KEPCO_API_KEY) {
+    jobs.push(kepcoNotices(from, to, process.env.KEPCO_API_KEY).then((list) => list.forEach((x) => {
+      if (x._kind === kind && inRange(x.bidNtceDt, from, to)) rows.push(x);
+    })).catch((e) => console.log(`[unify] 한전 실패: ${e.message}`)));
   }
   // 국가철도공단·한국철도공사 (공공데이터 파일)
   for (const src of ['kr', 'korail']) {

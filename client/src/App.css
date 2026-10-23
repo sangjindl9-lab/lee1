@@ -246,5 +246,6 @@ table.sub tr.mine td { background: var(--mine); font-weight: 700; }
 .org-pill { display: inline-block; font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 4px; margin-right: 6px; vertical-align: 1px;
   background: #e6f4f1; color: #0f766e; }
 .org-pill.kr, .org-pill.korail { background: #eef0fb; color: #3f4fb3; }
+.org-pill.kepco { background: #fdf1e1; color: #b45309; }
 @media (prefers-color-scheme: dark) { .org-pill { background: #12302b; color: #5eead4; } .org-pill.kr, .org-pill.korail { background: #1e2547; color: #a5b4fc; } }
 .org-sum { margin-left: 10px; font-size: 12px; color: var(--ink-3); }

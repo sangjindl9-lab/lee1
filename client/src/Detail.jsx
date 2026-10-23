@@ -257,7 +257,7 @@ function OpengInfo({ item: r, kind, type }) {
   );
 }
 
-const ORG_SITE = { kwater: ['한국수자원공사 전자조달', 'https://ebid.kwater.or.kr/'], kr: ['국가철도공단 전자조달', 'https://ebid.kr.or.kr/'], korail: ['한국철도공사 전자조달', 'https://ebid.korail.com/'] };
+const ORG_SITE = { kepco: ['한전 전자조달(SRM)', 'https://srm.kepco.net/'], kwater: ['한국수자원공사 전자조달', 'https://ebid.kwater.or.kr/'], kr: ['국가철도공단 전자조달', 'https://ebid.kr.or.kr/'], korail: ['한국철도공사 전자조달', 'https://ebid.korail.com/'] };
 function ExtInfo({ r, type }) {
   const [site, url] = ORG_SITE[r._org] || ['원문', '#'];
   return (
@@ -277,6 +277,9 @@ function ExtInfo({ r, type }) {
           <Field label="개찰">{dt(r.opengDt)}</Field>
           <Field label="상태">{r._status}</Field>
           <Field label="담당자">{r._officer}</Field>
+          {r._basic && <Field label="예비가격기초금액">{won(r._basic)}원</Field>}
+          {r.sucsfbidMthdNm && <Field label="낙찰방법">{r.sucsfbidMthdNm}</Field>}
+          {r._restrict && <Field label="참가자격" wide>{r._restrict}</Field>}
         </> : <>
           <Field label="상태">{r.awardStatus}</Field>
           <Field label="낙찰(1순위)업체"><strong><CompanyName name={r.bidwinnrNm} bizno={r.bidwinnrBizno} ceo={r.bidwinnrCeoNm} /></strong></Field>
@@ -288,6 +291,7 @@ function ExtInfo({ r, type }) {
           {r._selection && <Field label="낙찰자결정">{r._selection}</Field>}
         </>}
       </dl>
+      {r._files?.length > 0 && <><h3>첨부파일</h3><ul className="files">{r._files.map((f, i) => <li key={i}><a href={f.url} target="_blank" rel="noreferrer">{f.name}</a></li>)}</ul></>}
       {r._org === 'kwater' && type !== 'bid' && <p className="muted small">수자원공사 결과에는 사업자번호가 없어 업체 연락처는 연결되지 않습니다.</p>}
       {r._org === 'kr' && type !== 'bid' && <p className="muted small">국가철도공단은 개찰결과를 1순위 업체만 공개합니다.</p>}
       <p className="links"><a href={url} target="_blank" rel="noreferrer">{site} 바로가기 ↗</a></p>
