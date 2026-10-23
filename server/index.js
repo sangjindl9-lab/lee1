@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { mockResponse } from './mock.js';
 import { selfTest } from './selftest.js';
 import { krResults, krDetail } from './krbid.js';
+import { kwSearch, KW_OPS } from './kwater.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -425,6 +426,26 @@ app.get('/api/krbid/:type/detail', async (req, res) => {
   const key = Object.fromEntries(['ggNyeondo', 'ggGubun', 'ggIrBeonho', 'ggChasu', 'gyErBeonho'].map((k) => [k, String(req.query[k] || '').replace(/[^0-9]/g, '')]));
   if (!['award', 'openg'].includes(type) || !key.ggNyeondo || !key.ggIrBeonho) return res.status(400).json({ error: '잘못된 요청' });
   try { res.json(await krDetail(type, key)); } catch (err) { res.status(502).json({ error: `철도공단 상세 조회 실패: ${err.message}` }); }
+});
+
+// ── 한국수자원공사 전자조달 (data.go.kr B500001) ──────────────────────────────
+app.get('/api/kwater/:kind', async (req, res) => {
+  const { kind } = req.params;
+  if (!KW_OPS[kind]) return res.status(404).json({ error: '알 수 없는 구분' });
+  if (MOCK || !KEY) return res.json({ items: [], totalCount: 0, mock: true });
+  const kst = (d) => new Date(d.getTime() + 9 * 3600 * 1000).toISOString().slice(0, 10);
+  const to = String(req.query.to || '') || kst(new Date());
+  const from = String(req.query.from || '') || kst(new Date(Date.now() - 29 * 86400000));
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) return res.status(400).json({ error: '날짜 형식 오류' });
+  if ((new Date(to) - new Date(from)) / 86400000 > 186) return res.status(400).json({ error: '기간은 6개월 이내로 지정하세요' });
+  try {
+    const rows = await kwSearch(kind, { from, to, q: String(req.query.q || '') }, KEY);
+    const size = Math.min(Number(req.query.numOfRows || 30), 3000); const page = Number(req.query.pageNo || 1);
+    res.json({ items: rows.slice((page - 1) * size, page * size).map(({ raw, ...r }) => ({ ...r, raw: req.query.raw ? raw : undefined })),
+      totalCount: rows.length, from, to });
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
 });
 
 app.get('/api/award/:kind', async (req, res) => {

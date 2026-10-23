@@ -1,21 +1,15 @@
-// SELFTEST=1: 한국수자원공사 API 명세(openapi.json) 파라미터 확인
-const one = (s) => s.replace(/\s+/g, ' ');
-export async function selfTest() {
-  for (const u of ['https://www.data.go.kr/catalog/15101635/openapi.json', 'https://www.data.go.kr/catalog/15101620/openapi.json']) {
+// SELFTEST=1: 한국수자원공사 연동 점검 (각 구분 건수 + 원본 필드 샘플)
+export async function selfTest(base) {
+  for (const kind of ['cntrwk', 'servc', 'gds', 'dmscpt', 'rst']) {
+    const t = Date.now();
     try {
-      const r = await fetch(u, { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(20000) });
-      const t = await r.text();
-      let spec; try { spec = JSON.parse(t); } catch { console.log(`[KWSPEC] ${u} ${r.status} not json ${one(t).slice(0, 300)}`); continue; }
-      console.log(`[KWSPEC] ${u} host=${spec.host || spec.servers?.[0]?.url} base=${spec.basePath || ''}`);
-      for (const [p, v] of Object.entries(spec.paths || {})) {
-        const op = v.get || v.post || {};
-        const params = (op.parameters || []).map((x) => `${x.name}${x.required ? '*' : ''}(${one(x.description || '').slice(0, 60)})`).join(', ');
-        console.log(`[KWSPEC] ${p} ${op.summary || ''} :: ${params}`);
-        const schema = JSON.stringify(op.responses?.['200'] || {}).slice(0, 1500);
-        console.log(`[KWSPEC] ${p} resp ${schema}`);
+      const d = await fetch(`${base}/api/kwater/${kind}?numOfRows=2&raw=1`).then((r) => r.json());
+      console.log(`[SELFTEST] kwater ${kind} → ${d.error ? `ERROR ${d.error}` : `total=${d.totalCount} (${d.from}~${d.to})`} ${Date.now() - t}ms`);
+      for (const r of d.items || []) {
+        const { raw, ...rest } = r;
+        console.log(`[SELFTEST]   ${JSON.stringify(rest).slice(0, 500)}`);
+        console.log(`[SELFTEST]   raw ${JSON.stringify(raw).slice(0, 1200)}`);
       }
-      const defs = spec.definitions || spec.components?.schemas || {};
-      for (const [n, d] of Object.entries(defs)) console.log(`[KWSPEC] def ${n} :: ${Object.entries(d.properties || {}).map(([k, x]) => `${k}(${one(x.description || '').slice(0, 30)})`).join(', ').slice(0, 2500)}`);
-    } catch (e) { console.log(`[KWSPEC] ${u} EXC ${e.message}`); }
+    } catch (e) { console.log(`[SELFTEST] kwater ${kind} EXC ${e.message}`); }
   }
 }
