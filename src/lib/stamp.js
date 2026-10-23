@@ -46,18 +46,22 @@ export function renderStamp(cv, o) {
     const cfont = `${o.centerFont || "'Noto Serif KR'"},'Noto Serif KR'`
     const side = R * 1.84, x0 = cx - side / 2, y0 = cy - side / 2
     base.lineWidth = W * 0.022; base.strokeRect(x0, y0, side, side)
-    const chars = [...(text.replace(/\s/g, '') + (o.center || ''))], n = chars.length
-    const cols = o.cols || Math.max(2, Math.ceil(Math.sqrt(n))), rows = Math.ceil(n / cols)
-    const pad = side * 0.07, inner = side - pad * 2, cw = inner / cols, rh = inner / rows
-    const cs = o.centerScale ?? 1, fs = Math.min(cw, rh) * 0.92 * cs
-    let i = 0
-    for (let c = cols - 1; c >= 0; c--) for (let r = 0; r < rows; r++) {
-      if (i >= n) break
-      const ch = chars[i++], hanja = /[\u4E00-\u9FFF]/.test(ch)
-      x.font = `700 ${fs}px ${hanja ? cfont : font}`
-      const mw = x.measureText(ch).width || fs, sx = Math.max(0.6, Math.min(1.5, (cw * 0.9) / mw)), sy = Math.max(0.7, Math.min(1.4, (rh * 0.9) / fs))
-      x.save(); x.translate(x0 + pad + (c + 0.5) * cw, y0 + pad + (r + 0.5) * rh); x.scale(sx, sy); draw(ch, 0, fs * 0.05); x.restore()
-    }
+    // 회사명 열(오른쪽) + 끝 문구 열(왼쪽)을 따로 나누고, 각 열은 세로를 꽉 채움
+    const A = [...text.replace(/\s/g, '')], B = [...(o.center || '')]
+    const colsA = o.cols || Math.max(1, Math.ceil(A.length / 4)), colsB = B.length ? (B.length <= 5 ? 1 : 2) : 0
+    const split = (arr, k) => { const out = [], base = Math.floor(arr.length / k), extra = arr.length % k; let i = 0; for (let c = 0; c < k; c++) { const cnt = base + (c < extra ? 1 : 0); out.push(arr.slice(i, i + cnt)); i += cnt } return out }
+    const columns = [...split(A, colsA), ...(colsB ? split(B, colsB) : [])]   // 오른쪽부터 순서
+    const cols = columns.length, pad = side * 0.07, inner = side - pad * 2, cw = inner / cols, cs = o.centerScale ?? 1
+    columns.forEach((col, k) => {
+      const c = cols - 1 - k, cnt = col.length; if (!cnt) return
+      const rh = inner / cnt, fs = Math.min(cw, rh) * 0.92 * cs
+      col.forEach((ch, r) => {
+        const hanja = /[\u4E00-\u9FFF]/.test(ch)
+        x.font = `700 ${fs}px ${hanja ? cfont : font}`
+        const mw = x.measureText(ch).width || fs, sx = Math.max(0.6, Math.min(1.5, (cw * 0.9) / mw)), sy = Math.max(0.7, Math.min(1.6, (rh * 0.9) / fs))
+        x.save(); x.translate(x0 + pad + (c + 0.5) * cw, y0 + pad + (r + 0.5) * rh); x.scale(sx, sy); draw(ch, 0, fs * 0.05); x.restore()
+      })
+    })
   } else {
     let chars = [...text.replace(/\s/g, '')].slice(0, 4)
     if (chars.length === 3 || chars.length === 1) chars.push('인')

@@ -71,7 +71,7 @@ export default function StampTab({ onFinish, toast }) {
       {kind === 'corpsq' && (
         <div className="sliders">
           <label>글자 크기 <span>{Math.round(centerScale * 100)}%</span><input type="range" min="0.5" max="1.4" step="0.02" value={centerScale} onChange={e => setCenterScale(+e.target.value)} /></label>
-          <label>열 수 <span>{cols || '자동'}</span><input type="range" min="0" max="6" step="1" value={cols} onChange={e => setCols(+e.target.value)} /></label>
+          <label>회사명 열 수 <span>{cols || '자동'}</span><input type="range" min="0" max="5" step="1" value={cols} onChange={e => setCols(+e.target.value)} /></label>
         </div>
       )}
       {kind.startsWith('corp') && (
