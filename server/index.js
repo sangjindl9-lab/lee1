@@ -543,6 +543,25 @@ app.get('/api/corps/stream', async (req, res) => {
   const seen = new Set(); const all = []; let done = 0; let errors = 0; let closed = false;
   req.on('close', () => { closed = true; });
   send({ type: 'start', total: years.length });
+  // 1단계(즉시): 서버가 이미 받아둔 낙찰·개찰 결과에 나온 업체 중 이름이 맞는 곳 → 사업자번호로 바로 조회
+  try {
+    const nq = q.replace(/\s/g, '');
+    const quick = new Map();
+    const take = (name, bizno) => { if (name && bizno && String(name).replace(/\s/g, '').includes(nq) && !quick.has(String(bizno))) quick.set(String(bizno), name); };
+    for (const { data } of cache.values()) for (const it of data?.items || []) {
+      take(it.bidwinnrNm, it.bidwinnrBizno);
+      if (it.opengCorpInfo) { const [n, b] = String(it.opengCorpInfo).split('^'); take(n, b); }
+      if (it.prcbdrNm) take(it.prcbdrNm, it.prcbdrBizno);
+    }
+    for (const c of companies.values()) take(c.name, c.bizno);
+    const list = [...quick.keys()].slice(0, 30);
+    if (list.length) {
+      const rows = (await pool(list.map((b) => () => upstream('usr', 'getPrcrmntCorpBasicInfo02', { inqryDiv: '3', bizno: b, numOfRows: 1, pageNo: 1 })), 10))
+        .flatMap((d) => d?.items || []).map(corpRow).filter((r) => !seen.has(r.bizno));
+      rows.forEach((r) => { seen.add(r.bizno); all.push(r); });
+      if (rows.length && !closed) send({ type: 'rows', items: rows, done: 0, total: years.length, quick: true });
+    }
+  } catch (e) { console.log(`[corps] 빠른 찾기 실패 ${e.message}`); }
   await pool(years.map((y) => async () => {
     if (closed) return;
     try {
