@@ -548,7 +548,7 @@ app.get('/api/corps/search', async (req, res) => {
       if (items.length >= d.totalCount || !(d.items || []).length) break;
     }
     return { items };
-  }));
+  }), 10);
   const seen = new Set(); const rows = [];
   const errors = results.filter((r) => r?.error).length;
   for (const r of results) for (const c of r?.items || []) { const b = String(c.bizno); if (!seen.has(b)) { seen.add(b); rows.push(corpRow(c)); } }
