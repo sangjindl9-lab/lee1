@@ -87,7 +87,8 @@ def _num(v: Decimal | None):
 
 
 def write_version_original(src_path: Path, out_path: Path, version, sheet_maps: dict[str, dict], original_items: dict[str, dict] | None,
-                           delete_mode: str = "zero", title_suffix: str = "") -> dict:
+                           delete_mode: str = "zero", title_suffix: str = "", cost_overrides: list[dict] | None = None) -> dict:
+    """cost_overrides: [{"sheet","row","col","amount","name"}] — 원가계산서에서 값으로 고정할 비목(낙찰금액 맞추기 이윤 등)."""
     """
     version: ContractVersion (items 포함). sheet_maps: {sheet: column_map dict}.
     original_items: {uid: 원본(최초 가져오기) 값 dict} — 없으면 모든 셀을 현재 값으로 기록.
@@ -105,6 +106,13 @@ def write_version_original(src_path: Path, out_path: Path, version, sheet_maps: 
                   for w in wb.worksheets for row in w.iter_rows() for c in row)
     if fragile:
         stats["notes"].append("원본에 매크로 함수/외부 링크 수식이 있어 내역서 품목 행의 수량·단가 참조 수식은 저장된 값으로 고정했습니다.")
+        # 외부 파일 링크([1]옵션!$D$2 등)는 어디서든 끊어진 참조이므로 저장값으로 고정
+        for w in wb.worksheets:
+            wv_ = wbv[w.title]
+            for row in w.iter_rows():
+                for c in row:
+                    if isinstance(c.value, str) and c.value.startswith("=") and "[" in c.value:
+                        c.value = wv_[c.coordinate].value
     items = sorted(version.items, key=lambda i: i.seq)
     by_sheet: dict[str, list] = {}
     for it in items:
@@ -201,6 +209,8 @@ def write_version_original(src_path: Path, out_path: Path, version, sheet_maps: 
                     cv = ws.cell(r, col(f)).value
                     if f == "tot_price" and isinstance(cv, str) and cv.startswith("="):
                         continue   # 합계단가 수식은 유지 (구성 단가 변경으로 자동 반영)
+                    if isinstance(cv, str) and cv.startswith("=") and (it.price_source or {}).get("rate_row"):
+                        continue   # 요율행(공구손료 등)의 기준금액 수식은 유지 → 엑셀이 재계산
                     ws.cell(r, col(f), _num(val))   # 수식(일위대가 참조)을 승인된 단가 값으로 교체
                     changed = True
             if changed:
@@ -213,6 +223,11 @@ def write_version_original(src_path: Path, out_path: Path, version, sheet_maps: 
                     if isinstance(v, str) and len(v) > 4 and ("[" in v or "내역" in v or "공사" in v) and title_suffix not in v:
                         ws.cell(rr, cc, f"{v}  - {title_suffix}")
                         break
+    # 원가계산서 고정 비목 (이윤 역산 등) 값 기록
+    for co in cost_overrides or []:
+        if co.get("sheet") in wb.sheetnames and co.get("row") and co.get("col") and co.get("amount") is not None:
+            wb[co["sheet"]].cell(co["row"], co["col"], _num(Decimal(str(co["amount"]))))
+            stats["cost_fixed"] = stats.get("cost_fixed", 0) + 1
     # Excel 이 열 때 전체 재계산 (금액·소계·원가 수식 반영)
     wb.calculation.fullCalcOnLoad = True
     wb.save(out_path)

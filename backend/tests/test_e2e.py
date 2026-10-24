@@ -306,3 +306,48 @@ def test_adjust_prices_and_delete_version(client):
     # 공사 삭제
     assert client.delete(f"/api/projects/{pid}").status_code == 200
     assert client.get(f"/api/projects/{pid}").status_code == 404
+
+
+def test_fit_contract(client):
+    pid = client.post("/api/projects", json={"name": "낙찰 맞추기 테스트"}).json()["id"]
+    with open(CHILGOK, "rb") as fh:
+        fid = client.post(f"/api/projects/{pid}/files", files={"file": (CHILGOK.name, fh, "application/octet-stream")}, data={"sync": "true"}).json()["id"]
+    vid = client.post(f"/api/files/{fid}/import", json={}).json()["version_id"]
+    # 원본 총공사비 확인 (미리보기, 100%)
+    pv = client.post(f"/api/versions/{vid}/fit-contract", json={"target_amount": 300359600, "include_vat": True, "only_preview": True}).json()
+    grand_orig = pv["summary"]["grand"]
+    assert pv["preview"] and Decimal(pv["diff"]) == 0 and Decimal(grand_orig) == 300359600
+    assert Decimal(pv["profit"]) == 16408680   # 원본 이윤 그대로 복원되는지
+    # 낙찰가 87% 로 맞추기: 자재 87.747%, 노무 100% → 남는 차액은 이윤
+    target = (Decimal(grand_orig) * Decimal("0.87")).to_integral_value(rounding="ROUND_DOWN")
+    target = (target / 1000).to_integral_value(rounding="ROUND_DOWN") * 1000   # 천원 절사
+    pv = client.post(f"/api/versions/{vid}/fit-contract", json={"target_amount": float(target), "include_vat": True, "mat_pct": 87.747, "lab_pct": 87.747, "only_preview": True}).json()
+    assert Decimal(pv["summary"]["grand"]) == target, pv["summary"]
+    assert Decimal(pv["summary"]["total_cost"]) + Decimal(pv["summary"]["vat"]) == target
+    profit_prev = Decimal(pv["profit"])
+    # 미리보기는 저장하지 않음
+    items = client.get(f"/api/versions/{vid}/items").json()["items"]
+    assert Decimal(client.get(f"/api/versions/{vid}").json()["totals"]["mat_amt"]) == Decimal("98821566")
+    # 적용
+    r = client.post(f"/api/versions/{vid}/fit-contract", json={"target_amount": float(target), "include_vat": True, "mat_pct": 87.747, "lab_pct": 87.747, "only_preview": False, "reason": "낙찰"})
+    assert r.status_code == 200, r.text
+    d = r.json()
+    assert Decimal(d["profit"]) == profit_prev and Decimal(d["summary"]["grand"]) == target
+    rules = client.get(f"/api/projects/{pid}/cost-rules", params={"version_id": vid}).json()
+    profit_rule = next(x for x in rules if x["name"].replace(" ", "").startswith("이윤"))
+    assert profit_rule["fixed"] and Decimal(profit_rule["amount"]) == profit_prev
+    assert Decimal(client.get(f"/api/projects/{pid}").json()["contract_amount"]) == target
+    # 원본양식 출력: 이윤 셀이 값으로 들어가고 Excel 재계산 시 총공사비 = 낙찰금액
+    r = client.get(f"/api/versions/{vid}/export")
+    out = TMP / "fit.xlsm"
+    out.write_bytes(r.content)
+    wb = openpyxl.load_workbook(out, keep_vba=True)
+    ws = wb["원가"]
+    row = next(rr for rr in range(1, 50) if any(str(ws.cell(rr, c).value or "").replace(" ", "").startswith("이윤") for c in (1, 2, 3)))
+    assert ws.cell(row, 5).value == int(profit_prev)
+    import shutil, subprocess
+    if shutil.which("soffice"):
+        subprocess.run(["soffice", "--headless", "--calc", "--convert-to", "xlsx", "--outdir", str(TMP / "rc"), str(out)], check=True, timeout=180, capture_output=True)
+        wv = openpyxl.load_workbook(TMP / "rc" / "fit.xlsx", data_only=True)["원가"]
+        grow = next(rr for rr in range(1, 50) if any(str(wv.cell(rr, c).value or "").replace(" ", "").startswith("(총계") for c in (1, 2, 3)))
+        assert wv.cell(grow, 5).value == int(target), (wv.cell(grow, 5).value, target)

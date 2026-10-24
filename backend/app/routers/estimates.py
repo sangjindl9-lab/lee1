@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
@@ -12,7 +13,8 @@ from ..auth import audit, get_current_user, get_project_for
 from ..db import get_db
 from ..config import settings
 from ..models import ContractVersion, CostRateRule, DesignChange, EstimateItem, PriceTable, ProgressClaim, SourceFile, UnitPriceAnalysis, User, WorkbookSheet
-from ..schemas import CostRuleIn, ItemAdd, ItemEdit, PriceAdjustIn
+from ..schemas import CostRuleIn, FitContractIn, ItemAdd, ItemEdit, PriceAdjustIn
+from ..services.rate_rows import evaluate_base
 from ..services.calc import D, line_amounts, project_rounding, s
 
 router = APIRouter(prefix="/api")
@@ -195,36 +197,91 @@ def export_version(vid: int, delete_mode: str = "zero", db: Session = Depends(ge
     ext = Path(sf.stored_path).suffix.lower()
     stem = Path(sf.original_name).stem
     out = out_dir / f"{stem}_v{v.version_no}_{v.label}_{datetime.now().strftime('%Y%m%d_%H%M')}{ext}"
-    stats = write_version_original(Path(sf.stored_path), out, v, sheet_maps, original, delete_mode, title_suffix=f"v{v.version_no} {v.label}" if v.version_no else "")
+    cost_over = [{"sheet": r.sheet, "row": r.source_row, "col": r.amount_col, "amount": s(r.amount), "name": r.name}
+                 for r in db.query(CostRateRule).filter_by(version_id=v.id) if r.fixed and r.amount is not None and r.source_row]
+    stats = write_version_original(Path(sf.stored_path), out, v, sheet_maps, original, delete_mode,
+                                   title_suffix=f"v{v.version_no} {v.label}" if v.version_no else "", cost_overrides=cost_over)
     audit(db, user, "version.export", p.id, target=f"v{v.version_no}", after={"file": out.name, **{k: stats[k] for k in ("modified", "added", "deleted")}})
     db.commit()
     media = "application/vnd.ms-excel.sheet.macroEnabled.12" if ext == ".xlsm" else "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     return FileResponse(out, filename=out.name, media_type=media, headers={"X-Export-Stats": f"modified={stats['modified']};added={stats['added']};deleted={stats['deleted']}"})
 
 
-@router.post("/versions/{vid}/adjust-prices")
-def adjust_prices(vid: int, body: PriceAdjustIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """재료비/노무비/경비 단가를 퍼센트로 일괄 조정 (낙찰률·노임 상승률 적용 등). only_preview 면 합계 변화만 계산."""
+def _restore_rate(amt: Decimal, base: Decimal, rule) -> Decimal:
+    """금액/기준금액에서 원래 요율(2%, 1.5%, 0.25% …)을 복원: 자릿수가 적은 비율부터 금액이 재현되는 것을 택한다."""
     from ..services.calc import round_by
-    v = _version(db, vid, user, "edit")
-    _editable(db, v)
-    p = get_project_for(db, v.project_id, user, "edit")
-    rounding = project_rounding(p)
+    raw = amt / base * 100
+    for d in range(0, 5):
+        cand = raw.quantize(Decimal(1).scaleb(-d))
+        if cand > 0 and round_by(base * cand / 100, rule) == amt:
+            return cand / 100
+    return amt / base
+
+
+def _rate_lookup(v: ContractVersion, new_vals: dict):
+    """원본 통합문서(캐시값)를 읽어 (행, 열) -> 값 조회 함수를 시트별로 만든다. 금액 열은 조정된 금액으로 대체."""
+    import openpyxl
+    from sqlalchemy.orm import object_session
+    db = object_session(v)
+    sf = db.get(SourceFile, v.source_file_id) if (db and v.source_file_id) else None
+    if not sf or not Path(sf.stored_path).exists():
+        return None
+    try:
+        wb = openpyxl.load_workbook(sf.stored_path, data_only=True, read_only=False)
+    except Exception:
+        return None
+    maps = {ws.name: (ws.user_column_map or ws.column_map or {}) for ws in sf.sheets}
+    cache: dict[str, dict] = {}
+
+    def for_sheet(sheet: str):
+        if sheet not in wb.sheetnames:
+            return lambda r, c: None
+        ws = wb[sheet]
+        cm = maps.get(sheet, {})
+        col_field = {}
+        fields = cm.get("fields", cm)
+        for f in ("mat_amt", "lab_amt", "exp_amt"):
+            c = fields.get(f)
+            if isinstance(c, dict):
+                c = c.get("col")
+            if isinstance(c, str) and c.isalpha():
+                from openpyxl.utils import column_index_from_string
+                c = column_index_from_string(c)
+            if c:
+                col_field[int(c)] = f
+
+        def lookup(r: int, c: int):
+            f = col_field.get(c)
+            if f:
+                nv = new_vals.get((sheet, r))
+                if nv is not None:
+                    return nv[f]
+            return ws.cell(r, c).value
+        return lookup
+    return for_sheet
+
+
+def _apply_pct(v: ContractVersion, rounding: dict, body, apply: bool) -> dict:
+    """단가 % 조정 공통 로직. apply=False 면 미리보기."""
+    from ..services.calc import round_by
     prule = {"func": body.price_round, "digits": body.price_digits}
     pcts = {"mat_price": Decimal(str(body.mat_pct)) / 100, "lab_price": Decimal(str(body.lab_pct)) / 100, "exp_price": Decimal(str(body.exp_pct)) / 100}
     before_tot = {k: Decimal(0) for k in ("mat_amt", "lab_amt", "exp_amt", "tot_amt")}
     after_tot = {k: Decimal(0) for k in before_tot}
     n = 0
     skipped = []
+    rate_rows = []
+    # 일반 행 먼저 처리 → 요율행은 조정된 금액으로 기준금액 수식을 다시 평가
+    new_vals: dict[tuple[str, int], dict[str, Decimal]] = {}   # (시트, 행) -> 조정 후 금액
     for it in v.items:
         if it.row_type != "item" or it.is_deleted:
             continue
         if body.section_prefix and it.section_path[:len(body.section_prefix)] != body.section_prefix:
             continue
-        # 금액이 수량×단가와 다른 행(공구손료 등 요율 산정 행)은 건드리지 않는다
+        # 금액이 수량×단가와 다른 행(공구손료 등 요율 산정 행): 기준 비목의 적용률로 비례 조정
         cur_am = line_amounts(D(it.qty), it.mat_price, it.lab_price, it.exp_price, rounding)
         if any(abs(cur_am[k] - D(getattr(it, k))) > 1 for k in ("mat_amt", "lab_amt", "exp_amt")):
-            skipped.append(it.name)
+            rate_rows.append(it)
             continue
         for k in before_tot:
             before_tot[k] += D(getattr(it, k))
@@ -235,6 +292,8 @@ def adjust_prices(vid: int, body: PriceAdjustIn, db: Session = Depends(get_db), 
         am = line_amounts(D(it.qty), new["mat_price"], new["lab_price"], new["exp_price"], rounding)
         for k in after_tot:
             after_tot[k] += am[k]
+        if it.sheet and it.source_row:
+            new_vals[(it.sheet, int(it.source_row))] = am
         if not body.only_preview:
             changed = any(D(new[f]) != D(getattr(it, f)) for f in pcts)
             if changed:
@@ -247,15 +306,130 @@ def adjust_prices(vid: int, body: PriceAdjustIn, db: Session = Depends(get_db), 
                 it.price_source = src
         else:
             n += 1
-    if not body.only_preview:
+    # 요율행(공구손료 "노무비의 2%" 등): 단가칸 수식(=SUMIF(...노무비 열...))을 조정된 금액으로 다시 평가해 기준금액을 구하고
+    # 금액 = 기준금액 × 요율. 수식을 평가하지 못하면 기준 비목의 적용률로 비례 조정. 단가 셀의 수식은 출력 시 그대로 둔다(rate_row).
+    lookup = _rate_lookup(v, new_vals) if rate_rows else None
+    for it in rate_rows:
+        text = f"{it.name} {it.spec}".replace(" ", "")
+        dep = "lab" if any(w in text for w in ("인력품", "노무", "품의", "공구손료")) else "mat"
+        pct = pcts["lab_price"] if dep == "lab" else pcts["mat_price"]
+        for k in before_tot:
+            before_tot[k] += D(getattr(it, k))
+        new_am = {}
+        new_price = {}
+        for k, pf in (("mat_amt", "mat_price"), ("lab_amt", "lab_price"), ("exp_amt", "exp_price")):
+            old_amt, old_price = D(getattr(it, k)), D(getattr(it, pf))
+            if old_amt == 0:
+                new_am[k], new_price[pf] = old_amt, getattr(it, pf)
+                continue
+            base_a = None
+            formula = (it.price_source or {}).get(pf)
+            if lookup and isinstance(formula, str) and formula.startswith("=") and it.sheet:
+                base_a = evaluate_base(formula, lookup(it.sheet))
+            if base_a is not None and old_price and D(it.qty) == 1:
+                rate = _restore_rate(old_amt, old_price, rounding.get("amount"))   # 2%, 1.5% 등 요율 복원
+                new_price[pf] = base_a
+                new_am[k] = round_by(base_a * rate, rounding.get("amount"))
+            else:
+                new_price[pf] = getattr(it, pf)
+                new_am[k] = round_by(old_amt * pct, rounding.get("amount"))
+        new_am["tot_amt"] = new_am["mat_amt"] + new_am["lab_amt"] + new_am["exp_amt"]
+        for k in after_tot:
+            after_tot[k] += new_am[k]
+        if it.sheet and it.source_row:
+            new_vals[(it.sheet, int(it.source_row))] = new_am
+        if apply and pct != 1:
+            it.mat_amt, it.lab_amt, it.exp_amt, it.tot_amt = new_am["mat_amt"], new_am["lab_amt"], new_am["exp_amt"], new_am["tot_amt"]
+            it.mat_price, it.lab_price, it.exp_price = new_price["mat_price"], new_price["lab_price"], new_price["exp_price"]
+            it.tot_price = D(it.mat_price) + D(it.lab_price) + D(it.exp_price)
+            src = dict(it.price_source or {})
+            src["rate_row"] = True
+            it.price_source = src
+            n += 1
+        skipped.append(it.name)
+    # 범위(section_prefix) 밖 행의 금액은 그대로 합계에 포함
+    skipped_tot = {k: Decimal(0) for k in before_tot}
+    for it in v.items:
+        if it.row_type == "item" and not it.is_deleted and body.section_prefix and it.section_path[:len(body.section_prefix)] != body.section_prefix:
+            for k in skipped_tot:
+                skipped_tot[k] += D(getattr(it, k))
+    if apply:
         _recalc_totals(v)
-        audit(db, user, "items.adjust_prices", v.project_id, target=f"v{v.version_no}",
-              before={k: s(x) for k, x in before_tot.items()}, after={k: s(x) for k, x in after_tot.items()},
-              reason=f"{body.reason} (재료 {body.mat_pct}% / 노무 {body.lab_pct}% / 경비 {body.exp_pct}%)")
-        db.commit()
     return {"items": n, "skipped": skipped[:50], "skipped_count": len(skipped),
             "before": {k: s(x) for k, x in before_tot.items()}, "after": {k: s(x) for k, x in after_tot.items()},
-            "diff": {k: s(after_tot[k] - before_tot[k]) for k in before_tot}, "preview": body.only_preview}
+            "after_all": {k: s(after_tot[k] + skipped_tot[k]) for k in after_tot},
+            "diff": {k: s(after_tot[k] - before_tot[k]) for k in before_tot}, "preview": not apply}
+
+
+@router.post("/versions/{vid}/adjust-prices")
+def adjust_prices(vid: int, body: PriceAdjustIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """재료비/노무비/경비 단가를 퍼센트로 일괄 조정 (낙찰률·노임 상승률 적용 등). only_preview 면 합계 변화만 계산."""
+    v = _version(db, vid, user, "edit")
+    _editable(db, v)
+    p = get_project_for(db, v.project_id, user, "edit")
+    res = _apply_pct(v, project_rounding(p), body, apply=not body.only_preview)
+    if not body.only_preview:
+        audit(db, user, "items.adjust_prices", v.project_id, target=f"v{v.version_no}", before=res["before"], after=res["after"],
+              reason=f"{body.reason} (재료 {body.mat_pct}% / 노무 {body.lab_pct}% / 경비 {body.exp_pct}%)")
+        db.commit()
+    return res
+
+
+@router.post("/versions/{vid}/fit-contract")
+def fit_contract(vid: int, body: FitContractIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """낙찰금액 맞추기: 재료/노무/경비 단가에 적용률을 곱한 뒤, 제비율을 재계산하고 남은 차액을 이윤으로 맞춘다.
+    미리보기(only_preview=True)로 이윤·이윤율을 먼저 확인하고 적용한다."""
+    from ..services.costcalc import fit_profit
+    v = _version(db, vid, user, "edit")
+    _editable(db, v)
+    p = get_project_for(db, v.project_id, user, "edit")
+    rounding = project_rounding(p)
+    rules = db.query(CostRateRule).filter_by(project_id=p.id, version_id=v.id).order_by(CostRateRule.seq).all()
+    if not rules or not any(r.name.replace(" ", "").startswith("이윤") for r in rules):
+        raise HTTPException(400, "원가계산서에 '이윤' 비목이 없어 낙찰금액 맞추기를 할 수 없습니다. 원가계산서·제비율에서 비목을 확인하세요.")
+    adj = _apply_pct(v, rounding, body, apply=not body.only_preview)
+    after = adj["after_all"]
+    # 기계경비는 원가계산서 금액(외부 산출)을 우선하고 경비 적용률을 곱한다
+    exp_rule = next((r for r in rules if r.name.replace(" ", "").startswith("기계경비") and r.amount is not None), None)
+    from ..services.calc import round_by
+    exp_base = round_by(D(exp_rule.amount) * Decimal(str(body.exp_pct)) / 100, rounding.get("amount")) if exp_rule else D(after["exp_amt"])
+    direct = {"mat": D(after["mat_amt"]), "lab": D(after["lab_amt"]), "exp": exp_base}
+    # 이윤이 이전 맞추기로 fixed 되어 있어도 다시 계산되도록 임시 해제
+    for r in rules:
+        if r.name.replace(" ", "").startswith("이윤"):
+            r.fixed = False
+    fit = fit_profit(rules, direct, Decimal(str(body.target_amount)), body.include_vat, rounding.get("amount"))
+    result = {"adjust": adj, "cost_sheet": fit["lines"], "summary": {k: s(x) if isinstance(x, Decimal) else x for k, x in fit["summary"].items()},
+              "profit": s(fit["profit"]), "profit_rate": s(fit["profit_rate"]) if fit["profit_rate"] is not None else None,
+              "profit_cap": s(fit["profit_cap"]) if fit["profit_cap"] is not None else None,
+              "target": s(fit["target"]), "target_cost": s(fit["target_cost"]), "diff": s(fit["diff"]), "warnings": fit["warnings"], "preview": body.only_preview}
+    if body.only_preview:
+        db.rollback()
+        return result
+    if fit["profit"] < 0:
+        db.rollback()
+        raise HTTPException(400, "이윤이 음수가 되어 적용할 수 없습니다. 재료비/노무비 적용률을 낮추세요.")
+    # 비목 금액 저장 + 이윤 고정
+    by_id = {r.id: r for r in rules}
+    for line in fit["lines"]:
+        r = by_id.get(line["id"])
+        if r is None:
+            continue
+        if line["amount"] is not None:
+            r.amount = D(line["amount"])
+        if line["cat"] == "profit":
+            r.fixed = True
+            r.source = f"낙찰금액 {s(Decimal(str(body.target_amount)))} 맞추기 (이윤 역산, 이윤율 {result['profit_rate']}%)"
+    p.contract_amount = Decimal(str(body.target_amount))
+    st = dict(p.settings or {})
+    st["award"] = {"target_amount": body.target_amount, "include_vat": body.include_vat, "mat_pct": body.mat_pct, "lab_pct": body.lab_pct,
+                   "exp_pct": body.exp_pct, "profit": s(fit["profit"]), "profit_rate": result["profit_rate"], "version_id": v.id}
+    p.settings = st
+    audit(db, user, "version.fit_contract", p.id, target=f"v{v.version_no}", before=adj["before"],
+          after={"target": body.target_amount, "profit": s(fit["profit"]), "profit_rate": result["profit_rate"], "grand": result["summary"].get("grand")},
+          reason=f"{body.reason} (재료 {body.mat_pct}% / 노무 {body.lab_pct}% / 경비 {body.exp_pct}%)")
+    db.commit()
+    return result
 
 
 @router.post("/versions/{vid}/items/{uid}/restore")
