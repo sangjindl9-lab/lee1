@@ -9,8 +9,8 @@ from sqlalchemy.orm import Session
 
 from ..auth import audit, get_current_user, get_project_for
 from ..db import get_db
-from ..models import ContractVersion, CostRateRule, EstimateItem, UnitPriceAnalysis, User
-from ..schemas import CostRuleIn, ItemEdit
+from ..models import ContractVersion, CostRateRule, DesignChange, EstimateItem, ProgressClaim, UnitPriceAnalysis, User
+from ..schemas import CostRuleIn, ItemAdd, ItemEdit
 from ..services.calc import D, line_amounts, project_rounding, s
 
 router = APIRouter(prefix="/api")
@@ -64,12 +64,31 @@ def version_items(vid: int, q: str | None = None, db: Session = Depends(get_db),
     return {"version": version_out(v), "items": [item_out(i) for i in items]}
 
 
+def _editable(db: Session, v: ContractVersion):
+    """편집 가능 여부: 확정 기성이나 승인된 설계변경이 이 버전을 참조하면 직접 수정 금지(설계변경으로)."""
+    if v.status == "draft":
+        return
+    if db.query(ProgressClaim).filter_by(contract_version_id=v.id, status="confirmed").count():
+        raise HTTPException(400, "이 계약내역으로 확정된 기성 회차가 있어 직접 수정할 수 없습니다. 설계변경으로 처리하세요.")
+    if db.query(DesignChange).filter_by(base_version_id=v.id, status="approved").count():
+        raise HTTPException(400, "이 계약내역을 기준으로 승인된 설계변경이 있어 직접 수정할 수 없습니다. 최신 버전을 편집하거나 설계변경으로 처리하세요.")
+
+
+@router.get("/versions/{vid}/editable")
+def version_editable(vid: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    v = _version(db, vid, user)
+    try:
+        _editable(db, v)
+        return {"editable": True, "reason": ""}
+    except HTTPException as e:
+        return {"editable": False, "reason": e.detail}
+
+
 @router.put("/versions/{vid}/items/{uid}")
 def edit_item(vid: int, uid: str, body: ItemEdit, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """draft 버전의 품목 수정 (수량·단가·명칭). 금액은 현장 반올림 규칙으로 재계산."""
+    """품목 수정 (수량·단가·명칭). 금액은 현장 반올림 규칙으로 재계산. 확정 버전은 기성/설계변경 참조가 없을 때만."""
     v = _version(db, vid, user, "edit")
-    if v.status != "draft":
-        raise HTTPException(400, "확정(승인)된 계약내역은 직접 수정할 수 없습니다. 설계변경으로 처리하세요.")
+    _editable(db, v)
     p = get_project_for(db, v.project_id, user, "edit")
     it = db.query(EstimateItem).filter_by(version_id=vid, uid=uid).first()
     if not it:
@@ -92,6 +111,57 @@ def edit_item(vid: int, uid: str, body: ItemEdit, db: Session = Depends(get_db),
     audit(db, user, "item.edit", v.project_id, target=f"v{v.version_no}/{it.name}", before=before, after=item_out(it), reason=body.reason)
     db.commit()
     return item_out(it)
+
+
+@router.post("/versions/{vid}/items")
+def add_item(vid: int, body: ItemAdd, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """품목 추가: after_uid 다음(또는 해당 공종 끝)에 삽입."""
+    import hashlib
+    v = _version(db, vid, user, "edit")
+    _editable(db, v)
+    p = get_project_for(db, v.project_id, user, "edit")
+    items = sorted(v.items, key=lambda i: i.seq)
+    anchor = next((i for i in items if i.uid == body.after_uid), None) if body.after_uid else None
+    if anchor is None:
+        # 공종 경로의 마지막 품목 뒤
+        sec = [i for i in items if i.section_path == body.section_path]
+        anchor = sec[-1] if sec else None
+    if anchor is None:
+        raise HTTPException(400, "삽입 위치(공종)를 찾지 못했습니다.")
+    path = anchor.section_path if anchor.row_type == "item" else (body.section_path or anchor.section_path)
+    pos = anchor.seq
+    for i in items:
+        if i.seq > pos:
+            i.seq += 1
+    uid = hashlib.sha1(f"manual|{vid}|{pos}|{body.name}|{body.spec}|{datetime.utcnow().isoformat()}".encode()).hexdigest()[:16]
+    am = line_amounts(D(body.qty), body.mat_price, body.lab_price, body.exp_price, project_rounding(p))
+    it = EstimateItem(version_id=vid, uid=uid, seq=pos + 1, row_type="item", level=len(path) + 1, section_path=path,
+                      sheet=anchor.sheet, name=body.name, spec=body.spec, unit=body.unit, qty=D(body.qty),
+                      mat_price=D(body.mat_price), lab_price=D(body.lab_price), exp_price=D(body.exp_price),
+                      mat_amt=am["mat_amt"], lab_amt=am["lab_amt"], exp_amt=am["exp_amt"],
+                      tot_price=D(body.mat_price) + D(body.lab_price) + D(body.exp_price), tot_amt=am["tot_amt"], note=body.note,
+                      price_source={"manual": True})
+    v.items.append(it)
+    _recalc_totals(v)
+    audit(db, user, "item.add", v.project_id, target=f"v{v.version_no}/{it.name}", after=item_out(it), reason=body.reason)
+    db.commit()
+    return item_out(it)
+
+
+@router.delete("/versions/{vid}/items/{uid}")
+def delete_item(vid: int, uid: str, reason: str = "", db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    v = _version(db, vid, user, "edit")
+    _editable(db, v)
+    it = db.query(EstimateItem).filter_by(version_id=vid, uid=uid).first()
+    if not it:
+        raise HTTPException(404, "품목이 없습니다.")
+    before = item_out(it)
+    v.items.remove(it)
+    db.delete(it)
+    _recalc_totals(v)
+    audit(db, user, "item.delete", v.project_id, target=f"v{v.version_no}/{before['name']}", before=before, reason=reason)
+    db.commit()
+    return {"ok": True, "totals": v.totals}
 
 
 def _recalc_totals(v: ContractVersion):

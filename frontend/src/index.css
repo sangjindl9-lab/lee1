@@ -93,3 +93,5 @@ ul.plain { margin: 4px 0; padding-left: 18px; }
   .main { padding: 12px; }
   .tbl-wrap { max-height: none; }
 }
+table.t td.editable { cursor: text; }
+table.t td.editable:hover { outline: 2px solid #93c5fd; outline-offset: -2px; background: #eff6ff; }

@@ -82,6 +82,20 @@ class ItemEdit(BaseModel):
     reason: str = ""
 
 
+class ItemAdd(BaseModel):
+    section_path: list[str] | None = None
+    after_uid: str | None = None
+    name: str
+    spec: str = ""
+    unit: str = ""
+    qty: float = 0
+    mat_price: float = 0
+    lab_price: float = 0
+    exp_price: float = 0
+    note: str = ""
+    reason: str = ""
+
+
 class CostRuleIn(BaseModel):
     rate: float | None = None
     rate_base: str | None = None
