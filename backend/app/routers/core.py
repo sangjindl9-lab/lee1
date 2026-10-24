@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from ..auth import (audit, create_token, get_current_user, get_project_for, hash_password, require_admin, verify_password)
 from ..db import get_db
-from ..models import AuditLog, ContractVersion, DesignChange, Project, ProjectMember, ProgressClaim, SourceFile, User
+from ..models import AuditLog, ContractVersion, CostRateRule, DesignChange, PriceTable, Project, ProjectMember, ProgressClaim, SourceFile, UnitPriceAnalysis, User
 from ..schemas import LoginIn, MemberIn, ProjectIn, UserIn, UserOut
 
 router = APIRouter(prefix="/api")
@@ -147,6 +147,9 @@ def update_project(pid: int, body: ProjectIn, db: Session = Depends(get_db), use
 def delete_project(pid: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     p = get_project_for(db, pid, user, "approve")
     audit(db, user, "project.delete", p.id, target=p.name)
+    for model in (DesignChange, PriceTable, CostRateRule, UnitPriceAnalysis, ProjectMember):
+        for row in db.query(model).filter_by(project_id=pid):
+            db.delete(row)
     db.delete(p)
     db.commit()
     return {"ok": True}

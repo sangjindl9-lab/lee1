@@ -402,13 +402,14 @@ class CostLine:
     base_text: str = ""
     formula: str = ""
     kind: str = "line"               # line / subtotal / total
+    round_digits: int | None = 0     # None = 수식에 절사/반올림 없음
 
     def as_dict(self):
         return {"row": self.row, "name": self.name, "amount": str(self.amount) if self.amount is not None else None,
                 "amount2": str(self.amount2) if self.amount2 is not None else None,
                 "amount_orig": str(self.amount_orig) if self.amount_orig is not None else None,
                 "rate": str(self.rate) if self.rate is not None else None, "rate_base": self.rate_base,
-                "base_text": self.base_text, "formula": self.formula, "kind": self.kind}
+                "base_text": self.base_text, "formula": self.formula, "kind": self.kind, "round_digits": self.round_digits}
 
 
 def parse_cost_sheet(ws_v: Worksheet, ws_f: Worksheet) -> dict[str, Any]:
@@ -502,7 +503,8 @@ def parse_cost_sheet(ws_v: Worksheet, ws_f: Worksheet) -> dict[str, Any]:
         n = name.replace(" ", "")
         kind = "subtotal" if ("소계" in n or n.startswith("계")) else ("total" if ("합계" in n or "총" in n) else "line")
         lines.append(CostLine(row=r, name=name.replace("  ", " "), amount=amt, amount2=amt2, amount_orig=amt_orig, rate=rate,
-                              rate_base=rate_base, base_text=base_text, formula=f, kind=kind))
+                              rate_base=rate_base, base_text=base_text, formula=f, kind=kind,
+                              round_digits=(detect_rounding(f).digits if detect_rounding(f).func != "none" else None) if f else 0))
     return {
         "sheet": ws_v.title,
         "name_col": name_col, "amount_col": amount_col, "amount2_col": amount2_col, "rate_col": rate_col,

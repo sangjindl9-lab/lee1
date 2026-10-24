@@ -208,6 +208,10 @@ class CostRateRule(Base):
     fixed: Mapped[bool] = mapped_column(Boolean, default=False)   # 정산 비목(변경 시 재계산 제외)
     source: Mapped[str] = mapped_column(String(255), default="")   # 적용 근거/출처
     effective_date: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    round_digits: Mapped[int | None] = mapped_column(Integer, default=0, nullable=True)    # 비목 금액 절사 자리 (-2 = 백원 절사, None = 절사 없음)
+    sheet: Mapped[str] = mapped_column(String(255), default="")      # 원본 원가계산서 시트
+    source_row: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    amount_col: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class ProgressClaim(Base):

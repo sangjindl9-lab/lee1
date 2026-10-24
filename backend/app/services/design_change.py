@@ -255,7 +255,7 @@ def approve_change(db: Session, project: Project, dc: DesignChange, user_id: int
         for r, cs in zip(rules, summary["cost_sheet"]):
             db.add(CostRateRule(project_id=project.id, version_id=nv.id, seq=r.seq, name=r.name, kind=r.kind, rate=r.rate,
                                 rate_base=r.rate_base, base_text=r.base_text, amount=D(cs["chg"]) if cs["chg"] is not None else r.amount,
-                                fixed=r.fixed, source=r.source, effective_date=r.effective_date))
+                                fixed=r.fixed, source=r.source, effective_date=r.effective_date, round_digits=r.round_digits, sheet=r.sheet, source_row=r.source_row, amount_col=r.amount_col))
     dc.status = "approved"
     dc.approved_at = datetime.utcnow()
     dc.result_version_id = nv.id

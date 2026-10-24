@@ -20,6 +20,21 @@ for r in (core.router, files.router, estimates.router, progress.router, changes.
     app.include_router(r)
 
 
+def _add_missing_columns(conn):
+    """모델에 새로 추가된 열을 기존 테이블에 ALTER 로 보강 (간이 마이그레이션)."""
+    from sqlalchemy import inspect, text
+    insp = inspect(conn)
+    for table in Base.metadata.sorted_tables:
+        if table.name not in insp.get_table_names():
+            continue
+        existing = {c["name"] for c in insp.get_columns(table.name)}
+        for col in table.columns:
+            if col.name in existing:
+                continue
+            ddl = col.type.compile(dialect=conn.dialect)
+            conn.execute(text(f'ALTER TABLE {table.name} ADD COLUMN "{col.name}" {ddl}'))
+
+
 @app.on_event("startup")
 def _startup():
     import time
@@ -31,6 +46,7 @@ def _startup():
                 if engine.dialect.name == "postgresql":
                     conn.execute(text("SELECT pg_advisory_xact_lock(728391)"))
                 Base.metadata.create_all(conn)
+                _add_missing_columns(conn)
             break
         except Exception:  # noqa: BLE001
             if attempt == 4:

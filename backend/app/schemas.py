@@ -107,6 +107,19 @@ class PriceAdjustIn(BaseModel):
     reason: str = ""
 
 
+class FitContractIn(BaseModel):
+    target_amount: float          # 낙찰금액
+    include_vat: bool = True      # 부가세 포함 금액인지
+    mat_pct: float = 100
+    lab_pct: float = 100
+    exp_pct: float = 100
+    price_digits: int = 0
+    price_round: str = "trunc"
+    section_prefix: list[str] | None = None
+    only_preview: bool = True
+    reason: str = ""
+
+
 class CostRuleIn(BaseModel):
     rate: float | None = None
     rate_base: str | None = None
