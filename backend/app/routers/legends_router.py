@@ -45,7 +45,7 @@ def auto_detect(pid: int, wait: bool = False, user: User = Depends(require_role(
 
 
 @router.post("/region")
-def from_region(pid: int, body: LegendRegionIn, user: User = Depends(require_role(*EDIT_ROLES)), db: Session = Depends(get_db)):
+def from_region(pid: int, body: LegendRegionIn, force: bool = False, user: User = Depends(require_role(*EDIT_ROLES)), db: Session = Depends(get_db)):
     """자동 검출 실패 시 사용자가 마우스로 지정한 표 영역."""
     get_project_or_403(db, user, pid)
     s = db.get(DrawingSheet, body.sheet_id)
@@ -54,6 +54,13 @@ def from_region(pid: int, body: LegendRegionIn, user: User = Depends(require_rol
     r = body.region
     if not all(k in r for k in ("x0", "y0", "x1", "y1")) or r["x1"] <= r["x0"] or r["y1"] <= r["y0"]:
         raise HTTPException(400, "영역이 올바르지 않습니다.")
+    # 범례 영역은 '산출 제외' 영역이 된다 — 도면 대부분을 덮으면 수량이 0 이 되므로 막는다
+    b = s.bbox or {}
+    sheet_area = max((b.get("x1", 0) - b.get("x0", 0)) * (b.get("y1", 0) - b.get("y0", 0)), 1e-9)
+    ratio = (r["x1"] - r["x0"]) * (r["y1"] - r["y0"]) / sheet_area
+    if ratio > 0.35 and not force:
+        raise HTTPException(400, f"지정한 범례 영역이 도면의 {ratio * 100:.0f}% 입니다. 범례 영역 안의 기호는 수량에서 빠지므로, "
+                                 "범례 '표'만 작게 드래그하십시오. 기호 개수를 세려면 '영역 집계'를 쓰십시오.")
     t = services.legend_from_region(db, pid, s, r, body.title)
     audit(db, user, "legend_region", pid, sheet=s.id, rows=len(t.symbols))
     db.commit()
@@ -65,10 +72,27 @@ def delete_table(pid: int, tid: int, user: User = Depends(require_role(*EDIT_ROL
     get_project_or_403(db, user, pid)
     t = db.get(LegendTable, tid)
     if not t or t.project_id != pid:
-        raise HTTPException(404)
+        raise HTTPException(404, "범례표가 없습니다.")
+    services.purge_legend_symbols(db, pid, [x.id for x in t.symbols])
+    audit(db, user, "legend_delete", pid, table=t.title)
     db.delete(t)
     db.commit()
+    services.recompute_quantities(db, pid)
     return {"ok": True}
+
+
+@router.delete("")
+def delete_all_tables(pid: int, user: User = Depends(require_role(*EDIT_ROLES)), db: Session = Depends(get_db)):
+    """이 프로젝트의 범례표 전체 삭제 (잘못 지정한 범례 영역 초기화)."""
+    get_project_or_403(db, user, pid)
+    tables = db.query(LegendTable).filter_by(project_id=pid).all()
+    services.purge_legend_symbols(db, pid, [x.id for t in tables for x in t.symbols])
+    for t in tables:
+        db.delete(t)
+    audit(db, user, "legend_delete_all", pid, tables=len(tables))
+    db.commit()
+    services.recompute_quantities(db, pid)
+    return {"deleted": len(tables)}
 
 
 @router.post("/{tid}/symbols")
@@ -135,9 +159,11 @@ def delete_symbol(pid: int, sid: int, user: User = Depends(require_role(*EDIT_RO
     get_project_or_403(db, user, pid)
     s = db.get(LegendSymbol, sid)
     if not s or s.project_id != pid:
-        raise HTTPException(404)
+        raise HTTPException(404, "범례 행이 없습니다.")
+    services.purge_legend_symbols(db, pid, [s.id])
     db.delete(s)
     db.commit()
+    services.recompute_quantities(db, pid)
     return {"ok": True}
 
 

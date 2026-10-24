@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import math
+import re
 from collections import defaultdict
 
 from .anchor import _interior, _interior_desc, _sheet_index, anchor_descriptor
@@ -17,6 +18,8 @@ from .symbol_library import suggest
 from .geometry import bbox_of, bitmap_signature, bitmap_similarity, prim_bbox
 
 GROUP_LABELS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+# 수량 대상이 아닌 주기·가닥수·화살표·회로번호·인출/입상 표시 블록 (기본 체크 해제·회색 표시)
+NOTE_BLOCK = re.compile(r"^(arrow|m-|0-|t-|z-[2-9]$|z-회로번호|z-인출|z-입상|z-입하|z-g\d|a\$|범례|.*주기$|.*(표제|도곽|title|border|north|방위|축척))", re.I)
 
 
 def _inside(bb: dict, r: dict) -> bool:
@@ -91,11 +94,13 @@ def _prim_len(pr: dict, region: dict) -> tuple[float, list]:
 
 
 def analyze_region(geo: dict, region: dict, source_kind: str, scale_factor: float | None,
-                   excluded_layers: set[str] | None = None, discipline: str | None = None) -> dict:
+                   excluded_layers: set[str] | None = None, discipline: str | None = None,
+                   exclude_regions: list[dict] | None = None) -> dict:
     """영역 집계. 반환: {mode, objects:[...], lines:[...], notes:[...]}.
     objects 각 항목: {key, label, kind('block'|'shape'), block, count, items:[{bbox,h}], sample:[prims], size}
     lines 각 항목: {key(layer/style), length (도면단위), length_m (축척 있으면), pieces:[[pt..]..]}"""
     excluded_layers = excluded_layers or set()
+    excl = [r for r in (exclude_regions or []) if r]
     notes: list[str] = []
     prims = [pr for pr in geo.get("prims", []) if len(pr.get("p", [])) >= 2 and pr.get("layer") not in excluded_layers]
     is_raster = source_kind in ("pdf_raster", "image") or (geo.get("_raster") and not any(
@@ -119,6 +124,8 @@ def analyze_region(geo: dict, region: dict, source_kind: str, scale_factor: floa
         if e.get("t") != "INSERT" or e.get("layer") in excluded_layers:
             continue
         bb = e.get("bbox") or {"x0": e["x"], "y0": e["y"], "x1": e["x"], "y1": e["y"]}
+        if any(rx["x0"] <= e["x"] <= rx["x1"] and rx["y0"] <= e["y"] <= rx["y1"] for rx in excl):
+            continue   # 범례표 안의 견본 기호
         if r_ok := (region["x0"] <= e["x"] <= region["x1"] and region["y0"] <= e["y"] <= region["y1"]):
             by_block[e["block"]].append({"bbox": bb, "h": e.get("h"), "x": e["x"], "y": e["y"]})
         if r_ok or _intersects(bb, region):
@@ -132,7 +139,9 @@ def analyze_region(geo: dict, region: dict, source_kind: str, scale_factor: floa
                           whole=bitmap_signature(bprims) if bprims else None)
         except Exception:   # 추천 실패는 집계에 영향 없음
             sug = []
-        objects.append({"key": f"blk:{name}", "kind": "block", "block": name, "label": name, "shape": "CAD 블록", "color": None,
+        note = bool(NOTE_BLOCK.match(name)) or any(len(t) > 10 for t in (bdef.get("texts") or []))
+        objects.append({"key": f"blk:{name}", "kind": "block", "block": name, "label": name,
+                        "shape": "주기·표시 블록 (수량 아님?)" if note else "CAD 블록", "note": note, "color": None,
                         "count": len(items), "items": items, "suggest": sug,
                         "sample": bprims[:400], "size": None})
 
@@ -145,6 +154,8 @@ def analyze_region(geo: dict, region: dict, source_kind: str, scale_factor: floa
     cands = []
     for i, k, b, sz, asp, col, dashed in closed:
         if not (min_size <= sz <= max_size) or not _center_in(b, region):
+            continue
+        if any(_center_in(b, rx) for rx in excl):
             continue
         if i >= 0 and loose[i].get("h") in blk_handles:
             continue

@@ -78,7 +78,7 @@ async function renderWorkspace(pid) {
   $("#app").innerHTML = `<div class="ws"><aside id="left"></aside><section class="center" id="center"><canvas id="cv"></canvas>
     <div class="vtools">
       <button id="m_pan" class="on" onclick="setMode('pan')">이동/선택</button><button id="m_region" onclick="setMode('region')">범례 영역 지정</button>
-      <button id="m_measure" onclick="setMode('measure')">거리 측정/축척</button><button id="m_add" onclick="setMode('add')">기호 수동 추가</button><button id="m_sample" onclick="setMode('sample')">도면에서 기호 지정</button><button id="m_tally" class="hl" onclick="setMode('tally')">▣ 영역 집계(드래그)</button>
+      <button id="m_measure" onclick="setMode('measure')">거리 측정/축척</button><button id="m_add" onclick="setMode('add')">기호 수동 추가</button><button id="m_sample" onclick="setMode('sample')">도면에서 기호 지정</button><button id="m_tally" class="hl" onclick="setMode('tally')">▣ 영역 집계(드래그)</button><button class="hl" onclick="tallyAll()">▦ 도면 전체 집계</button>
       <button onclick="fitView()">전체보기</button><button onclick="toggle('showDets')">기호표시</button><button onclick="toggle('showRoutes')">선로표시</button>
       <button class="primary" onclick="runTakeoff()">▶ 자동 물량산출 실행</button>
       <button onclick="exportXlsx()">Excel</button><button onclick="dl('/api/projects/${pid}/export/pdf','물량집계표.pdf')">PDF</button>
@@ -162,19 +162,22 @@ function leftFiles() {
 function toggleLayer(n) { W.hidden.has(n) ? W.hidden.delete(n) : W.hidden.add(n); draw(); }
 
 function leftLegend() {
-  let h = `<div class="row"><button class="primary sm" onclick="runLegendAuto()">🔍 범례표 자동 인식</button><button class="sm ok" onclick="api('/api/projects/${W.pid}/legends/approve-all',{method:'POST'}).then(r=>{toast(r.approved+'건 승인');refreshAll()})">품명 있는 항목 일괄 승인</button></div><div class="small muted">자동 인식 실패 시 상단 '범례 영역 지정' 으로 도면에서 표를 드래그하십시오.</div>`;
+  let h = `<div class="row"><button class="primary sm" onclick="runLegendAuto()">🔍 범례표 자동 인식</button><button class="sm ok" onclick="api('/api/projects/${W.pid}/legends/approve-all',{method:'POST'}).then(r=>{toast(r.approved+'건 승인');refreshAll()})">품명 있는 항목 일괄 승인</button>${W.legends.length ? `<button class="sm err" onclick="delAllLegends()">🗑 범례 전체 삭제</button>` : ""}</div><div class="small muted">자동 인식 실패 시 상단 '범례 영역 지정' 으로 도면에서 표를 드래그하십시오.</div>`;
   if (!W.legends.length) h += `<p class="muted">인식된 범례가 없습니다.</p>`;
   for (const t of W.legends) {
-    h += `<div class="card" style="padding:8px"><div class="row" style="justify-content:space-between"><b>${esc(t.title)}</b><span><span class="badge">${t.source}</span> ${(t.confidence * 100).toFixed(0)}% <button class="sm" onclick="if(t=W.sheets.find(s=>s.id==${t.sheet_id}))openSheet(${t.sheet_id},${JSON.stringify(t.region)})">위치</button><button class="sm err" onclick="if(confirm('범례표 삭제?'))api('/api/projects/${W.pid}/legends/${t.id}',{method:'DELETE'}).then(refreshAll)">×</button></span></div>`;
+    h += `<div class="card" style="padding:8px"><div class="row" style="justify-content:space-between"><b>${esc(t.title)}</b><span><span class="badge">${t.source}</span> ${(t.confidence * 100).toFixed(0)}% <button class="sm" onclick="if(t=W.sheets.find(s=>s.id==${t.sheet_id}))openSheet(${t.sheet_id},${JSON.stringify(t.region)})">위치</button><button class="sm err" onclick="delLegend(${t.id},'${esc(t.title).replace(/'/g, "")}')">🗑 삭제</button></span></div>`;
     h += `<table><tr><th>기호</th><th>품명/규격/단위</th><th>범주</th><th>신뢰</th><th>검출</th><th></th></tr>`;
     for (const s of t.symbols) {
       const img = s.has_image ? `<img class="sym-img" data-src="/api/projects/${W.pid}/legends/symbols/${s.id}/image">` : (s.block_name ? `<canvas class="mini" data-block="${esc(s.block_name)}" data-sheet="${t.sheet_id}"></canvas>` : "");
-      h += `<tr class="${W.sel && W.sel.type === "legend" && W.sel.id === s.id ? "sel" : ""}" onclick="selectLegend(${s.id})"><td>${img}<div class="small">${esc(s.symbol_name || "")}<br><span class="muted">${esc(s.block_name || "")}</span></div></td><td>${esc(s.item_name) || "<span class='muted'>미확인</span>"}<br><span class="muted small">${esc(s.spec || "")} / ${esc(s.unit || "")}</span></td><td>${CAT[s.category]}</td><td>${(s.confidence * 100).toFixed(0)}%</td><td class="num">${s.detected_count}</td><td><span class="badge ${s.status}">${KO[s.status]}</span></td></tr>`;
+      h += `<tr class="${W.sel && W.sel.type === "legend" && W.sel.id === s.id ? "sel" : ""}" onclick="selectLegend(${s.id})"><td>${img}<div class="small">${esc(s.symbol_name || "")}<br><span class="muted">${esc(s.block_name || "")}</span></div></td><td>${esc(s.item_name) || "<span class='muted'>미확인</span>"}<br><span class="muted small">${esc(s.spec || "")} / ${esc(s.unit || "")}</span></td><td>${CAT[s.category]}</td><td>${(s.confidence * 100).toFixed(0)}%</td><td class="num">${s.detected_count}</td><td><span class="badge ${s.status}">${KO[s.status]}</span><br><button class="sm err" title="이 행 삭제" onclick="event.stopPropagation();delLegendRow(${s.id})">×</button></td></tr>`;
     }
     h += `</table><div class="row"><button class="sm" onclick="addLegendRow(${t.id})">+ 미인식 기호 등록</button></div></div>`;
   }
   return h;
 }
+async function delLegend(id, title) { if (!confirm(`범례표 '${title}' 를 삭제합니다.\n이 범례로 검출된 기호·산출 수량도 함께 지워집니다.`)) return; await api(`/api/projects/${W.pid}/legends/${id}`, { method: "DELETE" }); toast("범례표를 삭제했습니다."); W.sel = null; refreshAll(); }
+async function delAllLegends() { if (!confirm(`범례표 ${W.legends.length}개를 모두 삭제합니다.\n범례로 검출된 기호·산출 수량도 지워지고, '산출 제외' 영역이 모두 풀립니다. (영역 집계 내역은 유지)`)) return; const r = await api(`/api/projects/${W.pid}/legends`, { method: "DELETE" }); toast(`범례표 ${r.deleted}개 삭제`); W.sel = null; refreshAll(); }
+async function delLegendRow(id) { if (!confirm("이 범례 행을 삭제합니다.")) return; await api(`/api/projects/${W.pid}/legends/symbols/${id}`, { method: "DELETE" }); if (W.sel && W.sel.id === id) W.sel = null; refreshAll(); }
 function selectLegend(id) { W.sel = { type: "legend", id }; renderLeft(); renderRight(); draw(); }
 async function addLegendRow(tid) {
   const block = prompt("CAD 블록명 (또는 비우고 기호명 입력)"); const sym = block ? "" : prompt("기호명(도면 문자 라벨)");
@@ -470,8 +473,14 @@ function segDist(p, a, b) { const dx = b[0] - a[0], dy = b[1] - a[1]; const l2 =
 async function finishRegion(a, b) {
   const region = { x0: Math.min(a[0], b[0]), y0: Math.min(a[1], b[1]), x1: Math.max(a[0], b[0]), y1: Math.max(a[1], b[1]) };
   if (region.x1 - region.x0 < 1e-6) return;
+  const sb = W.sheet.bbox, ratio = (region.x1 - region.x0) * (region.y1 - region.y0) / Math.max((sb.x1 - sb.x0) * (sb.y1 - sb.y0), 1e-9);
+  let force = false;
+  if (ratio > 0.35) {
+    if (!confirm(`지정한 영역이 도면의 ${Math.round(ratio * 100)}% 입니다.\n범례 영역 안의 기호는 수량에서 빠지므로, 보통은 범례 '표'만 작게 지정합니다.\n기호 개수를 세려면 '영역 집계'를 쓰십시오.\n\n그래도 이 영역을 범례로 지정할까요?`)) return;
+    force = true;
+  }
   const title = prompt("범례표 이름", "사용자 지정 범례"); if (title === null) return;
-  const t = await api(`/api/projects/${W.pid}/legends/region`, { method: "POST", json: { sheet_id: W.sheet.id, region, title } });
+  const t = await api(`/api/projects/${W.pid}/legends/region${force ? "?force=1" : ""}`, { method: "POST", json: { sheet_id: W.sheet.id, region, title } });
   toast(`범례 행 ${t.symbols.length}개 추출`); W.tab = "legend"; setMode("pan"); refreshAll();
 }
 async function measureClick(p) {
@@ -516,6 +525,20 @@ async function tallyRegion(a, b) {
   toast(r.mode === "raster" ? "스캔 도면은 객체 자동 구분이 안 됩니다 (오른쪽 안내 참조)" : `영역 안 객체 ${r.objects.length}종 · 선 ${r.lines.length}종 — ${isNarrow() ? "아래" : "오른쪽"} 목록에서 집계할 항목에 품명을 입력하십시오`);
 }
 const tallyCount = o => o.items.filter(it => !it.off).length;
+async function tallyAll() {
+  if (!W.sheet) return toast("먼저 도면을 여십시오.", true);
+  const b = W.sheet.bbox; setMode("tally");
+  await tallyRegion([b.x0, b.y0], [b.x1, b.y1]);
+}
+function tallyFillBlocks() {
+  let n = 0;
+  for (const o of W.tally.objects) {
+    if (o.kind !== "block" || o.note) continue;
+    const sg = (o.suggest || [])[0];
+    o.name = sg && sg.score >= 0.9 ? sg.name : o.block; o.on = true; n++;
+  }
+  renderRight(); draw(); toast(`CAD 블록 ${n}종에 이름을 채웠습니다. 확인 후 '물량표에 추가'를 누르십시오.`);
+}
 function tallyToggleAt(p) {
   const T = W.tally; if (!T || T.sheet_id !== W.sheet.id) return;
   const tol = 4 / V.scale;
@@ -530,10 +553,12 @@ function tallyPanel() {
   <div class="small muted">집계할 항목에 <b>품명을 입력</b>하면 자동으로 체크됩니다. 도면에서 객체를 클릭하면 개별로 빼거나 넣을 수 있습니다.</div>`;
   for (const n of T.notes || []) h += `<div class="warnbox small">${esc(n)}</div>`;
   if (T.objects.length) {
+    const nb = T.objects.filter(o => o.kind === "block" && !o.note).length;
     h += `<h3>객체 ${T.objects.length}종 <span class="small muted">(체크 ${nOn})</span></h3>`;
+    if (nb) h += `<div class="row"><button class="sm ok" onclick="tallyFillBlocks()">CAD 블록 ${nb}종 이름 자동 채우기 (블록명·추천)</button></div>`;
     T.objects.forEach((o, i) => {
       const n = tallyCount(o);
-      h += `<div class="tcard ${o.on ? "on" : ""}" onmouseenter="tallySet('objects',${i},'focus','o${i}')" onmouseleave="tallySet('objects',${i},'focus',null)">
+      h += `<div class="tcard ${o.on ? "on" : ""} ${o.note ? "note" : ""}" onmouseenter="tallySet('objects',${i},'focus','o${i}')" onmouseleave="tallySet('objects',${i},'focus',null)">
       <div class="trow"><input type="checkbox" ${o.on ? "checked" : ""} onchange="tallySet('objects',${i},'on',this.checked)"><span class="swatch" style="background:${o.col}"></span><canvas class="mini tmini" data-i="${i}" width="52" height="38"></canvas>
       <div class="tlab"><b>${esc(o.label)}</b><br><span class="small muted">${esc(o.shape || "")}</span></div><div class="tqty">${n}<span class="small"> ${esc(o.unit || "개")}</span>${n !== o.count ? `<div class="small muted">(${o.count - n}개 제외)</div>` : ""}</div></div>
       ${(o.suggest || []).length ? `<div class="trow sugs"><span class="small muted">추천</span>${o.suggest.map((sg, k) => `<button class="sm chip" title="${esc(sg.source)} · ${esc(sg.why || "")}" onclick="tallyPick(${i},${k})">${esc(sg.name)} <span class="small muted">${Math.round(sg.score * 100)}%</span></button>`).join("")}</div>` : ""}

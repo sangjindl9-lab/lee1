@@ -84,3 +84,4 @@ button.chip { border-radius: 12px; background: #eef4ff; border-color: #b9cdf5; p
 .symcell { border: 1px solid #e3e3e3; border-radius: 4px; padding: 4px; text-align: center; background: #fff; }
 .symcell canvas { display: block; margin: 0 auto; }
 .symcell .small { line-height: 1.2; word-break: keep-all; }
+.tcard.note { opacity: .55; }

@@ -424,3 +424,28 @@ def test_17_symbol_library_suggest(client, auth, tmp_path):
                     json={"region": {"x0": 0, "y0": 0, "x1": 8000, "y1": 2000}}).json()
     o = r["objects"][0]
     assert o["count"] == 6 and o["suggest"][0]["name"] == "조인트박스(J/B)" and o["suggest"][0]["score"] > 0.9
+
+
+def test_18_legend_delete_and_guard(client, auth, fixtures):
+    """범례 삭제(검출·산출 후에도 FK 오류 없이), 도면 대부분을 덮는 범례 영역 차단, 도면 전체 집계는 범례 견본 제외."""
+    pid = client.post("/api/projects", headers=auth, json={"name": "[테스트] 범례 삭제"}).json()["id"]
+    _upload(client, auth, pid, fixtures / "test_cctv_plan.dxf")
+    sh = wait_done(client, auth, pid)[0]["sheets"][0]
+    client.post(f"/api/projects/{pid}/legends/auto?wait=1", headers=auth)
+    client.post(f"/api/projects/{pid}/legends/approve-all", headers=auth)
+    client.post(f"/api/projects/{pid}/takeoff/run?wait=1", headers=auth)
+    assert client.get(f"/api/projects/{pid}/takeoff/items", headers=auth).json()
+    b = sh["bbox"]
+    # 전체 집계: 범례표 안 견본 블록(CCTV_FIX 등 3개)은 빠져야 함 → 고정형 12+기존 1
+    r = client.post(f"/api/projects/{pid}/sheets/{sh['id']}/region-analyze", headers=auth, json={"region": b}).json()
+    assert {o["block"]: o["count"] for o in r["objects"] if o["kind"] == "block"}["CCTV_FIX"] == 13
+    # 도면 전체를 범례로 지정 → 400 (force 없이)
+    big = client.post(f"/api/projects/{pid}/legends/region", headers=auth, json={"sheet_id": sh["id"], "region": b, "title": "x"})
+    assert big.status_code == 400 and "범례" in big.json()["detail"]
+    # 범례 한 행 삭제 → 전체 삭제 (검출·산출이 있어도 성공), 산출 수량 정리
+    legs = client.get(f"/api/projects/{pid}/legends", headers=auth).json()
+    sid = legs[0]["symbols"][0]["id"]
+    assert client.delete(f"/api/projects/{pid}/legends/symbols/{sid}", headers=auth).status_code == 200
+    assert client.delete(f"/api/projects/{pid}/legends", headers=auth).json()["deleted"] == len(legs)
+    assert client.get(f"/api/projects/{pid}/legends", headers=auth).json() == []
+    assert client.get(f"/api/projects/{pid}/takeoff/items", headers=auth).json() == []

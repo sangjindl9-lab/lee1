@@ -670,3 +670,25 @@ def sample_symbol_from_sheet(db: Session, ls: LegendSymbol, sheet: DrawingSheet,
     db.commit()
     return {"ok": True, "kind": k, "size": round(s_, 2), "dashed": bool(dashed), "interior_empty": anchor["interior"]["empty"],
             "prims": len(inner) + 1, "layers": [col], "bbox": b}
+
+
+
+def purge_legend_symbols(db: Session, pid: int, symbol_ids: list[int]) -> None:
+    """범례 기호 삭제 전, 그 기호로 검출·산출된 데이터를 FK 순서대로 정리한다."""
+    from sqlalchemy import delete, select, update
+    from .models import Circuit, DetectedSymbol, QuantityEvidence, QuantityItem, Route, RouteSegment
+    if not symbol_ids:
+        return
+    det_ids = select(DetectedSymbol.id).where(DetectedSymbol.legend_symbol_id.in_(symbol_ids))
+    route_ids = select(Route.id).where(Route.legend_symbol_id.in_(symbol_ids))
+    seg_ids = select(RouteSegment.id).where(RouteSegment.route_id.in_(route_ids))
+    item_ids = select(QuantityItem.id).where(QuantityItem.legend_symbol_id.in_(symbol_ids))
+    db.execute(delete(QuantityEvidence).where(QuantityEvidence.detected_symbol_id.in_(det_ids) | QuantityEvidence.route_id.in_(route_ids)
+                                              | QuantityEvidence.segment_id.in_(seg_ids) | QuantityEvidence.item_id.in_(item_ids)))
+    db.execute(delete(QuantityItem).where(QuantityItem.legend_symbol_id.in_(symbol_ids)))
+    db.execute(delete(Circuit).where(Circuit.cable_symbol_id.in_(symbol_ids) | Circuit.route_id.in_(route_ids)))
+    db.execute(update(RouteSegment).where(RouteSegment.legend_symbol_id.in_(symbol_ids)).values(legend_symbol_id=None))
+    db.execute(delete(RouteSegment).where(RouteSegment.route_id.in_(route_ids)))
+    db.execute(delete(Route).where(Route.id.in_(route_ids)))
+    db.execute(delete(DetectedSymbol).where(DetectedSymbol.legend_symbol_id.in_(symbol_ids)))
+    db.flush()

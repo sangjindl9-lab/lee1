@@ -54,7 +54,7 @@ def region_analyze(pid: int, sid: int, body: RegionIn, user: User = Depends(curr
         raise HTTPException(404, "처리본이 없습니다. 재분석하십시오.")
     geo = services.load_geometry(s)
     res = analyze_region(geo, _norm_region(body.region), s.source_kind or "", s.scale_factor if s.scale_confirmed else None,
-                         set(body.hidden_layers), s.discipline)
+                         set(body.hidden_layers), s.discipline, services.legend_exclude_regions(db, pid, s.id))
     res["scale_confirmed"] = bool(s.scale_confirmed)
     res["units"] = s.units
     return res
