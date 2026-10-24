@@ -279,3 +279,30 @@ def test_price_tables(client):
     assert any(c["label"] == "거래가격/단가" for c in d["columns"])
     lk = client.get(f"/api/projects/{pid}/price-lookup", params={"q": "가요전선관 22"}).json()
     assert lk and lk[0]["name"] == "합성수지제 가요전선관"
+
+
+def test_adjust_prices_and_delete_version(client):
+    pid = client.post("/api/projects", json={"name": "단가조정 테스트"}).json()["id"]
+    with open(CHILGOK, "rb") as fh:
+        fid = client.post(f"/api/projects/{pid}/files", files={"file": (CHILGOK.name, fh, "application/octet-stream")}, data={"sync": "true"}).json()["id"]
+    vid = client.post(f"/api/files/{fid}/import", json={}).json()["version_id"]
+    items = [i for i in client.get(f"/api/versions/{vid}/items").json()["items"] if i["row_type"] == "item"]
+    first = items[0]
+    pv = client.post(f"/api/versions/{vid}/adjust-prices", json={"mat_pct": 87.747, "lab_pct": 100, "only_preview": True}).json()
+    assert pv["preview"] and Decimal(pv["diff"]["mat_amt"]) < 0 and Decimal(pv["diff"]["lab_amt"]) == 0
+    r = client.post(f"/api/versions/{vid}/adjust-prices", json={"mat_pct": 87.747, "lab_pct": 100, "reason": "낙찰률 적용"})
+    assert r.status_code == 200 and r.json()["items"] > 0
+    it = next(i for i in client.get(f"/api/versions/{vid}/items").json()["items"] if i["uid"] == first["uid"])
+    exp = (Decimal(first["mat_price"]) * Decimal("0.87747")).to_integral_value(rounding="ROUND_DOWN")
+    assert Decimal(it["mat_price"]) == exp and Decimal(it["lab_price"]) == Decimal(first["lab_price"])
+    assert Decimal(it["mat_amt"]) == (Decimal(it["qty"]) * exp).to_integral_value(rounding="ROUND_DOWN")
+    # 공종 한정 + 노무 105%
+    sec = first["section_path"]
+    r = client.post(f"/api/versions/{vid}/adjust-prices", json={"lab_pct": 105, "section_prefix": sec}).json()
+    assert r["items"] > 0
+    # 버전 삭제 (기성 없음 → 가능)
+    assert client.delete(f"/api/versions/{vid}").status_code == 200
+    assert client.get(f"/api/projects/{pid}/versions").json() == []
+    # 공사 삭제
+    assert client.delete(f"/api/projects/{pid}").status_code == 200
+    assert client.get(f"/api/projects/{pid}").status_code == 404

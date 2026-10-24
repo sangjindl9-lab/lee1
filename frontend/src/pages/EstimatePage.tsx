@@ -20,6 +20,8 @@ export default function EstimatePage() {
   const [cellVal, setCellVal] = useState('')
   const [adding, setAdding] = useState<any>(null)
   const [lookup, setLookup] = useState<any[]>([])
+  const [adj, setAdj] = useState<any>(null)   // 단가 % 조정 모달
+  const [adjPreview, setAdjPreview] = useState<any>(null)
   const [msg, setMsg] = useState<{ t: string; k: string } | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -129,6 +131,8 @@ export default function EstimatePage() {
           <input placeholder="품명/규격 검색" value={q} onChange={(e) => setQ(e.target.value)} style={{ width: 200 }} />
           <button onClick={() => setCollapsed(new Set(Object.keys(sectionTotals)))}>모두 접기</button><button onClick={() => setCollapsed(new Set())}>모두 펼치기</button>
           <button className={editMode ? 'primary' : ''} disabled={!editable.editable} title={editable.reason} onClick={() => { setEditMode(!editMode); setCell(null) }}>{editMode ? '편집 모드 끄기' : '편집 모드'}</button>
+          {editMode && <button onClick={() => { setAdj({ mat_pct: '100', lab_pct: '100', exp_pct: '100', section: '', price_digits: '0', price_round: 'trunc', reason: '' }); setAdjPreview(null) }}>단가 % 일괄 조정</button>}
+          <button className="danger" onClick={async () => { if (!confirm(`v${v?.version_no} ${v?.label} 내역서를 삭제할까요? (품목·원가비목이 함께 삭제됩니다. 기성 회차가 있으면 먼저 삭제해야 합니다)`)) return; try { await api.delete(`/versions/${vid}`); setVid(null); setData(null); const r = await api.get(`/projects/${pid}/versions`); setVersions(r.data); if (r.data.length) setVid(r.data[r.data.length - 1].id); reloadProject(); setMsg({ t: '내역서를 삭제했습니다.', k: 'ok' }) } catch (e) { setMsg({ t: errMsg(e), k: 'err' }) } }}>내역서 삭제</button>
           <button onClick={async () => { try { await downloadFile(`/versions/${vid}/export`); setMsg({ t: '원본 양식 그대로(시트·서식·수식 유지, 수정·추가·삭제 행만 반영) 엑셀을 내려받았습니다. Excel에서 열면 금액·소계가 자동 재계산됩니다.', k: 'ok' }) } catch (e) { setMsg({ t: errMsg(e), k: 'err' }) } }}>엑셀 출력 (원본 양식 그대로)</button>
           {v?.status === 'draft' && <button onClick={approve}>계약내역 확정</button>}
         </div></div>
@@ -175,6 +179,25 @@ export default function EstimatePage() {
           </tbody>
         </table>
       </div>
+      {adj && <div className="modal-bg" onClick={() => setAdj(null)}><div className="modal" onClick={(e) => e.stopPropagation()}>
+        <h3>단가 퍼센트 일괄 조정</h3>
+        <div className="help">재료비·노무비·경비 단가에 적용률(%)을 곱해 일괄 변경합니다 (예: 낙찰률 87.747% 적용 → 재료비 87.747 입력). 100은 변동 없음. 수량×단가와 금액이 다른 요율 산정 행(공구손료 등)은 건드리지 않습니다.</div>
+        <div className="grid2" style={{ marginTop: 10 }}>
+          <label className="f">재료비 단가 적용률 (%)<input className="num" value={adj.mat_pct} onChange={(e) => setAdj({ ...adj, mat_pct: e.target.value })} /></label>
+          <label className="f">노무비 단가 적용률 (%)<input className="num" value={adj.lab_pct} onChange={(e) => setAdj({ ...adj, lab_pct: e.target.value })} /></label>
+          <label className="f">경비 단가 적용률 (%)<input className="num" value={adj.exp_pct} onChange={(e) => setAdj({ ...adj, exp_pct: e.target.value })} /></label>
+          <label className="f">적용 범위 (공종)<select value={adj.section} onChange={(e) => setAdj({ ...adj, section: e.target.value })}><option value="">전체</option>{Object.keys(sectionTotals).map((k) => <option key={k} value={k}>{k.split('::').join(' > ')}</option>)}</select></label>
+          <label className="f">조정 단가 소수 자리<select value={adj.price_digits} onChange={(e) => setAdj({ ...adj, price_digits: e.target.value })}><option value="0">정수</option><option value="1">1자리</option><option value="2">2자리</option><option value="4">4자리</option></select></label>
+          <label className="f">단가 처리<select value={adj.price_round} onChange={(e) => setAdj({ ...adj, price_round: e.target.value })}><option value="trunc">절사</option><option value="round">반올림</option></select></label>
+          <label className="f">사유 (이력 기록)<input value={adj.reason} onChange={(e) => setAdj({ ...adj, reason: e.target.value })} placeholder="예: 낙찰률 87.747% 적용" /></label>
+        </div>
+        {adjPreview && <div className="alert info" style={{ marginTop: 10 }}>대상 {adjPreview.items}개 품목{adjPreview.skipped_count ? ` (요율행 ${adjPreview.skipped_count}개 제외)` : ''} · 재료비 {fmt(adjPreview.before.mat_amt)} → {fmt(adjPreview.after.mat_amt)} ({fmt(adjPreview.diff.mat_amt)}) · 노무비 {fmt(adjPreview.before.lab_amt)} → {fmt(adjPreview.after.lab_amt)} ({fmt(adjPreview.diff.lab_amt)}) · 합계 {fmt(adjPreview.before.tot_amt)} → <b>{fmt(adjPreview.after.tot_amt)}</b> ({fmt(adjPreview.diff.tot_amt)})</div>}
+        <div className="row" style={{ justifyContent: 'flex-end', marginTop: 12 }}>
+          <button onClick={() => setAdj(null)}>취소</button>
+          <button onClick={async () => { try { const r = await api.post(`/versions/${vid}/adjust-prices`, { mat_pct: +adj.mat_pct, lab_pct: +adj.lab_pct, exp_pct: +adj.exp_pct, section_prefix: adj.section ? adj.section.split('::') : null, price_digits: +adj.price_digits, price_round: adj.price_round, only_preview: true }); setAdjPreview(r.data) } catch (e) { setMsg({ t: errMsg(e), k: 'err' }) } }}>미리보기</button>
+          <button className="primary" disabled={!adjPreview} onClick={async () => { if (!confirm('단가를 일괄 조정합니다. 계속할까요?')) return; try { const r = await api.post(`/versions/${vid}/adjust-prices`, { mat_pct: +adj.mat_pct, lab_pct: +adj.lab_pct, exp_pct: +adj.exp_pct, section_prefix: adj.section ? adj.section.split('::') : null, price_digits: +adj.price_digits, price_round: adj.price_round, reason: adj.reason }); setAdj(null); loadItems(); loadVersions(); reloadProject(); setMsg({ t: `${r.data.items}개 품목 단가 조정 완료 — 합계 ${fmt(r.data.before.tot_amt)} → ${fmt(r.data.after.tot_amt)}`, k: 'ok' }) } catch (e) { setMsg({ t: errMsg(e), k: 'err' }) } }}>적용</button>
+        </div>
+      </div></div>}
       {adding && <div className="modal-bg" onClick={() => setAdding(null)}><div className="modal" onClick={(e) => e.stopPropagation()}>
         <h3>품목 추가 <span className="muted" style={{ fontSize: 12, fontWeight: 400 }}>{(adding.section_path || []).join(' > ')}</span></h3>
         <div className="grid2">

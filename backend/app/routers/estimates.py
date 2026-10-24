@@ -12,7 +12,7 @@ from ..auth import audit, get_current_user, get_project_for
 from ..db import get_db
 from ..config import settings
 from ..models import ContractVersion, CostRateRule, DesignChange, EstimateItem, PriceTable, ProgressClaim, SourceFile, UnitPriceAnalysis, User, WorkbookSheet
-from ..schemas import CostRuleIn, ItemAdd, ItemEdit
+from ..schemas import CostRuleIn, ItemAdd, ItemEdit, PriceAdjustIn
 from ..services.calc import D, line_amounts, project_rounding, s
 
 router = APIRouter(prefix="/api")
@@ -202,6 +202,62 @@ def export_version(vid: int, delete_mode: str = "zero", db: Session = Depends(ge
     return FileResponse(out, filename=out.name, media_type=media, headers={"X-Export-Stats": f"modified={stats['modified']};added={stats['added']};deleted={stats['deleted']}"})
 
 
+@router.post("/versions/{vid}/adjust-prices")
+def adjust_prices(vid: int, body: PriceAdjustIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """재료비/노무비/경비 단가를 퍼센트로 일괄 조정 (낙찰률·노임 상승률 적용 등). only_preview 면 합계 변화만 계산."""
+    from ..services.calc import round_by
+    v = _version(db, vid, user, "edit")
+    _editable(db, v)
+    p = get_project_for(db, v.project_id, user, "edit")
+    rounding = project_rounding(p)
+    prule = {"func": body.price_round, "digits": body.price_digits}
+    pcts = {"mat_price": Decimal(str(body.mat_pct)) / 100, "lab_price": Decimal(str(body.lab_pct)) / 100, "exp_price": Decimal(str(body.exp_pct)) / 100}
+    before_tot = {k: Decimal(0) for k in ("mat_amt", "lab_amt", "exp_amt", "tot_amt")}
+    after_tot = {k: Decimal(0) for k in before_tot}
+    n = 0
+    skipped = []
+    for it in v.items:
+        if it.row_type != "item" or it.is_deleted:
+            continue
+        if body.section_prefix and it.section_path[:len(body.section_prefix)] != body.section_prefix:
+            continue
+        # 금액이 수량×단가와 다른 행(공구손료 등 요율 산정 행)은 건드리지 않는다
+        cur_am = line_amounts(D(it.qty), it.mat_price, it.lab_price, it.exp_price, rounding)
+        if any(abs(cur_am[k] - D(getattr(it, k))) > 1 for k in ("mat_amt", "lab_amt", "exp_amt")):
+            skipped.append(it.name)
+            continue
+        for k in before_tot:
+            before_tot[k] += D(getattr(it, k))
+        new = {}
+        for f, pct in pcts.items():
+            cur = getattr(it, f)
+            new[f] = round_by(D(cur) * pct, prule) if (cur is not None and pct != 1) else cur
+        am = line_amounts(D(it.qty), new["mat_price"], new["lab_price"], new["exp_price"], rounding)
+        for k in after_tot:
+            after_tot[k] += am[k]
+        if not body.only_preview:
+            changed = any(D(new[f]) != D(getattr(it, f)) for f in pcts)
+            if changed:
+                n += 1
+                it.mat_price, it.lab_price, it.exp_price = new["mat_price"], new["lab_price"], new["exp_price"]
+                it.mat_amt, it.lab_amt, it.exp_amt, it.tot_amt = am["mat_amt"], am["lab_amt"], am["exp_amt"], am["tot_amt"]
+                it.tot_price = D(it.mat_price) + D(it.lab_price) + D(it.exp_price)
+                src = dict(it.price_source or {})
+                src["adjusted"] = {"mat_pct": body.mat_pct, "lab_pct": body.lab_pct, "exp_pct": body.exp_pct}
+                it.price_source = src
+        else:
+            n += 1
+    if not body.only_preview:
+        _recalc_totals(v)
+        audit(db, user, "items.adjust_prices", v.project_id, target=f"v{v.version_no}",
+              before={k: s(x) for k, x in before_tot.items()}, after={k: s(x) for k, x in after_tot.items()},
+              reason=f"{body.reason} (재료 {body.mat_pct}% / 노무 {body.lab_pct}% / 경비 {body.exp_pct}%)")
+        db.commit()
+    return {"items": n, "skipped": skipped[:50], "skipped_count": len(skipped),
+            "before": {k: s(x) for k, x in before_tot.items()}, "after": {k: s(x) for k, x in after_tot.items()},
+            "diff": {k: s(after_tot[k] - before_tot[k]) for k in before_tot}, "preview": body.only_preview}
+
+
 @router.post("/versions/{vid}/items/{uid}/restore")
 def restore_item(vid: int, uid: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     v = _version(db, vid, user, "edit")
@@ -238,9 +294,15 @@ def approve_version(vid: int, db: Session = Depends(get_db), user: User = Depend
 @router.delete("/versions/{vid}")
 def delete_version(vid: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     v = _version(db, vid, user, "approve")
-    if v.status != "draft":
-        raise HTTPException(400, "승인된 버전은 삭제할 수 없습니다.")
-    audit(db, user, "version.delete", v.project_id, target=f"v{v.version_no}")
+    if db.query(ProgressClaim).filter_by(contract_version_id=v.id).count():
+        raise HTTPException(400, "이 계약내역을 사용하는 기성 회차가 있습니다. 기성 회차를 먼저 삭제하세요.")
+    dcs = db.query(DesignChange).filter((DesignChange.base_version_id == v.id) | (DesignChange.result_version_id == v.id)).all()
+    if any(d.status == "approved" and d.result_version_id != v.id for d in dcs):
+        raise HTTPException(400, "이 계약내역을 기준으로 승인된 설계변경이 있습니다. 결과 버전을 먼저 삭제하세요.")
+    for d in dcs:
+        db.delete(d)   # 이 버전이 결과인 승인 설계변경 / 이 버전을 기준으로 한 작성중 설계변경은 함께 삭제
+    db.query(CostRateRule).filter_by(version_id=v.id).delete()
+    audit(db, user, "version.delete", v.project_id, target=f"v{v.version_no} {v.label}")
     db.delete(v)
     db.commit()
     return {"ok": True}

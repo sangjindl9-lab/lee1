@@ -39,7 +39,7 @@ export default function Dashboard() {
             </div>
             <div className="bar"><div style={{ width: `${Math.min(100, parseFloat(p.cum_rate))}%` }} /></div>
             <div className="row between" style={{ fontSize: 12 }}>
-              <span>기성률 <b>{p.cum_rate}%</b> · 기성 {p.confirmed_claims}/{p.claim_count}회</span>
+              <span>기성률 <b>{p.cum_rate}%</b> · 기성 {p.confirmed_claims}/{p.claim_count}회 <button className="sm danger" style={{ marginLeft: 6 }} onClick={async (e) => { e.preventDefault(); e.stopPropagation(); if (!confirm(`"${p.name}" 공사와 모든 자료(파일·내역서·기성·설계변경)를 삭제합니다. 계속할까요?`)) return; try { await api.delete(`/projects/${p.id}`); load() } catch (err) { setErr(errMsg(err)) } }}>삭제</button></span>
               <span>{p.current_version ? <span className="badge info">{p.current_version.label}</span> : <span className="badge warn">내역서 미등록</span>}
                 {p.open_changes > 0 && <span className="badge warn" style={{ marginLeft: 4 }}>설계변경 진행중</span>}</span>
             </div>

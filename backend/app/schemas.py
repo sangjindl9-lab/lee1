@@ -96,6 +96,17 @@ class ItemAdd(BaseModel):
     reason: str = ""
 
 
+class PriceAdjustIn(BaseModel):
+    mat_pct: float = 100      # 재료비 단가 적용률(%) — 100 이면 변동 없음
+    lab_pct: float = 100      # 노무비 단가 적용률(%)
+    exp_pct: float = 100      # 경비 단가 적용률(%)
+    section_prefix: list[str] | None = None   # 특정 공종(경로 prefix)만
+    price_digits: int = 0     # 조정 단가 소수 자리 (절사)
+    price_round: str = "trunc"   # trunc / round
+    only_preview: bool = False
+    reason: str = ""
+
+
 class CostRuleIn(BaseModel):
     rate: float | None = None
     rate_base: str | None = None
