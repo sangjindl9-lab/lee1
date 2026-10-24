@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import PriceTables from '../components/PriceTables'
 import { useParams } from 'react-router-dom'
 import { api, errMsg, fmt, fq } from '../api'
 
@@ -12,6 +13,7 @@ export default function UnitPricesPage() {
   const [show, setShow] = useState(false)
   const [form, setForm] = useState<any>({ title: '', components: [{ ...EMPTY_C }] })
   const [msg, setMsg] = useState('')
+  const [tab, setTab] = useState<'unit' | 'material' | 'labor' | 'etc'>('unit')
   const load = () => api.get(`/projects/${pid}/unit-prices`).then((r) => setList(r.data))
   useEffect(() => { load() }, [pid])
   const filtered = list.filter((u) => !q || u.title.toLowerCase().includes(q.toLowerCase()) || u.no.includes(q))
@@ -24,7 +26,10 @@ export default function UnitPricesPage() {
   const copyFrom = (u: any) => { setForm({ title: `${u.title} (복사)`, components: u.components.map((c: any) => ({ name: c.name, spec: c.spec, unit: c.unit, qty: c.qty || '', mat_price: c.mat_price || '', lab_price: c.lab_price || '', exp_price: c.exp_price || '' })) }); setShow(true) }
   return (
     <>
-      <div className="topbar"><h1>일위대가 관리</h1><div className="actions"><input placeholder="호표/명칭 검색" value={q} onChange={(e) => setQ(e.target.value)} /><button className="primary" onClick={() => setShow(true)}>+ 신규 일위대가 작성</button></div></div>
+      <div className="topbar"><h1>일위대가 · 단가표 관리</h1><div className="actions">{tab === 'unit' && <><input placeholder="호표/명칭 검색" value={q} onChange={(e) => setQ(e.target.value)} /><button className="primary" onClick={() => setShow(true)}>+ 신규 일위대가 작성</button></>}</div></div>
+      <div className="tabs"><button className={tab === 'unit' ? 'on' : ''} onClick={() => setTab('unit')}>일위대가</button><button className={tab === 'material' ? 'on' : ''} onClick={() => setTab('material')}>자재단가 (합산자재·단가조사·단가대비표)</button><button className={tab === 'labor' ? 'on' : ''} onClick={() => setTab('labor')}>노임단가 (노임근거·일위노임)</button><button className={tab === 'etc' ? 'on' : ''} onClick={() => setTab('etc')}>기타 참조표 (목차·산출서)</button></div>
+      {tab !== 'unit' && <PriceTables pid={pid!} kind={tab === 'etc' ? 'etc' : tab} />}
+      {tab === 'unit' && <>
       <div className="alert info">원본에서 읽은 일위대가는 기존 계약단가의 근거로 보존되며 수정하지 않습니다. 단가 변경이 필요하면 "복사"해서 신규 일위대가를 만들고 설계변경에서 "신규 일위대가 단가"로 연결하세요 (기존 계약단가는 그대로 유지됩니다).</div>
       {msg && <div className="alert ok">{msg}</div>}
       <div className="grid2" style={{ gridTemplateColumns: '1fr 1.4fr' }}>
@@ -42,6 +47,7 @@ export default function UnitPricesPage() {
                 <tr className="sub"><td colSpan={5}>합 계</td><td className="r">{fmt(sel.total.mat_amt)}</td><td /><td className="r">{fmt(sel.total.lab_amt)}</td><td className="r">{fmt(sel.total.exp_amt)}</td><td className="r">{fmt(sel.total.tot_amt)}</td></tr></tbody></table></>}
         </div>
       </div>
+      </>}
       {show && <div className="modal-bg" onClick={() => setShow(false)}><div className="modal" style={{ width: 'min(900px, 96vw)' }} onClick={(e) => e.stopPropagation()}>
         <h3>신규 일위대가 작성</h3>
         <label className="f">명칭 (품명 규격 단위)<input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="예: 경질비닐전선관 HI 28mm M" /></label>

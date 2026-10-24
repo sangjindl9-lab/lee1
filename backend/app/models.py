@@ -175,6 +175,23 @@ class UnitPriceAnalysis(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
 
 
+class PriceTable(Base):
+    """원본의 자재단가·단가조사·노임·일위대가목록 등 참조 표 (열 라벨 + 행 dict)."""
+    __tablename__ = "price_tables"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    source_file_id: Mapped[int | None] = mapped_column(ForeignKey("source_files.id", ondelete="CASCADE"), nullable=True)
+    sheet: Mapped[str] = mapped_column(String(255))
+    kind: Mapped[str] = mapped_column(String(32), default="material")   # material / labor / unit_price_index / quantity
+    title: Mapped[str] = mapped_column(String(255), default="")
+    name_key: Mapped[str] = mapped_column(String(8), default="")
+    columns: Mapped[list] = mapped_column(JSON, default=list)
+    rows: Mapped[list] = mapped_column(JSON, default=list)
+    groups: Mapped[list] = mapped_column(JSON, default=list)
+    row_count: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+
+
 class CostRateRule(Base):
     """원가계산서 비목/요율 (버전별)."""
     __tablename__ = "cost_rate_rules"

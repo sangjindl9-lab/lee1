@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from ..excel.analyzer import analyze_file, strip_internal
 from ..excel.parser import ROW_ITEM, ROW_SECTION, ROW_SUBTOTAL
-from ..models import (ContractVersion, CostRateRule, EstimateItem, Project, SourceFile, UnitPriceAnalysis, WorkbookSheet)
+from ..models import (ContractVersion, CostRateRule, EstimateItem, PriceTable, Project, SourceFile, UnitPriceAnalysis, WorkbookSheet)
 from .calc import D
 
 
@@ -108,6 +108,11 @@ def import_contract(db: Session, project: Project, sf: SourceFile, result: dict,
                                 rate=D(line["rate"]) if line["rate"] is not None else None, rate_base=line["rate_base"],
                                 base_text=line["base_text"], amount=D(line["amount"]) if line["amount"] is not None else None,
                                 source=f"원본 {cost['sheet']} 시트"))
+    # 자재단가 / 노임 / 참조 표 (같은 파일 것은 교체)
+    db.query(PriceTable).filter_by(project_id=project.id, source_file_id=sf.id).delete()
+    for sname, t in result.get("_price_tables", {}).items():
+        db.add(PriceTable(project_id=project.id, source_file_id=sf.id, sheet=sname, kind=t["kind"], title=t.get("title", ""),
+                          name_key=t.get("name_key", ""), columns=t["columns"], rows=t["rows"], groups=t["groups"], row_count=len(t["rows"])))
     # 일위대가
     for sname, groups in result.get("_unit_prices", {}).items():
         for g in groups:

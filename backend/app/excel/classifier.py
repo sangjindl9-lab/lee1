@@ -29,6 +29,7 @@ ROLE_LABELS = {
 }
 
 NAME_RULES: list[tuple[str, list[str]]] = [
+    (MATERIAL, ["단가대비", "자재단가", "단가비교", "합산자재", "단가조사"]),
     (CHANGE_COMPARE, ["증감대비", "증감내역", "증감총괄", "대비표"]),
     (CHANGE_ESTIMATE, ["변경내역"]),
     (COST, ["원가계산", "원가", "공사비예산", "공사비총괄", "갑지"]),

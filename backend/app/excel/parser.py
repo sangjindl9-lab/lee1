@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
+from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
 from .column_mapper import ColumnMap
@@ -549,3 +550,115 @@ def parse_unit_price_sheet(ws_v: Worksheet, ws_f: Worksheet, cm: ColumnMap) -> l
         comp["price_source"] = _formula_ref(pf) if isinstance(pf, str) else ""
         cur["components"].append(comp)
     return groups
+
+
+# ---------------------------------------------------------------- 자재단가 / 노임 등 범용 표 파서
+def parse_table_sheet(ws_v: Worksheet, ws_f: Worksheet, max_rows: int = 6000) -> dict[str, Any]:
+    """헤더(1~2행)를 찾아 열 라벨을 만들고 데이터 행을 dict 목록으로 추출한다.
+    - 2행 헤더는 '상위/하위' 로 합친다 (예: 거래가격/단가, 거래가격/PAGE)
+    - '공종줄' 마커나 숫자/단가 없는 제목 행은 그룹(group) 라벨로 기록
+    - 숫자 열은 number 로, 나머지는 text 로 보존"""
+    from .column_mapper import NAME_EXACT, _merged_origin_value, find_header_row
+    h = find_header_row(ws_v, max_rows=15)
+    if not h:
+        # 품명 없는 노임표(직종분류 등): '직종' 이나 '노임' 이 있는 행
+        for r in range(1, min(ws_v.max_row, 15) + 1):
+            texts = [norm_text(ws_v.cell(r, c).value) for c in range(1, min(ws_v.max_column, 30) + 1)]
+            if any(t and ("직종" in t or "노임" in t or "명칭" in t) for t in texts):
+                h = r
+                break
+    if not h:
+        return {"header_row": None, "columns": [], "rows": [], "groups": [], "title": cell_text(ws_v.cell(1, 1).value)}
+    max_col = min(ws_v.max_column, 40)
+
+    def _is_label_row(r: int) -> bool:
+        texts = nums = 0
+        for c in range(1, max_col + 1):
+            v = ws_v.cell(r, c).value
+            if v in (None, "", " "):
+                continue
+            if isinstance(v, str) and to_decimal(v) is None:
+                if len(v) > 40 or "::" in v or v.strip().startswith("[") or v.strip() in ("공종줄", "합계줄", "일목줄"):
+                    return False
+                texts += 1
+            else:
+                nums += 1
+        return texts >= 2 and nums <= 1
+
+    header_rows = [h]
+    while len(header_rows) < 3 and _is_label_row(header_rows[-1] + 1):
+        header_rows.append(header_rows[-1] + 1)
+    columns = []
+    carry = [""] * len(header_rows)
+    for c in range(1, max_col + 1):
+        parts = []
+        for li, hr in enumerate(header_rows):
+            t = cell_text(_merged_origin_value(ws_v, hr, c)) if len(header_rows) > 1 else cell_text(ws_v.cell(hr, c).value)
+            # 병합되지 않은 상위 그룹 라벨은 오른쪽으로 이어진 것으로 (아래 행에 라벨이 있을 때만)
+            below = any(cell_text(ws_v.cell(h2, c).value) for h2 in header_rows[li + 1:])
+            if t:
+                carry[li] = t
+            elif below and carry[li]:
+                t = carry[li]
+            else:
+                carry[li] = ""
+            if t:
+                parts.append(t.replace("\n", " "))
+        dedup = []
+        for p_ in parts:
+            if not dedup or norm_text(dedup[-1]) != norm_text(p_):
+                dedup.append(p_)
+        if not dedup:
+            continue
+        columns.append({"key": get_column_letter(c), "label": "/".join(dedup), "col": c})
+    two = len(header_rows) > 1
+    sub = header_rows[-1]
+    name_col = next((cc["col"] for cc in columns if norm_text(cc["label"]) in NAME_EXACT or norm_text(cc["label"]) in ("직종분류", "직종", "직종명")), None)
+    if name_col is None:
+        name_col = columns[0]["col"] if columns else 1
+    data_start = header_rows[-1] + 1
+    rows = []
+    groups = []
+    cur_group = ""
+    title = ""
+    for r in range(1, h):
+        for c in range(1, min(ws_v.max_column, 8) + 1):
+            t = cell_text(ws_v.cell(r, c).value)
+            if len(t) > 6 and ("[" in t or "표" in t or "서" in t or "노임" in t or "단가" in t):
+                title = t
+                break
+        if title:
+            break
+    for r in range(data_start, min(ws_v.max_row, data_start + max_rows) + 1):
+        vals = {}
+        nnum = 0
+        for cc in columns:
+            v = ws_v.cell(r, cc["col"]).value
+            if v in (None, "", " "):
+                continue
+            d = to_decimal(v) if not isinstance(v, bool) else None
+            if d is not None and not isinstance(v, str):
+                vals[cc["key"]] = float(d) if d != d.to_integral_value() else int(d)
+                nnum += 1
+            else:
+                vals[cc["key"]] = cell_text(v)
+        if not vals:
+            continue
+        name = cell_text(ws_v.cell(r, name_col).value)
+        if not name:
+            # 명칭 없는 행: 왼쪽 열 텍스트
+            for c in range(1, name_col):
+                t = cell_text(ws_v.cell(r, c).value)
+                if t and not re.match(r"^[\d\.\-]+$", t):
+                    name = t
+                    break
+        marker = cell_text(ws_v.cell(r, 2).value)
+        if marker == "공종줄" or (name and nnum == 0 and len(vals) <= 2):
+            cur_group = name
+            groups.append({"row": r, "name": name})
+            continue
+        vals["_row"] = r
+        vals["_name"] = name
+        vals["_group"] = cur_group
+        rows.append(vals)
+    return {"header_row": h, "columns": columns, "rows": rows, "groups": groups, "title": title, "name_key": get_column_letter(name_col)}

@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from ..auth import audit, get_current_user, get_project_for
 from ..db import get_db
 from ..config import settings
-from ..models import ContractVersion, CostRateRule, DesignChange, EstimateItem, ProgressClaim, SourceFile, UnitPriceAnalysis, User, WorkbookSheet
+from ..models import ContractVersion, CostRateRule, DesignChange, EstimateItem, PriceTable, ProgressClaim, SourceFile, UnitPriceAnalysis, User, WorkbookSheet
 from ..schemas import CostRuleIn, ItemAdd, ItemEdit
 from ..services.calc import D, line_amounts, project_rounding, s
 
@@ -308,3 +308,51 @@ def create_unit_price(pid: int, body: dict, db: Session = Depends(get_db), user:
     audit(db, user, "unit_price.create", p.id, target=u.no, after=total)
     db.commit()
     return {"id": u.id, "no": u.no, "title": u.title, "components": u.components, "total": u.total, "is_new": True}
+
+
+# ---------------------------------------------------------------- 자재단가 / 노임 표
+def _tokens_match(q: str, text: str) -> bool:
+    t = text.lower().replace(" ", "")
+    return all(tok in t for tok in q.lower().split() if tok)
+
+
+def _row_text(r: dict) -> str:
+    return " ".join(str(v) for k, v in r.items() if not k.startswith("_")) + " " + (r.get("_name") or "")
+@router.get("/projects/{pid}/price-tables")
+def price_tables(pid: int, kind: str | None = None, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    get_project_for(db, pid, user)
+    q = db.query(PriceTable).filter_by(project_id=pid)
+    if kind:
+        q = q.filter_by(kind=kind)
+    return [{"id": t.id, "sheet": t.sheet, "kind": t.kind, "title": t.title, "row_count": t.row_count, "source_file_id": t.source_file_id,
+             "columns": t.columns} for t in q.order_by(PriceTable.kind, PriceTable.id)]
+
+
+@router.get("/price-tables/{tid}")
+def price_table(tid: int, q: str | None = None, limit: int = 3000, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    t = db.get(PriceTable, tid)
+    if not t:
+        raise HTTPException(404)
+    get_project_for(db, t.project_id, user)
+    rows = t.rows
+    if q:
+        rows = [r for r in rows if _tokens_match(q, _row_text(r))]
+    return {"id": t.id, "sheet": t.sheet, "kind": t.kind, "title": t.title, "name_key": t.name_key, "columns": t.columns,
+            "groups": t.groups, "rows": rows[:limit], "total": len(t.rows), "matched": len(rows)}
+
+
+@router.get("/projects/{pid}/price-lookup")
+def price_lookup(pid: int, q: str, limit: int = 30, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """품명/규격으로 자재단가·노임 표 통합 검색 (내역 편집·신규 품목 단가 참고용)."""
+    get_project_for(db, pid, user)
+    out = []
+    for t in db.query(PriceTable).filter_by(project_id=pid).filter(PriceTable.kind.in_(["material", "labor"])):
+        labels = {c["key"]: c["label"] for c in t.columns}
+        for r in t.rows:
+            if _tokens_match(q, _row_text(r)):
+                nums = {labels[k]: v for k, v in r.items() if not k.startswith("_") and isinstance(v, (int, float)) and k in labels}
+                out.append({"sheet": t.sheet, "kind": t.kind, "name": r.get("_name"), "row": r.get("_row"),
+                            "text": {labels.get(k, k): v for k, v in r.items() if not k.startswith("_") and isinstance(v, str)}, "numbers": nums})
+                if len(out) >= limit:
+                    return out
+    return out

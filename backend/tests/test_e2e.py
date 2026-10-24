@@ -260,3 +260,22 @@ def test_sheet_role_override_and_mapping(client):
     assert r.status_code == 200, r.text
     rules = client.get("/api/mapping-rules").json()
     assert rules and rules[0]["column_map"] == {"note": 18}
+
+
+def test_price_tables(client):
+    r = client.post("/api/projects", json={"name": "단가표 테스트"})
+    pid = r.json()["id"]
+    with open(CHILGOK, "rb") as fh:
+        fid = client.post(f"/api/projects/{pid}/files", files={"file": (CHILGOK.name, fh, "application/octet-stream")}, data={"sync": "true"}).json()["id"]
+    a = client.get(f"/api/files/{fid}/analysis").json()
+    assert {"합산자재", "단가조사", "일위노임", "노임근거", "단가대비표"} <= set(a["price_tables"])
+    client.post(f"/api/files/{fid}/import", json={})
+    tables = client.get(f"/api/projects/{pid}/price-tables").json()
+    kinds = {t["sheet"]: t["kind"] for t in tables}
+    assert kinds["합산자재"] == "material" and kinds["노임근거"] == "labor"
+    t = next(t for t in tables if t["sheet"] == "단가조사")
+    d = client.get(f"/api/price-tables/{t['id']}", params={"q": "CD-난연성 22"}).json()
+    assert d["matched"] == 1 and d["rows"][0]["G"] == 227.2193
+    assert any(c["label"] == "거래가격/단가" for c in d["columns"])
+    lk = client.get(f"/api/projects/{pid}/price-lookup", params={"q": "가요전선관 22"}).json()
+    assert lk and lk[0]["name"] == "합성수지제 가요전선관"

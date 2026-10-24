@@ -8,7 +8,7 @@ from typing import Any
 from . import classifier as C
 from .column_mapper import apply_user_mapping, detect_columns
 from .loader import WorkbookBundle, load_bundle
-from .parser import ParsedSheet, parse_cost_sheet, parse_estimate_sheet, parse_unit_price_sheet
+from .parser import ParsedSheet, parse_cost_sheet, parse_estimate_sheet, parse_table_sheet, parse_unit_price_sheet
 from .validator import compare_with_cost_sheet, validate_sheet
 
 
@@ -55,6 +55,7 @@ def analyze_file(path: str | Path, work_dir: str | Path | None = None,
     validations: dict[str, Any] = {}
     cost_sheets: dict[str, Any] = {}
     unit_prices: dict[str, Any] = {}
+    price_tables: dict[str, Any] = {}     # 자재단가 / 노임 등 표
     unidentified: list[str] = []
 
     for r in roles:
@@ -86,6 +87,14 @@ def analyze_file(path: str | Path, work_dir: str | Path | None = None,
                     unit_prices[r.sheet] = parse_unit_price_sheet(ws_v, ws_f, cm)
                 except Exception as e:  # noqa: BLE001
                     unidentified.append(f"[{r.sheet}] 일위대가 해석 실패: {e}")
+        elif r.role in (C.MATERIAL, C.LABOR, C.UNIT_PRICE_INDEX, C.QUANTITY):
+            try:
+                t = parse_table_sheet(ws_v, ws_f)
+                if t["rows"]:
+                    t["kind"] = {C.MATERIAL: "material", C.LABOR: "labor", C.UNIT_PRICE_INDEX: "unit_price_index", C.QUANTITY: "quantity"}[r.role]
+                    price_tables[r.sheet] = t
+            except Exception as e:  # noqa: BLE001
+                unidentified.append(f"[{r.sheet}] 표 해석 실패: {e}")
         elif r.role == C.UNKNOWN:
             unidentified.append(f"[{r.sheet}] 역할 미확인 - 시트 역할을 지정하세요")
 
@@ -120,9 +129,11 @@ def analyze_file(path: str | Path, work_dir: str | Path | None = None,
         "cost_sheets": cost_sheets,
         "cost_compare": cost_compare,
         "unit_price_count": {k: len(v) for k, v in unit_prices.items()},
+        "price_tables": {k: {"kind": v["kind"], "title": v["title"], "rows": len(v["rows"]), "columns": len(v["columns"])} for k, v in price_tables.items()},
         "unidentified": unidentified,
         "_parsed": parsed,          # 내부용 (DB 저장 시 사용)
         "_unit_prices": unit_prices,
+        "_price_tables": price_tables,
         "_bundle": bundle,
     }
 

@@ -27,7 +27,7 @@ export default function Layout() {
             <L to={`/projects/${pid}/estimate`}>③ 내역서 분석·편집</L>
             <L to={`/projects/${pid}/claims`}>④ 기성내역서 작성</L>
             <L to={`/projects/${pid}/changes`}>⑤ 설계변경 작성</L>
-            <L to={`/projects/${pid}/unit-prices`}>⑥ 일위대가 관리</L>
+            <L to={`/projects/${pid}/unit-prices`}>⑥ 일위대가·단가표</L>
             <L to={`/projects/${pid}/cost-rules`}>⑦ 원가계산서·제비율</L>
             <L to={`/projects/${pid}/audit`}>⑧ 변경이력</L>
           </>

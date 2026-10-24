@@ -19,6 +19,7 @@ export default function EstimatePage() {
   const [cell, setCell] = useState<{ uid: string; field: Field } | null>(null)   // 편집 중인 셀
   const [cellVal, setCellVal] = useState('')
   const [adding, setAdding] = useState<any>(null)
+  const [lookup, setLookup] = useState<any[]>([])
   const [msg, setMsg] = useState<{ t: string; k: string } | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -186,6 +187,11 @@ export default function EstimatePage() {
           <label className="f">경비 단가<input className="num" value={adding.exp_price} onChange={(e) => setAdding({ ...adding, exp_price: e.target.value })} /></label>
           <label className="f">비고<input value={adding.note} onChange={(e) => setAdding({ ...adding, note: e.target.value })} /></label>
         </div>
+        <div className="row" style={{ marginTop: 10 }}><button className="sm" onClick={async () => { const r = await api.get(`/projects/${pid}/price-lookup`, { params: { q: `${adding.name} ${adding.spec}`.trim() } }); setLookup(r.data) }} disabled={!adding.name}>단가표에서 찾기 (자재단가·노임)</button><span className="help">원본의 합산자재·단가조사·노임 표에서 품명/규격으로 검색해 단가를 가져옵니다.</span></div>
+        {lookup.length > 0 && <div className="tbl-wrap" style={{ maxHeight: 200, marginTop: 6 }}><table className="t"><thead><tr><th>시트</th><th>품명</th><th>내용</th><th>단가</th><th></th></tr></thead>
+          <tbody>{lookup.map((l: any, i: number) => <tr key={i}><td>{l.sheet}</td><td>{l.name}</td><td style={{ fontSize: 11 }}>{Object.values(l.text).filter((x: any) => x !== l.name).join(' / ').slice(0, 60)}</td>
+            <td style={{ fontSize: 11 }}>{Object.entries(l.numbers).map(([k, v]: any) => `${k}: ${fmt(v, 2)}`).join(' · ')}</td>
+            <td className="c"><button className="sm" onClick={() => { const n: any = l.numbers; const mat = n['재료비'] ?? n['적용단가'] ?? n['계'] ?? Object.values(n)[0]; setAdding({ ...adding, mat_price: mat ?? adding.mat_price, lab_price: n['노무비'] ?? adding.lab_price, exp_price: n['경비'] ?? adding.exp_price, unit: adding.unit || l.text['단위'] || '' }) }}>적용</button></td></tr>)}</tbody></table></div>}
         <div className="row" style={{ justifyContent: 'flex-end', marginTop: 12 }}><button onClick={() => setAdding(null)}>취소</button><button className="primary" disabled={!adding.name} onClick={addItem}>추가</button></div>
       </div></div>}
     </>
