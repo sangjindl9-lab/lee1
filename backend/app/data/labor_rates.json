@@ -1,0 +1,31 @@
+{
+  "note": "출처에서 직접 확인한 값만 수록. 숫자를 추정해 채우지 않는다.",
+  "sets": [
+    {
+      "set": "2026H2-정보통신",
+      "title": "2026년 하반기 정보통신부문 시중노임단가",
+      "publisher": "정보통신부문 시중노임단가(2026년 하반기, 정보통신신문 2026.9.8 보도)",
+      "effective_date": "2026-09-01",
+      "version": "2026 하반기",
+      "source_url": "https://www.koit.co.kr/news/articleView.html?idxno=208915",
+      "rates": [
+        {"trade": "광케이블설치사", "daily_rate": 471931},
+        {"trade": "S/W시험사", "daily_rate": 446560},
+        {"trade": "통신케이블공", "daily_rate": 438070},
+        {"trade": "통신외선공", "daily_rate": 410182},
+        {"trade": "H/W시험사", "daily_rate": 398279},
+        {"trade": "무선안테나공", "daily_rate": 360084},
+        {"trade": "통신관련기사", "daily_rate": 324979},
+        {"trade": "통신설비공", "daily_rate": 316875},
+        {"trade": "통신관련산업기사", "daily_rate": 304662},
+        {"trade": "통신내선공", "daily_rate": 286219},
+        {"trade": "통신관련기능사", "daily_rate": 250000}
+      ]
+    }
+  ],
+  "missing": [
+    {"group": "전기·일반 건설 직종 (내선전공, 저압·고압케이블전공, 배전·송전·변전전공, 계장공, 보통인부, 특별인부 등)",
+     "reason": "2026년 하반기 값은 대한건설협회 「2026년 하반기 적용 건설업 임금실태조사 보고서」(2026.9.1 공표, 적용 2026.9.1~)에만 수록되어 있어 직종별 금액을 확인하지 못함",
+     "where": "https://www.kseis.co.kr/bbs/data/dataDetail.do?bbs_seq=82199305780142"}
+  ]
+}

@@ -80,10 +80,46 @@ def add_labor(body: LaborIn, user: User = Depends(require_role(*EDIT_ROLES)), db
     return {"id": r.id}
 
 
+def ensure_standard_labor(db: Session, company_id: int) -> int:
+    """기본 제공 노임단가(출처 확인된 값만, app/data/labor_rates.json)를 회사 기준정보에 한 번 넣는다.
+    같은 직종·적용일·버전이 이미 있으면 넣지 않는다 (사용자 수정값 보존)."""
+    import json
+    from pathlib import Path
+    path = Path(__file__).resolve().parents[1] / "data" / "labor_rates.json"
+    if not path.exists():
+        return 0
+    data = json.loads(path.read_text(encoding="utf-8"))
+    have = {(r.trade, r.effective_date) for r in db.query(LaborRate).filter_by(company_id=company_id).all()}
+    n = 0
+    for st in data.get("sets", []):
+        for r in st["rates"]:
+            if (r["trade"], st["effective_date"]) in have:
+                continue
+            db.add(LaborRate(company_id=company_id, trade=r["trade"], daily_rate=float(r["daily_rate"]), publisher=st["publisher"],
+                             effective_date=st["effective_date"], version=st.get("version")))
+            n += 1
+    if n:
+        db.commit()
+    return n
+
+
 @router.get("/labor-rates")
 def list_labor(user: User = Depends(current_user), db: Session = Depends(get_db)):
-    return [{"id": r.id, "trade": r.trade, "daily_rate": r.daily_rate, "publisher": r.publisher, "effective_date": r.effective_date}
-            for r in db.query(LaborRate).filter_by(company_id=user.company_id).all()]
+    ensure_standard_labor(db, user.company_id)
+    rows = db.query(LaborRate).filter_by(company_id=user.company_id).order_by(LaborRate.trade, LaborRate.effective_date.desc()).all()
+    return [{"id": r.id, "trade": r.trade, "daily_rate": r.daily_rate, "publisher": r.publisher, "effective_date": r.effective_date,
+             "version": r.version} for r in rows]
+
+
+@router.get("/labor-rates/standard-info")
+def labor_standard_info(user: User = Depends(current_user)):
+    """기본 제공 노임 세트의 출처와, 확인하지 못해 비워 둔 직종 안내."""
+    import json
+    from pathlib import Path
+    path = Path(__file__).resolve().parents[1] / "data" / "labor_rates.json"
+    data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+    return {"sets": [{k: v for k, v in st.items() if k != "rates"} | {"count": len(st["rates"])} for st in data.get("sets", [])],
+            "missing": data.get("missing", [])}
 
 
 @router.post("/materials")
@@ -116,7 +152,10 @@ def compute_estimate(pid: int, body: RatesIn, user: User = Depends(require_role(
     get_project_or_403(db, user, pid)
     items = db.query(QuantityItem).filter_by(project_id=pid).all()
     norms = {n.code: n for n in db.query(StandardNorm).filter_by(company_id=user.company_id).all()}
-    labor = {r.trade: r for r in db.query(LaborRate).filter_by(company_id=user.company_id).all()}
+    # 같은 직종이 여러 적용일로 있으면 가장 최근 적용일 단가를 쓴다
+    labor = {}
+    for r in db.query(LaborRate).filter_by(company_id=user.company_id).order_by(LaborRate.effective_date).all():
+        labor[r.trade] = r
     lines, direct_mat, direct_lab, gov_mat = [], 0.0, 0.0, 0.0
     all_verified = True
     for q in items:
