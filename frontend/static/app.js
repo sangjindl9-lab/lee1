@@ -99,6 +99,11 @@ async function refreshAll() {
   W.sheets = W.files.flatMap(f => f.sheets.map(s => ({ ...s, file: f })));
   if (W.sheet) { W.dets = await api(`/api/projects/${pid}/takeoff/symbols?sheet_id=${W.sheet.id}`); W.routes = await api(`/api/projects/${pid}/takeoff/routes?sheet_id=${W.sheet.id}`); }
   renderLeft(); renderRight(); draw();
+  // 아직 연 도면이 없으면 첫 도면(평면도 우선)을 자동으로 연다 — 휴대폰에서 목록을 못 찾아 빈 화면이 되는 문제 방지
+  if (!W.sheet && W.sheets.length) {
+    const first = W.sheets.find(x => x.drawing_type === "평면도") || W.sheets[0];
+    await openSheet(first.id);
+  }
   if (busyFiles(W.files)) schedulePoll();
 }
 // 도면 처리 중에는 파일 상태만 가볍게 확인 (타이머 1개만 유지). 진행률이 바뀔 때만 도면 목록을 다시 그리고,
@@ -425,7 +430,11 @@ const aciColor = c => (c === null || c === undefined) ? "#ddd" : (ACI[c] || `hsl
 const symColor = id => `hsl(${(id * 67) % 360},85%,60%)`;
 function draw() {
   const c = V.ctx; if (!c) return; c.setTransform(1, 0, 0, 1, 0, 0); c.fillStyle = "#1e1e1e"; c.fillRect(0, 0, V.cv.width, V.cv.height);
-  if (!W.geo) return;
+  if (!W.geo) {
+    c.fillStyle = "#bbb"; c.font = "15px sans-serif"; c.textAlign = "center";
+    const msg = !(W.sheets || []).length ? (busyFiles(W.files) ? "도면 분석 중입니다… 끝나면 자동으로 표시됩니다" : "도면 파일을 올리십시오") : (isNarrow() ? "위쪽 도면 목록에서 📄 도면을 누르십시오" : "왼쪽 도면 목록에서 📄 도면을 누르십시오");
+    c.fillText(msg, V.cv.width / 2, V.cv.height / 2); c.textAlign = "start"; return;
+  }
   const b = W.sheet.bbox;
   const T = W.tally && W.tally.sheet_id === W.sheet.id ? W.tally : null;
   if (T && T.only) { drawTallyOnly(c, T); return; }
