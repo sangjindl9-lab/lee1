@@ -142,7 +142,9 @@ function leftFiles() {
     h += `<div class="item" style="flex-direction:column;align-items:stretch"><div class="row" style="justify-content:space-between"><span>${esc(f.name)} <span class="badge ${f.status}">${KO[f.status] || f.status}</span></span><span><button class="sm" onclick="api('/api/projects/${W.pid}/files/${f.id}/reprocess',{method:'POST'}).then(refreshAll)">재분석</button><button class="sm err" onclick="if(confirm('삭제?'))api('/api/projects/${W.pid}/files/${f.id}',{method:'DELETE'}).then(refreshAll)">×</button></span></div>`;
     if (["queued", "processing"].includes(f.status)) h += `<div class="prog"><i style="width:${f.progress}%"></i></div>`;
     if (f.error) h += `<div class="errbox">${esc(f.error)}</div>`;
-    for (const w of f.warnings || []) h += `<div class="warnbox">${esc(w)}</div>`;
+    const ws = f.warnings || [];
+    if (ws.length > 2) h += `<details class="warns"><summary>⚠ 확인할 안내 ${ws.length}건 (축척·OCR 등) — 눌러서 보기</summary>${ws.map(w => `<div class="warnbox">${esc(w)}</div>`).join("")}</details>`;
+    else for (const w of ws) h += `<div class="warnbox">${esc(w)}</div>`;
     for (const s of f.sheets) h += `<div class="item ${W.sheet && W.sheet.id === s.id ? "sel" : ""}" onclick="openSheet(${s.id})"><span>📄 ${esc(s.drawing_no || "")} ${esc(s.drawing_title || s.sheet_name)} <span class="muted small">${s.drawing_type || ""} ${s.discipline || ""}</span></span><span class="small ${s.scale_confirmed ? "muted" : ""}" style="color:${s.scale_confirmed ? "" : "var(--warn)"}">${s.scale_confirmed ? s.units : "축척 미확정"}</span></div>`;
     h += `</div>`;
   }
@@ -366,19 +368,46 @@ async function uploadFiles(files) { const fd = new FormData(); for (const f of f
 function dropFiles(e) { e.preventDefault(); uploadFiles(e.dataTransfer.files); }
 
 /* ---------------- 뷰어 ---------------- */
+const isNarrow = () => window.matchMedia("(max-width: 1100px)").matches;
 const V = { cv: null, ctx: null, scale: 1, tx: 0, ty: 0, drag: null, mouse: null };
 function initViewer() {
   V.cv = $("#cv"); V.ctx = V.cv.getContext("2d");
   const ro = new ResizeObserver(() => { V.cv.width = V.cv.clientWidth; V.cv.height = V.cv.clientHeight; draw(); }); ro.observe($("#center"));
   V.cv.addEventListener("wheel", e => { e.preventDefault(); const f = e.deltaY < 0 ? 1.15 : 1 / 1.15; const [mx, my] = [e.offsetX, e.offsetY]; V.tx = mx - (mx - V.tx) * f; V.ty = my - (my - V.ty) * f; V.scale *= f; draw(); }, { passive: false });
-  V.cv.addEventListener("mousedown", e => { V.drag = { x: e.offsetX, y: e.offsetY, tx: V.tx, ty: V.ty, moved: false, start: toWorld(e.offsetX, e.offsetY), btn: e.button !== 0 }; });
+  // 마우스·터치 공통(Pointer Events). 터치: 한 손가락 = 현재 모드 동작(이동/영역 드래그), 두 손가락 = 이동·확대
+  V.ptrs = new Map();
+  V.cv.style.touchAction = "none";
   V.cv.addEventListener("contextmenu", e => e.preventDefault());
-  V.cv.addEventListener("mousemove", e => { V.mouse = toWorld(e.offsetX, e.offsetY); if (V.drag && (W.mode === "pan" || V.drag.btn)) { V.tx = V.drag.tx + e.offsetX - V.drag.x; V.ty = V.drag.ty + e.offsetY - V.drag.y; if (Math.abs(e.offsetX - V.drag.x) + Math.abs(e.offsetY - V.drag.y) > 3) V.drag.moved = true; } draw(); });
-  V.cv.addEventListener("mouseup", e => { const d = V.drag; V.drag = null; if (!d || d.btn) return; const p = toWorld(e.offsetX, e.offsetY); if (W.mode === "pan" && !d.moved) pick(p); else if (W.mode === "tally") { if (Math.abs(e.offsetX - d.x) + Math.abs(e.offsetY - d.y) > 6) tallyRegion(d.start, p); else tallyToggleAt(p); } else if (W.mode === "region") finishRegion(d.start, p); else if (W.mode === "measure") measureClick(p); else if (W.mode === "add") addSymbolAt(p); else if (W.mode === "sample") sampleSymbolAt(p); });
+  const pos = e => { const r = V.cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+  V.cv.addEventListener("pointerdown", e => {
+    try { V.cv.setPointerCapture(e.pointerId); } catch (_) { } const [x, y] = pos(e); V.ptrs.set(e.pointerId, [x, y]);
+    if (V.ptrs.size === 2) { const [a, b] = [...V.ptrs.values()]; V.pinch = { d: Math.hypot(a[0] - b[0], a[1] - b[1]) || 1, m: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], scale: V.scale, tx: V.tx, ty: V.ty }; V.drag = null; return; }
+    if (V.ptrs.size > 2) return;
+    V.drag = { x, y, tx: V.tx, ty: V.ty, moved: false, start: toWorld(x, y), btn: e.pointerType === "mouse" && e.button !== 0 };
+  });
+  V.cv.addEventListener("pointermove", e => {
+    const [x, y] = pos(e); if (V.ptrs.has(e.pointerId)) V.ptrs.set(e.pointerId, [x, y]);
+    if (V.pinch && V.ptrs.size >= 2) { const [a, b] = [...V.ptrs.values()]; const d = Math.hypot(a[0] - b[0], a[1] - b[1]) || 1, m = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]; const P = V.pinch, f = d / P.d; V.scale = P.scale * f; V.tx = m[0] - (P.m[0] - P.tx) * f; V.ty = m[1] - (P.m[1] - P.ty) * f; draw(); return; }
+    V.mouse = toWorld(x, y);
+    if (V.drag && (W.mode === "pan" || V.drag.btn)) { V.tx = V.drag.tx + x - V.drag.x; V.ty = V.drag.ty + y - V.drag.y; }
+    if (V.drag && Math.abs(x - V.drag.x) + Math.abs(y - V.drag.y) > 3) V.drag.moved = true;
+    draw();
+  });
+  const endPtr = e => {
+    V.ptrs.delete(e.pointerId);
+    if (V.pinch) { if (!V.ptrs.size) V.pinch = null; V.drag = null; return; }
+    const d = V.drag; V.drag = null; if (!d || d.btn || e.type === "pointercancel") return;
+    const [x, y] = pos(e); const p = toWorld(x, y); const moved = Math.abs(x - d.x) + Math.abs(y - d.y) > (e.pointerType === "mouse" ? 6 : 12);
+    if (W.mode === "pan") { if (!moved) pick(p); }
+    else if (W.mode === "tally") { if (moved) tallyRegion(d.start, p); else tallyToggleAt(p); }
+    else if (W.mode === "region") { if (moved) finishRegion(d.start, p); }
+    else if (W.mode === "measure") measureClick(p); else if (W.mode === "add") addSymbolAt(p); else if (W.mode === "sample") sampleSymbolAt(p);
+  };
+  V.cv.addEventListener("pointerup", endPtr); V.cv.addEventListener("pointercancel", endPtr);
 }
 function toWorld(px, py) { return [(px - V.tx) / V.scale, -(py - V.ty) / V.scale]; }
 function toScreen(x, y) { return [x * V.scale + V.tx, -y * V.scale + V.ty]; }
-function setMode(m) { W.mode = m; W.pts = []; document.querySelectorAll(".vtools button[id^=m_]").forEach(b => b.classList.toggle("on", b.id === "m_" + m)); V.cv.style.cursor = m === "pan" ? "grab" : "crosshair"; $("#vinfo").textContent = { pan: "클릭: 기호·선로 선택 / 드래그: 이동 / 휠: 확대", region: "표 영역을 드래그하여 범례로 등록", measure: "두 점을 클릭 → 실제 거리(m) 입력 시 축척 확정", tally: "집계할 영역을 드래그 → 영역 안 객체 개수·케이블 선 표시 / 객체 클릭: 개별 제외·포함 / 오른쪽 버튼 드래그: 화면 이동", add: "범례 기호를 선택한 뒤 도면을 클릭하면 기호가 추가됩니다", sample: "범례 탭에서 기호를 선택한 뒤, 도면 위 실제 기호 하나를 클릭 → 그 모양으로 전체 검색" }[m]; }
+function setMode(m) { W.mode = m; W.pts = []; document.querySelectorAll(".vtools button[id^=m_]").forEach(b => b.classList.toggle("on", b.id === "m_" + m)); V.cv.style.cursor = m === "pan" ? "grab" : "crosshair"; $("#vinfo").textContent = { pan: "클릭: 기호·선로 선택 / 드래그: 이동 / 휠: 확대", region: "표 영역을 드래그하여 범례로 등록", measure: "두 점을 클릭 → 실제 거리(m) 입력 시 축척 확정", tally: "집계할 영역을 드래그 → 영역 안 객체 개수·케이블 선 표시 / 객체 클릭: 개별 제외·포함 / 오른쪽 버튼(휴대폰: 두 손가락) 드래그: 화면 이동", add: "범례 기호를 선택한 뒤 도면을 클릭하면 기호가 추가됩니다", sample: "범례 탭에서 기호를 선택한 뒤, 도면 위 실제 기호 하나를 클릭 → 그 모양으로 전체 검색" }[m]; }
 function fitView() { const b = W.sheet && W.sheet.bbox; if (!b) return; const w = b.x1 - b.x0 || 1, h = b.y1 - b.y0 || 1; V.scale = Math.min(V.cv.width / w, V.cv.height / h) * 0.92; V.tx = (V.cv.width - w * V.scale) / 2 - b.x0 * V.scale; V.ty = (V.cv.height + h * V.scale) / 2 + b.y0 * V.scale; draw(); }
 async function openSheet(id, focusRegion) {
   const s = W.sheets.find(x => x.id === id); if (!s) return;
@@ -386,7 +415,9 @@ async function openSheet(id, focusRegion) {
   if (s.has_raster) { const im = new Image(); im.onload = () => draw(); const r = await fetch(`/api/projects/${W.pid}/sheets/${id}/raster`, { headers: { Authorization: "Bearer " + S.token } }); if (r.ok) { im.src = URL.createObjectURL(await r.blob()); W.img = im; } }
   [W.dets, W.routes] = await Promise.all([api(`/api/projects/${W.pid}/takeoff/symbols?sheet_id=${id}`), api(`/api/projects/${W.pid}/takeoff/routes?sheet_id=${id}`)]);
   if (!(W.sel && W.sel.type === "item")) W.sel = null;
-  renderLeft(); renderRight(); fitView();
+  renderLeft(); renderRight();
+  if (isNarrow()) $("#center").scrollIntoView({ behavior: "smooth", block: "start" });
+  fitView();
   if (focusRegion) { const w = focusRegion.x1 - focusRegion.x0, h = focusRegion.y1 - focusRegion.y0; V.scale = Math.min(V.cv.width / w, V.cv.height / h) * 0.8; V.tx = (V.cv.width - w * V.scale) / 2 - focusRegion.x0 * V.scale; V.ty = (V.cv.height + h * V.scale) / 2 + focusRegion.y0 * V.scale; draw(); }
 }
 const ACI = ["#000", "#f44", "#ff0", "#4f4", "#4ff", "#44f", "#f4f", "#eee", "#999", "#ccc"];
@@ -470,8 +501,10 @@ async function tallyRegion(a, b) {
   r.objects.forEach((o, i) => { o.on = false; o.name = ""; o.spec = ""; o.unit = "개"; o.col = TCOL(i); o.bg = isGreyish(o.color); });
   r.lines.forEach((l, i) => { l.on = false; l.name = "케이블"; l.spec = ""; l.len = ""; l.col = lineColor(l.key, i); });
   W.tally = { ...r, region, sheet_id: W.sheet.id, only: true };
-  W.sel = null; renderRight(); draw();
-  toast(r.mode === "raster" ? "스캔 도면은 객체 자동 구분이 안 됩니다 (오른쪽 안내 참조)" : `영역 안 객체 ${r.objects.length}종 · 선 ${r.lines.length}종 — 집계할 항목에 품명을 입력하십시오`);
+  W.sel = null; renderRight();
+  $("#vinfo").textContent = `영역 분석 완료 — 객체 ${r.objects.length}종, 선 ${r.lines.length}종`;
+  if (isNarrow()) fitTally(); else draw();
+  toast(r.mode === "raster" ? "스캔 도면은 객체 자동 구분이 안 됩니다 (오른쪽 안내 참조)" : `영역 안 객체 ${r.objects.length}종 · 선 ${r.lines.length}종 — ${isNarrow() ? "아래" : "오른쪽"} 목록에서 집계할 항목에 품명을 입력하십시오`);
 }
 const tallyCount = o => o.items.filter(it => !it.off).length;
 function tallyToggleAt(p) {

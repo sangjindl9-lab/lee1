@@ -62,3 +62,19 @@ canvas.tmini { display: block; border: 1px solid #ccc; border-radius: 3px; }
 .tcard input.tname { flex: 1 1 45%; min-width: 0; }
 .tcard input.tspec { flex: 1 1 35%; min-width: 0; }
 .tcard input.tunit { width: 52px; flex: 0 0 52px; }
+details.warns { margin: 4px 0; }
+details.warns > summary { cursor: pointer; font-size: 12px; color: #8a5a00; background: #fff8e6; border: 1px solid #f0d58a; border-radius: 4px; padding: 4px 8px; }
+/* 좁은 화면(휴대폰·태블릿 세로): 패널을 위아래로 쌓고, 도구 버튼은 한 줄 가로 스크롤 */
+@media (max-width: 1100px) {
+  .ws { display: flex; flex-direction: column; height: auto; }
+  .ws > aside, .ws > section.right { border: 0; border-bottom: 1px solid var(--line); overflow: visible; }
+  .ws > aside { max-height: 45vh; overflow: auto; }
+  .ws > section.center { height: 72vh; min-height: 360px; flex: none; }
+  .vtools { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; right: 8px; max-width: none; }
+  .vtools button { white-space: nowrap; flex: none; }
+  .vinfo { right: 8px; }
+}
+@media (max-width: 1100px) {
+  #app { height: auto; min-height: calc(100vh - 46px); overflow: visible; }
+  .page { height: auto; }
+}
