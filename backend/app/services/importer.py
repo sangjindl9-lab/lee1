@@ -103,11 +103,19 @@ def import_contract(db: Session, project: Project, sf: SourceFile, result: dict,
     # 원가 비목
     cost = result["cost_sheets"].get(result["primary_cost_sheet"]) if result.get("primary_cost_sheet") else None
     if cost:
+        from .costcalc import ALWAYS_FIXED_WORDS as FIXED_WORDS
+        any_formula = any(l["formula"] for l in cost["lines"])
         for i, line in enumerate(cost["lines"]):
-            db.add(CostRateRule(project_id=project.id, version_id=cv.id, seq=i, name=line["name"], kind=line["kind"],
+            n = line["name"].replace(" ", "")
+            fixed = False
+            if line["rate"] is not None and line["amount"] is not None and line["kind"] == "line":
+                # 고정(정산) 비목은 국민연금·노인장기요양·퇴직공제·안전관리비만. 나머지 요율 비목은 직접비 변동에 따라 재계산
+                fixed = any(w in n for w in FIXED_WORDS)
+            db.add(CostRateRule(project_id=project.id, version_id=cv.id, seq=i, name=line["name"], kind=line["kind"], fixed=fixed,
+                                round_digits=line.get("round_digits", 0),
                                 rate=D(line["rate"]) if line["rate"] is not None else None, rate_base=line["rate_base"],
                                 base_text=line["base_text"], amount=D(line["amount"]) if line["amount"] is not None else None,
-                                source=f"원본 {cost['sheet']} 시트"))
+                                source=f"원본 {cost['sheet']} 시트", sheet=cost["sheet"], source_row=line["row"], amount_col=cost["amount_col"]))
     # 자재단가 / 노임 / 참조 표 (같은 파일 것은 교체)
     db.query(PriceTable).filter_by(project_id=project.id, source_file_id=sf.id).delete()
     for sname, t in result.get("_price_tables", {}).items():

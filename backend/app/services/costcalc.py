@@ -24,6 +24,15 @@ def _norm(n: str) -> str:
     return re.sub(r"[\s\(\)\[\]·,]", "", n or "")
 
 
+# 낙찰·단가 조정과 무관하게 원 내역서 금액 그대로 고정되는 정산(사후정산) 비목
+ALWAYS_FIXED_WORDS = ("국민연금", "연금보험", "노인장기요양", "장기요양", "퇴직공제", "퇴직금공제", "산업안전보건관리비", "안전관리비", "안전보건관리비")
+
+
+def is_always_fixed(name: str) -> bool:
+    n = _norm(name)
+    return any(w in n for w in ALWAYS_FIXED_WORDS)
+
+
 def classify_line(name: str) -> str:
     n = _norm(name)
     if n.startswith("직접재료비"):
@@ -57,7 +66,7 @@ def compute_cost_sheet(rules: list[CostRateRule], direct: dict[str, Decimal], ro
 
 
 def compute_cost_sheet_full(rules: list[CostRateRule], direct: dict[str, Decimal], rounding_rule: dict | None = None,
-                            overrides: dict[str, Decimal] | None = None) -> tuple[list[dict], dict]:
+                            overrides: dict[str, Decimal] | None = None, base_ref: dict | None = None) -> tuple[list[dict], dict]:
     """direct = {"mat": 직접재료비, "lab": 직접노무비, "exp": 기계경비(직접경비)}
     각 비목을 순서대로 계산한다. 요율이 있는 비목은 rate_base 로 기준금액을 찾아 계산,
     요율이 없고 fixed 인 비목은 원본 금액 유지, 소계/합계는 구조상 직전 블록 합으로 추정."""
@@ -74,6 +83,8 @@ def compute_cost_sheet_full(rules: list[CostRateRule], direct: dict[str, Decimal
     seen_net = False
     overrides = overrides or {}
     summary: dict[str, Decimal | None] = {"overhead": ZERO, "profit": ZERO, "vat": None, "profit_rate_cap": None, "profit_base": None}
+    bases: dict[int, Decimal] = {}   # 비목 id -> 기준금액 (원본 기준금액 기록용)
+    summary["bases"] = bases
     for r in rules:
         n = _norm(r.name)
         cat = classify_line(r.name)
@@ -86,8 +97,8 @@ def compute_cost_sheet_full(rules: list[CostRateRule], direct: dict[str, Decimal
             amt = lab
         elif n.startswith("기계경비"):
             amt = exp
-        elif r.fixed and r.amount is not None:
-            amt = D(r.amount)
+        elif (r.fixed or is_always_fixed(r.name)) and r.amount is not None:
+            amt = D(r.amount)   # 고정(정산) 비목: 국민연금·건강보험·노인장기요양·퇴직공제·안전관리비 등은 원 금액 유지
         elif r.rate is not None:
             base = _norm(r.rate_base)
             base_amt = None
@@ -113,8 +124,13 @@ def compute_cost_sheet_full(rules: list[CostRateRule], direct: dict[str, Decimal
                 summary["profit_rate_cap"] = D(r.rate)
                 summary["profit_base"] = base_amt
             if base_amt is not None:
+                bases[r.id] = base_amt
                 lr = {"func": rr.get("func", "trunc"), "digits": int(r.round_digits or 0)} if (r.round_digits or 0) != 0 else rr
                 amt = round_by(base_amt * D(r.rate) / 100, lr) if r.round_digits is not None else base_amt * D(r.rate) / 100
+                # 원본이 요율 계산값이 아닌 금액(값 입력)이었던 비목: 원 금액 × 기준금액 변동비율로 비례 조정
+                ob = (base_ref or {}).get(r.id)
+                if cat == "line" and not seen_net and r.amount is not None and ob and abs(round_by(ob * D(r.rate) / 100, lr) - D(r.amount)) > 1:
+                    amt = round_by(D(r.amount) * base_amt / ob, rr)
             if cat == "vat" and base_amt is None:
                 # 부가세 기준을 못 읽으면 총원가(순공사비+일반관리비+이윤+후행비목) × 요율
                 tc = mat + lab + indirect_lab + sum(exp_items) + values.get("일반관리비", ZERO) + values.get("이윤", ZERO) + sum(post_items)
@@ -160,7 +176,7 @@ def compute_cost_sheet_full(rules: list[CostRateRule], direct: dict[str, Decimal
         elif cat == "grand" and amt is None:
             amt = round_by(mat + lab + indirect_lab + sum(exp_items) + values.get("일반관리비", ZERO) + values.get("이윤", ZERO) + sum(post_items), rr) + (summary["vat"] or ZERO)
         out.append({"id": r.id, "name": r.name, "kind": r.kind, "cat": cat, "rate": str(r.rate) if r.rate is not None else None,
-                    "rate_base": r.rate_base, "base_text": r.base_text, "fixed": r.fixed,
+                    "rate_base": r.rate_base, "base_text": r.base_text, "fixed": bool(r.fixed or is_always_fixed(r.name)),
                     "original_amount": str(r.amount) if r.amount is not None else None,
                     "amount": str(amt) if amt is not None else None})
     net = mat + lab + indirect_lab + sum(exp_items)
@@ -174,10 +190,14 @@ def compute_cost_sheet_full(rules: list[CostRateRule], direct: dict[str, Decimal
 
 
 def fit_profit(rules: list[CostRateRule], direct: dict[str, Decimal], target: Decimal, include_vat: bool,
-               rounding_rule: dict | None = None) -> dict:
+               rounding_rule: dict | None = None, direct_orig: dict[str, Decimal] | None = None) -> dict:
     """낙찰금액(target)에 맞춰 이윤을 역산. include_vat 면 target 은 부가세 포함 총공사비."""
     rr = rounding_rule or {"func": "trunc", "digits": 0}
-    _, base = compute_cost_sheet_full(rules, direct, rr, {"profit": ZERO})
+    base_ref = None
+    if direct_orig is not None:
+        _, o = compute_cost_sheet_full(rules, direct_orig, rr, {"profit": ZERO})
+        base_ref = dict(o["bases"])
+    _, base = compute_cost_sheet_full(rules, direct, rr, {"profit": ZERO}, base_ref)
     has_vat = base["vat"] is not None
     other = base["total_cost"]          # 이윤 0 일 때 총원가 (절사)
     warnings = []
@@ -198,14 +218,15 @@ def fit_profit(rules: list[CostRateRule], direct: dict[str, Decimal], target: De
     else:
         target_cost = target
     profit = target_cost - other
-    lines, summ = compute_cost_sheet_full(rules, direct, rr, {"profit": profit})
+    lines, summ = compute_cost_sheet_full(rules, direct, rr, {"profit": profit}, base_ref)
     # 이윤에 연동되는 후행 비목(배상책임공제료 등)이 있으면 수렴할 때까지 보정
     for _ in range(8):
         gap = target_cost - summ["total_cost"]
         if gap == 0:
             break
         profit += gap
-        lines, summ = compute_cost_sheet_full(rules, direct, rr, {"profit": profit})
+        lines, summ = compute_cost_sheet_full(rules, direct, rr, {"profit": profit}, base_ref)
+    summ.pop("bases", None)
     cap = summ.get("profit_rate_cap")
     pbase = summ.get("profit_base")
     rate = (profit / pbase * 100).quantize(Decimal("0.01")) if pbase else None

@@ -226,8 +226,12 @@ def write_version_original(src_path: Path, out_path: Path, version, sheet_maps: 
     # 원가계산서 고정 비목 (이윤 역산 등) 값 기록
     for co in cost_overrides or []:
         if co.get("sheet") in wb.sheetnames and co.get("row") and co.get("col") and co.get("amount") is not None:
-            wb[co["sheet"]].cell(co["row"], co["col"], _num(Decimal(str(co["amount"]))))
-            stats["cost_fixed"] = stats.get("cost_fixed", 0) + 1
+            c = wb[co["sheet"]].cell(co["row"], co["col"])
+            is_formula = isinstance(c.value, str) and c.value.startswith("=")
+            if co.get("force") or (not is_formula and c.value is not None):
+                # 수식 비목은 Excel 재계산에 맡기고, 값으로 입력된 비목(건강보험 등)과 이윤(역산값)만 기록
+                c.value = _num(Decimal(str(co["amount"])))
+                stats["cost_fixed"] = stats.get("cost_fixed", 0) + 1
     # Excel 이 열 때 전체 재계산 (금액·소계·원가 수식 반영)
     wb.calculation.fullCalcOnLoad = True
     wb.save(out_path)

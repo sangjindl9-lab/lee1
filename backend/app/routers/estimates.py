@@ -15,6 +15,7 @@ from ..config import settings
 from ..models import ContractVersion, CostRateRule, DesignChange, EstimateItem, PriceTable, ProgressClaim, SourceFile, UnitPriceAnalysis, User, WorkbookSheet
 from ..schemas import CostRuleIn, FitContractIn, ItemAdd, ItemEdit, PriceAdjustIn
 from ..services.rate_rows import evaluate_base
+from ..services.costcalc import is_always_fixed
 from ..services.calc import D, line_amounts, project_rounding, s
 
 router = APIRouter(prefix="/api")
@@ -197,8 +198,9 @@ def export_version(vid: int, delete_mode: str = "zero", db: Session = Depends(ge
     ext = Path(sf.stored_path).suffix.lower()
     stem = Path(sf.original_name).stem
     out = out_dir / f"{stem}_v{v.version_no}_{v.label}_{datetime.now().strftime('%Y%m%d_%H%M')}{ext}"
-    cost_over = [{"sheet": r.sheet, "row": r.source_row, "col": r.amount_col, "amount": s(r.amount), "name": r.name}
-                 for r in db.query(CostRateRule).filter_by(version_id=v.id) if r.fixed and r.amount is not None and r.source_row]
+    cost_over = [{"sheet": r.sheet, "row": r.source_row, "col": r.amount_col, "amount": s(r.amount), "name": r.name,
+                  "force": bool(r.fixed and r.name.replace(" ", "").startswith("이윤"))}
+                 for r in db.query(CostRateRule).filter_by(version_id=v.id) if r.kind == "line" and r.amount is not None and r.source_row]
     stats = write_version_original(Path(sf.stored_path), out, v, sheet_maps, original, delete_mode,
                                    title_suffix=f"v{v.version_no} {v.label}" if v.version_no else "", cost_overrides=cost_over)
     audit(db, user, "version.export", p.id, target=f"v{v.version_no}", after={"file": out.name, **{k: stats[k] for k in ("modified", "added", "deleted")}})
@@ -394,11 +396,17 @@ def fit_contract(vid: int, body: FitContractIn, db: Session = Depends(get_db), u
     from ..services.calc import round_by
     exp_base = round_by(D(exp_rule.amount) * Decimal(str(body.exp_pct)) / 100, rounding.get("amount")) if exp_rule else D(after["exp_amt"])
     direct = {"mat": D(after["mat_amt"]), "lab": D(after["lab_amt"]), "exp": exp_base}
-    # 이윤이 이전 맞추기로 fixed 되어 있어도 다시 계산되도록 임시 해제
+    # 조정 전(원본) 직접비 = 조정 범위 밖 합계 + 조정 전 합계
+    orig = {k: D(after[k]) - D(adj["after"][k]) + D(adj["before"][k]) for k in ("mat_amt", "lab_amt")}
+    direct_orig = {"mat": orig["mat_amt"], "lab": orig["lab_amt"], "exp": D(exp_rule.amount) if exp_rule else D(after["exp_amt"]) - D(adj["after"]["exp_amt"]) + D(adj["before"]["exp_amt"])}
+    # 고정은 정산 비목(국민연금·노인장기요양·퇴직공제·안전관리비)만, 이윤·그 외 요율 비목은 다시 계산
+    from ..services.costcalc import classify_line
     for r in rules:
         if r.name.replace(" ", "").startswith("이윤"):
             r.fixed = False
-    fit = fit_profit(rules, direct, Decimal(str(body.target_amount)), body.include_vat, rounding.get("amount"))
+        elif r.kind == "line" and r.rate is not None and classify_line(r.name) == "line":
+            r.fixed = is_always_fixed(r.name)
+    fit = fit_profit(rules, direct, Decimal(str(body.target_amount)), body.include_vat, rounding.get("amount"), direct_orig)
     result = {"adjust": adj, "cost_sheet": fit["lines"], "summary": {k: s(x) if isinstance(x, Decimal) else x for k, x in fit["summary"].items()},
               "profit": s(fit["profit"]), "profit_rate": s(fit["profit_rate"]) if fit["profit_rate"] is not None else None,
               "profit_cap": s(fit["profit_cap"]) if fit["profit_cap"] is not None else None,

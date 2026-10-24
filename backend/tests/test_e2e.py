@@ -325,6 +325,13 @@ def test_fit_contract(client):
     assert Decimal(pv["summary"]["grand"]) == target, pv["summary"]
     assert Decimal(pv["summary"]["total_cost"]) + Decimal(pv["summary"]["vat"]) == target
     profit_prev = Decimal(pv["profit"])
+    # 정산 비목 4종은 원 내역서 금액 고정, 건강보험 등 나머지 요율 비목은 직접노무비 감소에 따라 감소
+    for l in pv["cost_sheet"]:
+        n = l["name"].replace(" ", "")
+        if any(w in n for w in ("연금보험", "노인장기요양", "퇴직금공제", "산업안전보건관리비")):
+            assert l["fixed"] and Decimal(l["amount"]) == Decimal(l["original_amount"]), l
+        if n.startswith("건강보험") or n.startswith("산재보험") or n.startswith("고용보험"):
+            assert not l["fixed"] and Decimal(l["amount"]) < Decimal(l["original_amount"]), l
     # 미리보기는 저장하지 않음
     items = client.get(f"/api/versions/{vid}/items").json()["items"]
     assert Decimal(client.get(f"/api/versions/{vid}").json()["totals"]["mat_amt"]) == Decimal("98821566")

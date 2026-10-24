@@ -24,7 +24,7 @@ export default function EstimatePage() {
   const [adjPreview, setAdjPreview] = useState<any>(null)
   const [fit, setFit] = useState<any>(null)   // 낙찰금액 맞추기 모달
   const [fitPreview, setFitPreview] = useState<any>(null)
-  const fitBody = (preview: boolean) => ({ target_amount: +String(fit.target).replace(/,/g, ''), include_vat: fit.include_vat, mat_pct: +fit.mat_pct, lab_pct: +fit.lab_pct, exp_pct: +fit.exp_pct, price_digits: +fit.price_digits, price_round: fit.price_round, only_preview: preview, reason: fit.reason })
+  const fitBody = (preview: boolean) => ({ target_amount: +String(fit.target).replace(/,/g, ''), include_vat: fit.include_vat, mat_pct: +fit.mat_pct, lab_pct: +fit.lab_pct, exp_pct: 100, price_digits: +fit.price_digits, price_round: fit.price_round, only_preview: preview, reason: fit.reason })
   const [msg, setMsg] = useState<{ t: string; k: string } | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -185,11 +185,10 @@ export default function EstimatePage() {
       </div>
       {adj && <div className="modal-bg" onClick={() => setAdj(null)}><div className="modal" onClick={(e) => e.stopPropagation()}>
         <h3>단가 퍼센트 일괄 조정</h3>
-        <div className="help">재료비·노무비·경비 단가에 적용률(%)을 곱해 일괄 변경합니다 (예: 낙찰률 87.747% 적용 → 재료비 87.747 입력). 100은 변동 없음. 수량×단가와 금액이 다른 요율 산정 행(공구손료 등)은 기준금액(노무비 합계 등) 변동에 따라 자동 재산정됩니다.</div>
+        <div className="help">재료비·노무비 단가에 적용률(%)을 곱해 일괄 변경합니다 (예: 낙찰률 87.747% 적용 → 재료비 87.747 입력). 100은 변동 없음. 수량×단가와 금액이 다른 요율 산정 행(공구손료 등)은 기준금액(노무비 합계 등) 변동에 따라 자동 재산정됩니다.</div>
         <div className="grid2" style={{ marginTop: 10 }}>
           <label className="f">재료비 단가 적용률 (%)<input className="num" value={adj.mat_pct} onChange={(e) => setAdj({ ...adj, mat_pct: e.target.value })} /></label>
           <label className="f">노무비 단가 적용률 (%)<input className="num" value={adj.lab_pct} onChange={(e) => setAdj({ ...adj, lab_pct: e.target.value })} /></label>
-          <label className="f">경비 단가 적용률 (%)<input className="num" value={adj.exp_pct} onChange={(e) => setAdj({ ...adj, exp_pct: e.target.value })} /></label>
           <label className="f">적용 범위 (공종)<select value={adj.section} onChange={(e) => setAdj({ ...adj, section: e.target.value })}><option value="">전체</option>{Object.keys(sectionTotals).map((k) => <option key={k} value={k}>{k.split('::').join(' > ')}</option>)}</select></label>
           <label className="f">조정 단가 소수 자리<select value={adj.price_digits} onChange={(e) => setAdj({ ...adj, price_digits: e.target.value })}><option value="0">정수</option><option value="1">1자리</option><option value="2">2자리</option><option value="4">4자리</option></select></label>
           <label className="f">단가 처리<select value={adj.price_round} onChange={(e) => setAdj({ ...adj, price_round: e.target.value })}><option value="trunc">절사</option><option value="round">반올림</option></select></label>
@@ -198,19 +197,18 @@ export default function EstimatePage() {
         {adjPreview && <div className="alert info" style={{ marginTop: 10 }}>대상 {adjPreview.items}개 품목{adjPreview.skipped_count ? ` (요율행 ${adjPreview.skipped_count}개 포함)` : ''} · 재료비 {fmt(adjPreview.before.mat_amt)} → {fmt(adjPreview.after.mat_amt)} ({fmt(adjPreview.diff.mat_amt)}) · 노무비 {fmt(adjPreview.before.lab_amt)} → {fmt(adjPreview.after.lab_amt)} ({fmt(adjPreview.diff.lab_amt)}) · 합계 {fmt(adjPreview.before.tot_amt)} → <b>{fmt(adjPreview.after.tot_amt)}</b> ({fmt(adjPreview.diff.tot_amt)})</div>}
         <div className="row" style={{ justifyContent: 'flex-end', marginTop: 12 }}>
           <button onClick={() => setAdj(null)}>취소</button>
-          <button onClick={async () => { try { const r = await api.post(`/versions/${vid}/adjust-prices`, { mat_pct: +adj.mat_pct, lab_pct: +adj.lab_pct, exp_pct: +adj.exp_pct, section_prefix: adj.section ? adj.section.split('::') : null, price_digits: +adj.price_digits, price_round: adj.price_round, only_preview: true }); setAdjPreview(r.data) } catch (e) { setMsg({ t: errMsg(e), k: 'err' }) } }}>미리보기</button>
-          <button className="primary" disabled={!adjPreview} onClick={async () => { if (!confirm('단가를 일괄 조정합니다. 계속할까요?')) return; try { const r = await api.post(`/versions/${vid}/adjust-prices`, { mat_pct: +adj.mat_pct, lab_pct: +adj.lab_pct, exp_pct: +adj.exp_pct, section_prefix: adj.section ? adj.section.split('::') : null, price_digits: +adj.price_digits, price_round: adj.price_round, reason: adj.reason }); setAdj(null); loadItems(); loadVersions(); reloadProject(); setMsg({ t: `${r.data.items}개 품목 단가 조정 완료 — 합계 ${fmt(r.data.before.tot_amt)} → ${fmt(r.data.after.tot_amt)}`, k: 'ok' }) } catch (e) { setMsg({ t: errMsg(e), k: 'err' }) } }}>적용</button>
+          <button onClick={async () => { try { const r = await api.post(`/versions/${vid}/adjust-prices`, { mat_pct: +adj.mat_pct, lab_pct: +adj.lab_pct, exp_pct: 100, section_prefix: adj.section ? adj.section.split('::') : null, price_digits: +adj.price_digits, price_round: adj.price_round, only_preview: true }); setAdjPreview(r.data) } catch (e) { setMsg({ t: errMsg(e), k: 'err' }) } }}>미리보기</button>
+          <button className="primary" disabled={!adjPreview} onClick={async () => { if (!confirm('단가를 일괄 조정합니다. 계속할까요?')) return; try { const r = await api.post(`/versions/${vid}/adjust-prices`, { mat_pct: +adj.mat_pct, lab_pct: +adj.lab_pct, exp_pct: 100, section_prefix: adj.section ? adj.section.split('::') : null, price_digits: +adj.price_digits, price_round: adj.price_round, reason: adj.reason }); setAdj(null); loadItems(); loadVersions(); reloadProject(); setMsg({ t: `${r.data.items}개 품목 단가 조정 완료 — 합계 ${fmt(r.data.before.tot_amt)} → ${fmt(r.data.after.tot_amt)}`, k: 'ok' }) } catch (e) { setMsg({ t: errMsg(e), k: 'err' }) } }}>적용</button>
         </div>
       </div></div>}
       {fit && <div className="modal-bg" onClick={() => setFit(null)}><div className="modal" style={{ maxWidth: 860 }} onClick={(e) => e.stopPropagation()}>
         <h3>낙찰금액 맞추기 (계약내역서 작성)</h3>
-        <div className="help">낙찰금액을 입력하고 재료비·노무비·경비 단가 적용률(%)을 정하면, 제비율(간접노무비·보험료·일반관리비 등)을 원가계산서 요율대로 다시 계산한 뒤 <b>남는 차액을 이윤에서 자동으로 맞춥니다</b>. 미리보기에서 이윤·이윤율을 확인하고 적용하세요. 적용 후 "엑셀 출력(원본 양식 그대로)"을 하면 원가계산서 총공사비가 낙찰금액과 일치합니다.</div>
+        <div className="help">낙찰금액을 입력하고 재료비·노무비 단가 적용률(%)을 정하면, 제비율(간접노무비·산재/고용보험·기타경비·일반관리비 등)을 원가계산서 요율대로 다시 계산한 뒤 <b>남는 차액을 이윤에서 자동으로 맞춥니다</b>. 국민연금·건강보험·노인장기요양·퇴직공제·산업안전보건관리비는 원 내역서 금액 그대로 고정됩니다. 미리보기에서 이윤·이윤율을 확인하고 적용하세요. 적용 후 "엑셀 출력(원본 양식 그대로)"을 하면 원가계산서 총공사비가 낙찰금액과 일치합니다.</div>
         <div className="grid2" style={{ marginTop: 10 }}>
           <label className="f">낙찰금액 (원) *<input className="num" autoFocus value={fit.target} onChange={(e) => setFit({ ...fit, target: e.target.value })} placeholder="예: 261312000" /></label>
           <label className="f">금액 기준<select value={fit.include_vat ? '1' : '0'} onChange={(e) => setFit({ ...fit, include_vat: e.target.value === '1' })}><option value="1">부가세 포함 총공사비</option><option value="0">부가세 제외 (총원가)</option></select></label>
           <label className="f">재료비 단가 적용률 (%)<input className="num" value={fit.mat_pct} onChange={(e) => setFit({ ...fit, mat_pct: e.target.value })} /></label>
           <label className="f">노무비 단가 적용률 (%)<input className="num" value={fit.lab_pct} onChange={(e) => setFit({ ...fit, lab_pct: e.target.value })} /></label>
-          <label className="f">경비 단가 적용률 (%)<input className="num" value={fit.exp_pct} onChange={(e) => setFit({ ...fit, exp_pct: e.target.value })} /></label>
           <label className="f">조정 단가 처리<div className="row"><select value={fit.price_digits} onChange={(e) => setFit({ ...fit, price_digits: e.target.value })}><option value="0">정수</option><option value="1">1자리</option><option value="2">2자리</option></select><select value={fit.price_round} onChange={(e) => setFit({ ...fit, price_round: e.target.value })}><option value="trunc">절사</option><option value="round">반올림</option></select></div></label>
           <label className="f">사유 (이력 기록)<input value={fit.reason} onChange={(e) => setFit({ ...fit, reason: e.target.value })} /></label>
           {v && <div className="f muted" style={{ fontSize: 12 }}>현재 직접공사비 {fmt(v.totals.tot_amt)} · 예: 공고가의 87% 낙찰이면 재료·노무 87~88% 입력 후 미리보기로 이윤율을 확인하고, 이윤이 요율 한도를 넘거나 음수가 되면 적용률을 조정하세요.</div>}
