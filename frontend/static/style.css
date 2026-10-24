@@ -47,3 +47,18 @@ canvas.mini{width:60px;height:36px;border:1px solid var(--line);background:#fff}
 
 .jobbox{position:fixed;left:50%;top:60px;transform:translateX(-50%);background:#fff;border:1px solid var(--line);box-shadow:0 4px 16px rgba(0,0,0,.2);border-radius:6px;padding:10px 14px;z-index:98;min-width:320px}
 .jobbox .prog{margin:6px 0}
+.swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: middle; }
+.vtools button.hl { border-color: #ffd166; color: #ffd166; font-weight: 600; }
+.vtools button.hl.on { background: #ffd166; color: #222; }
+table.tally td { vertical-align: middle; padding: 3px 4px; }
+table.tally input[type=text], table.tally input:not([type]) , table.tally input[type=number] { padding: 2px 4px; }
+canvas.tmini { display: block; border: 1px solid #ccc; border-radius: 3px; }
+.tcard { border: 1px solid #ddd; border-radius: 6px; padding: 5px 6px; margin: 4px 0; background: #fafafa; }
+.tcard.on { border-color: #f0a500; background: #fff8e6; }
+.tcard .trow { display: flex; align-items: center; gap: 5px; }
+.tcard .trow + .trow { margin-top: 4px; }
+.tcard .tlab { flex: 1; line-height: 1.2; min-width: 0; }
+.tcard .tqty { font-size: 18px; font-weight: 700; text-align: right; white-space: nowrap; }
+.tcard input.tname { flex: 1 1 45%; min-width: 0; }
+.tcard input.tspec { flex: 1 1 35%; min-width: 0; }
+.tcard input.tunit { width: 52px; flex: 0 0 52px; }

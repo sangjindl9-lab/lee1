@@ -474,8 +474,33 @@ def recompute_quantities(db: Session, pid: int) -> list[QuantityItem]:
                                  legend_symbol_id=lid, status=QuantityStatus.insufficient, note="전선관/트레이 경로에 회선 수를 지정하면 산출됩니다.")
                 db.add(q)
                 items.append(q)
+    items.extend(_tally_items(db, pid))
     db.commit()
     return items
+
+
+def _tally_items(db: Session, pid: int) -> list[QuantityItem]:
+    """수동 영역 집계 → 물량 행. 같은 품명·규격·단위끼리 합산하고 영역별 내역을 산출식에 남긴다."""
+    from .models import RegionTally
+    groups: dict[tuple, list] = defaultdict(list)
+    for t in db.query(RegionTally).filter_by(project_id=pid).order_by(RegionTally.id).all():
+        groups[(t.discipline, t.item_name.strip(), (t.spec or "").strip(), t.unit, t.kind)].append(t)
+    out = []
+    for (disc, name, spec, unit, kind), ts in groups.items():
+        total = sum(t.qty or 0 for t in ts)
+        formula = " + ".join(f"{t.drawing_no or '도면'} 영역#{t.id}: {fmt_num(t.qty)}{unit}" for t in ts)
+        q = QuantityItem(project_id=pid, discipline=disc, item_name=name, spec=spec or None, unit=unit,
+                         formula=f"수동 영역 집계 — {formula}", qty_drawing=total, qty_total=total,
+                         drawing_nos=sorted({t.drawing_no for t in ts if t.drawing_no}), status=QuantityStatus.verified,
+                         note="사용자 드래그 집계" + (" (케이블 길이 직접 입력)" if kind == "cable" else ""))
+        db.add(q)
+        out.append(q)
+    return out
+
+
+def fmt_num(v) -> str:
+    v = float(v or 0)
+    return str(int(v)) if v == int(v) else f"{v:.2f}"
 
 
 def _sub_disc(ls: LegendSymbol) -> str | None:

@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from .config import BASE_DIR, settings
 from .db import Base, engine
 from . import models  # noqa: F401  (테이블 등록)
-from .routers import auth_router, projects_router, legends_router, takeoff_router, export_router, estimate_router
+from .routers import auth_router, projects_router, legends_router, takeoff_router, export_router, estimate_router, region_router
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 
@@ -23,7 +23,7 @@ def _startup():
     Base.metadata.create_all(engine)
 
 
-for r in (auth_router, projects_router, legends_router, takeoff_router, export_router, estimate_router):
+for r in (auth_router, projects_router, legends_router, takeoff_router, export_router, estimate_router, region_router):
     app.include_router(r.router)
 
 

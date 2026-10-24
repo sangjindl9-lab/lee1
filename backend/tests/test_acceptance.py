@@ -358,3 +358,48 @@ def test_15_reprocess_after_takeoff(client, auth, project):
     assert len(client.get(f"/api/projects/{project}/legends", headers=auth).json()) == n_leg
     r = client.post(f"/api/projects/{project}/takeoff/run?wait=1", headers=auth).json()
     assert r["items"] > 0
+
+
+def test_16_region_tally_manual(client, auth, fixtures):
+    """자동 인식 없이: 드래그 영역 안 객체를 모양별로 세고, 케이블 길이는 직접 입력 → 물량표에 합산.
+    DXF(블록) 와 벡터 PDF(닫힌 도형) 모두."""
+    pid = client.post("/api/projects", headers=auth, json={"name": "[테스트] 영역 집계"}).json()["id"]
+    _upload(client, auth, pid, fixtures / "test_cctv_plan.dxf", fixtures / "test_vector.pdf")
+    files = {f["name"]: f for f in wait_done(client, auth, pid)}
+    dxf = files["test_cctv_plan.dxf"]["sheets"][0]
+    # 배치도 영역(범례표 제외): 고정형 12 + 기존 1, PTZ 3, 접속함 1
+    r = client.post(f"/api/projects/{pid}/sheets/{dxf['id']}/region-analyze", headers=auth,
+                    json={"region": {"x0": 0, "y0": 0, "x1": 30000, "y1": 30000}}).json()
+    blocks = {o["block"]: o["count"] for o in r["objects"] if o["kind"] == "block"}
+    assert blocks == {"CCTV_FIX": 13, "CCTV_PTZ": 3, "JB_OUT": 1}, blocks
+    conduit = next(l for l in r["lines"] if l["key"] == "T-CONDUIT")
+    assert abs(conduit["length"] - 45000) < 1          # 10+20+15 m (mm 단위)
+    # 기존 시설 레이어를 숨기고 다시 → 고정형 12
+    r2 = client.post(f"/api/projects/{pid}/sheets/{dxf['id']}/region-analyze", headers=auth,
+                     json={"region": {"x0": 0, "y0": 0, "x1": 30000, "y1": 30000}, "hidden_layers": ["T-EXIST"]}).json()
+    assert {o["block"]: o["count"] for o in r2["objects"] if o["kind"] == "block"}["CCTV_FIX"] == 12
+    # 벡터 PDF: 원+가로선 기호 5개가 한 그룹
+    pdf = files["test_vector.pdf"]["sheets"][0]
+    H = pdf["bbox"]["y1"]
+    r3 = client.post(f"/api/projects/{pid}/sheets/{pdf['id']}/region-analyze", headers=auth,
+                     json={"region": {"x0": 100, "y0": H - 340, "x1": 600, "y1": H - 260}}).json()
+    assert r3["mode"] == "vector" and r3["objects"] and r3["objects"][0]["count"] == 5, [(o["label"], o["count"]) for o in r3["objects"]]
+    # 저장 → 물량표 (같은 품명·규격 합산, 케이블은 입력 길이)
+    rows = [{"kind": "object", "item_name": "고정형 카메라", "spec": "4MP", "qty": 12},
+            {"kind": "cable", "item_name": "UTP 케이블", "spec": "CAT.6", "qty": 52.5}]
+    assert client.post(f"/api/projects/{pid}/tallies", headers=auth,
+                       json={"sheet_id": dxf["id"], "region": {"x0": 0, "y0": 0, "x1": 30000, "y1": 30000}, "rows": rows}).status_code == 200
+    client.post(f"/api/projects/{pid}/tallies", headers=auth,
+                json={"sheet_id": pdf["id"], "region": {"x0": 100, "y0": 1, "x1": 600, "y1": 300}, "rows": [{"item_name": "고정형 카메라", "spec": "4MP", "qty": 5}]})
+    items = {(q["item_name"], q["spec"]): q for q in client.get(f"/api/projects/{pid}/takeoff/items", headers=auth).json()}
+    cam = items[("고정형 카메라", "4MP")]
+    assert cam["qty_total"] == 17 and cam["unit"] == "개" and cam["status"] == "verified" and "영역#" in cam["formula"]
+    assert items[("UTP 케이블", "CAT.6")]["qty_total"] == 52.5 and items[("UTP 케이블", "CAT.6")]["unit"] == "m"
+    # 자동 산출을 다시 돌려도 수동 집계는 유지, 삭제하면 빠짐
+    client.post(f"/api/projects/{pid}/takeoff/run?wait=1", headers=auth)
+    tl = client.get(f"/api/projects/{pid}/tallies", headers=auth).json()
+    assert len(tl) == 3
+    client.delete(f"/api/projects/{pid}/tallies/{tl[-1]['id']}", headers=auth)
+    items = {(q["item_name"], q["spec"]): q for q in client.get(f"/api/projects/{pid}/takeoff/items", headers=auth).json()}
+    assert items[("고정형 카메라", "4MP")]["qty_total"] == 12
+    assert client.get(f"/api/projects/{pid}/export/xlsx", headers=auth).status_code == 200

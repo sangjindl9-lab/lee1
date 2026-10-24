@@ -78,7 +78,7 @@ async function renderWorkspace(pid) {
   $("#app").innerHTML = `<div class="ws"><aside id="left"></aside><section class="center" id="center"><canvas id="cv"></canvas>
     <div class="vtools">
       <button id="m_pan" class="on" onclick="setMode('pan')">이동/선택</button><button id="m_region" onclick="setMode('region')">범례 영역 지정</button>
-      <button id="m_measure" onclick="setMode('measure')">거리 측정/축척</button><button id="m_add" onclick="setMode('add')">기호 수동 추가</button><button id="m_sample" onclick="setMode('sample')">도면에서 기호 지정</button>
+      <button id="m_measure" onclick="setMode('measure')">거리 측정/축척</button><button id="m_add" onclick="setMode('add')">기호 수동 추가</button><button id="m_sample" onclick="setMode('sample')">도면에서 기호 지정</button><button id="m_tally" class="hl" onclick="setMode('tally')">▣ 영역 집계(드래그)</button>
       <button onclick="fitView()">전체보기</button><button onclick="toggle('showDets')">기호표시</button><button onclick="toggle('showRoutes')">선로표시</button>
       <button class="primary" onclick="runTakeoff()">▶ 자동 물량산출 실행</button>
       <button onclick="exportXlsx()">Excel</button><button onclick="dl('/api/projects/${pid}/export/pdf','물량집계표.pdf')">PDF</button>
@@ -95,7 +95,7 @@ function userEditing() {   // 입력 중이거나 목록을 펼친 상태면 화
 async function refreshAll() {
   clearTimeout(W.pollTimer); W.pollTimer = null;
   const pid = W.pid;
-  [W.files, W.legends, W.items, W.issues] = await Promise.all([api(`/api/projects/${pid}/files`), api(`/api/projects/${pid}/legends`), api(`/api/projects/${pid}/takeoff/items`), api(`/api/projects/${pid}/takeoff/issues`)]);
+  [W.files, W.legends, W.items, W.issues, W.tallies] = await Promise.all([api(`/api/projects/${pid}/files`), api(`/api/projects/${pid}/legends`), api(`/api/projects/${pid}/takeoff/items`), api(`/api/projects/${pid}/takeoff/issues`), api(`/api/projects/${pid}/tallies`)]);
   W.sheets = W.files.flatMap(f => f.sheets.map(s => ({ ...s, file: f })));
   if (W.sheet) { W.dets = await api(`/api/projects/${pid}/takeoff/symbols?sheet_id=${W.sheet.id}`); W.routes = await api(`/api/projects/${pid}/takeoff/routes?sheet_id=${W.sheet.id}`); }
   renderLeft(); renderRight(); draw();
@@ -182,7 +182,10 @@ function leftQty() {
   const groups = {};
   for (const q of W.items) (groups[q.discipline || "미분류"] = groups[q.discipline || "미분류"] || []).push(q);
   let h = `<div class="row"><button class="sm" onclick="api('/api/projects/${W.pid}/takeoff/recompute',{method:'POST'}).then(refreshAll)">재계산</button><button class="sm" onclick="snapshot()">리비전 저장</button><button class="sm" onclick="showDiff()">변경 비교</button><select id="qgroup" onchange="renderLeft()"><option value="discipline">공종별</option><option value="floor">층·구간별</option></select></div>`;
-  if (!W.items.length) h += `<p class="muted">산출된 물량이 없습니다. 범례 승인 후 '자동 물량산출 실행' 을 누르십시오.</p>`;
+  if (!W.items.length) h += `<p class="muted">산출된 물량이 없습니다. 범례 승인 후 '자동 물량산출 실행' 을 누르거나, 상단 '▣ 영역 집계(드래그)' 로 직접 세십시오.</p>`;
+  if ((W.tallies || []).length) {
+    h += `<h3>수동 영역 집계 내역 (${W.tallies.length})</h3><table><tr><th>도면</th><th>품명</th><th>규격</th><th>수량</th><th></th></tr>` + W.tallies.map(t => `<tr><td class="small">${esc(t.drawing_no || "")}</td><td>${esc(t.item_name)}</td><td class="small">${esc(t.spec || "")}</td><td class="num">${fmt(t.qty)} ${esc(t.unit)}</td><td><button class="sm" onclick="showTally(${t.id})">위치</button><button class="sm err" onclick="if(confirm('이 집계 내역을 삭제합니다.'))api('/api/projects/${W.pid}/tallies/${t.id}',{method:'DELETE'}).then(refreshAll)">×</button></td></tr>`).join("") + `</table>`;
+  }
   for (const [g, qs] of Object.entries(groups)) {
     h += `<h3>${esc(g)}</h3><table><tr><th>품명</th><th>규격</th><th>단위</th><th>수량</th><th></th></tr>`;
     for (const q of qs) h += `<tr class="${W.sel && W.sel.type === "item" && W.sel.id === q.id ? "sel" : ""}" onclick="selectItem(${q.id})"><td>${esc(q.item_name)}${q.install_type !== "new" ? ` <span class="badge">${INST[q.install_type]}</span>` : ""}</td><td class="small">${esc(q.spec || "")}</td><td>${esc(q.unit)}</td><td class="num">${fmt(q.qty_total)}</td><td><span class="badge ${q.status}">${KO[q.status]}</span></td></tr>`;
@@ -267,6 +270,7 @@ async function computeEstimate() {
 /* ---------------- 우측 패널 ---------------- */
 function renderRight() {
   const R = $("#right"); if (!R) return;
+  if (W.tally && W.sheet && W.tally.sheet_id === W.sheet.id) { R.innerHTML = tallyPanel(); drawTallyMinis(); return; }
   const sel = W.sel;
   if (!sel) { R.innerHTML = W.sheet ? sheetPanel() : `<p class="muted">도면·기호·물량을 선택하면 상세 정보와 수정 기능이 표시됩니다.</p>`; return; }
   if (sel.type === "det") {
@@ -367,13 +371,14 @@ function initViewer() {
   V.cv = $("#cv"); V.ctx = V.cv.getContext("2d");
   const ro = new ResizeObserver(() => { V.cv.width = V.cv.clientWidth; V.cv.height = V.cv.clientHeight; draw(); }); ro.observe($("#center"));
   V.cv.addEventListener("wheel", e => { e.preventDefault(); const f = e.deltaY < 0 ? 1.15 : 1 / 1.15; const [mx, my] = [e.offsetX, e.offsetY]; V.tx = mx - (mx - V.tx) * f; V.ty = my - (my - V.ty) * f; V.scale *= f; draw(); }, { passive: false });
-  V.cv.addEventListener("mousedown", e => { V.drag = { x: e.offsetX, y: e.offsetY, tx: V.tx, ty: V.ty, moved: false, start: toWorld(e.offsetX, e.offsetY) }; });
-  V.cv.addEventListener("mousemove", e => { V.mouse = toWorld(e.offsetX, e.offsetY); if (V.drag && W.mode === "pan") { V.tx = V.drag.tx + e.offsetX - V.drag.x; V.ty = V.drag.ty + e.offsetY - V.drag.y; if (Math.abs(e.offsetX - V.drag.x) + Math.abs(e.offsetY - V.drag.y) > 3) V.drag.moved = true; } draw(); });
-  V.cv.addEventListener("mouseup", e => { const d = V.drag; V.drag = null; if (!d) return; const p = toWorld(e.offsetX, e.offsetY); if (W.mode === "pan" && !d.moved) pick(p); else if (W.mode === "region") finishRegion(d.start, p); else if (W.mode === "measure") measureClick(p); else if (W.mode === "add") addSymbolAt(p); else if (W.mode === "sample") sampleSymbolAt(p); });
+  V.cv.addEventListener("mousedown", e => { V.drag = { x: e.offsetX, y: e.offsetY, tx: V.tx, ty: V.ty, moved: false, start: toWorld(e.offsetX, e.offsetY), btn: e.button !== 0 }; });
+  V.cv.addEventListener("contextmenu", e => e.preventDefault());
+  V.cv.addEventListener("mousemove", e => { V.mouse = toWorld(e.offsetX, e.offsetY); if (V.drag && (W.mode === "pan" || V.drag.btn)) { V.tx = V.drag.tx + e.offsetX - V.drag.x; V.ty = V.drag.ty + e.offsetY - V.drag.y; if (Math.abs(e.offsetX - V.drag.x) + Math.abs(e.offsetY - V.drag.y) > 3) V.drag.moved = true; } draw(); });
+  V.cv.addEventListener("mouseup", e => { const d = V.drag; V.drag = null; if (!d || d.btn) return; const p = toWorld(e.offsetX, e.offsetY); if (W.mode === "pan" && !d.moved) pick(p); else if (W.mode === "tally") { if (Math.abs(e.offsetX - d.x) + Math.abs(e.offsetY - d.y) > 6) tallyRegion(d.start, p); else tallyToggleAt(p); } else if (W.mode === "region") finishRegion(d.start, p); else if (W.mode === "measure") measureClick(p); else if (W.mode === "add") addSymbolAt(p); else if (W.mode === "sample") sampleSymbolAt(p); });
 }
 function toWorld(px, py) { return [(px - V.tx) / V.scale, -(py - V.ty) / V.scale]; }
 function toScreen(x, y) { return [x * V.scale + V.tx, -y * V.scale + V.ty]; }
-function setMode(m) { W.mode = m; W.pts = []; document.querySelectorAll(".vtools button[id^=m_]").forEach(b => b.classList.toggle("on", b.id === "m_" + m)); V.cv.style.cursor = m === "pan" ? "grab" : "crosshair"; $("#vinfo").textContent = { pan: "클릭: 기호·선로 선택 / 드래그: 이동 / 휠: 확대", region: "표 영역을 드래그하여 범례로 등록", measure: "두 점을 클릭 → 실제 거리(m) 입력 시 축척 확정", add: "범례 기호를 선택한 뒤 도면을 클릭하면 기호가 추가됩니다", sample: "범례 탭에서 기호를 선택한 뒤, 도면 위 실제 기호 하나를 클릭 → 그 모양으로 전체 검색" }[m]; }
+function setMode(m) { W.mode = m; W.pts = []; document.querySelectorAll(".vtools button[id^=m_]").forEach(b => b.classList.toggle("on", b.id === "m_" + m)); V.cv.style.cursor = m === "pan" ? "grab" : "crosshair"; $("#vinfo").textContent = { pan: "클릭: 기호·선로 선택 / 드래그: 이동 / 휠: 확대", region: "표 영역을 드래그하여 범례로 등록", measure: "두 점을 클릭 → 실제 거리(m) 입력 시 축척 확정", tally: "집계할 영역을 드래그 → 영역 안 객체 개수·케이블 선 표시 / 객체 클릭: 개별 제외·포함 / 오른쪽 버튼 드래그: 화면 이동", add: "범례 기호를 선택한 뒤 도면을 클릭하면 기호가 추가됩니다", sample: "범례 탭에서 기호를 선택한 뒤, 도면 위 실제 기호 하나를 클릭 → 그 모양으로 전체 검색" }[m]; }
 function fitView() { const b = W.sheet && W.sheet.bbox; if (!b) return; const w = b.x1 - b.x0 || 1, h = b.y1 - b.y0 || 1; V.scale = Math.min(V.cv.width / w, V.cv.height / h) * 0.92; V.tx = (V.cv.width - w * V.scale) / 2 - b.x0 * V.scale; V.ty = (V.cv.height + h * V.scale) / 2 + b.y0 * V.scale; draw(); }
 async function openSheet(id, focusRegion) {
   const s = W.sheets.find(x => x.id === id); if (!s) return;
@@ -391,6 +396,8 @@ function draw() {
   const c = V.ctx; if (!c) return; c.setTransform(1, 0, 0, 1, 0, 0); c.fillStyle = "#1e1e1e"; c.fillRect(0, 0, V.cv.width, V.cv.height);
   if (!W.geo) return;
   const b = W.sheet.bbox;
+  const T = W.tally && W.tally.sheet_id === W.sheet.id ? W.tally : null;
+  if (T && T.only) { drawTallyOnly(c, T); return; }
   if (W.img && b) { const [sx, sy] = toScreen(b.x0, b.y1); c.drawImage(W.img, sx, sy, (b.x1 - b.x0) * V.scale, (b.y1 - b.y0) * V.scale); }
   const layerColor = {}; for (const L of W.sheet.layers) layerColor[L.name] = aciColor(L.color);
   c.lineWidth = 1;
@@ -406,8 +413,9 @@ function draw() {
   if (W.showRoutes) for (const r of W.routes) { const on = W.sel && ((W.sel.type === "route" && W.sel.id === r.id) || (W.sel.type === "item" && itemHas(W.sel.id, { route_id: r.id }))); c.lineWidth = on ? 5 : 3; c.strokeStyle = on ? "#ff6a00" : (r.kind === "cable" ? "#4ade80" : r.kind === "tray" ? "#c084fc" : "#38bdf8"); for (const s of r.segments) { c.setLineDash(s.dup_of ? [4, 4] : []); c.beginPath(); s.points.forEach(([x, y], i) => { const [sx, sy] = toScreen(x, y); i ? c.lineTo(sx, sy) : c.moveTo(sx, sy); }); c.stroke(); c.setLineDash([]); if (s.length_m !== null && V.scale > 0.004) { const m = s.points[Math.floor(s.points.length / 2)]; const [sx, sy] = toScreen(m[0], m[1]); c.fillStyle = "#fff"; c.font = "11px sans-serif"; c.fillText(s.length_m.toFixed(2) + "m", sx + 4, sy - 4); } } }
   // 검출 기호
   if (W.showDets) for (const d of W.dets) { const [sx, sy] = toScreen(d.x, d.y); const on = W.sel && ((W.sel.type === "det" && W.sel.id === d.id) || (W.sel.type === "legend" && W.sel.id === d.legend_symbol_id) || (W.sel.type === "item" && itemHas(W.sel.id, { detected_symbol_id: d.id }))); const col = d.status === "excluded" ? "#777" : symColor(d.legend_symbol_id); const R = on ? 11 : 8; c.beginPath(); c.arc(sx, sy, R, 0, Math.PI * 2); c.fillStyle = on ? "#ff6a00" : col; c.globalAlpha = .85; c.fill(); c.globalAlpha = 1; if (d.status === "review") { c.strokeStyle = "#ffd166"; c.lineWidth = 2; c.stroke(); } if (d.status === "excluded") { c.strokeStyle = "#fff"; c.beginPath(); c.moveTo(sx - 5, sy - 5); c.lineTo(sx + 5, sy + 5); c.moveTo(sx + 5, sy - 5); c.lineTo(sx - 5, sy + 5); c.stroke(); } c.fillStyle = "#000"; c.font = "bold 10px sans-serif"; c.textAlign = "center"; c.fillText(d.seq_no, sx, sy + 3.5); c.textAlign = "start"; }
+  if (T) drawTallyMarks(c, T);
   // 영역/측정 드래그
-  if (V.drag && W.mode === "region" && V.mouse) { const [x0, y0] = toScreen(...V.drag.start), [x1, y1] = toScreen(...V.mouse); c.strokeStyle = "#ffd166"; c.setLineDash([4, 4]); c.strokeRect(x0, y0, x1 - x0, y1 - y0); c.setLineDash([]); }
+  if (V.drag && (W.mode === "region" || W.mode === "tally") && V.mouse) { const [x0, y0] = toScreen(...V.drag.start), [x1, y1] = toScreen(...V.mouse); c.strokeStyle = "#ffd166"; c.setLineDash([4, 4]); c.strokeRect(x0, y0, x1 - x0, y1 - y0); c.setLineDash([]); }
   if (W.mode === "measure" && W.pts.length) { const [x0, y0] = toScreen(...W.pts[0]), [x1, y1] = toScreen(...(V.mouse || W.pts[0])); c.strokeStyle = "#ff6a00"; c.lineWidth = 2; c.beginPath(); c.moveTo(x0, y0); c.lineTo(x1, y1); c.stroke(); const d = Math.hypot(V.mouse[0] - W.pts[0][0], V.mouse[1] - W.pts[0][1]); c.fillStyle = "#fff"; c.fillText(`${d.toFixed(1)} 도면단위${W.sheet.scale_factor ? ` = ${(d * W.sheet.scale_factor).toFixed(2)} m` : ""}`, x1 + 8, y1); }
   if (V.mouse) $("#vinfo").textContent = `X ${V.mouse[0].toFixed(1)}  Y ${V.mouse[1].toFixed(1)}  (${W.sheet.units || "?"})  배율 ${V.scale.toFixed(4)}`;
 }
@@ -447,6 +455,121 @@ function drawMini(cv) {
   cv.width = 120; cv.height = 72; const c = cv.getContext("2d"); const pts = def.prims.flatMap(p => p.p); if (!pts.length) return;
   const xs = pts.map(q => q[0]), ys = pts.map(q => q[1]); const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys); const s = Math.min(110 / (x1 - x0 || 1), 62 / (y1 - y0 || 1));
   c.strokeStyle = "#222"; c.lineWidth = 1.2; for (const p of def.prims) { c.beginPath(); p.p.forEach(([x, y], i) => { const sx = 5 + (x - x0) * s, sy = 67 - (y - y0) * s; i ? c.lineTo(sx, sy) : c.moveTo(sx, sy); }); c.stroke(); }
+}
+
+
+/* ---------------- 수동 영역 집계 ---------------- */
+const TCOL = i => `hsl(${(i * 53 + 15) % 360},90%,58%)`;
+function hexOf(key) { const m = /#([0-9a-f]{6})/i.exec(key || ""); return m ? "#" + m[1] : null; }
+function isGreyish(hex) { if (!hex) return false; const r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16); return Math.max(r, g, b) - Math.min(r, g, b) < 24 && r > 70 && r < 235; }
+function lineColor(key, i) { const h = hexOf(key); if (h && !isGreyish(h) && h !== "#000000" && h !== "#ffffff") return h; const L = W.sheet && W.sheet.layers.find(x => x.name === key); return L && L.color !== null && L.color !== 7 ? aciColor(L.color) : TCOL(i + 7); }
+async function tallyRegion(a, b) {
+  const region = { x0: Math.min(a[0], b[0]), y0: Math.min(a[1], b[1]), x1: Math.max(a[0], b[0]), y1: Math.max(a[1], b[1]) };
+  $("#vinfo").textContent = "영역 분석 중…";
+  const r = await api(`/api/projects/${W.pid}/sheets/${W.sheet.id}/region-analyze`, { method: "POST", json: { region, hidden_layers: [...W.hidden] } });
+  r.objects.forEach((o, i) => { o.on = false; o.name = ""; o.spec = ""; o.unit = "개"; o.col = TCOL(i); o.bg = isGreyish(o.color); });
+  r.lines.forEach((l, i) => { l.on = false; l.name = "케이블"; l.spec = ""; l.len = ""; l.col = lineColor(l.key, i); });
+  W.tally = { ...r, region, sheet_id: W.sheet.id, only: true };
+  W.sel = null; renderRight(); draw();
+  toast(r.mode === "raster" ? "스캔 도면은 객체 자동 구분이 안 됩니다 (오른쪽 안내 참조)" : `영역 안 객체 ${r.objects.length}종 · 선 ${r.lines.length}종 — 집계할 항목에 품명을 입력하십시오`);
+}
+const tallyCount = o => o.items.filter(it => !it.off).length;
+function tallyToggleAt(p) {
+  const T = W.tally; if (!T || T.sheet_id !== W.sheet.id) return;
+  const tol = 4 / V.scale;
+  for (const o of T.objects) { if (!o.on) continue; for (const it of o.items) { const bb = it.bbox; if (p[0] >= bb.x0 - tol && p[0] <= bb.x1 + tol && p[1] >= bb.y0 - tol && p[1] <= bb.y1 + tol) { it.off = !it.off; renderRight(); draw(); return; } } }
+}
+function tallySet(kind, i, k, v) { const o = W.tally[kind][i]; o[k] = v; if (k === "on") { renderRight(); draw(); } else if (k === "focus") { W.tally.focus = v; draw(); } }
+function tallyPanel() {
+  const T = W.tally;
+  const nOn = T.objects.filter(o => o.on).length, nL = T.lines.filter(l => l.on).length;
+  let h = `<h2>영역 집계 <button class="sm" onclick="W.tally=null;renderRight();draw()">닫기</button></h2>
+  <div class="row"><label><input type="checkbox" ${T.only ? "checked" : ""} onchange="W.tally.only=this.checked;draw()"> 영역 객체·선만 보기</label> <button class="sm" onclick="fitTally()">영역 확대</button></div>
+  <div class="small muted">집계할 항목에 <b>품명을 입력</b>하면 자동으로 체크됩니다. 도면에서 객체를 클릭하면 개별로 빼거나 넣을 수 있습니다.</div>`;
+  for (const n of T.notes || []) h += `<div class="warnbox small">${esc(n)}</div>`;
+  if (T.objects.length) {
+    h += `<h3>객체 ${T.objects.length}종 <span class="small muted">(체크 ${nOn})</span></h3>`;
+    T.objects.forEach((o, i) => {
+      const n = tallyCount(o);
+      h += `<div class="tcard ${o.on ? "on" : ""}" onmouseenter="tallySet('objects',${i},'focus','o${i}')" onmouseleave="tallySet('objects',${i},'focus',null)">
+      <div class="trow"><input type="checkbox" ${o.on ? "checked" : ""} onchange="tallySet('objects',${i},'on',this.checked)"><span class="swatch" style="background:${o.col}"></span><canvas class="mini tmini" data-i="${i}" width="52" height="38"></canvas>
+      <div class="tlab"><b>${esc(o.label)}</b><br><span class="small muted">${esc(o.shape || "")}</span></div><div class="tqty">${n}<span class="small"> ${esc(o.unit || "개")}</span>${n !== o.count ? `<div class="small muted">(${o.count - n}개 제외)</div>` : ""}</div></div>
+      <div class="trow"><input class="tname" placeholder="품명 (예: LED 투광등)" value="${esc(o.name)}" oninput="tallyName('objects',${i},this.value)"><input class="tspec" placeholder="규격" value="${esc(o.spec)}" onchange="tallySet('objects',${i},'spec',this.value)"><input class="tunit" value="${esc(o.unit)}" onchange="tallySet('objects',${i},'unit',this.value)"></div></div>`;
+    });
+  } else if (T.mode !== "raster") h += `<p class="muted">영역 안에서 닫힌 외곽선의 객체를 찾지 못했습니다.</p>`;
+  if (T.lines.length) {
+    h += `<h3>선 ${T.lines.length}종 <span class="small muted">— 케이블이면 길이(m)를 입력 (체크 ${nL})</span></h3>`;
+    T.lines.forEach((l, i) => {
+      const ref = l.length_m !== null && l.length_m !== undefined ? `참고 ${fmt(l.length_m)} m` : `참고 ${fmt(l.length)} ${esc(T.units || "도면단위")} (축척 미확정)`;
+      h += `<div class="tcard ${l.on ? "on" : ""}" onmouseenter="tallySet('lines',${i},'focus','l${i}')" onmouseleave="tallySet('lines',${i},'focus',null)">
+      <div class="trow"><input type="checkbox" ${l.on ? "checked" : ""} onchange="tallySet('lines',${i},'on',this.checked)"><span class="swatch" style="background:${l.col};width:22px;height:4px"></span><div class="tlab"><span class="small">${esc(l.key)}</span><br><span class="small muted">${ref}</span></div></div>
+      <div class="trow"><input class="tname" placeholder="품명 (예: 전선)" value="${esc(l.name)}" onchange="tallySet('lines',${i},'name',this.value)"><input class="tspec" placeholder="규격 (예: F-CV 6㎟)" value="${esc(l.spec)}" onchange="tallySet('lines',${i},'spec',this.value)"><input class="tunit" type="number" min="0" step="0.1" placeholder="m" value="${esc(l.len)}" oninput="tallyLen(${i},this.value)"></div></div>`;
+    });
+  }
+  h += `<div class="row" style="position:sticky;bottom:0;background:var(--panel,#fff);padding:6px 0"><button class="primary" onclick="saveTally()">물량표에 추가</button></div>
+  <div class="small muted">· 같은 기호가 두 종으로 나뉘면 같은 품명·규격을 입력하십시오 — 물량표에서 합산됩니다.<br>· 같은 곳을 다시 드래그해 추가하면 이중으로 집계됩니다. 잘못 넣은 내역은 '물량' 탭에서 삭제하십시오.</div>`;
+  return h;
+}
+function tallyName(kind, i, v) { const o = W.tally[kind][i]; o.name = v; const want = !!v.trim(); if (o.on !== want) { o.on = want; const card = document.querySelectorAll(".tcard")[i]; if (card) { card.classList.toggle("on", want); card.querySelector("input[type=checkbox]").checked = want; } draw(); } }
+function tallyLen(i, v) { const l = W.tally.lines[i]; l.len = v; const want = +v > 0; if (l.on !== want) { l.on = want; const card = document.querySelectorAll(".tcard")[W.tally.objects.length + i]; if (card) { card.classList.toggle("on", want); card.querySelector("input[type=checkbox]").checked = want; } draw(); } }
+function drawTallyMinis() {
+  for (const cv of document.querySelectorAll("canvas.tmini")) {
+    const o = W.tally.objects[+cv.dataset.i]; const prims = o.sample || []; const pts = prims.flatMap(p => p.p); if (!pts.length) continue;
+    const c = cv.getContext("2d"); c.fillStyle = "#fff"; c.fillRect(0, 0, cv.width, cv.height);
+    const xs = pts.map(q => q[0]), ys = pts.map(q => q[1]); const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+    const s = Math.min((cv.width - 8) / (x1 - x0 || 1), (cv.height - 8) / (y1 - y0 || 1)); const ox = (cv.width - (x1 - x0) * s) / 2, oy = (cv.height + (y1 - y0) * s) / 2;
+    c.strokeStyle = "#111"; c.fillStyle = "#111"; c.lineWidth = 1.2;
+    for (const p of prims) { c.beginPath(); p.p.forEach(([x, y], i) => { const sx = ox + (x - x0) * s, sy = oy - (y - y0) * s; i ? c.lineTo(sx, sy) : c.moveTo(sx, sy); }); p.t === "f" ? c.fill() : c.stroke(); }
+  }
+}
+function drawTallyOnly(c, T) {
+  const b = W.sheet.bbox;
+  if (W.img && b) { c.globalAlpha = 0.12; const [sx, sy] = toScreen(b.x0, b.y1); c.drawImage(W.img, sx, sy, (b.x1 - b.x0) * V.scale, (b.y1 - b.y0) * V.scale); c.globalAlpha = 1; }
+  else { c.strokeStyle = "rgba(200,200,200,.12)"; c.lineWidth = 1; for (const p of W.geo.prims) { if (p.p.length < 2) continue; c.beginPath(); p.p.forEach(([x, y], i) => { const [sx, sy] = toScreen(x, y); i ? c.lineTo(sx, sy) : c.moveTo(sx, sy); }); c.stroke(); } }
+  drawTallyMarks(c, T, true);
+  if (V.drag && W.mode === "tally" && V.mouse) { const [x0, y0] = toScreen(...V.drag.start), [x1, y1] = toScreen(...V.mouse); c.strokeStyle = "#ffd166"; c.setLineDash([4, 4]); c.strokeRect(x0, y0, x1 - x0, y1 - y0); c.setLineDash([]); }
+}
+function drawTallyMarks(c, T, full) {
+  const r = T.region; const [rx0, ry0] = toScreen(r.x0, r.y1), [rx1, ry1] = toScreen(r.x1, r.y0);
+  c.setLineDash([8, 4]); c.strokeStyle = "#ffd166"; c.lineWidth = 2; c.strokeRect(rx0, ry0, rx1 - rx0, ry1 - ry0); c.setLineDash([]);
+  T.lines.forEach((l, i) => {
+    if (!l.on && T.focus !== "l" + i && (!full || isGreyish(hexOf(l.key)))) return;
+    c.strokeStyle = l.col; c.globalAlpha = l.on || T.focus === "l" + i ? 1 : 0.35; c.lineWidth = T.focus === "l" + i ? 4 : (l.on ? 2.5 : 1);
+    for (const pc of l.pieces) { c.beginPath(); pc.forEach(([x, y], k) => { const [sx, sy] = toScreen(x, y); k ? c.lineTo(sx, sy) : c.moveTo(sx, sy); }); c.stroke(); }
+    c.globalAlpha = 1;
+  });
+  const anyOn = T.objects.some(o => o.on);
+  T.objects.forEach((o, i) => {
+    const foc = T.focus === "o" + i;
+    if (!o.on && !foc && (anyOn || o.bg || !full)) return;   // 체크 전에는 배경(회색) 외 모든 객체를 옅게 표시
+    c.globalAlpha = o.on || foc ? 1 : 0.55;
+    let n = 0;
+    for (const it of o.items) {
+      const bb = it.bbox; const [x0, y0] = toScreen(bb.x0, bb.y1), [x1, y1] = toScreen(bb.x1, bb.y0); const pad = 3;
+      c.lineWidth = foc ? 3 : (o.on ? 2 : 1); c.strokeStyle = it.off ? "#777" : o.col;
+      c.strokeRect(x0 - pad, y0 - pad, x1 - x0 + 2 * pad, y1 - y0 + 2 * pad);
+      if (it.off) { c.beginPath(); c.moveTo(x0, y0); c.lineTo(x1, y1); c.moveTo(x1, y0); c.lineTo(x0, y1); c.stroke(); continue; }
+      n++; if ((o.on || foc) && V.scale * (bb.x1 - bb.x0) > 6) { c.fillStyle = o.col; c.font = "bold 11px sans-serif"; c.fillText(n, x1 + pad + 1, y0); }
+    }
+    c.globalAlpha = 1;
+  });
+}
+function fitTally() { const r = W.tally.region; const w = r.x1 - r.x0, h = r.y1 - r.y0; V.scale = Math.min(V.cv.width / w, V.cv.height / h) * 0.9; V.tx = (V.cv.width - w * V.scale) / 2 - r.x0 * V.scale; V.ty = (V.cv.height + h * V.scale) / 2 + r.y0 * V.scale; draw(); }
+async function saveTally() {
+  const T = W.tally; const rows = [];
+  for (const o of T.objects) { if (!o.on || !tallyCount(o)) continue; if (!o.name.trim()) return toast(`체크한 객체(${o.label})의 품명을 입력하십시오.`, true); rows.push({ kind: "object", item_name: o.name, spec: o.spec, unit: o.unit || "개", qty: tallyCount(o), marks: o.items.filter(it => !it.off).map(it => [(it.bbox.x0 + it.bbox.x1) / 2, (it.bbox.y0 + it.bbox.y1) / 2]) }); }
+  for (const l of T.lines) { if (!l.on) continue; if (!(+l.len > 0)) return toast(`체크한 선(${l.key})의 케이블 길이(m)를 입력하십시오.`, true); if (!l.name.trim()) return toast("케이블 품명을 입력하십시오.", true); rows.push({ kind: "cable", item_name: l.name, spec: l.spec, unit: "m", qty: +l.len, ref_length: l.length_m ?? l.length, note: `선 종류 ${l.key}` }); }
+  if (!rows.length) return toast("체크한 객체나 길이를 입력한 케이블이 없습니다.", true);
+  await api(`/api/projects/${W.pid}/tallies`, { method: "POST", json: { sheet_id: T.sheet_id, region: T.region, rows } });
+  toast(`${rows.length}개 항목을 물량표에 추가했습니다.`); W.tally = null; W.tab = "qty"; await refreshAll();
+}
+async function showTally(id) {
+  const t = W.tallies.find(x => x.id === id); if (!t) return;
+  if (!W.sheet || W.sheet.id !== t.sheet_id) await openSheet(t.sheet_id, t.region);
+  else { const r = t.region; const w = r.x1 - r.x0, h = r.y1 - r.y0; V.scale = Math.min(V.cv.width / w, V.cv.height / h) * 0.8; V.tx = (V.cv.width - w * V.scale) / 2 - r.x0 * V.scale; V.ty = (V.cv.height + h * V.scale) / 2 + r.y0 * V.scale; }
+  W.flash = t; draw();
+  const c = V.ctx, r = t.region; const [x0, y0] = toScreen(r.x0, r.y1), [x1, y1] = toScreen(r.x1, r.y0); c.strokeStyle = "#ff6a00"; c.lineWidth = 3; c.strokeRect(x0, y0, x1 - x0, y1 - y0);
+  for (const [x, y] of t.marks || []) { const [sx, sy] = toScreen(x, y); c.beginPath(); c.arc(sx, sy, 7, 0, Math.PI * 2); c.stroke(); }
 }
 
 /* ---------------- 기준정보 (적산) ---------------- */

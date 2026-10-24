@@ -61,6 +61,7 @@ class Project(Base):
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
     files: Mapped[list[DrawingFile]] = relationship(back_populates="project", cascade="all, delete-orphan")
+    tallies: Mapped[list["RegionTally"]] = relationship(cascade="all, delete-orphan")
 
 
 class FileStatus(str, enum.Enum):
@@ -482,3 +483,25 @@ class Job(Base):
     error: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+
+class RegionTally(Base):
+    """수동 영역 집계 1행 — 사용자가 도면에서 드래그한 영역 안의 객체 개수 또는 직접 입력한 케이블 길이.
+    자동 인식과 무관하게 물량산출조서에 '수동 영역 집계' 로 합산된다. (시트 재분석 후에도 보존)"""
+    __tablename__ = "region_tallies"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), index=True)
+    sheet_id: Mapped[int | None] = mapped_column(Integer)          # 재분석 시 시트가 바뀌므로 FK 없이 참조만
+    drawing_no: Mapped[str | None] = mapped_column(String(100))
+    region: Mapped[dict] = mapped_column(JSON, default=dict)
+    kind: Mapped[str] = mapped_column(String(10), default="object")   # object | cable
+    discipline: Mapped[str | None] = mapped_column(String(50))
+    item_name: Mapped[str] = mapped_column(String(200))
+    spec: Mapped[str | None] = mapped_column(String(300))
+    unit: Mapped[str] = mapped_column(String(20), default="개")
+    qty: Mapped[float] = mapped_column(Float, default=0)
+    ref_length: Mapped[float | None] = mapped_column(Float)       # 참고: 영역 안 선 길이(m 또는 도면단위)
+    marks: Mapped[list] = mapped_column(JSON, default=list)       # 집계한 객체 위치 [[x,y],...] (화면 표시용)
+    note: Mapped[str | None] = mapped_column(String(300))
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
