@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useOutletContext, useParams } from 'react-router-dom'
-import { api, errMsg, fmt, fq, trimNum } from '../api'
+import { api, downloadFile, errMsg, fmt, fq, trimNum } from '../api'
 
 type Field = 'name' | 'spec' | 'unit' | 'qty' | 'mat_price' | 'lab_price' | 'exp_price' | 'note'
 const EDIT_FIELDS: Field[] = ['name', 'spec', 'unit', 'qty', 'mat_price', 'lab_price', 'exp_price', 'note']
@@ -128,6 +128,7 @@ export default function EstimatePage() {
           <input placeholder="품명/규격 검색" value={q} onChange={(e) => setQ(e.target.value)} style={{ width: 200 }} />
           <button onClick={() => setCollapsed(new Set(Object.keys(sectionTotals)))}>모두 접기</button><button onClick={() => setCollapsed(new Set())}>모두 펼치기</button>
           <button className={editMode ? 'primary' : ''} disabled={!editable.editable} title={editable.reason} onClick={() => { setEditMode(!editMode); setCell(null) }}>{editMode ? '편집 모드 끄기' : '편집 모드'}</button>
+          <button onClick={async () => { try { await downloadFile(`/versions/${vid}/export`); setMsg({ t: '원본 양식 그대로(시트·서식·수식 유지, 수정·추가·삭제 행만 반영) 엑셀을 내려받았습니다. Excel에서 열면 금액·소계가 자동 재계산됩니다.', k: 'ok' }) } catch (e) { setMsg({ t: errMsg(e), k: 'err' }) } }}>엑셀 출력 (원본 양식 그대로)</button>
           {v?.status === 'draft' && <button onClick={approve}>계약내역 확정</button>}
         </div></div>
       {v && <div className="kpis">
@@ -167,7 +168,7 @@ export default function EstimatePage() {
                   : <>{Cell(i, 'mat_price', fmt, 'r')}{Cell(i, 'lab_price', fmt, 'r')}{Cell(i, 'exp_price', fmt, 'r')}</>}
                 <td className="r">{fmt(i.tot_price)}</td><td className="r">{fmt(i.tot_amt)}</td>{Cell(i, 'note', (x) => x)}
                 <td className="muted" style={{ fontSize: 11 }}>{i.unit_price_ref || src}</td>
-                {editMode && <td className="c"><button className="sm" title="아래에 품목 추가" onClick={() => setAdding({ section_path: i.section_path, after_uid: i.uid, name: '', spec: '', unit: i.unit, qty: '', mat_price: '', lab_price: '', exp_price: '', note: '' })}>+</button> <button className="sm danger" onClick={() => delItem(i)}>×</button></td>}
+                {editMode && <td className="c">{i.is_deleted ? <button className="sm" onClick={async () => { await api.post(`/versions/${vid}/items/${i.uid}/restore`); loadItems(); loadVersions() }}>복구</button> : <><button className="sm" title="아래에 품목 추가" onClick={() => setAdding({ section_path: i.section_path, after_uid: i.uid, name: '', spec: '', unit: i.unit, qty: '', mat_price: '', lab_price: '', exp_price: '', note: '' })}>+</button> <button className="sm danger" onClick={() => delItem(i)}>×</button></>}</td>}
               </tr>
             })}
           </tbody>

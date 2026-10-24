@@ -5,11 +5,13 @@ from datetime import datetime
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from ..auth import audit, get_current_user, get_project_for
 from ..db import get_db
-from ..models import ContractVersion, CostRateRule, DesignChange, EstimateItem, ProgressClaim, UnitPriceAnalysis, User
+from ..config import settings
+from ..models import ContractVersion, CostRateRule, DesignChange, EstimateItem, ProgressClaim, SourceFile, UnitPriceAnalysis, User, WorkbookSheet
 from ..schemas import CostRuleIn, ItemAdd, ItemEdit
 from ..services.calc import D, line_amounts, project_rounding, s
 
@@ -156,12 +158,62 @@ def delete_item(vid: int, uid: str, reason: str = "", db: Session = Depends(get_
     if not it:
         raise HTTPException(404, "품목이 없습니다.")
     before = item_out(it)
-    v.items.remove(it)
-    db.delete(it)
+    if it.price_source.get("manual") or v.status == "draft" and not it.source_row:
+        v.items.remove(it)
+        db.delete(it)          # 수동 추가 행은 완전 삭제
+    else:
+        it.is_deleted = True   # 원본 행은 삭제 표시 (원본 양식 출력 시 수량 0 처리)
     _recalc_totals(v)
     audit(db, user, "item.delete", v.project_id, target=f"v{v.version_no}/{before['name']}", before=before, reason=reason)
     db.commit()
     return {"ok": True, "totals": v.totals}
+
+
+@router.get("/versions/{vid}/export")
+def export_version(vid: int, delete_mode: str = "zero", db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """계약내역 버전을 업로드한 원본 엑셀 양식 그대로 출력 (수정·추가·삭제된 셀만 반영, 나머지 시트·서식·수식 유지)."""
+    from pathlib import Path
+    from ..excel.analyzer import analyze_file
+    from ..excel.export_version import write_version_original
+    v = _version(db, vid, user)
+    p = get_project_for(db, v.project_id, user)
+    sf = db.get(SourceFile, v.source_file_id) if v.source_file_id else None
+    if not sf:
+        raise HTTPException(400, "이 버전은 원본 파일이 없어 원본 양식으로 출력할 수 없습니다.")
+    sheet_maps = {ws.name: ws.column_map for ws in db.query(WorkbookSheet).filter_by(file_id=sf.id) if ws.column_map}
+    # 원본 값(가져오기 시점) 재추출 → 바뀐 셀만 기록
+    role_over = {ws.name: ws.user_role for ws in sf.sheets if ws.user_role}
+    map_over = {ws.name: ws.user_column_map for ws in sf.sheets if ws.user_column_map}
+    res = analyze_file(sf.stored_path, str(settings.storage_dir / "work"), role_over or None, map_over or None)
+    original = {}
+    for ps in res["_parsed"].values():
+        for it in ps.items:
+            original[it.uid] = {"name": it.name, "spec": it.spec, "unit": it.unit, "note": it.note, "qty": it.qty,
+                                "mat_price": it.mat_price, "lab_price": it.lab_price, "exp_price": it.exp_price, "tot_price": it.tot_price}
+    out_dir = settings.storage_dir / f"project_{p.id}" / "exports"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    ext = Path(sf.stored_path).suffix.lower()
+    stem = Path(sf.original_name).stem
+    out = out_dir / f"{stem}_v{v.version_no}_{v.label}_{datetime.now().strftime('%Y%m%d_%H%M')}{ext}"
+    stats = write_version_original(Path(sf.stored_path), out, v, sheet_maps, original, delete_mode, title_suffix=f"v{v.version_no} {v.label}" if v.version_no else "")
+    audit(db, user, "version.export", p.id, target=f"v{v.version_no}", after={"file": out.name, **{k: stats[k] for k in ("modified", "added", "deleted")}})
+    db.commit()
+    media = "application/vnd.ms-excel.sheet.macroEnabled.12" if ext == ".xlsm" else "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    return FileResponse(out, filename=out.name, media_type=media, headers={"X-Export-Stats": f"modified={stats['modified']};added={stats['added']};deleted={stats['deleted']}"})
+
+
+@router.post("/versions/{vid}/items/{uid}/restore")
+def restore_item(vid: int, uid: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    v = _version(db, vid, user, "edit")
+    _editable(db, v)
+    it = db.query(EstimateItem).filter_by(version_id=vid, uid=uid).first()
+    if not it:
+        raise HTTPException(404)
+    it.is_deleted = False
+    _recalc_totals(v)
+    audit(db, user, "item.restore", v.project_id, target=f"v{v.version_no}/{it.name}")
+    db.commit()
+    return item_out(it)
 
 
 def _recalc_totals(v: ContractVersion):
