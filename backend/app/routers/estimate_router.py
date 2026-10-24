@@ -66,10 +66,43 @@ def add_norm(body: NormIn, user: User = Depends(require_role(*EDIT_ROLES)), db: 
     return {"id": n.id}
 
 
+def ensure_standard_norms(db: Session, company_id: int) -> int:
+    """사용자가 올린 2026 표준품셈(전기·정보통신)에서 추출한 품 항목(app/data/norms_2026.json)을
+    회사 기준정보에 한 번 넣는다. 이미 같은 코드가 있으면 넣지 않는다(사용자 수정 보존)."""
+    import json
+    from pathlib import Path
+    path = Path(__file__).resolve().parents[1] / "data" / "norms_2026.json"
+    if not path.exists():
+        return 0
+    have = {c for (c,) in db.query(StandardNorm.code).filter_by(company_id=company_id).all()}
+    data = json.loads(path.read_text(encoding="utf-8"))
+    rows = []
+    for it in data["items"]:
+        if it["code"] in have:
+            continue
+        rows.append(StandardNorm(company_id=company_id, code=it["code"][:50], title=it["title"][:300], unit=(it["unit"] or "식")[:20],
+                                 labor=it["labor"], publisher=it["publisher"][:100], year=2026, effective_date="2026-01-01",
+                                 source=f"{it['source']} p.{it['page']}"[:300], version="2026",
+                                 conditions={"section": it.get("section"), "page": it["page"]}))
+    if rows:
+        db.add_all(rows)
+        db.commit()
+    return len(rows)
+
+
 @router.get("/norms")
-def list_norms(user: User = Depends(current_user), db: Session = Depends(get_db)):
-    return [{"id": n.id, "code": n.code, "title": n.title, "unit": n.unit, "labor": n.labor, "publisher": n.publisher, "year": n.year, "version": n.version}
-            for n in db.query(StandardNorm).filter_by(company_id=user.company_id).all()]
+def list_norms(q: str | None = None, limit: int = 0, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """표준품셈 목록. q: 검색어(공백 구분, 모두 포함), limit: 최대 개수(0=전체)."""
+    ensure_standard_norms(db, user.company_id)
+    qry = db.query(StandardNorm).filter_by(company_id=user.company_id)
+    for tok in (q or "").split():
+        like = f"%{tok}%"
+        qry = qry.filter((StandardNorm.title.like(like)) | (StandardNorm.code.like(like)))
+    qry = qry.order_by(StandardNorm.id)
+    if limit:
+        qry = qry.limit(limit)
+    return [{"id": n.id, "code": n.code, "title": n.title, "unit": n.unit, "labor": n.labor, "publisher": n.publisher, "year": n.year,
+             "version": n.version, "source": n.source} for n in qry.all()]
 
 
 @router.post("/labor-rates")

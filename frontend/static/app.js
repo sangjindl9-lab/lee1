@@ -237,10 +237,10 @@ function renderEstimateLeft() {
   for (const q of W.items) {
     const m = E.mapping[q.id] || {};
     h += `<tr><td>${esc(q.item_name)}<br><span class="small muted">${esc(q.spec || "")}</span></td><td class="num">${fmt(q.qty_total)} ${esc(q.unit)}</td>
-    <td><select onchange="setMap(${q.id},'norm_code',this.value)" style="max-width:120px"><option value="">(없음)</option>${E.norms.map(n => `<option value="${esc(n.code)}" ${m.norm_code === n.code ? "selected" : ""}>${esc(n.code)} ${esc(n.title)}</option>`).join("")}</select></td>
+    <td><input list="normlist" style="max-width:160px" placeholder="품셈 검색 (예: 전선관)" value="${esc(m.norm_code || "")}" onchange="setMap(${q.id},'norm_code',(this.value||'').split(' ')[0])" title="${esc((E.norms.find(n => n.code === m.norm_code) || {}).title || "")}"></td>
     <td><select onchange="setMap(${q.id},'material_id',+this.value||null)" style="max-width:120px"><option value="">(없음)</option>${E.mats.map(x => `<option value="${x.id}" ${m.material_id === x.id ? "selected" : ""}>${esc(x.item_name)} ${esc(x.spec || "")} ${x.price ?? "단가없음"}</option>`).join("")}</select></td></tr>`;
   }
-  h += `</table><div class="row"><button class="sm" onclick="autoMap()">품명·규격 자동 매핑</button></div>`;
+  h += `</table><datalist id="normlist">${E.norms.map(n => `<option value="${esc(n.code)} ${esc(n.title)} (${esc(n.unit)})"></option>`).join("")}</datalist><div class="row"><button class="sm" onclick="autoMap()">품명·규격 자동 매핑</button></div><div class="small muted">품셈 칸에 품명을 입력하면 2026 전기·정보통신 표준품셈 ${E.norms.length.toLocaleString()}개 항목에서 찾아 줍니다.</div>`;
   el.innerHTML = h;
 }
 function setMap(id, k, v) { E.mapping[id] = { ...(E.mapping[id] || {}), [k]: v || null }; }
@@ -648,7 +648,8 @@ async function renderRefData() {
     linfo.missing.map(m => `<div class="warnbox small">⚠ ${esc(m.group)}: ${esc(m.reason)}. 보고서를 <a href="${esc(m.where)}" target="_blank" rel="noopener">여기</a>서 받아 아래 'Excel 일괄 등록' 또는 직접 입력으로 등록하십시오.</div>`).join("") + `</div>`;
   $("#app").innerHTML = `<div class="page">
   <div class="card"><h2>표준품셈 (적법하게 확보한 자료만 등록 — 임의 품셈 생성 금지)</h2><div class="row"><input id="n_code" placeholder="품셈번호"><input id="n_title" placeholder="항목명" style="width:220px"><input id="n_unit" placeholder="단위" style="width:60px"><input id="n_labor" placeholder='노무량 JSON 예 {"내선전공":0.12}' style="width:220px"><input id="n_pub" placeholder="발행기관"><input id="n_year" type="number" placeholder="적용연도"><input id="n_src" placeholder="출처"><button class="primary" onclick="addNorm()">등록</button></div>
-  <table><tr><th>번호</th><th>항목</th><th>단위</th><th>노무량</th><th>발행기관</th><th>연도</th></tr>${norms.map(n => `<tr><td>${esc(n.code)}</td><td>${esc(n.title)}</td><td>${esc(n.unit)}</td><td>${esc(JSON.stringify(n.labor))}</td><td>${esc(n.publisher)}</td><td>${n.year}</td></tr>`).join("")}</table></div>
+  <div class="row"><input id="normq" placeholder="품셈 검색 (예: 전선관 후강, 통신내선공, 5-1)" style="width:320px" onkeydown="if(event.key==='Enter')searchNorms()"><button class="sm" onclick="searchNorms()">검색</button><span class="small muted">등록 ${norms.length.toLocaleString()}개 항목</span></div>
+  <div id="normres">${normTable(norms.slice(0, 50))}${norms.length > 50 ? `<div class="small muted">앞 50개만 표시 — 검색하십시오.</div>` : ""}</div></div>
   <div class="card"><h2>노임단가</h2>${linfoHtml}<div class="row"><input id="l_trade" placeholder="직종"><input id="l_rate" type="number" placeholder="일당"><input id="l_pub" placeholder="발행기관"><input id="l_date" type="date"><button class="primary" onclick="addLabor()">등록</button></div>
   <table><tr><th>직종</th><th>일당(원)</th><th>출처·발행기관</th><th>적용일</th></tr>${labor.map(l => `<tr><td>${esc(l.trade)}</td><td class="num">${l.daily_rate.toLocaleString()}</td><td class="small">${esc(l.publisher)}</td><td>${l.effective_date}</td></tr>`).join("")}</table></div>
   <div class="card"><h2>자재단가</h2><div class="row"><input id="m_name" placeholder="품명"><input id="m_spec" placeholder="규격"><input id="m_unit" placeholder="단위" style="width:60px"><select id="m_sup"><option value="private">사급</option><option value="gov">관급</option></select><input id="m_price" type="number" placeholder="단가"><input id="m_src" placeholder="출처(물가지/견적)"><input id="m_date" type="date"><button class="primary" onclick="addMat()">등록</button></div>
@@ -675,6 +676,13 @@ async function loadSymLib(filter) {
     if (x.letters.length) { c.font = "9px sans-serif"; c.fillStyle = "#c00"; c.fillText(x.letters.join(" "), 2, 10); }
   }
   const qi = $("#symq"); if (qi && q) { qi.focus(); qi.setSelectionRange(q.length, q.length); }
+}
+function normTable(ns) {
+  return `<table><tr><th>번호</th><th>항목</th><th>단위</th><th>노무량(인)</th><th>출처</th></tr>${ns.map(n => `<tr><td class="small">${esc(n.code)}</td><td>${esc(n.title)}</td><td>${esc(n.unit)}</td><td class="small">${Object.entries(n.labor || {}).map(([k, v]) => `${esc(k)} ${v}`).join("<br>")}</td><td class="small">${esc(n.source || n.publisher || "")}</td></tr>`).join("")}</table>`;
+}
+async function searchNorms() {
+  const q = $("#normq").value.trim(); const ns = await api(`/api/norms?limit=200&q=${encodeURIComponent(q)}`);
+  $("#normres").innerHTML = `<div class="small muted">검색 결과 ${ns.length}${ns.length === 200 ? "+ (앞 200개)" : ""}개</div>` + normTable(ns);
 }
 async function importRef(kind, file) { if (!file) return; const fd = new FormData(); fd.append("file", file); const r = await api(`/api/refdata/${kind}/import`, { method: "POST", body: fd }); toast(`${r.imported}건 등록`); renderRefData(); }
 async function addNorm() { let labor; try { labor = JSON.parse($("#n_labor").value); } catch (e) { return toast("노무량 JSON 형식 오류", true); } await api("/api/norms", { method: "POST", json: { code: $("#n_code").value, title: $("#n_title").value, unit: $("#n_unit").value, labor, publisher: $("#n_pub").value, year: +$("#n_year").value, source: $("#n_src").value } }); renderRefData(); }
