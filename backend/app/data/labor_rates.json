@@ -1,31 +1,710 @@
 {
-  "note": "출처에서 직접 확인한 값만 수록. 숫자를 추정해 채우지 않는다.",
-  "sets": [
+ "note": "출처 원문에서 직접 확인한 값만 수록. 숫자를 추정해 채우지 않는다.",
+ "sets": [
+  {
+   "set": "2026H2-건설업",
+   "title": "2026년 하반기 적용 건설업 임금실태조사(시중노임단가)",
+   "publisher": "대한건설협회 2026년 하반기 적용 건설업 임금실태조사(시중노임단가)",
+   "effective_date": "2026-09-01",
+   "version": "2026 하반기",
+   "source_url": "https://www.kseis.co.kr/bbs/data/dataDetail.do?bbs_seq=82199305780142",
+   "rates": [
     {
-      "set": "2026H2-정보통신",
-      "title": "2026년 하반기 정보통신부문 시중노임단가",
-      "publisher": "정보통신부문 시중노임단가(2026년 하반기, 정보통신신문 2026.9.8 보도)",
-      "effective_date": "2026-09-01",
-      "version": "2026 하반기",
-      "source_url": "https://www.koit.co.kr/news/articleView.html?idxno=208915",
-      "rates": [
-        {"trade": "광케이블설치사", "daily_rate": 471931},
-        {"trade": "S/W시험사", "daily_rate": 446560},
-        {"trade": "통신케이블공", "daily_rate": 438070},
-        {"trade": "통신외선공", "daily_rate": 410182},
-        {"trade": "H/W시험사", "daily_rate": 398279},
-        {"trade": "무선안테나공", "daily_rate": 360084},
-        {"trade": "통신관련기사", "daily_rate": 324979},
-        {"trade": "통신설비공", "daily_rate": 316875},
-        {"trade": "통신관련산업기사", "daily_rate": 304662},
-        {"trade": "통신내선공", "daily_rate": 286219},
-        {"trade": "통신관련기능사", "daily_rate": 250000}
-      ]
+     "trade": "작업반장",
+     "daily_rate": 218316,
+     "code": "1001",
+     "note": null
+    },
+    {
+     "trade": "보통인부",
+     "daily_rate": 172698,
+     "code": "1002",
+     "note": null
+    },
+    {
+     "trade": "특별인부",
+     "daily_rate": 228717,
+     "code": "1003",
+     "note": null
+    },
+    {
+     "trade": "조력공",
+     "daily_rate": 181496,
+     "code": "1004",
+     "note": null
+    },
+    {
+     "trade": "제도사",
+     "daily_rate": 242423,
+     "code": "1005",
+     "note": "조사현장 5개 미만"
+    },
+    {
+     "trade": "비계공",
+     "daily_rate": 284440,
+     "code": "1006",
+     "note": null
+    },
+    {
+     "trade": "형틀목공",
+     "daily_rate": 275379,
+     "code": "1007",
+     "note": null
+    },
+    {
+     "trade": "철근공",
+     "daily_rate": 268932,
+     "code": "1008",
+     "note": null
+    },
+    {
+     "trade": "철공",
+     "daily_rate": 243870,
+     "code": "1009",
+     "note": null
+    },
+    {
+     "trade": "철판공",
+     "daily_rate": 220901,
+     "code": "1010",
+     "note": null
+    },
+    {
+     "trade": "철골공",
+     "daily_rate": 255172,
+     "code": "1011",
+     "note": null
+    },
+    {
+     "trade": "용접공",
+     "daily_rate": 286330,
+     "code": "1012",
+     "note": null
+    },
+    {
+     "trade": "콘크리트공",
+     "daily_rate": 276285,
+     "code": "1013",
+     "note": null
+    },
+    {
+     "trade": "보링공",
+     "daily_rate": 233503,
+     "code": "1014",
+     "note": null
+    },
+    {
+     "trade": "착암공",
+     "daily_rate": 223246,
+     "code": "1015",
+     "note": "조사현장 5개 미만"
+    },
+    {
+     "trade": "화약취급공",
+     "daily_rate": 270444,
+     "code": "1016",
+     "note": null
+    },
+    {
+     "trade": "할석공",
+     "daily_rate": 246224,
+     "code": "1017",
+     "note": null
+    },
+    {
+     "trade": "포설공",
+     "daily_rate": 221306,
+     "code": "1018",
+     "note": "조사현장 5개 미만"
+    },
+    {
+     "trade": "포장공",
+     "daily_rate": 274873,
+     "code": "1019",
+     "note": null
+    },
+    {
+     "trade": "잠수부",
+     "daily_rate": 391240,
+     "code": "1020",
+     "note": "조사현장 5개 미만"
+    },
+    {
+     "trade": "조적공",
+     "daily_rate": 273229,
+     "code": "1021",
+     "note": null
+    },
+    {
+     "trade": "견출공",
+     "daily_rate": 254875,
+     "code": "1022",
+     "note": null
+    },
+    {
+     "trade": "건축목공",
+     "daily_rate": 282990,
+     "code": "1023",
+     "note": null
+    },
+    {
+     "trade": "창호공",
+     "daily_rate": 248547,
+     "code": "1024",
+     "note": null
+    },
+    {
+     "trade": "유리공",
+     "daily_rate": 258602,
+     "code": "1025",
+     "note": null
+    },
+    {
+     "trade": "방수공",
+     "daily_rate": 233163,
+     "code": "1026",
+     "note": null
+    },
+    {
+     "trade": "미장공",
+     "daily_rate": 279102,
+     "code": "1027",
+     "note": null
+    },
+    {
+     "trade": "타일공",
+     "daily_rate": 294379,
+     "code": "1028",
+     "note": null
+    },
+    {
+     "trade": "도장공",
+     "daily_rate": 268225,
+     "code": "1029",
+     "note": null
+    },
+    {
+     "trade": "내장공",
+     "daily_rate": 258904,
+     "code": "1030",
+     "note": null
+    },
+    {
+     "trade": "도배공",
+     "daily_rate": 229833,
+     "code": "1031",
+     "note": null
+    },
+    {
+     "trade": "연마공",
+     "daily_rate": 208207,
+     "code": "1032",
+     "note": "조사현장 5개 미만"
+    },
+    {
+     "trade": "석공",
+     "daily_rate": 270694,
+     "code": "1033",
+     "note": null
+    },
+    {
+     "trade": "줄눈공",
+     "daily_rate": 212390,
+     "code": "1034",
+     "note": null
+    },
+    {
+     "trade": "판넬조립공",
+     "daily_rate": 246986,
+     "code": "1035",
+     "note": null
+    },
+    {
+     "trade": "벌목부",
+     "daily_rate": 257444,
+     "code": "1037",
+     "note": "조사현장 5개 미만"
+    },
+    {
+     "trade": "조경공",
+     "daily_rate": 235843,
+     "code": "1038",
+     "note": null
+    },
+    {
+     "trade": "배관공",
+     "daily_rate": 249073,
+     "code": "1039",
+     "note": null
+    },
+    {
+     "trade": "배관공(수도)",
+     "daily_rate": 260673,
+     "code": "1040",
+     "note": null
+    },
+    {
+     "trade": "보일러공",
+     "daily_rate": 240647,
+     "code": "1041",
+     "note": "조사현장 5개 미만"
+    },
+    {
+     "trade": "위생공",
+     "daily_rate": 221435,
+     "code": "1042",
+     "note": null
+    },
+    {
+     "trade": "덕트공",
+     "daily_rate": 208140,
+     "code": "1043",
+     "note": null
+    },
+    {
+     "trade": "보온공",
+     "daily_rate": 222151,
+     "code": "1044",
+     "note": null
+    },
+    {
+     "trade": "인력운반공",
+     "daily_rate": 183687,
+     "code": "1045",
+     "note": "조사현장 5개 미만"
+    },
+    {
+     "trade": "궤도공",
+     "daily_rate": 220821,
+     "code": "1046",
+     "note": null
+    },
+    {
+     "trade": "건설기계운전사",
+     "daily_rate": 283323,
+     "code": "1048",
+     "note": null
+    },
+    {
+     "trade": "화물차운전사",
+     "daily_rate": 240042,
+     "code": "1049",
+     "note": "조사현장 5개 미만"
+    },
+    {
+     "trade": "기계설비공",
+     "daily_rate": 242647,
+     "code": "1051",
+     "note": null
+    },
+    {
+     "trade": "플랜트배관공",
+     "daily_rate": 327442,
+     "code": "1056",
+     "note": null
+    },
+    {
+     "trade": "플랜트제관공",
+     "daily_rate": 268949,
+     "code": "1057",
+     "note": null
+    },
+    {
+     "trade": "플랜트용접공",
+     "daily_rate": 289745,
+     "code": "1058",
+     "note": null
+    },
+    {
+     "trade": "플랜트특수용접공",
+     "daily_rate": 334739,
+     "code": "1059",
+     "note": "조사현장 5개 미만"
+    },
+    {
+     "trade": "플랜트기계설치공",
+     "daily_rate": 234041,
+     "code": "1060",
+     "note": null
+    },
+    {
+     "trade": "플랜트특별인부",
+     "daily_rate": 215601,
+     "code": "1061",
+     "note": null
+    },
+    {
+     "trade": "플랜트케이블전공",
+     "daily_rate": 263300,
+     "code": "1062",
+     "note": "조사현장 5개 미만"
+    },
+    {
+     "trade": "플랜트계장공",
+     "daily_rate": 204167,
+     "code": "1063",
+     "note": "조사현장 5개 미만"
+    },
+    {
+     "trade": "플랜트보온공",
+     "daily_rate": 252567,
+     "code": "1065",
+     "note": "조사현장 5개 미만"
+    },
+    {
+     "trade": "제철축로공",
+     "daily_rate": 365714,
+     "code": "1066",
+     "note": "조사현장 5개 미만"
+    },
+    {
+     "trade": "비파괴시험공",
+     "daily_rate": 220565,
+     "code": "1067",
+     "note": null
+    },
+    {
+     "trade": "특급품질관리원",
+     "daily_rate": 200971,
+     "code": "1068",
+     "note": "조사현장 5개 미만"
+    },
+    {
+     "trade": "고급품질관리원",
+     "daily_rate": 199200,
+     "code": "1069",
+     "note": "조사현장 5개 미만"
+    },
+    {
+     "trade": "중급품질관리원",
+     "daily_rate": 179012,
+     "code": "1070",
+     "note": null
+    },
+    {
+     "trade": "초급품질관리원",
+     "daily_rate": 150049,
+     "code": "1071",
+     "note": "조사현장 5개 미만"
+    },
+    {
+     "trade": "지적기사",
+     "daily_rate": 283066,
+     "code": "1072",
+     "note": null
+    },
+    {
+     "trade": "지적산업기사",
+     "daily_rate": 251236,
+     "code": "1073",
+     "note": null
+    },
+    {
+     "trade": "지적기능사",
+     "daily_rate": 175118,
+     "code": "1074",
+     "note": null
+    },
+    {
+     "trade": "내선전공",
+     "daily_rate": 276108,
+     "code": "1075",
+     "note": null
+    },
+    {
+     "trade": "특고압케이블전공",
+     "daily_rate": 444519,
+     "code": "1076",
+     "note": null
+    },
+    {
+     "trade": "고압케이블전공",
+     "daily_rate": 376049,
+     "code": "1077",
+     "note": null
+    },
+    {
+     "trade": "저압케이블전공",
+     "daily_rate": 306274,
+     "code": "1078",
+     "note": null
+    },
+    {
+     "trade": "송전전공",
+     "daily_rate": 645607,
+     "code": "1079",
+     "note": null
+    },
+    {
+     "trade": "송전활선전공",
+     "daily_rate": 685744,
+     "code": "1080",
+     "note": null
+    },
+    {
+     "trade": "배전전공",
+     "daily_rate": 420978,
+     "code": "1081",
+     "note": null
+    },
+    {
+     "trade": "배전활선전공",
+     "daily_rate": 562067,
+     "code": "1082",
+     "note": null
+    },
+    {
+     "trade": "플랜트전공",
+     "daily_rate": 269471,
+     "code": "1083",
+     "note": null
+    },
+    {
+     "trade": "계장공",
+     "daily_rate": 321645,
+     "code": "1084",
+     "note": null
+    },
+    {
+     "trade": "철도신호공",
+     "daily_rate": 318257,
+     "code": "1085",
+     "note": null
+    },
+    {
+     "trade": "통신내선공",
+     "daily_rate": 286219,
+     "code": "1086",
+     "note": null
+    },
+    {
+     "trade": "통신설비공",
+     "daily_rate": 316875,
+     "code": "1087",
+     "note": null
+    },
+    {
+     "trade": "통신외선공",
+     "daily_rate": 410182,
+     "code": "1088",
+     "note": null
+    },
+    {
+     "trade": "통신케이블공",
+     "daily_rate": 438070,
+     "code": "1089",
+     "note": null
+    },
+    {
+     "trade": "무선안테나공",
+     "daily_rate": 360084,
+     "code": "1090",
+     "note": null
+    },
+    {
+     "trade": "석면해체공",
+     "daily_rate": 203461,
+     "code": "1091",
+     "note": "조사현장 5개 미만"
+    },
+    {
+     "trade": "광케이블설치사",
+     "daily_rate": 471931,
+     "code": "2001",
+     "note": null
+    },
+    {
+     "trade": "H/W시험사",
+     "daily_rate": 398279,
+     "code": "2002",
+     "note": "조사현장 5개 미만"
+    },
+    {
+     "trade": "S/W시험사",
+     "daily_rate": 446560,
+     "code": "2003",
+     "note": "조사현장 5개 미만"
+    },
+    {
+     "trade": "도편수",
+     "daily_rate": 533333,
+     "code": "3001",
+     "note": "조사현장 5개 미만"
+    },
+    {
+     "trade": "한식목공",
+     "daily_rate": 353383,
+     "code": "3003",
+     "note": null
+    },
+    {
+     "trade": "한식석공",
+     "daily_rate": 403594,
+     "code": "3005",
+     "note": null
+    },
+    {
+     "trade": "한식와공",
+     "daily_rate": 374046,
+     "code": "3007",
+     "note": "조사현장 5개 미만"
+    },
+    {
+     "trade": "화공",
+     "daily_rate": 300798,
+     "code": "3012",
+     "note": "조사현장 5개 미만"
+    },
+    {
+     "trade": "한식미장공편수",
+     "daily_rate": 395789,
+     "code": "3014",
+     "note": "조사현장 5개 미만"
+    },
+    {
+     "trade": "원자력플랜트전공",
+     "daily_rate": 238957,
+     "code": "4001",
+     "note": null
+    },
+    {
+     "trade": "원자력용접공",
+     "daily_rate": 220497,
+     "code": "4002",
+     "note": null
+    },
+    {
+     "trade": "원자력기계설치공",
+     "daily_rate": 244723,
+     "code": "4003",
+     "note": null
+    },
+    {
+     "trade": "원자력품질관리사",
+     "daily_rate": 287101,
+     "code": "4004",
+     "note": null
+    },
+    {
+     "trade": "통신관련기사",
+     "daily_rate": 324979,
+     "code": "5001",
+     "note": "조사현장 5개 미만"
+    },
+    {
+     "trade": "통신관련산업기사",
+     "daily_rate": 304662,
+     "code": "5002",
+     "note": "조사현장 5개 미만"
+    },
+    {
+     "trade": "통신관련기능사",
+     "daily_rate": 250000,
+     "code": "5003",
+     "note": "조사현장 5개 미만"
+    },
+    {
+     "trade": "전기공사기사",
+     "daily_rate": 339070,
+     "code": "5004",
+     "note": null
+    },
+    {
+     "trade": "전기공사산업기사",
+     "daily_rate": 298573,
+     "code": "5005",
+     "note": null
+    },
+    {
+     "trade": "변전전공",
+     "daily_rate": 485593,
+     "code": "5006",
+     "note": null
+    },
+    {
+     "trade": "코킹공",
+     "daily_rate": 212439,
+     "code": "5007",
+     "note": null
+    },
+    {
+     "trade": "특급품질관리기술인",
+     "daily_rate": 272695,
+     "code": "5008",
+     "note": "조사현장 5개 미만"
+    },
+    {
+     "trade": "고급품질관리기술인",
+     "daily_rate": 221341,
+     "code": "5009",
+     "note": "조사현장 5개 미만"
+    },
+    {
+     "trade": "중급품질관리기술인",
+     "daily_rate": 193319,
+     "code": "5010",
+     "note": null
+    },
+    {
+     "trade": "초급품질관리기술인",
+     "daily_rate": 167631,
+     "code": "5011",
+     "note": null
+    },
+    {
+     "trade": "플로어링마루시공공",
+     "daily_rate": 257926,
+     "code": "5012",
+     "note": "조사현장 5개 미만"
+    },
+    {
+     "trade": "교통정리원",
+     "daily_rate": 176930,
+     "code": "5013",
+     "note": null
+    },
+    {
+     "trade": "철거공",
+     "daily_rate": 261108,
+     "code": "5014",
+     "note": null
+    },
+    {
+     "trade": "흙막이공",
+     "daily_rate": 272418,
+     "code": "5015",
+     "note": null
+    },
+    {
+     "trade": "전철전공",
+     "daily_rate": 429783,
+     "code": "5016",
+     "note": null
     }
-  ],
-  "missing": [
-    {"group": "전기·일반 건설 직종 (내선전공, 저압·고압케이블전공, 배전·송전·변전전공, 계장공, 보통인부, 특별인부 등)",
-     "reason": "2026년 하반기 값은 대한건설협회 「2026년 하반기 적용 건설업 임금실태조사 보고서」(2026.9.1 공표, 적용 2026.9.1~)에만 수록되어 있어 직종별 금액을 확인하지 못함",
-     "where": "https://www.kseis.co.kr/bbs/data/dataDetail.do?bbs_seq=82199305780142"}
-  ]
+   ]
+  }
+ ],
+ "not_surveyed": [
+  "지붕잇기공",
+  "건설기계조장",
+  "일반기계운전사",
+  "준설선선장",
+  "준설선기관사",
+  "준설선운전사",
+  "선원",
+  "플랜트덕트공",
+  "드잡이공",
+  "한식목공조공",
+  "한식미장공",
+  "한식와공조공",
+  "목조각공",
+  "석조각공",
+  "특수화공",
+  "드잡이공편수",
+  "한식와공편수",
+  "한식단청공편수",
+  "한식석공조공",
+  "한식미장공조공"
+ ],
+ "missing": []
 }

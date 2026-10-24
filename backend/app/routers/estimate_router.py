@@ -128,7 +128,8 @@ def ensure_standard_labor(db: Session, company_id: int) -> int:
         for r in st["rates"]:
             if (r["trade"], st["effective_date"]) in have:
                 continue
-            db.add(LaborRate(company_id=company_id, trade=r["trade"], daily_rate=float(r["daily_rate"]), publisher=st["publisher"],
+            pub = st["publisher"] + (f" ※{r['note']}" if r.get("note") else "")
+            db.add(LaborRate(company_id=company_id, trade=r["trade"], daily_rate=float(r["daily_rate"]), publisher=pub[:100],
                              effective_date=st["effective_date"], version=st.get("version")))
             n += 1
     if n:
