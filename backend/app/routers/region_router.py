@@ -54,7 +54,7 @@ def region_analyze(pid: int, sid: int, body: RegionIn, user: User = Depends(curr
         raise HTTPException(404, "처리본이 없습니다. 재분석하십시오.")
     geo = services.load_geometry(s)
     res = analyze_region(geo, _norm_region(body.region), s.source_kind or "", s.scale_factor if s.scale_confirmed else None,
-                         set(body.hidden_layers))
+                         set(body.hidden_layers), s.discipline)
     res["scale_confirmed"] = bool(s.scale_confirmed)
     res["units"] = s.units
     return res
@@ -106,3 +106,16 @@ def delete_tally(pid: int, tid: int, user: User = Depends(require_role(*EDIT_ROL
     db.commit()
     services.recompute_quantities(db, pid)
     return {"ok": True}
+
+
+lib_router = APIRouter(prefix="/api/symbol-library", tags=["symbol-library"])
+
+
+@lib_router.get("")
+def symbol_library(user: User = Depends(current_user)):
+    """학습된 표준 심볼 라이브러리 (이름·공종·출처·축소 도형)."""
+    from ..engine.symbol_library import load_library
+    lib = load_library()
+    return {"sources": lib.get("sources", []),
+            "symbols": [{"id": e["id"], "name": e["name"], "code": e.get("code"), "discipline": e["discipline"], "source": e["source"],
+                         "letters": e.get("letters", []), "thumb": e.get("thumb", [])} for e in lib.get("symbols", [])]}

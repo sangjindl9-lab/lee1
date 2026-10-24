@@ -12,8 +12,9 @@ from __future__ import annotations
 import math
 from collections import defaultdict
 
-from .anchor import _interior, _interior_desc, _sheet_index
-from .geometry import bbox_of, bitmap_similarity, prim_bbox
+from .anchor import _interior, _interior_desc, _sheet_index, anchor_descriptor
+from .symbol_library import suggest
+from .geometry import bbox_of, bitmap_signature, bitmap_similarity, prim_bbox
 
 GROUP_LABELS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
@@ -90,7 +91,7 @@ def _prim_len(pr: dict, region: dict) -> tuple[float, list]:
 
 
 def analyze_region(geo: dict, region: dict, source_kind: str, scale_factor: float | None,
-                   excluded_layers: set[str] | None = None) -> dict:
+                   excluded_layers: set[str] | None = None, discipline: str | None = None) -> dict:
     """영역 집계. 반환: {mode, objects:[...], lines:[...], notes:[...]}.
     objects 각 항목: {key, label, kind('block'|'shape'), block, count, items:[{bbox,h}], sample:[prims], size}
     lines 각 항목: {key(layer/style), length (도면단위), length_m (축척 있으면), pieces:[[pt..]..]}"""
@@ -125,9 +126,15 @@ def analyze_region(geo: dict, region: dict, source_kind: str, scale_factor: floa
     blocks = geo.get("blocks", {})
     for name, items in sorted(by_block.items(), key=lambda kv: -len(kv[1])):
         bdef = blocks.get(name) or {}
+        bprims = bdef.get("prims") or []
+        try:
+            sug = suggest(anchor_descriptor(bprims) if bprims else None, bdef.get("texts") or [], discipline, block=name,
+                          whole=bitmap_signature(bprims) if bprims else None)
+        except Exception:   # 추천 실패는 집계에 영향 없음
+            sug = []
         objects.append({"key": f"blk:{name}", "kind": "block", "block": name, "label": name, "shape": "CAD 블록", "color": None,
-                        "count": len(items), "items": items,
-                        "sample": (bdef.get("prims") or [])[:400], "size": None})
+                        "count": len(items), "items": items, "suggest": sug,
+                        "sample": bprims[:400], "size": None})
 
     # 2) 블록이 아닌 도형: 닫힌 외곽 도형(원·사각형·다각형, ㄱ자 조각으로 그린 사각형 포함)을 기호의 '앵커'로 잡는다.
     #    기호에 붙은 배선·지시선은 비교에서 빠지므로 선이 연결된 기호도 따로 셀 수 있다.
@@ -196,8 +203,31 @@ def analyze_region(geo: dict, region: dict, source_kind: str, scale_factor: floa
     for gi, g in enumerate(groups):
         lab = GROUP_LABELS[gi] if gi < len(GROUP_LABELS) else f"{gi + 1}"
         desc = KIND.get(g["kind"], "") + (" 파선" if g["dashed"] else "") + (" (빈 도형)" if g["desc"]["empty"] else "")
+        # 라이브러리 추천: 대표 객체의 외곽·내부 + 객체 안 문자(도면 문자/OCR)
+        letters = []
+        for it in g["items"][:8]:
+            bb = it["bbox"]
+            letters += [t["text"] for t in geo.get("texts", []) if t.get("bbox") and _center_in(t["bbox"], bb)]
+        # 대표 객체 주변(외곽 1.35배 안에 완전히 들어오는 도형)의 전체 모양
+        bb0 = g["items"][0]["bbox"]
+        cx, cy = (bb0["x0"] + bb0["x1"]) / 2, (bb0["y0"] + bb0["y1"]) / 2
+        hw, hh = (bb0["x1"] - bb0["x0"]) * 0.68 + 1e-9, (bb0["y1"] - bb0["y0"]) * 0.68 + 1e-9
+        hw = hh = max(hw, hh)
+        box = {"x0": cx - hw * 1.0, "x1": cx + hw * 1.0, "y0": cy - hh * 1.0, "y1": cy + hh * 1.0}
+        near = set()
+        for gx in range(int(box["x0"] // cell), int(box["x1"] // cell) + 1):
+            for gy in range(int(box["y0"] // cell), int(box["y1"] // cell) + 1):
+                near.update(grid.get((gx, gy), ()))
+        local = [loose[j] for j in near if _inside(prim_bbox(loose[j]), box)]
+        whole = bitmap_signature(local) if local else None
+        try:
+            sug = suggest({"kind": g["kind"], "aspect": g["aspect"], "dashed": g["dashed"], "interior": g["desc"]}, letters, discipline,
+                          whole=whole)
+        except Exception:
+            sug = []
         objects.append({"key": f"shape:{gi}", "kind": "shape", "block": None, "label": f"객체 {lab}", "shape": desc, "color": g["color"],
-                        "count": len(g["items"]), "items": g["items"], "sample": g["sample"], "size": round(g["size"], 3)})
+                        "count": len(g["items"]), "items": g["items"], "sample": g["sample"], "size": round(g["size"], 3),
+                        "letters": sorted(set(letters))[:6], "suggest": sug})
     in_cluster = {c["i"] for c in kept if c["i"] >= 0}
     for c in kept:
         in_cluster.update(id(q) for q in c["inner"])

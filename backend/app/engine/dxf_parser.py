@@ -9,6 +9,7 @@ from __future__ import annotations
 import math
 import subprocess
 from dataclasses import dataclass, field
+import re
 from pathlib import Path
 
 import ezdxf
@@ -90,6 +91,12 @@ def convert_dwg_to_dxf(dwg_path: Path, out_dir: Path) -> tuple[Path, list[str]]:
     if not out.exists() or out.stat().st_size < 200:
         err = (proc.stderr or proc.stdout or "")[-500:]
         raise ConversionError(f"DWG 변환 실패({ver or '버전 미상'}): {err or '출력 파일 없음'}")
+    try:
+        resolved = resolve_anonymous_inserts(dwg_path, out)
+    except Exception as ex:   # 복원 실패해도 변환 결과는 사용 (경고로 알림)
+        resolved, warnings = 0, warnings + [f"동적 블록 이름 복원 실패: {type(ex).__name__}"]
+    if resolved:
+        warnings.append(f"동적 블록 {resolved}개의 원래 블록명을 복원했습니다 (예: '*U' → 'con 1구').")
     fixed = repair_dxf_text_breaks(out)
     if fixed:
         warnings.append(f"변환된 DXF 에서 줄바꿈이 섞인 문자열 {fixed}곳을 복구했습니다 (여러 줄 문자).")
@@ -105,6 +112,112 @@ def _is_group_code(line: bytes) -> bool:
         t = t[1:]
     return 0 < len(t) <= 4 and t.isdigit()
 
+
+
+def find_dwgread() -> str | None:
+    import shutil
+    for cand in ("dwgread", "/opt/libredwg/bin/dwgread", "/usr/local/bin/dwgread"):
+        p = shutil.which(cand) or (cand if Path(cand).exists() else None)
+        if p:
+            return p
+    return None
+
+
+_HEX = re.compile(r"\(\d+\.\d+\.([0-9A-F]+)\)")
+
+
+def resolve_anonymous_inserts(dwg_path: Path, dxf_path: Path, timeout: int = 600) -> int:
+    """동적 블록 참조 복원. LibreDWG 는 동적 블록 인스턴스(익명 블록 *U###)를 DXF 에 이름 '*U' 로만 써서
+    어떤 기호인지 잃어버린다. dwgread -v3 덤프에서
+      INSERT 핸들 → 익명 블록 핸들, 익명 블록의 EED(AcDbBlockRepBTag, 코드 5) → 원본 동적 블록 핸들
+    을 읽어 DXF 의 INSERT 이름을 원본 블록명(예: 'con 1구')으로 바꾼다. 바꾼 개수 반환."""
+    import subprocess
+    data = dxf_path.read_bytes()
+    if b"\n*U\r\n" not in data and b"\n*U\n" not in data:
+        return 0
+    exe = find_dwgread()
+    if not exe:
+        return 0
+    proc = subprocess.Popen([exe, "-v3", str(dwg_path)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    ins2blk: dict[str, str] = {}
+    anon_src: dict[str, str] = {}
+    cur_type, cur_h, cur_anon = None, None, False
+    try:
+        import time
+        t0 = time.time()
+        for raw in proc.stdout:
+            if time.time() - t0 > timeout:
+                proc.kill()
+                break
+            line = raw.decode("utf-8", "replace")
+            if line.startswith("Add entity ") or line.startswith("Add table record ") or line.startswith("Add object "):
+                parts = line.split()
+                cur_type = parts[3] if line.startswith("Add table record") else parts[2]
+                cur_h, cur_anon = None, False
+                continue
+            if line.startswith("handle: ") and cur_h is None:
+                cur_h = line.split()[1].split(".")[-1]
+                continue
+            if cur_type in ("INSERT", "MINSERT") and line.startswith("block_header:"):
+                m = _HEX.search(line)
+                if m and cur_h:
+                    ins2blk[cur_h] = m.group(1)
+            elif cur_type == "BLOCK_HEADER":
+                if "code: 5 [RC], entity:" in line and cur_h:
+                    anon_src.setdefault(cur_h, line.rsplit("entity:", 1)[1].split()[0].strip())
+    finally:
+        proc.stdout.close()
+        proc.wait()
+    if not ins2blk or not anon_src:
+        return 0
+    # DXF: BLOCK_RECORD 핸들 → 이름(원래 바이트 그대로, 코드페이지 보존)
+    nl = b"\r\n" if b"\r\n" in data[:2000] else b"\n"
+    lines = data.split(nl)
+    rec_name: dict[str, bytes] = {}
+    i = 0
+    n = len(lines)
+    while i + 1 < n:
+        if lines[i].strip() == b"0" and lines[i + 1].strip() == b"BLOCK_RECORD":
+            j, h, name = i + 2, None, None
+            while j + 1 < n and lines[j].strip() != b"0":
+                c = lines[j].strip()
+                if c == b"5" and h is None:
+                    h = lines[j + 1].strip().decode("ascii", "ignore").upper()
+                elif c == b"2" and name is None:
+                    name = lines[j + 1]
+                j += 2
+            if h and name is not None:
+                rec_name[h] = name
+            i = j
+            continue
+        i += 1
+    changed = 0
+    i = 0
+    while i + 1 < n:
+        if lines[i].strip() == b"0" and lines[i + 1].strip() == b"INSERT":
+            j, h, name_idx = i + 2, None, None
+            while j + 1 < n and lines[j].strip() != b"0":
+                c = lines[j].strip()
+                if c == b"5" and h is None:
+                    h = lines[j + 1].strip().decode("ascii", "ignore").upper()
+                elif c == b"2" and name_idx is None:
+                    name_idx = j + 1
+                j += 2
+            if h and name_idx is not None and lines[name_idx].strip() == b"*U":
+                tgt = ins2blk.get(h, "").upper()
+                nm = rec_name.get(tgt)
+                if nm is None or nm.strip().startswith(b"*"):
+                    src = anon_src.get(tgt, "").upper()      # 익명 블록 → 원본 동적 블록
+                    nm = rec_name.get(src)
+                if nm is not None and not nm.strip().startswith(b"*"):
+                    lines[name_idx] = nm
+                    changed += 1
+            i = j
+            continue
+        i += 1
+    if changed:
+        dxf_path.write_bytes(nl.join(lines))
+    return changed
 
 def repair_dxf_text_breaks(path: Path) -> int:
     """LibreDWG 는 여러 줄 문자(MTEXT/속성)의 줄바꿈을 그대로 써서 DXF '코드/값' 짝을 깨뜨린다.

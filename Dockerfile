@@ -3,8 +3,8 @@ FROM python:3.12-slim AS libredwg
 RUN apt-get update && apt-get install -y --no-install-recommends build-essential cmake git ca-certificates && rm -rf /var/lib/apt/lists/*
 RUN git clone --depth 1 --branch 0.13.3 https://github.com/LibreDWG/libredwg.git /src \
  && cmake -S /src -B /build -DCMAKE_BUILD_TYPE=Release -DLIBREDWG_DISABLE_JSON=ON -DDISABLE_WERROR=ON \
- && cmake --build /build -j"$(nproc)" --target dwg2dxf \
- && mkdir -p /opt/libredwg/bin && cp /build/dwg2dxf /opt/libredwg/bin/ \
+ && cmake --build /build -j"$(nproc)" --target dwg2dxf dwgread \
+ && mkdir -p /opt/libredwg/bin && cp /build/dwg2dxf /build/dwgread /opt/libredwg/bin/ \
  && /opt/libredwg/bin/dwg2dxf --version
 
 # ---- 2단계: 앱 ----

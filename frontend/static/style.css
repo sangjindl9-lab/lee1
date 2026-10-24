@@ -78,3 +78,9 @@ details.warns > summary { cursor: pointer; font-size: 12px; color: #8a5a00; back
   #app { height: auto; min-height: calc(100vh - 46px); overflow: visible; }
   .page { height: auto; }
 }
+.tcard .sugs { flex-wrap: wrap; gap: 4px; }
+button.chip { border-radius: 12px; background: #eef4ff; border-color: #b9cdf5; padding: 2px 8px; }
+.symgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 6px; }
+.symcell { border: 1px solid #e3e3e3; border-radius: 4px; padding: 4px; text-align: center; background: #fff; }
+.symcell canvas { display: block; margin: 0 auto; }
+.symcell .small { line-height: 1.2; word-break: keep-all; }

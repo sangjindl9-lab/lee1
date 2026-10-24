@@ -25,6 +25,7 @@ def _startup():
 
 for r in (auth_router, projects_router, legends_router, takeoff_router, export_router, estimate_router, region_router):
     app.include_router(r.router)
+app.include_router(region_router.lib_router)
 
 
 @app.get("/api/health")

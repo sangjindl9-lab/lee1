@@ -536,6 +536,7 @@ function tallyPanel() {
       h += `<div class="tcard ${o.on ? "on" : ""}" onmouseenter="tallySet('objects',${i},'focus','o${i}')" onmouseleave="tallySet('objects',${i},'focus',null)">
       <div class="trow"><input type="checkbox" ${o.on ? "checked" : ""} onchange="tallySet('objects',${i},'on',this.checked)"><span class="swatch" style="background:${o.col}"></span><canvas class="mini tmini" data-i="${i}" width="52" height="38"></canvas>
       <div class="tlab"><b>${esc(o.label)}</b><br><span class="small muted">${esc(o.shape || "")}</span></div><div class="tqty">${n}<span class="small"> ${esc(o.unit || "개")}</span>${n !== o.count ? `<div class="small muted">(${o.count - n}개 제외)</div>` : ""}</div></div>
+      ${(o.suggest || []).length ? `<div class="trow sugs"><span class="small muted">추천</span>${o.suggest.map((sg, k) => `<button class="sm chip" title="${esc(sg.source)} · ${esc(sg.why || "")}" onclick="tallyPick(${i},${k})">${esc(sg.name)} <span class="small muted">${Math.round(sg.score * 100)}%</span></button>`).join("")}</div>` : ""}
       <div class="trow"><input class="tname" placeholder="품명 (예: LED 투광등)" value="${esc(o.name)}" oninput="tallyName('objects',${i},this.value)"><input class="tspec" placeholder="규격" value="${esc(o.spec)}" onchange="tallySet('objects',${i},'spec',this.value)"><input class="tunit" value="${esc(o.unit)}" onchange="tallySet('objects',${i},'unit',this.value)"></div></div>`;
     });
   } else if (T.mode !== "raster") h += `<p class="muted">영역 안에서 닫힌 외곽선의 객체를 찾지 못했습니다.</p>`;
@@ -552,6 +553,7 @@ function tallyPanel() {
   <div class="small muted">· 같은 기호가 두 종으로 나뉘면 같은 품명·규격을 입력하십시오 — 물량표에서 합산됩니다.<br>· 같은 곳을 다시 드래그해 추가하면 이중으로 집계됩니다. 잘못 넣은 내역은 '물량' 탭에서 삭제하십시오.</div>`;
   return h;
 }
+function tallyPick(i, k) { const o = W.tally.objects[i], sg = o.suggest[k]; o.name = sg.name; o.on = true; renderRight(); draw(); }
 function tallyName(kind, i, v) { const o = W.tally[kind][i]; o.name = v; const want = !!v.trim(); if (o.on !== want) { o.on = want; const card = document.querySelectorAll(".tcard")[i]; if (card) { card.classList.toggle("on", want); card.querySelector("input[type=checkbox]").checked = want; } draw(); } }
 function tallyLen(i, v) { const l = W.tally.lines[i]; l.len = v; const want = +v > 0; if (l.on !== want) { l.on = want; const card = document.querySelectorAll(".tcard")[W.tally.objects.length + i]; if (card) { card.classList.toggle("on", want); card.querySelector("input[type=checkbox]").checked = want; } draw(); } }
 function drawTallyMinis() {
@@ -624,10 +626,28 @@ async function renderRefData() {
   <table><tr><th>직종</th><th>일당</th><th>발행기관</th><th>적용일</th></tr>${labor.map(l => `<tr><td>${esc(l.trade)}</td><td class="num">${l.daily_rate.toLocaleString()}</td><td>${esc(l.publisher)}</td><td>${l.effective_date}</td></tr>`).join("")}</table></div>
   <div class="card"><h2>자재단가</h2><div class="row"><input id="m_name" placeholder="품명"><input id="m_spec" placeholder="규격"><input id="m_unit" placeholder="단위" style="width:60px"><select id="m_sup"><option value="private">사급</option><option value="gov">관급</option></select><input id="m_price" type="number" placeholder="단가"><input id="m_src" placeholder="출처(물가지/견적)"><input id="m_date" type="date"><button class="primary" onclick="addMat()">등록</button></div>
   <table><tr><th>품명</th><th>규격</th><th>단위</th><th>관급/사급</th><th>단가</th><th>출처</th><th>적용일</th></tr>${mats.map(m => `<tr><td>${esc(m.item_name)}</td><td>${esc(m.spec)}</td><td>${esc(m.unit)}</td><td>${m.supply_type === "gov" ? "관급" : "사급"}</td><td class="num">${m.price ?? "미등록"}</td><td>${esc(m.price_source || "")}</td><td>${m.effective_date || ""}</td></tr>`).join("")}</table></div>
+  <div class="card" id="symlib"><h2>표준 심볼 라이브러리 <span class="small muted">불러오는 중…</span></h2></div>
   <div class="card"><h2>Excel 일괄 등록</h2><div class="row">표준품셈 <input type="file" accept=".xlsx" onchange="importRef('norms',this.files[0])"> <span class="small muted">열: 품셈번호, 항목, 단위, 발행기관, 연도, 출처 + 직종명 열(노무량)</span></div>
   <div class="row">노임단가 <input type="file" accept=".xlsx" onchange="importRef('labor',this.files[0])"> <span class="small muted">열: 직종, 일당, 발행기관, 적용일</span></div>
   <div class="row">자재단가 <input type="file" accept=".xlsx" onchange="importRef('materials',this.files[0])"> <span class="small muted">열: 품명, 규격, 단위, 관급/사급, 단가, 출처, 적용일</span></div>
   <p class="small muted">공식 자료를 적법하게 확보해 등록하십시오. 원가계산은 각 프로젝트의 '적산' 탭에서 수행합니다.</p></div></div>`;
+  loadSymLib();
+}
+async function loadSymLib(filter) {
+  const el = $("#symlib"); if (!el) return;
+  const L = W.symlib || (W.symlib = await api("/api/symbol-library"));
+  const q = (filter || "").trim(); const syms = L.symbols.filter(x => !q || (x.name + " " + (x.code || "") + " " + x.discipline).includes(q));
+  const by = {}; for (const x of syms) (by[x.discipline] = by[x.discipline] || []).push(x);
+  el.innerHTML = `<h2>표준 심볼 라이브러리 (${L.symbols.length}종)</h2><div class="small muted">영역 집계에서 객체 모양을 이 기호들과 비교해 품명을 추천합니다. 출처: ${L.sources.map(esc).join(", ")}</div>
+  <div class="row"><input id="symq" placeholder="검색 (예: 감지기, 콘센트)" value="${esc(q)}" oninput="loadSymLib(this.value)"></div>` +
+    Object.entries(by).map(([d, xs]) => `<h3>${esc(d)} (${xs.length})</h3><div class="symgrid">${xs.map(x => `<div class="symcell" title="${esc(x.source)}${x.code ? " · " + esc(x.code) : ""}"><canvas class="libthumb" width="64" height="48" data-id="${x.id}"></canvas><div class="small">${esc(x.name)}</div></div>`).join("")}</div>`).join("");
+  const ids = new Map(L.symbols.map(x => [x.id, x]));
+  for (const cv of el.querySelectorAll("canvas.libthumb")) {
+    const x = ids.get(+cv.dataset.id); const c = cv.getContext("2d"); c.fillStyle = "#fff"; c.fillRect(0, 0, 64, 48); c.strokeStyle = "#111"; c.fillStyle = "#111"; c.lineWidth = 1;
+    const sc = Math.min(56 / 100, 40 / 100); for (const p of x.thumb) { c.beginPath(); p.p.forEach(([a, b], k) => { const sx = 4 + a * sc, sy = 44 - b * sc; k ? c.lineTo(sx, sy) : c.moveTo(sx, sy); }); p.t === "f" ? c.fill() : c.stroke(); }
+    if (x.letters.length) { c.font = "9px sans-serif"; c.fillStyle = "#c00"; c.fillText(x.letters.join(" "), 2, 10); }
+  }
+  const qi = $("#symq"); if (qi && q) { qi.focus(); qi.setSelectionRange(q.length, q.length); }
 }
 async function importRef(kind, file) { if (!file) return; const fd = new FormData(); fd.append("file", file); const r = await api(`/api/refdata/${kind}/import`, { method: "POST", body: fd }); toast(`${r.imported}건 등록`); renderRefData(); }
 async function addNorm() { let labor; try { labor = JSON.parse($("#n_labor").value); } catch (e) { return toast("노무량 JSON 형식 오류", true); } await api("/api/norms", { method: "POST", json: { code: $("#n_code").value, title: $("#n_title").value, unit: $("#n_unit").value, labor, publisher: $("#n_pub").value, year: +$("#n_year").value, source: $("#n_src").value } }); renderRefData(); }

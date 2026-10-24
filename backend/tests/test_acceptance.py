@@ -403,3 +403,24 @@ def test_16_region_tally_manual(client, auth, fixtures):
     items = {(q["item_name"], q["spec"]): q for q in client.get(f"/api/projects/{pid}/takeoff/items", headers=auth).json()}
     assert items[("고정형 카메라", "4MP")]["qty_total"] == 12
     assert client.get(f"/api/projects/{pid}/export/xlsx", headers=auth).status_code == 200
+
+
+def test_17_symbol_library_suggest(client, auth, tmp_path):
+    """학습한 표준 심볼 라이브러리: 블록명 일치 → 이름 추천, 라이브러리 목록 API."""
+    import ezdxf
+    lib = client.get("/api/symbol-library", headers=auth).json()
+    assert len(lib["symbols"]) >= 200 and any("TTA" in s for s in lib["sources"])
+    doc = ezdxf.new("R2018"); doc.header["$INSUNITS"] = 4
+    b = doc.blocks.new("Z-죠인트박스"); b.add_circle((0, 0), 100); b.add_text("J", dxfattribs={"height": 80})
+    msp = doc.modelspace()
+    for i in range(6):
+        msp.add_blockref("Z-죠인트박스", (1000 + i * 1000, 1000))
+    msp.add_text("LIGHTING PLAN", dxfattribs={"height": 200}).set_placement((0, 3000))
+    p = tmp_path / "jb.dxf"; doc.saveas(p)
+    pid = client.post("/api/projects", headers=auth, json={"name": "[테스트] 심볼 추천"}).json()["id"]
+    _upload(client, auth, pid, p)
+    sh = wait_done(client, auth, pid)[0]["sheets"][0]
+    r = client.post(f"/api/projects/{pid}/sheets/{sh['id']}/region-analyze", headers=auth,
+                    json={"region": {"x0": 0, "y0": 0, "x1": 8000, "y1": 2000}}).json()
+    o = r["objects"][0]
+    assert o["count"] == 6 and o["suggest"][0]["name"] == "조인트박스(J/B)" and o["suggest"][0]["score"] > 0.9
