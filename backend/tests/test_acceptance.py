@@ -449,3 +449,24 @@ def test_18_legend_delete_and_guard(client, auth, fixtures):
     assert client.delete(f"/api/projects/{pid}/legends", headers=auth).json()["deleted"] == len(legs)
     assert client.get(f"/api/projects/{pid}/legends", headers=auth).json() == []
     assert client.get(f"/api/projects/{pid}/takeoff/items", headers=auth).json() == []
+
+
+def test_19_damaged_dxf_recovers(client, auth, tmp_path):
+    """EOF 누락 + 이름 없는 레이어 같은 손상 DXF 도 보정해서 읽고, 경고로 알린다."""
+    import ezdxf
+    doc = ezdxf.new(); doc.layers.add("E-LIGHT"); msp = doc.modelspace()
+    for i in range(5):
+        msp.add_circle((i * 100, 0), 20, dxfattribs={"layer": "E-LIGHT"})
+    p = tmp_path / "bad.dxf"; doc.saveas(p)
+    t = p.read_text(encoding="utf-8").replace("\r\n", "\n").split("\n")
+    for k in range(len(t) - 1):
+        if t[k].strip() == "2" and t[k + 1] == "E-LIGHT":
+            del t[k:k + 2]
+            break
+    s = "\n".join(t); p.write_text(s[:s.rfind("EOF") - 4], encoding="utf-8")
+    pid = client.post("/api/projects", headers=auth, json={"name": "[테스트] 손상 DXF"}).json()["id"]
+    _upload(client, auth, pid, p)
+    f = wait_done(client, auth, pid)[0]
+    assert f["status"] == "done", f["error"]
+    assert any("보정" in w for w in f["warnings"])
+    assert f["sheets"][0]["stats"]["entities"] >= 5

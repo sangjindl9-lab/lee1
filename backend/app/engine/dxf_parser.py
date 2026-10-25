@@ -91,6 +91,9 @@ def convert_dwg_to_dxf(dwg_path: Path, out_dir: Path) -> tuple[Path, list[str]]:
     if not out.exists() or out.stat().st_size < 200:
         err = (proc.stderr or proc.stdout or "")[-500:]
         raise ConversionError(f"DWG 변환 실패({ver or '버전 미상'}): {err or '출력 파일 없음'}")
+    if proc.returncode != 0:
+        warnings.append(f"DWG 변환기가 오류 코드 {proc.returncode} 로 끝났습니다. 도면 일부 객체가 빠졌을 수 있으니 "
+                        "결과를 확인하거나 CAD 에서 DXF 로 저장해 올리십시오.")
     try:
         resolved = resolve_anonymous_inserts(dwg_path, out)
     except Exception as ex:   # 복원 실패해도 변환 결과는 사용 (경고로 알림)
@@ -331,20 +334,100 @@ def block_fingerprint(doc, block_name: str, depth: int = 0) -> tuple[dict, list[
     return shape_fingerprint(prims, texts), prims, texts
 
 
+def sanitize_dxf(src: Path, dst: Path) -> list[str]:
+    """손상된 DXF 보정 (변환기 출력이 끊기거나 표 항목 이름이 빠진 경우).
+    - 그룹코드/값 짝이 깨진 줄(여러 줄 문자열) 이어 붙이기
+    - TABLES 의 표 항목(LAYER·LTYPE·STYLE·BLOCK_RECORD 등)에 이름(코드 2)이 없거나 비면 임시 이름 부여
+    - 끝에 ENDSEC/EOF 가 없으면 추가
+    반환: 고친 내용 설명 목록"""
+    data = src.read_bytes()
+    lines = data.replace(b"\r\n", b"\n").split(b"\n")
+    pairs: list[list[bytes]] = []
+    i, n, joined = 0, len(lines), 0
+    while i < n:
+        code = lines[i].strip()
+        if not code and i >= n - 1:
+            break
+        if not _is_group_code(code):
+            if pairs:
+                pairs[-1][1] = pairs[-1][1] + b"\\P" + lines[i].rstrip(b"\r")
+                joined += 1
+            i += 1
+            continue
+        val = lines[i + 1].rstrip(b"\r") if i + 1 < n else b""
+        pairs.append([code, val])
+        i += 2
+    fixes = []
+    if joined:
+        fixes.append(f"줄바꿈 섞인 문자열 {joined}곳 복구")
+    out: list[list[bytes]] = []
+    section, in_table, named, unnamed = None, False, 0, 0
+    rec_start = None
+    for k, (c, v) in enumerate(pairs):
+        if c == b"0":
+            # 이전 표 항목 마감: 이름이 없으면 부여
+            if rec_start is not None and not named:
+                unnamed += 1
+                out.insert(rec_start + 1, [b"2", f"_UNNAMED_{unnamed}".encode()])
+            rec_start = None
+            vs = v.strip()
+            if vs == b"SECTION":
+                section = "?"
+            elif vs == b"ENDSEC":
+                section, in_table = None, False
+            elif vs == b"TABLE":
+                in_table = True
+            elif vs == b"ENDTAB":
+                in_table = False
+            elif section == "TABLES" and in_table:
+                rec_start, named = len(out), False
+        elif c == b"2" and section == "?":
+            section = v.strip().decode("ascii", "ignore")
+        elif c == b"2" and rec_start is not None:
+            if v.strip():
+                named = True
+            else:
+                unnamed += 1
+                v = f"_UNNAMED_{unnamed}".encode()
+                named = True
+        out.append([c, v])
+    if unnamed:
+        fixes.append(f"이름 없는 표 항목 {unnamed}개에 임시 이름 부여")
+    if not out or out[-1][1].strip() != b"EOF":
+        if section is not None:
+            out.append([b"0", b"ENDSEC"])
+        out.append([b"0", b"EOF"])
+        fixes.append("파일 끝(EOF) 누락 보정 — 변환이 중간에 끊겼을 수 있음")
+    dst.write_bytes(b"\r\n".join(b for pr in out for b in pr) + b"\r\n")
+    return fixes
+
+
+def _read_dxf_doc(path: Path):
+    from ezdxf import recover
+    try:
+        return ezdxf.readfile(str(path)), []
+    except Exception:
+        pass
+    try:
+        doc, _aud = recover.readfile(str(path))
+        return doc, ["DXF 구조 오류를 복구 모드로 읽었습니다."]
+    except Exception:
+        pass
+    fixed = path.with_name(path.stem + ".fixed.dxf")
+    fixes = sanitize_dxf(path, fixed)
+    doc, _aud = recover.readfile(str(fixed))
+    return doc, [f"손상된 DXF 를 보정해 읽었습니다: {', '.join(fixes) or '구조 정리'}. 누락된 객체가 있을 수 있으니 확인하십시오."]
+
+
 def parse_dxf(path: Path, layout: str = "Model") -> SheetData:
     try:
-        try:
-            doc = ezdxf.readfile(str(path))
-        except ezdxf.DXFStructureError:
-            # 변환기 출력 등 약간 어긋난 DXF 는 복구 모드로 읽는다
-            from ezdxf import recover
-            doc, _aud = recover.readfile(str(path))
+        doc, read_warn = _read_dxf_doc(path)
     except ezdxf.DXFStructureError as ex:
         raise ConversionError(f"DXF 구조 오류: {ex}")
     except Exception as ex:  # 인코딩 등
         raise ConversionError(f"DXF 읽기 실패: {ex}")
 
-    warnings: list[str] = []
+    warnings: list[str] = list(read_warn)
     units_code = int(doc.header.get("$INSUNITS", 0))
     units = INSUNITS.get(units_code, "unknown")
     scale = UNIT_TO_M.get(units)
