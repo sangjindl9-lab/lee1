@@ -16,12 +16,24 @@ from .geometry import bitmap_similarity
 LIB_PATH = Path(__file__).resolve().parents[1] / "data" / "symbol_library.json"
 
 
+LEARNED_PATH = LIB_PATH.with_name("symbol_library_learned.json")
+
+
 @lru_cache(maxsize=1)
 def load_library() -> dict:
-    if not LIB_PATH.exists():
-        return {"version": 0, "sources": [], "symbols": []}
-    with open(LIB_PATH, encoding="utf-8") as fp:
-        return json.load(fp)
+    """표준 심볼(심볼 DWG·TTA) + 실제 도면 범례에서 학습한 기호(symbol_library_learned.json)."""
+    lib = {"version": 0, "sources": [], "symbols": []}
+    if LIB_PATH.exists():
+        with open(LIB_PATH, encoding="utf-8") as fp:
+            lib = json.load(fp)
+    if LEARNED_PATH.exists():
+        with open(LEARNED_PATH, encoding="utf-8") as fp:
+            learned = json.load(fp)
+        base = max((e["id"] for e in lib["symbols"]), default=0)
+        for k, e in enumerate(learned, start=1):
+            lib["symbols"].append({**e, "id": base + k})
+        lib["sources"] = sorted(set(lib.get("sources", [])) | {e["source"] for e in learned})
+    return lib
 
 
 def _norm_code(s: str | None) -> str:
