@@ -91,6 +91,12 @@ def convert_dwg_to_dxf(dwg_path: Path, out_dir: Path) -> tuple[Path, list[str]]:
     if not out.exists() or out.stat().st_size < 200:
         err = (proc.stderr or proc.stdout or "")[-500:]
         raise ConversionError(f"DWG 변환 실패({ver or '버전 미상'}): {err or '출력 파일 없음'}")
+    tail = out.read_bytes()
+    if b"ENTITIES" not in tail:
+        hint = (" AutoCAD 2007 형식(AC1021) DWG 는 변환기(LibreDWG) 지원이 불완전합니다." if head == b"AC1021" else "")
+        raise ConversionError(
+            f"DWG({ver or '버전 미상'})의 도면 본문(모델 공간 객체)을 읽지 못했습니다.{hint} "
+            "CAD 에서 '다른 이름으로 저장' → AutoCAD 2010 또는 2013 DWG, 혹은 DXF 로 저장해 다시 올리십시오.")
     if proc.returncode != 0:
         warnings.append(f"DWG 변환기가 오류 코드 {proc.returncode} 로 끝났습니다. 도면 일부 객체가 빠졌을 수 있으니 "
                         "결과를 확인하거나 CAD 에서 DXF 로 저장해 올리십시오.")
@@ -136,7 +142,7 @@ def resolve_anonymous_inserts(dwg_path: Path, dxf_path: Path, timeout: int = 600
     을 읽어 DXF 의 INSERT 이름을 원본 블록명(예: 'con 1구')으로 바꾼다. 바꾼 개수 반환."""
     import subprocess
     data = dxf_path.read_bytes()
-    if b"\n*U\r\n" not in data and b"\n*U\n" not in data:
+    if not re.search(rb"\n\*U\d*\r?\n", data):
         return 0
     exe = find_dwgread()
     if not exe:
@@ -206,7 +212,7 @@ def resolve_anonymous_inserts(dwg_path: Path, dxf_path: Path, timeout: int = 600
                 elif c == b"2" and name_idx is None:
                     name_idx = j + 1
                 j += 2
-            if h and name_idx is not None and lines[name_idx].strip() == b"*U":
+            if h and name_idx is not None and re.fullmatch(rb"\*U\d*", lines[name_idx].strip()):
                 tgt = ins2blk.get(h, "").upper()
                 nm = rec_name.get(tgt)
                 if nm is None or nm.strip().startswith(b"*"):
@@ -419,14 +425,131 @@ def _read_dxf_doc(path: Path):
     return doc, [f"손상된 DXF 를 보정해 읽었습니다: {', '.join(fixes) or '구조 정리'}. 누락된 객체가 있을 수 있으니 확인하십시오."]
 
 
-def parse_dxf(path: Path, layout: str = "Model") -> SheetData:
+def _open_doc(path: Path):
     try:
-        doc, read_warn = _read_dxf_doc(path)
+        return _read_dxf_doc(path)
     except ezdxf.DXFStructureError as ex:
         raise ConversionError(f"DXF 구조 오류: {ex}")
     except Exception as ex:  # 인코딩 등
         raise ConversionError(f"DXF 읽기 실패: {ex}")
 
+
+def _paper_layouts(doc, n_model: int):
+    """내용이 있는 배치(도곽) 공간 — 객체 50개 이상"""
+    return [L for L in doc.layouts if L.name != "Model" and len(L) >= 50]
+
+
+def parse_dxf(path: Path, layout: str = "Model") -> SheetData:
+    """단일 시트(하위 호환). 모델 공간이 거의 비고 배치 공간에 본문이 있으면 배치 출력 화면을 돌려준다."""
+    sheets = parse_dxf_sheets(path) if layout in (None, "auto", "Model") else None
+    if sheets is not None:
+        return max(sheets, key=lambda sd: len(sd.prims)) if sheets[0].stats.get("model_tiny") else sheets[0]
+    doc, read_warn = _open_doc(path)
+    return _parse_space(doc, read_warn, layout)
+
+
+def parse_dxf_sheets(path: Path) -> list[SheetData]:
+    """모델 공간 시트 + 내용 있는 배치 공간마다 '출력 화면' 시트(배치 + 뷰포트로 보이는 모델 내용 합성).
+    수량 산출은 실제 축척인 모델 공간 시트에서, 배치 시트는 출력 도면 그대로 보기·범례·표 확인용."""
+    doc, read_warn = _open_doc(path)
+    model = _parse_space(doc, read_warn, "Model")
+    sheets = [model]
+    papers = _paper_layouts(doc, len(model.entities))
+    for L in papers:
+        try:
+            sheets.append(_compose_layout(doc, L, model))
+        except Exception as ex:   # 합성 실패해도 모델 시트는 사용
+            model.warnings.append(f"배치 '{L.name}' 합성 실패: {type(ex).__name__}")
+    if papers:
+        big = max(len(L) for L in papers)
+        model.stats["model_tiny"] = big > max(500, 3 * len(model.entities))
+        model.warnings.append(f"배치 공간 {len(papers)}개를 '출력 화면' 시트로 함께 만들었습니다. "
+                              "수량 산출은 실제 축척인 '모델 공간' 시트에서 하십시오 (배치 시트는 같은 내용이 여러 뷰포트에 반복될 수 있음).")
+    return sheets
+
+
+def _compose_layout(doc, L, model: SheetData) -> SheetData:
+    """배치 공간 객체 + 각 뷰포트 창으로 보이는 모델 공간 객체를 배치 좌표로 옮겨 합친 시트."""
+    paper = _parse_space(doc, [], L.name)
+    prims, texts, entities = list(paper.prims), list(paper.texts), list(paper.entities)
+    vps = [e for e in L if e.dxftype() == "VIEWPORT" and e.dxf.get("id", 0) != 1 and e.dxf.get("status", 1) != 0]
+    shown = 0
+    for v in vps:
+        try:
+            w, h = float(v.dxf.width), float(v.dxf.height)
+            vh = float(v.dxf.view_height)
+            if w <= 0 or h <= 0 or vh <= 0:
+                continue
+            k = h / vh                                   # 배치 1 = 모델 1/k
+            cx, cy = float(v.dxf.center.x), float(v.dxf.center.y)
+            mx, my = float(v.dxf.view_center_point.x), float(v.dxf.view_center_point.y)
+        except Exception:
+            continue
+        win = {"x0": mx - w / 2 / k, "x1": mx + w / 2 / k, "y0": my - h / 2 / k, "y1": my + h / 2 / k}
+        tf = lambda x, y: (cx + (x - mx) * k, cy + (y - my) * k)  # noqa: E731
+
+        def inside(b):
+            bx, by = (b["x0"] + b["x1"]) / 2, (b["y0"] + b["y1"]) / 2
+            return win["x0"] <= bx <= win["x1"] and win["y0"] <= by <= win["y1"]
+        for pr in model.prims:
+            pts = pr["p"]
+            if not pts:
+                continue
+            b = bbox_of(pts)
+            if b["x1"] < win["x0"] or b["x0"] > win["x1"] or b["y1"] < win["y0"] or b["y0"] > win["y1"]:
+                continue
+            tag = {"vp": int(v.dxf.get("id", 0)), "h": f"vp{v.dxf.handle}:{pr.get('h')}"}
+            if b["x0"] >= win["x0"] and b["x1"] <= win["x1"] and b["y0"] >= win["y0"] and b["y1"] <= win["y1"]:
+                prims.append({**pr, "p": [tf(x, y) for x, y in pts], **tag})
+                shown += 1
+                continue
+            # 뷰포트 경계에 걸친 선은 경계에서 잘라 넣는다
+            from .region_tally import _clip
+            cur = []
+            for a_, b_ in zip(pts, pts[1:]):
+                c = _clip(a_, b_, win)
+                if c is None:
+                    if len(cur) >= 2:
+                        prims.append({**pr, "t": "l", "p": [tf(x, y) for x, y in cur], **tag})
+                    cur = []
+                    continue
+                if cur and abs(cur[-1][0] - c[0][0]) < 1e-9 and abs(cur[-1][1] - c[0][1]) < 1e-9:
+                    cur.append(c[1])
+                else:
+                    if len(cur) >= 2:
+                        prims.append({**pr, "t": "l", "p": [tf(x, y) for x, y in cur], **tag})
+                    cur = [c[0], c[1]]
+            if len(cur) >= 2:
+                prims.append({**pr, "t": "l", "p": [tf(x, y) for x, y in cur], **tag})
+                shown += 1
+        for t in model.texts:
+            if win["x0"] <= t["x"] <= win["x1"] and win["y0"] <= t["y"] <= win["y1"]:
+                x, y = tf(t["x"], t["y"])
+                bb = t.get("bbox")
+                texts.append({**t, "x": x, "y": y, "height": (t.get("height") or 0) * k,
+                              **({"bbox": {"x0": tf(bb["x0"], bb["y0"])[0], "y0": tf(bb["x0"], bb["y0"])[1],
+                                           "x1": tf(bb["x1"], bb["y1"])[0], "y1": tf(bb["x1"], bb["y1"])[1]}} if bb else {})})
+        for e in model.entities:
+            if e.get("x") is None:
+                continue
+            if win["x0"] <= e["x"] <= win["x1"] and win["y0"] <= e["y"] <= win["y1"]:
+                x, y = tf(e["x"], e["y"])
+                bb = e.get("bbox")
+                entities.append({**e, "x": x, "y": y, "h": f"vp{v.dxf.handle}:{e.get('h')}",
+                                 **({"bbox": {"x0": tf(bb["x0"], bb["y0"])[0], "y0": tf(bb["x0"], bb["y0"])[1],
+                                              "x1": tf(bb["x1"], bb["y1"])[0], "y1": tf(bb["x1"], bb["y1"])[1]}} if bb else {})})
+    pts = [q for pr in prims for q in pr["p"]]
+    bbox = bbox_of(pts) if pts else paper.bbox
+    warnings = [f"배치 공간 '{L.name}' 출력 화면: 뷰포트 {len(vps)}개로 보이는 모델 객체 {shown}개를 합성했습니다. "
+                "뷰포트마다 축척이 달라 이 시트의 길이는 산출에 쓰지 마십시오(모델 공간 시트 사용)."] + paper.warnings
+    blocks = {**model.blocks, **paper.blocks}
+    stats = {**paper.stats, "prims": len(prims), "texts": len(texts), "entities": len(entities), "viewports": len(vps), "composed": shown}
+    return SheetData(source_kind="dxf", units="mm(배치)", scale_factor=None, bbox=bbox, layers=paper.layers,
+                     entities=entities, blocks=blocks, prims=prims, texts=texts, warnings=warnings, stats=stats,
+                     sheet_name=f"{L.name}(출력 화면)")
+
+
+def _parse_space(doc, read_warn, layout: str) -> SheetData:
     warnings: list[str] = list(read_warn)
     units_code = int(doc.header.get("$INSUNITS", 0))
     units = INSUNITS.get(units_code, "unknown")
@@ -436,8 +559,8 @@ def parse_dxf(path: Path, layout: str = "Model") -> SheetData:
 
     msp = doc.modelspace() if layout == "Model" else doc.layouts.get(layout)
 
-    # XREF 확인
-    for br in doc.block_records:
+    # XREF 확인 (모델 시트에서만 한 번)
+    for br in (doc.block_records if layout == "Model" else []):
         if br.is_xref:
             warnings.append(f"XREF 블록 '{br.dxf.name}' 은 외부 참조입니다. 참조 파일이 첨부되지 않으면 해당 내용은 분석되지 않습니다.")
 
@@ -507,7 +630,7 @@ def parse_dxf(path: Path, layout: str = "Model") -> SheetData:
                 entities.append({**base, "text": e.dxf.text, "measure": float(e.get_measurement()), "x": float(e.dxf.defpoint.x), "y": float(e.dxf.defpoint.y)})
             except Exception:
                 entities.append({**base})
-        else:
+        elif t != "VIEWPORT":
             unsupported[t] = unsupported.get(t, 0) + 1
 
     for L in layers:

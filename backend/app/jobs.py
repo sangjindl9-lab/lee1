@@ -10,7 +10,7 @@ from pathlib import Path
 
 from .config import settings
 from .db import SessionLocal
-from .engine.dxf_parser import ConversionError, SheetData, convert_dwg_to_dxf, parse_dxf
+from .engine.dxf_parser import ConversionError, SheetData, convert_dwg_to_dxf, parse_dxf, parse_dxf_sheets
 from .engine.pdf_parser import parse_image, parse_pdf
 from .models import CADLayer, DetectedEntity, DrawingFile, DrawingRevision, DrawingSheet, FileStatus
 
@@ -145,10 +145,10 @@ def process_file(file_id: int):
                      error=str(ex), progress=0)
                 return
             _set(db, f, progress=30)
-            sheets = [parse_dxf(dxf)]
+            sheets = parse_dxf_sheets(dxf)
             sheets[0].warnings = conv_warn + sheets[0].warnings
         elif f.kind == "dxf":
-            sheets = [parse_dxf(src)]
+            sheets = parse_dxf_sheets(src)
         elif f.kind == "pdf":
             sheets = parse_pdf(src, proc_dir, progress=lambda d, n: _set(db, f, progress=30 + int(30 * d / n)))
         elif f.kind == "image":
