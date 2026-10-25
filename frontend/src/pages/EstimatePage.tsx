@@ -169,14 +169,14 @@ export default function EstimatePage() {
                   <td /><td className="r">{st ? fmt(st.tot) : ''}</td><td colSpan={2} />{editMode && <td className="c"><button className="sm" onClick={() => setAdding({ section_path: i.section_path, name: '', spec: '', unit: '', qty: '', mat_price: '', lab_price: '', exp_price: '', note: '' })}>+ 품목</button></td>}</tr>
               }
               if (hidden(key)) return null
-              const src = i.price_source?.mat_price || i.price_source?.tot_price || (i.price_source?.manual ? '수동 입력' : '')
+              const { label: src, raw: srcRaw } = priceSourceLabel(i)
               return <tr key={i.uid} style={{ opacity: i.is_deleted ? 0.45 : 1, textDecoration: i.is_deleted ? 'line-through' : undefined }}>
                 <td className="c">{i.is_new && <span className="badge info">신규</span>}{i.issues?.length > 0 && <span className="badge warn" title={i.issues.join(', ')}>!</span>}</td>
                 {Cell(i, 'name', (x) => x)}{Cell(i, 'spec', (x) => x)}{Cell(i, 'unit', (x) => x, 'c')}{Cell(i, 'qty', fq, 'r')}
                 {hasSplit ? <>{Cell(i, 'mat_price', fmt, 'r')}<td className="r">{fmt(i.mat_amt)}</td>{Cell(i, 'lab_price', fmt, 'r')}<td className="r">{fmt(i.lab_amt)}</td>{Cell(i, 'exp_price', fmt, 'r')}<td className="r">{fmt(i.exp_amt)}</td></>
                   : <>{Cell(i, 'mat_price', fmt, 'r')}{Cell(i, 'lab_price', fmt, 'r')}{Cell(i, 'exp_price', fmt, 'r')}</>}
                 <td className="r">{fmt(i.tot_price)}</td><td className="r">{fmt(i.tot_amt)}</td>{Cell(i, 'note', (x) => x)}
-                <td className="muted" style={{ fontSize: 11 }}>{i.unit_price_ref || src}</td>
+                <td className="muted" style={{ fontSize: 11 }} title={srcRaw}>{i.unit_price_ref || src}</td>
                 {editMode && <td className="c">{i.is_deleted ? <button className="sm" onClick={async () => { await api.post(`/versions/${vid}/items/${i.uid}/restore`); loadItems(); loadVersions() }}>복구</button> : <><button className="sm" title="아래에 품목 추가" onClick={() => setAdding({ section_path: i.section_path, after_uid: i.uid, name: '', spec: '', unit: i.unit, qty: '', mat_price: '', lab_price: '', exp_price: '', note: '' })}>+</button> <button className="sm danger" onClick={() => delItem(i)}>×</button></>}</td>}
               </tr>
             })}
@@ -255,4 +255,26 @@ export default function EstimatePage() {
       </div></div>}
     </>
   )
+}
+
+/** 단가출처 표시: 엑셀 수식(=TRUNC(단가대비표!O8) 등)을 "단가대비표 8행"처럼 읽기 쉽게. 원 수식은 툴팁(raw). */
+function priceSourceLabel(i: any): { label: string; raw: string } {
+  const ps = i.price_source || {}
+  if (ps.manual) return { label: '수동 입력', raw: '' }
+  const order = ['mat_price', 'lab_price', 'exp_price', 'tot_price'].filter((f) => ps[f] && Number(i[f] || 0) !== 0)
+  const f = order[0] || ['mat_price', 'lab_price', 'exp_price', 'tot_price'].find((k) => ps[k])
+  const raw = f ? String(ps[f]) : ''
+  if (!raw) return { label: ps.adjusted ? `단가 조정 (재료 ${ps.adjusted.mat_pct}% · 노무 ${ps.adjusted.lab_pct}%)` : '', raw: '' }
+  const refs: string[] = []
+  const re = /(?:'([^']+)'|([^\s'!=(),*+\-/&"]+))!\$?([A-Z]{1,3})\$?(\d+)/g
+  let m: RegExpExecArray | null
+  while ((m = re.exec(raw))) {
+    const lbl = `${m[1] || m[2]} ${m[4]}행`
+    if (!refs.includes(lbl)) refs.push(lbl)
+  }
+  let label = refs.length ? refs.slice(0, 2).join(', ') + (refs.length > 2 ? ` 외 ${refs.length - 2}` : '')
+    : /SUMIF|SUM\(/i.test(raw) ? '요율 계산 (공종 합계 기준)'
+    : raw.startsWith('=') || /^[A-Z]+\(/.test(raw) ? '수식 계산' : raw
+  if (ps.adjusted) label += ` · 조정 ${ps.adjusted.mat_pct}/${ps.adjusted.lab_pct}%`
+  return { label, raw }
 }
