@@ -123,6 +123,13 @@ def auto_detect_legends(db: Session, pid: int, progress=None, sheet_ids: list[in
 
 
 def legend_from_region(db: Session, pid: int, sheet: DrawingSheet, region: dict, title: str | None) -> LegendTable:
+    # 재선택: 같은 시트에서 사용자가 지정했던 범례 영역과 겹치면 기존 것을 지우고 새 영역으로 대체
+    for old in db.query(LegendTable).filter_by(project_id=pid, sheet_id=sheet.id, source="manual").all():
+        r = old.region or {}
+        if r and min(r["x1"], region["x1"]) > max(r["x0"], region["x0"]) and min(r["y1"], region["y1"]) > max(r["y0"], region["y0"]):
+            purge_legend_symbols(db, pid, [x.id for x in old.symbols])
+            db.delete(old)
+    db.flush()
     geo = load_geometry(sheet)
     res = legend_engine.legend_from_region(geo, region, title or "사용자 지정 범례", _ocr_cell_fn(sheet))
     tbl = _save_legend(db, pid, sheet, res, "manual")

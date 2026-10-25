@@ -496,3 +496,20 @@ def test_20_learn_legend_then_detect(client, auth, fixtures):
     sh2 = [f for f in wait_done(client, auth, pid) if f["name"] == "test_cctv_riser.dxf"][0]["sheets"][0]
     bad = client.post(f"/api/projects/{pid}/legends/learn", headers=auth, json={"sheet_id": sh2["id"]})
     assert bad.status_code == 400 and "범례" in bad.json()["detail"]
+
+
+def test_21_reselect_replaces(client, auth, fixtures):
+    """재선택: 같은 시트의 범례 영역을 다시 지정하면 기존 영역 학습분을 대체, 영역 집계는 replace_ids 로 기존 집계 대체."""
+    pid = client.post("/api/projects", headers=auth, json={"name": "[테스트] 재선택"}).json()["id"]
+    _upload(client, auth, pid, fixtures / "test_cctv_plan.dxf")
+    sh = wait_done(client, auth, pid)[0]["sheets"][0]
+    reg = {"x0": 35500, "y0": 22000, "x1": 57500, "y1": 31000}
+    client.post(f"/api/projects/{pid}/legends/region", headers=auth, json={"sheet_id": sh["id"], "region": {**reg, "x1": 45000}, "title": "잘못"})
+    client.post(f"/api/projects/{pid}/legends/region", headers=auth, json={"sheet_id": sh["id"], "region": reg, "title": "다시"})
+    titles = [t["title"] for t in client.get(f"/api/projects/{pid}/legends", headers=auth).json()]
+    assert titles == ["다시"], titles
+    body = {"sheet_id": sh["id"], "region": {"x0": 0, "y0": 0, "x1": 30000, "y1": 30000}, "rows": [{"item_name": "카메라", "qty": 12}]}
+    first = client.post(f"/api/projects/{pid}/tallies", headers=auth, json=body).json()
+    client.post(f"/api/projects/{pid}/tallies", headers=auth, json={**body, "rows": [{"item_name": "카메라", "qty": 13}], "replace_ids": [first[0]["id"]]})
+    tl = client.get(f"/api/projects/{pid}/tallies", headers=auth).json()
+    assert len(tl) == 1 and tl[0]["qty"] == 13

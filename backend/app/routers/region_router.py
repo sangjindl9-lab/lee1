@@ -34,6 +34,7 @@ class TallyIn(BaseModel):
     sheet_id: int
     region: dict
     rows: list[TallyRow]
+    replace_ids: list[int] = []     # 겹치는 기존 집계를 대체할 때 지울 id
 
 
 def _norm_region(r: dict) -> dict:
@@ -79,6 +80,11 @@ def add_tallies(pid: int, body: TallyIn, user: User = Depends(require_role(*EDIT
     rows = [r for r in body.rows if r.qty > 0]
     if not rows:
         raise HTTPException(400, "추가할 항목이 없습니다. 수량(또는 케이블 길이)을 입력하십시오.")
+    if body.replace_ids:
+        # 재선택: 같은 곳을 다시 집계하면 이전 집계 내역을 지우고 새로 저장
+        for t in db.query(RegionTally).filter(RegionTally.project_id == pid, RegionTally.id.in_(body.replace_ids)).all():
+            db.delete(t)
+        db.flush()
     out = []
     for r in rows:
         t = RegionTally(project_id=pid, sheet_id=s.id, drawing_no=s.drawing_no or s.sheet_name, region=region,

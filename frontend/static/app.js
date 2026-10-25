@@ -376,6 +376,15 @@ async function uploadFiles(files) { const fd = new FormData(); for (const f of f
 function dropFiles(e) { e.preventDefault(); uploadFiles(e.dataTransfer.files); }
 
 /* ---------------- 뷰어 ---------------- */
+document.addEventListener("keydown", e => {
+  if (e.key !== "Escape" || !V.cv) return;
+  const a = document.activeElement; if (a && ["INPUT", "TEXTAREA", "SELECT"].includes(a.tagName)) return;
+  let did = "";
+  if (V.drag) { V.drag = null; did = "드래그를 취소했습니다."; }
+  if (W.pts && W.pts.length) { W.pts = []; did = "찍은 점을 취소했습니다. 다시 선택하십시오."; }
+  if (W.tally && W.tally.boxOff) { W.tally.boxOff = false; renderRight(); did = "박스로 빼기를 취소했습니다."; }
+  if (did) { draw(); toast(did); }
+});
 const isNarrow = () => window.matchMedia("(max-width: 1100px)").matches;
 const V = { cv: null, ctx: null, scale: 1, tx: 0, ty: 0, drag: null, mouse: null };
 function initViewer() {
@@ -407,7 +416,7 @@ function initViewer() {
     const d = V.drag; V.drag = null; if (!d || d.btn || e.type === "pointercancel") return;
     const [x, y] = pos(e); const p = toWorld(x, y); const moved = Math.abs(x - d.x) + Math.abs(y - d.y) > (e.pointerType === "mouse" ? 6 : 12);
     if (W.mode === "pan") { if (!moved) pick(p); }
-    else if (W.mode === "tally") { if (moved) tallyRegion(d.start, p); else tallyToggleAt(p); }
+    else if (W.mode === "tally") { if (moved && W.tally && (W.tally.boxOff || e.shiftKey)) tallyBoxOff(d.start, p); else if (moved) tallyRegion(d.start, p); else tallyToggleAt(p); }
     else if (W.mode === "region") { if (moved) finishRegion(d.start, p); }
     else if (W.mode === "measure") measureClick(p); else if (W.mode === "add") addSymbolAt(p); else if (W.mode === "sample") sampleSymbolAt(p);
   };
@@ -415,7 +424,7 @@ function initViewer() {
 }
 function toWorld(px, py) { return [(px - V.tx) / V.scale, -(py - V.ty) / V.scale]; }
 function toScreen(x, y) { return [x * V.scale + V.tx, -y * V.scale + V.ty]; }
-function setMode(m) { W.mode = m; W.pts = []; document.querySelectorAll(".vtools button[id^=m_]").forEach(b => b.classList.toggle("on", b.id === "m_" + m)); V.cv.style.cursor = m === "pan" ? "grab" : "crosshair"; $("#vinfo").textContent = { pan: "클릭: 기호·선로 선택 / 드래그: 이동 / 휠: 확대", region: "범례표 부분만 드래그 → 기호를 학습하고 전체 도면에서 자동 검출", measure: "두 점을 클릭 → 실제 거리(m) 입력 시 축척 확정", tally: "집계할 영역을 드래그 → 영역 안 객체 개수·케이블 선 표시 / 객체 클릭: 개별 제외·포함 / 오른쪽 버튼(휴대폰: 두 손가락) 드래그: 화면 이동", add: "범례 기호를 선택한 뒤 도면을 클릭하면 기호가 추가됩니다", sample: "범례 탭에서 기호를 선택한 뒤, 도면 위 실제 기호 하나를 클릭 → 그 모양으로 전체 검색" }[m]; }
+function setMode(m) { W.mode = m; W.pts = []; document.querySelectorAll(".vtools button[id^=m_]").forEach(b => b.classList.toggle("on", b.id === "m_" + m)); V.cv.style.cursor = m === "pan" ? "grab" : "crosshair"; $("#vinfo").textContent = { pan: "클릭: 기호·선로 선택 / 드래그: 이동 / 휠: 확대", region: "범례표 부분만 드래그 → 기호를 학습하고 전체 도면에서 자동 검출", measure: "두 점을 클릭 → 실제 거리(m) 입력 시 축척 확정 (잘못 찍으면 ESC)", tally: "집계할 영역을 드래그 → 영역 안 객체 개수·케이블 선 표시 / 객체 클릭: 개별 제외·포함 / Shift+드래그: 박스 안 객체 빼기 / ESC: 취소", add: "범례 기호를 선택한 뒤 도면을 클릭하면 기호가 추가됩니다", sample: "범례 탭에서 기호를 선택한 뒤, 도면 위 실제 기호 하나를 클릭 → 그 모양으로 전체 검색" }[m]; }
 function fitView() { const b = W.sheet && W.sheet.bbox; if (!b) return; const w = b.x1 - b.x0 || 1, h = b.y1 - b.y0 || 1; V.scale = Math.min(V.cv.width / w, V.cv.height / h) * 0.92; V.tx = (V.cv.width - w * V.scale) / 2 - b.x0 * V.scale; V.ty = (V.cv.height + h * V.scale) / 2 + b.y0 * V.scale; draw(); }
 async function openSheet(id, focusRegion) {
   const s = W.sheets.find(x => x.id === id); if (!s) return;
@@ -458,7 +467,7 @@ function draw() {
   if (W.showDets) for (const d of W.dets) { const [sx, sy] = toScreen(d.x, d.y); const on = W.sel && ((W.sel.type === "det" && W.sel.id === d.id) || (W.sel.type === "legend" && W.sel.id === d.legend_symbol_id) || (W.sel.type === "item" && itemHas(W.sel.id, { detected_symbol_id: d.id }))); const col = d.status === "excluded" ? "#777" : symColor(d.legend_symbol_id); const R = on ? 11 : 8; c.beginPath(); c.arc(sx, sy, R, 0, Math.PI * 2); c.fillStyle = on ? "#ff6a00" : col; c.globalAlpha = .85; c.fill(); c.globalAlpha = 1; if (d.status === "review") { c.strokeStyle = "#ffd166"; c.lineWidth = 2; c.stroke(); } if (d.status === "excluded") { c.strokeStyle = "#fff"; c.beginPath(); c.moveTo(sx - 5, sy - 5); c.lineTo(sx + 5, sy + 5); c.moveTo(sx + 5, sy - 5); c.lineTo(sx - 5, sy + 5); c.stroke(); } c.fillStyle = "#000"; c.font = "bold 10px sans-serif"; c.textAlign = "center"; c.fillText(d.seq_no, sx, sy + 3.5); c.textAlign = "start"; }
   if (T) drawTallyMarks(c, T);
   // 영역/측정 드래그
-  if (V.drag && (W.mode === "region" || W.mode === "tally") && V.mouse) { const [x0, y0] = toScreen(...V.drag.start), [x1, y1] = toScreen(...V.mouse); c.strokeStyle = "#ffd166"; c.setLineDash([4, 4]); c.strokeRect(x0, y0, x1 - x0, y1 - y0); c.setLineDash([]); }
+  if (V.drag && (W.mode === "region" || W.mode === "tally") && V.mouse) { const [x0, y0] = toScreen(...V.drag.start), [x1, y1] = toScreen(...V.mouse); c.strokeStyle = W.tally && W.tally.boxOff ? "#ff4d4d" : "#ffd166"; c.setLineDash([4, 4]); c.strokeRect(x0, y0, x1 - x0, y1 - y0); c.setLineDash([]); }
   if (W.mode === "measure" && W.pts.length) { const [x0, y0] = toScreen(...W.pts[0]), [x1, y1] = toScreen(...(V.mouse || W.pts[0])); c.strokeStyle = "#ff6a00"; c.lineWidth = 2; c.beginPath(); c.moveTo(x0, y0); c.lineTo(x1, y1); c.stroke(); const d = Math.hypot(V.mouse[0] - W.pts[0][0], V.mouse[1] - W.pts[0][1]); c.fillStyle = "#fff"; c.fillText(`${d.toFixed(1)} 도면단위${W.sheet.scale_factor ? ` = ${(d * W.sheet.scale_factor).toFixed(2)} m` : ""}`, x1 + 8, y1); }
   if (V.mouse) $("#vinfo").textContent = `X ${V.mouse[0].toFixed(1)}  Y ${V.mouse[1].toFixed(1)}  (${W.sheet.units || "?"})  배율 ${V.scale.toFixed(4)}`;
 }
@@ -576,11 +585,12 @@ function tallyPanel() {
     const nb = T.objects.filter(o => o.kind === "block" && !o.note).length;
     h += `<h3>객체 ${T.objects.length}종 <span class="small muted">(체크 ${nOn})</span></h3>`;
     if (nb) h += `<div class="row"><button class="sm ok" onclick="tallyFillBlocks()">CAD 블록 ${nb}종 이름 자동 채우기 (블록명·추천)</button></div>`;
+    h += `<div class="row"><button class="sm" onclick="tallyAllOn(true)">☑ 전체 선택</button><button class="sm" onclick="tallyAllOn(false)">☐ 전체 해제</button><button class="sm ${T.boxOff ? "on" : ""}" onclick="W.tally.boxOff=!W.tally.boxOff;renderRight();$('#vinfo').textContent=W.tally.boxOff?'박스로 빼기: 도면에서 뺄 객체들을 드래그하십시오 (ESC 취소)':''">⬚ 박스로 객체 빼기${T.boxOff ? " (켜짐)" : ""}</button></div>`;
     T.objects.forEach((o, i) => {
       const n = tallyCount(o);
       h += `<div class="tcard ${o.on ? "on" : ""} ${o.note ? "note" : ""}" onmouseenter="tallySet('objects',${i},'focus','o${i}')" onmouseleave="tallySet('objects',${i},'focus',null)">
       <div class="trow"><input type="checkbox" ${o.on ? "checked" : ""} onchange="tallySet('objects',${i},'on',this.checked)"><span class="swatch" style="background:${o.col}"></span><canvas class="mini tmini" data-i="${i}" width="52" height="38"></canvas>
-      <div class="tlab"><b>${esc(o.label)}</b><br><span class="small muted">${esc(o.shape || "")}</span></div><div class="tqty">${n}<span class="small"> ${esc(o.unit || "개")}</span>${n !== o.count ? `<div class="small muted">(${o.count - n}개 제외)</div>` : ""}</div></div>
+      <div class="tlab"><b>${esc(o.label)}</b><br><span class="small muted">${esc(o.shape || "")}</span></div><div class="tqty">${n}<span class="small"> ${esc(o.unit || "개")}</span>${n !== o.count ? `<div class="small muted">(${o.count - n}개 제외)</div>` : ""}</div><button class="sm err" title="이 객체 묶음을 목록에서 삭제" onclick="tallyRemove('objects',${i})">🗑</button></div>
       ${(o.suggest || []).length ? `<div class="trow sugs"><span class="small muted">추천</span>${o.suggest.map((sg, k) => `<button class="sm chip" title="${esc(sg.source)} · ${esc(sg.why || "")}" onclick="tallyPick(${i},${k})">${esc(sg.name)} <span class="small muted">${Math.round(sg.score * 100)}%</span></button>`).join("")}</div>` : ""}
       <div class="trow"><input class="tname" placeholder="품명 (예: LED 투광등)" value="${esc(o.name)}" oninput="tallyName('objects',${i},this.value)"><input class="tspec" placeholder="규격" value="${esc(o.spec)}" onchange="tallySet('objects',${i},'spec',this.value)"><input class="tunit" value="${esc(o.unit)}" onchange="tallySet('objects',${i},'unit',this.value)"></div></div>`;
     });
@@ -590,7 +600,7 @@ function tallyPanel() {
     T.lines.forEach((l, i) => {
       const ref = l.length_m !== null && l.length_m !== undefined ? `참고 ${fmt(l.length_m)} m` : `참고 ${fmt(l.length)} ${esc(T.units || "도면단위")} (축척 미확정)`;
       h += `<div class="tcard ${l.on ? "on" : ""}" onmouseenter="tallySet('lines',${i},'focus','l${i}')" onmouseleave="tallySet('lines',${i},'focus',null)">
-      <div class="trow"><input type="checkbox" ${l.on ? "checked" : ""} onchange="tallySet('lines',${i},'on',this.checked)"><span class="swatch" style="background:${l.col};width:22px;height:4px"></span><div class="tlab"><span class="small">${esc(l.key)}</span><br><span class="small muted">${ref}</span></div></div>
+      <div class="trow"><input type="checkbox" ${l.on ? "checked" : ""} onchange="tallySet('lines',${i},'on',this.checked)"><span class="swatch" style="background:${l.col};width:22px;height:4px"></span><div class="tlab"><span class="small">${esc(l.key)}</span><br><span class="small muted">${ref}</span></div><button class="sm err" title="이 선 종류를 목록에서 삭제" onclick="tallyRemove('lines',${i})">🗑</button></div>
       <div class="trow"><input class="tname" placeholder="품명 (예: 전선)" value="${esc(l.name)}" onchange="tallySet('lines',${i},'name',this.value)"><input class="tspec" placeholder="규격 (예: F-CV 6㎟)" value="${esc(l.spec)}" onchange="tallySet('lines',${i},'spec',this.value)"><input class="tunit" type="number" min="0" step="0.1" placeholder="m" value="${esc(l.len)}" oninput="tallyLen(${i},this.value)"></div></div>`;
     });
   }
@@ -599,6 +609,21 @@ function tallyPanel() {
   return h;
 }
 function tallyPick(i, k) { const o = W.tally.objects[i], sg = o.suggest[k]; o.name = sg.name; o.on = true; renderRight(); draw(); }
+function tallyAllOn(on) {
+  for (const o of W.tally.objects) {
+    if (on && (o.note || o.bg || !tallyCount(o))) continue;
+    o.on = on;
+    if (on && !o.name.trim()) { const sg = (o.suggest || [])[0]; o.name = sg && sg.score >= 0.9 ? sg.name : (o.kind === "block" ? o.block : o.label); }
+  }
+  renderRight(); draw(); if (on) toast("배경·주기 블록을 뺀 객체를 모두 선택했습니다. 품명을 확인하십시오.");
+}
+function tallyRemove(kind, i) { W.tally[kind].splice(i, 1); W.tally.focus = null; renderRight(); draw(); }
+function tallyBoxOff(a, b) {
+  const r = { x0: Math.min(a[0], b[0]), y0: Math.min(a[1], b[1]), x1: Math.max(a[0], b[0]), y1: Math.max(a[1], b[1]) };
+  let n = 0;
+  for (const o of W.tally.objects) { for (const it of o.items) { const bb = it.bbox, cx = (bb.x0 + bb.x1) / 2, cy = (bb.y0 + bb.y1) / 2; if (cx >= r.x0 && cx <= r.x1 && cy >= r.y0 && cy <= r.y1 && !it.off) { it.off = true; n++; } } }
+  W.tally.boxOff = false; renderRight(); draw(); toast(`객체 ${n}개를 집계에서 뺐습니다. (도면에서 클릭하면 다시 넣을 수 있음)`);
+}
 function tallyName(kind, i, v) { const o = W.tally[kind][i]; o.name = v; const want = !!v.trim(); if (o.on !== want) { o.on = want; const card = document.querySelectorAll(".tcard")[i]; if (card) { card.classList.toggle("on", want); card.querySelector("input[type=checkbox]").checked = want; } draw(); } }
 function tallyLen(i, v) { const l = W.tally.lines[i]; l.len = v; const want = +v > 0; if (l.on !== want) { l.on = want; const card = document.querySelectorAll(".tcard")[W.tally.objects.length + i]; if (card) { card.classList.toggle("on", want); card.querySelector("input[type=checkbox]").checked = want; } draw(); } }
 function drawTallyMinis() {
@@ -616,7 +641,7 @@ function drawTallyOnly(c, T) {
   if (W.img && b) { c.globalAlpha = 0.12; const [sx, sy] = toScreen(b.x0, b.y1); c.drawImage(W.img, sx, sy, (b.x1 - b.x0) * V.scale, (b.y1 - b.y0) * V.scale); c.globalAlpha = 1; }
   else { c.strokeStyle = "rgba(200,200,200,.12)"; c.lineWidth = 1; for (const p of W.geo.prims) { if (p.p.length < 2) continue; c.beginPath(); p.p.forEach(([x, y], i) => { const [sx, sy] = toScreen(x, y); i ? c.lineTo(sx, sy) : c.moveTo(sx, sy); }); c.stroke(); } }
   drawTallyMarks(c, T, true);
-  if (V.drag && W.mode === "tally" && V.mouse) { const [x0, y0] = toScreen(...V.drag.start), [x1, y1] = toScreen(...V.mouse); c.strokeStyle = "#ffd166"; c.setLineDash([4, 4]); c.strokeRect(x0, y0, x1 - x0, y1 - y0); c.setLineDash([]); }
+  if (V.drag && W.mode === "tally" && V.mouse) { const [x0, y0] = toScreen(...V.drag.start), [x1, y1] = toScreen(...V.mouse); c.strokeStyle = W.tally && W.tally.boxOff ? "#ff4d4d" : "#ffd166"; c.setLineDash([4, 4]); c.strokeRect(x0, y0, x1 - x0, y1 - y0); c.setLineDash([]); }
 }
 function drawTallyMarks(c, T, full) {
   const r = T.region; const [rx0, ry0] = toScreen(r.x0, r.y1), [rx1, ry1] = toScreen(r.x1, r.y0);
@@ -649,7 +674,10 @@ async function saveTally() {
   for (const o of T.objects) { if (!o.on || !tallyCount(o)) continue; if (!o.name.trim()) return toast(`체크한 객체(${o.label})의 품명을 입력하십시오.`, true); rows.push({ kind: "object", item_name: o.name, spec: o.spec, unit: o.unit || "개", qty: tallyCount(o), marks: o.items.filter(it => !it.off).map(it => [(it.bbox.x0 + it.bbox.x1) / 2, (it.bbox.y0 + it.bbox.y1) / 2]) }); }
   for (const l of T.lines) { if (!l.on) continue; if (!(+l.len > 0)) return toast(`체크한 선(${l.key})의 케이블 길이(m)를 입력하십시오.`, true); if (!l.name.trim()) return toast("케이블 품명을 입력하십시오.", true); rows.push({ kind: "cable", item_name: l.name, spec: l.spec, unit: "m", qty: +l.len, ref_length: l.length_m ?? l.length, note: `선 종류 ${l.key}` }); }
   if (!rows.length) return toast("체크한 객체나 길이를 입력한 케이블이 없습니다.", true);
-  await api(`/api/projects/${W.pid}/tallies`, { method: "POST", json: { sheet_id: T.sheet_id, region: T.region, rows } });
+  const R = T.region, ov = (W.tallies || []).filter(t => t.sheet_id === T.sheet_id && t.region && Math.min(t.region.x1, R.x1) > Math.max(t.region.x0, R.x0) && Math.min(t.region.y1, R.y1) > Math.max(t.region.y0, R.y0));
+  let replace_ids = [];
+  if (ov.length && confirm(`이 영역과 겹치는 기존 집계 ${ov.length}건이 있습니다:\n${ov.slice(0, 8).map(t => `· ${t.item_name} ${fmt(t.qty)}${t.unit}`).join("\n")}\n\n[확인] 기존 집계를 지우고 새로 저장 (재선택)\n[취소] 기존 것은 두고 추가로 저장`)) replace_ids = ov.map(t => t.id);
+  await api(`/api/projects/${W.pid}/tallies`, { method: "POST", json: { sheet_id: T.sheet_id, region: T.region, rows, replace_ids } });
   toast(`${rows.length}개 항목을 물량표에 추가했습니다.`); W.tally = null; W.tab = "qty"; await refreshAll();
 }
 async function showTally(id) {
