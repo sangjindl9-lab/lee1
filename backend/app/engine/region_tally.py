@@ -95,7 +95,8 @@ def _prim_len(pr: dict, region: dict) -> tuple[float, list]:
 
 def analyze_region(geo: dict, region: dict, source_kind: str, scale_factor: float | None,
                    excluded_layers: set[str] | None = None, discipline: str | None = None,
-                   exclude_regions: list[dict] | None = None) -> dict:
+                   exclude_regions: list[dict] | None = None, project_symbols: list[dict] | None = None,
+                   detections: list[dict] | None = None) -> dict:
     """영역 집계. 반환: {mode, objects:[...], lines:[...], notes:[...]}.
     objects 각 항목: {key, label, kind('block'|'shape'), block, count, items:[{bbox,h}], sample:[prims], size}
     lines 각 항목: {key(layer/style), length (도면단위), length_m (축척 있으면), pieces:[[pt..]..]}"""
@@ -136,7 +137,7 @@ def analyze_region(geo: dict, region: dict, source_kind: str, scale_factor: floa
         bprims = bdef.get("prims") or []
         try:
             sug = suggest(anchor_descriptor(bprims) if bprims else None, bdef.get("texts") or [], discipline, block=name,
-                          whole=bitmap_signature(bprims) if bprims else None)
+                          whole=bitmap_signature(bprims) if bprims else None, extra=project_symbols)
         except Exception:   # 추천 실패는 집계에 영향 없음
             sug = []
         note = bool(NOTE_BLOCK.match(name)) or any(len(t) > 10 for t in (bdef.get("texts") or []))
@@ -144,6 +145,31 @@ def analyze_region(geo: dict, region: dict, source_kind: str, scale_factor: floa
                         "shape": "주기·표시 블록 (수량 아님?)" if note else "CAD 블록", "note": note, "color": None,
                         "count": len(items), "items": items, "suggest": sug,
                         "sample": bprims[:400], "size": None})
+
+    # 0) 범례 학습으로 이미 검출된 기호: 범례 품명으로 묶는다 (가장 정확 — 검출 엔진과 같은 결과)
+    det_pts = []
+    by_leg: dict[int, dict] = {}
+    for d in detections or []:
+        if not (region["x0"] <= d["x"] <= region["x1"] and region["y0"] <= d["y"] <= region["y1"]):
+            continue
+        if any(rx["x0"] <= d["x"] <= rx["x1"] and rx["y0"] <= d["y"] <= rx["y1"] for rx in excl):
+            continue
+        bb = d.get("bbox") or {"x0": d["x"] - 1, "y0": d["y"] - 1, "x1": d["x"] + 1, "y1": d["y"] + 1}
+        g = by_leg.setdefault(d["legend_id"], {"name": d["name"], "spec": d.get("spec"), "unit": d.get("unit"), "items": [], "review": 0})
+        g["items"].append({"bbox": bb, "h": d.get("handle"), "det": d["id"]})
+        g["review"] += 1 if d.get("status") == "review" else 0
+        det_pts.append((d["x"], d["y"]))
+    for lid, g in sorted(by_leg.items(), key=lambda kv: -len(kv[1]["items"])):
+        objects.append({"key": f"leg:{lid}", "kind": "legend", "block": None, "label": g["name"],
+                        "shape": "범례 학습 기호" + (f" (검토 {g['review']}개)" if g["review"] else ""), "color": None,
+                        "count": len(g["items"]), "items": g["items"], "sample": [], "size": None, "legend_id": lid,
+                        "spec": g["spec"], "unit": g["unit"], "suggest": []})
+    if det_pts:
+        # 범례 검출로 이미 센 블록 삽입은 블록 묶음에서 뺀다
+        for o in [o for o in objects if o["kind"] == "block"]:
+            o["items"] = [it for it in o["items"] if not any(it["bbox"]["x0"] <= x <= it["bbox"]["x1"] and it["bbox"]["y0"] <= y <= it["bbox"]["y1"] for x, y in det_pts)]
+            o["count"] = len(o["items"])
+        objects[:] = [o for o in objects if o["kind"] != "block" or o["count"]]
 
     # 2) 블록이 아닌 도형: 닫힌 외곽 도형(원·사각형·다각형, ㄱ자 조각으로 그린 사각형 포함)을 기호의 '앵커'로 잡는다.
     #    기호에 붙은 배선·지시선은 비교에서 빠지므로 선이 연결된 기호도 따로 셀 수 있다.
@@ -163,6 +189,8 @@ def analyze_region(geo: dict, region: dict, source_kind: str, scale_factor: floa
         if any(_overlap_ratio(b, tb) > 0.8 and (tb["x1"] - tb["x0"]) >= 2.2 * bw and (tb["y1"] - tb["y0"]) <= 1.6 * (b["y1"] - b["y0"])
                for tb in texts_bb):
             continue   # 여러 글자 단어 속 닫힌 획(윤곽선 문자 'O','D' 등) — 기호 하나를 'O' 로 읽은 OCR 은 제외하지 않음
+        if any(b["x0"] <= x <= b["x1"] and b["y0"] <= y <= b["y1"] for x, y in det_pts):
+            continue   # 범례 검출로 이미 센 기호
         cands.append({"i": i, "kind": k, "bbox": b, "size": sz, "aspect": asp, "color": col, "dashed": dashed})
     # 같은 자리의 이중 테두리·기호 안쪽 도형은 바깥 도형 하나로
     cands.sort(key=lambda c: -c["size"])
@@ -233,7 +261,7 @@ def analyze_region(geo: dict, region: dict, source_kind: str, scale_factor: floa
         whole = bitmap_signature(local) if local else None
         try:
             sug = suggest({"kind": g["kind"], "aspect": g["aspect"], "dashed": g["dashed"], "interior": g["desc"]}, letters, discipline,
-                          whole=whole)
+                          whole=whole, extra=project_symbols)
         except Exception:
             sug = []
         objects.append({"key": f"shape:{gi}", "kind": "shape", "block": None, "label": f"객체 {lab}", "shape": desc, "color": g["color"],

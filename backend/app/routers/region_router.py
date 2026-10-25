@@ -54,8 +54,25 @@ def region_analyze(pid: int, sid: int, body: RegionIn, user: User = Depends(curr
     if not s.geometry_path:
         raise HTTPException(404, "처리본이 없습니다. 재분석하십시오.")
     geo = services.load_geometry(s)
+    from ..models import DetectedSymbol, DetectStatus, LegendSymbol, SymbolStatus
+    legs = {x.id: x for x in db.query(LegendSymbol).filter_by(project_id=pid).all()}
+    proj_syms = []
+    for x in legs.values():
+        fp = x.fingerprint or {}
+        if x.category == "device" and x.item_name and x.status != SymbolStatus.unresolved and fp.get("anchor"):
+            proj_syms.append({"id": -x.id, "name": x.item_name, "spec": x.spec, "unit": x.unit, "discipline": x.discipline or "공통",
+                              "source": "이 프로젝트 범례", "anchor": fp["anchor"], "sig": {"bm": fp.get("bm"), "n": fp.get("n")},
+                              "letters": [t.upper() for t in (fp.get("texts") or []) if 0 < len(t) <= 4], "project": True})
+    dets = []
+    for d in db.query(DetectedSymbol).filter(DetectedSymbol.project_id == pid, DetectedSymbol.sheet_id == s.id,
+                                             DetectedSymbol.status != DetectStatus.excluded).all():
+        ls = legs.get(d.legend_symbol_id)
+        if ls and ls.item_name:
+            dets.append({"id": d.id, "x": d.x, "y": d.y, "bbox": d.bbox, "handle": d.entity_handle, "status": d.status.value,
+                         "legend_id": ls.id, "name": ls.item_name, "spec": ls.spec, "unit": ls.unit})
     res = analyze_region(geo, _norm_region(body.region), s.source_kind or "", s.scale_factor if s.scale_confirmed else None,
-                         set(body.hidden_layers), s.discipline, services.legend_exclude_regions(db, pid, s.id))
+                         set(body.hidden_layers), s.discipline, services.legend_exclude_regions(db, pid, s.id),
+                         project_symbols=proj_syms, detections=dets)
     res["scale_confirmed"] = bool(s.scale_confirmed)
     res["units"] = s.units
     return res

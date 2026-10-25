@@ -87,7 +87,7 @@ def _shape_score(a: dict, lib: dict) -> float:
 
 
 def suggest(anchor: dict | None, letters=(), discipline: str | None = None, block: str | None = None, top: int = 3,
-            whole: dict | None = None) -> list[dict]:
+            whole: dict | None = None, extra: list[dict] | None = None) -> list[dict]:
     """→ [{name, discipline, source, score, code}] 점수 높은 순. 블록명이 라이브러리 코드와 같으면 그 기호를 1순위로."""
     out = []
     if block:
@@ -99,10 +99,13 @@ def suggest(anchor: dict | None, letters=(), discipline: str | None = None, bloc
         return out
     G = _letters_of(letters)
     cands = []
-    for e in load_library()["symbols"]:
+    # extra = 이 프로젝트에서 학습한 범례 기호 (같은 도면 세트의 기호라 공용 라이브러리보다 우선)
+    for e in list(extra or []) + load_library()["symbols"]:
         if out and e["id"] == out[0]["id"]:
             continue
         s = _shape_score(anchor, e.get("anchor"))
+        if e.get("project"):
+            s = min(s * 1.15, 0.99) if s >= 0.35 else s
         if s < 0.35:
             continue
         if whole and (e.get("sig") or {}).get("bm"):
@@ -118,10 +121,11 @@ def suggest(anchor: dict | None, letters=(), discipline: str | None = None, bloc
             s *= 0.6
         if discipline and e["discipline"] not in (discipline, "공통"):
             s *= 0.9
-        s = min(s, 0.97)
+        s = min(s, 0.99 if e.get("project") else 0.97)
         if s >= 0.5:
             cands.append({"name": e["name"], "discipline": e["discipline"], "source": e["source"], "code": e.get("code"),
-                          "score": round(s, 3), "why": "모양" + ("·문자" if L & G else ""), "id": e["id"]})
+                          "score": round(s, 3), "why": ("프로젝트 범례 " if e.get("project") else "") + "모양" + ("·문자" if L & G else ""),
+                          "id": e["id"], **({"spec": e.get("spec"), "unit": e.get("unit")} if e.get("project") else {})})
     cands.sort(key=lambda c: -c["score"])
     # 같은 이름 중복 제거
     seen = {c["name"] for c in out}

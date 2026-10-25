@@ -545,13 +545,18 @@ async function tallyRegion(a, b) {
   const region = { x0: Math.min(a[0], b[0]), y0: Math.min(a[1], b[1]), x1: Math.max(a[0], b[0]), y1: Math.max(a[1], b[1]) };
   $("#vinfo").textContent = "영역 분석 중…";
   const r = await api(`/api/projects/${W.pid}/sheets/${W.sheet.id}/region-analyze`, { method: "POST", json: { region, hidden_layers: [...W.hidden] } });
-  r.objects.forEach((o, i) => { o.on = false; o.name = ""; o.spec = ""; o.unit = "개"; o.col = TCOL(i); o.bg = isGreyish(o.color); });
+  r.objects.forEach((o, i) => {
+    o.col = TCOL(i); o.bg = isGreyish(o.color);
+    if (o.kind === "legend") { o.on = true; o.name = o.label; o.spec = o.spec || ""; o.unit = o.unit || "개"; }   // 범례 학습으로 찾은 기호 = 품명 확정
+    else { o.on = false; o.name = ""; o.spec = ""; o.unit = "개"; }
+  });
   r.lines.forEach((l, i) => { l.on = false; l.name = "케이블"; l.spec = ""; l.len = ""; l.col = lineColor(l.key, i); });
   W.tally = { ...r, region, sheet_id: W.sheet.id, only: true };
   W.sel = null; renderRight();
   $("#vinfo").textContent = `영역 분석 완료 — 객체 ${r.objects.length}종, 선 ${r.lines.length}종`;
   if (isNarrow()) fitTally(); else draw();
-  toast(r.mode === "raster" ? "스캔 도면은 객체 자동 구분이 안 됩니다 (오른쪽 안내 참조)" : `영역 안 객체 ${r.objects.length}종 · 선 ${r.lines.length}종 — ${isNarrow() ? "아래" : "오른쪽"} 목록에서 집계할 항목에 품명을 입력하십시오`);
+  const nl = r.objects.filter(o => o.kind === "legend");
+  toast(r.mode === "raster" ? "스캔 도면은 객체 자동 구분이 안 됩니다 (오른쪽 안내 참조)" : (nl.length ? `범례 기호 ${nl.length}종 ${nl.reduce((a, o) => a + o.count, 0)}개를 품명대로 찾았습니다 (그 밖의 객체 ${r.objects.length - nl.length}종)` : `영역 안 객체 ${r.objects.length}종 · 선 ${r.lines.length}종 — ${isNarrow() ? "아래" : "오른쪽"} 목록에서 집계할 항목에 품명을 입력하십시오`));
 }
 const tallyCount = o => o.items.filter(it => !it.off).length;
 async function tallyAll() {
@@ -608,7 +613,7 @@ function tallyPanel() {
   <div class="small muted">· 같은 기호가 두 종으로 나뉘면 같은 품명·규격을 입력하십시오 — 물량표에서 합산됩니다.<br>· 같은 곳을 다시 드래그해 추가하면 이중으로 집계됩니다. 잘못 넣은 내역은 '물량' 탭에서 삭제하십시오.</div>`;
   return h;
 }
-function tallyPick(i, k) { const o = W.tally.objects[i], sg = o.suggest[k]; o.name = sg.name; o.on = true; renderRight(); draw(); }
+function tallyPick(i, k) { const o = W.tally.objects[i], sg = o.suggest[k]; o.name = sg.name; if (sg.spec) o.spec = sg.spec; if (sg.unit) o.unit = sg.unit; o.on = true; renderRight(); draw(); }
 function tallyAllOn(on) {
   for (const o of W.tally.objects) {
     if (on && (o.note || o.bg || !tallyCount(o))) continue;
