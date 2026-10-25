@@ -39,9 +39,24 @@ FRONT = BASE_DIR / "frontend" / "static"
 if FRONT.exists():
     app.mount("/static", StaticFiles(directory=FRONT), name="static")
 
+    def _asset_version() -> str:
+        import hashlib
+        h = hashlib.md5()
+        for name in ("app.js", "style.css"):
+            fp = FRONT / name
+            if fp.exists():
+                h.update(fp.read_bytes())
+        return h.hexdigest()[:10]
+
+    _VER = _asset_version()
+
     @app.get("/", include_in_schema=False)
     def index():
-        return FileResponse(FRONT / "index.html")
+        """화면 파일에 버전(내용 해시)을 붙여, 배포 후 브라우저가 예전 app.js 를 쓰지 않게 한다."""
+        from fastapi.responses import HTMLResponse
+        html = (FRONT / "index.html").read_text(encoding="utf-8")
+        html = html.replace("/static/app.js", f"/static/app.js?v={_VER}").replace("/static/style.css", f"/static/style.css?v={_VER}")
+        return HTMLResponse(html, headers={"Cache-Control": "no-cache, must-revalidate"})
 
     @app.get("/favicon.ico", include_in_schema=False)
     def favicon():
