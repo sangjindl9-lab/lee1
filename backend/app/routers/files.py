@@ -144,11 +144,21 @@ def download(fid: int, db: Session = Depends(get_db), user: User = Depends(get_c
 
 @router.delete("/files/{fid}")
 def delete_file(fid: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """원본 파일 삭제: 이 파일에서 가져온 계약내역(버전)·원가비목·단가표·일위대가도 함께 삭제.
+    그 계약내역을 쓰는 기성 회차가 있으면 삭제하지 않고 안내."""
+    from ..models import ContractVersion, PriceTable, UnitPriceAnalysis
+    from .estimates import delete_version_rows
     sf = _get_file(db, fid, user, "edit")
-    audit(db, user, "file.delete", sf.project_id, target=sf.original_name)
+    versions = db.query(ContractVersion).filter_by(source_file_id=sf.id).order_by(ContractVersion.version_no.desc()).all()
+    ids = {v.id for v in versions}
+    for v in versions:
+        delete_version_rows(db, v, ids)   # 기성 회차가 있으면 400 → 아무것도 지우지 않음
+    db.query(PriceTable).filter_by(source_file_id=sf.id).delete()
+    db.query(UnitPriceAnalysis).filter_by(source_file_id=sf.id).delete()
+    audit(db, user, "file.delete", sf.project_id, target=sf.original_name, after={"deleted_versions": len(versions)})
     db.delete(sf)
     db.commit()
-    return {"ok": True}
+    return {"ok": True, "deleted_versions": len(versions)}
 
 
 @router.get("/files/{fid}/preview")

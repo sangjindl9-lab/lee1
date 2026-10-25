@@ -358,3 +358,24 @@ def test_fit_contract(client):
         wv = openpyxl.load_workbook(TMP / "rc" / "fit.xlsx", data_only=True)["원가"]
         grow = next(rr for rr in range(1, 50) if any(str(wv.cell(rr, c).value or "").replace(" ", "").startswith("(총계") for c in (1, 2, 3)))
         assert wv.cell(grow, 5).value == int(target), (wv.cell(grow, 5).value, target)
+
+
+def test_delete_file_with_versions(client):
+    pid = client.post("/api/projects", json={"name": "파일 삭제 테스트"}).json()["id"]
+    with open(CHILGOK, "rb") as fh:
+        fid = client.post(f"/api/projects/{pid}/files", files={"file": (CHILGOK.name, fh, "application/octet-stream")}, data={"sync": "true"}).json()["id"]
+    vid = client.post(f"/api/files/{fid}/import", json={}).json()["version_id"]
+    assert client.post(f"/api/versions/{vid}/approve").status_code == 200
+    # 기성 회차가 있으면 삭제 불가 (400, 안내 문구)
+    r = client.post(f"/api/projects/{pid}/claims", json={"title": "1회"})
+    assert r.status_code == 200, r.text
+    cid = r.json()["id"]
+    r = client.delete(f"/api/files/{fid}")
+    assert r.status_code == 400 and "기성" in r.json()["detail"]
+    assert len(client.get(f"/api/projects/{pid}/versions").json()) == 1
+    # 기성 삭제 후에는 파일·계약내역 함께 삭제
+    assert client.delete(f"/api/claims/{cid}").status_code == 200
+    r = client.delete(f"/api/files/{fid}")
+    assert r.status_code == 200 and r.json()["deleted_versions"] == 1
+    assert client.get(f"/api/projects/{pid}/versions").json() == []
+    assert client.delete(f"/api/projects/{pid}").status_code == 200

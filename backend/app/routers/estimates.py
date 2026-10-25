@@ -476,18 +476,25 @@ def approve_version(vid: int, db: Session = Depends(get_db), user: User = Depend
 @router.delete("/versions/{vid}")
 def delete_version(vid: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     v = _version(db, vid, user, "approve")
+    delete_version_rows(db, v)
+    audit(db, user, "version.delete", v.project_id, target=f"v{v.version_no} {v.label}")
+    db.commit()
+    return {"ok": True}
+
+
+def delete_version_rows(db: Session, v: ContractVersion, others: set[int] | None = None) -> None:
+    """계약내역 버전과 딸린 원가비목·설계변경을 삭제 (커밋은 호출측). others: 함께 지워지는 버전 id (서로 참조 허용)."""
+    label = f"v{v.version_no} {v.label}"
     if db.query(ProgressClaim).filter_by(contract_version_id=v.id).count():
-        raise HTTPException(400, "이 계약내역을 사용하는 기성 회차가 있습니다. 기성 회차를 먼저 삭제하세요.")
+        raise HTTPException(400, f"계약내역 {label} 을(를) 사용하는 기성 회차가 있습니다. ④ 기성내역서에서 기성 회차를 먼저 삭제하세요.")
+    others = others or set()
     dcs = db.query(DesignChange).filter((DesignChange.base_version_id == v.id) | (DesignChange.result_version_id == v.id)).all()
-    if any(d.status == "approved" and d.result_version_id != v.id for d in dcs):
-        raise HTTPException(400, "이 계약내역을 기준으로 승인된 설계변경이 있습니다. 결과 버전을 먼저 삭제하세요.")
+    if any(d.status == "approved" and d.result_version_id != v.id and d.result_version_id not in others for d in dcs):
+        raise HTTPException(400, f"계약내역 {label} 을(를) 기준으로 승인된 설계변경이 있습니다. 변경 결과 버전을 먼저 삭제하세요.")
     for d in dcs:
         db.delete(d)   # 이 버전이 결과인 승인 설계변경 / 이 버전을 기준으로 한 작성중 설계변경은 함께 삭제
     db.query(CostRateRule).filter_by(version_id=v.id).delete()
-    audit(db, user, "version.delete", v.project_id, target=f"v{v.version_no} {v.label}")
     db.delete(v)
-    db.commit()
-    return {"ok": True}
 
 
 # ---------------------------------------------------------------- 원가 비목

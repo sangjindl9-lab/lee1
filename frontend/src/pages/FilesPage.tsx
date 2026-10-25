@@ -53,7 +53,11 @@ export default function FilesPage() {
       setTimeout(() => nav(`/projects/${pid}/estimate`), 800)
     } catch (e) { setMsg({ t: errMsg(e), k: 'err' }) } finally { setBusy('') }
   }
-  const del = async (f: any) => { if (!confirm(`${f.name} 파일을 삭제할까요? (이미 가져온 계약내역은 유지됩니다)`)) return; await api.delete(`/files/${f.id}`); setSel(null); load() }
+  const del = async (f: any) => {
+    if (!confirm(`${f.name} 파일을 삭제할까요?\n이 파일에서 가져온 계약내역(내역서 버전)·원가비목·단가표도 함께 삭제됩니다.`)) return
+    try { const r = await api.delete(`/files/${f.id}`); setSel(null); load(); alert(r.data.deleted_versions ? `파일과 계약내역 ${r.data.deleted_versions}개를 삭제했습니다.` : '파일을 삭제했습니다.') }
+    catch (e) { alert(errMsg(e)) }
+  }
   return (
     <>
       <div className="topbar"><h1>원본 내역서 관리</h1>
