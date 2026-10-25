@@ -438,7 +438,10 @@ def test_18_legend_delete_and_guard(client, auth, fixtures):
     b = sh["bbox"]
     # 전체 집계: 범례표 안 견본 블록(CCTV_FIX 등 3개)은 빠져야 함 → 고정형 12+기존 1
     r = client.post(f"/api/projects/{pid}/sheets/{sh['id']}/region-analyze", headers=auth, json={"region": b}).json()
-    assert {o["block"]: o["count"] for o in r["objects"] if o["kind"] == "block"}["CCTV_FIX"] == 13
+    # 범례 학습·검출 후에는 블록이 범례 품명 묶음(legend)으로 나온다 — 블록명 묶음과 합쳐 13개(견본 제외)
+    fix = sum(o["count"] for o in r["objects"] if o.get("block") == "CCTV_FIX" or o["label"] == "고정형 네트워크 카메라")
+    assert fix == 13, [(o["kind"], o["label"], o["count"]) for o in r["objects"]]
+    assert any(o["kind"] == "legend" and o["label"] == "고정형 네트워크 카메라" for o in r["objects"])
     # 도면 전체를 범례로 지정 → 400 (force 없이)
     big = client.post(f"/api/projects/{pid}/legends/region", headers=auth, json={"sheet_id": sh["id"], "region": b, "title": "x"})
     assert big.status_code == 400 and "범례" in big.json()["detail"]
