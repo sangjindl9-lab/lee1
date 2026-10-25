@@ -95,10 +95,10 @@ def _ocr_cell_fn(s: DrawingSheet):
     return lambda region: ocr_cell(s.raster_path, dpi, H, region)
 
 
-def auto_detect_legends(db: Session, pid: int, progress=None) -> list[LegendTable]:
-    """모든 시트에서 범례표 자동 탐색. 이미 같은 시트·영역에 승인된 범례가 있으면 건너뜀."""
+def auto_detect_legends(db: Session, pid: int, progress=None, sheet_ids: list[int] | None = None) -> list[LegendTable]:
+    """모든 시트(또는 지정 시트)에서 범례표 자동 탐색. 이미 같은 시트·영역에 승인된 범례가 있으면 건너뜀."""
     created = []
-    sheets_ = project_sheets(db, pid)
+    sheets_ = [s for s in project_sheets(db, pid) if not sheet_ids or s.id in sheet_ids]
     for si, s in enumerate(sheets_):
         if progress:
             progress(100 * si / max(len(sheets_), 1), f"범례표 탐색 {si + 1}/{len(sheets_)} ({s.drawing_no or s.sheet_name})")
@@ -111,7 +111,7 @@ def auto_detect_legends(db: Session, pid: int, progress=None) -> list[LegendTabl
                 continue
             created.append(_save_legend(db, pid, s, res, "auto"))
         # 엑셀 범례 보강: 시트 없는 xlsx 파일
-    for f in db.query(DrawingFile).filter_by(project_id=pid, kind="xlsx").all():
+    for f in (db.query(DrawingFile).filter_by(project_id=pid, kind="xlsx").all() if not sheet_ids else []):
         if db.query(LegendTable).filter_by(project_id=pid, title=f"[XLSX] {f.original_name}").first():
             continue
         rows = legend_engine.legend_from_xlsx(f.stored_path)

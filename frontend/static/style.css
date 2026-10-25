@@ -85,3 +85,7 @@ button.chip { border-radius: 12px; background: #eef4ff; border-color: #b9cdf5; p
 .symcell canvas { display: block; margin: 0 auto; }
 .symcell .small { line-height: 1.2; word-break: keep-all; }
 .tcard.note { opacity: .55; }
+.guide { background: #eef4ff; border: 1px solid #b9cdf5; border-radius: 6px; padding: 8px; margin: 6px 0; line-height: 1.5; }
+.guide .learned { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; max-height: 140px; overflow: auto; }
+.guide .lchip { background: #fff; border: 1px solid #d6e0f5; border-radius: 10px; padding: 1px 6px; font-size: 11px; display: inline-flex; align-items: center; gap: 3px; }
+.guide .lchip img { height: 16px; }

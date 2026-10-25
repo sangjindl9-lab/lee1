@@ -470,3 +470,29 @@ def test_19_damaged_dxf_recovers(client, auth, tmp_path):
     assert f["status"] == "done", f["error"]
     assert any("보정" in w for w in f["warnings"])
     assert f["sheets"][0]["stats"]["entities"] >= 5
+
+
+def test_20_learn_legend_then_detect(client, auth, fixtures):
+    """'범례 먼저 학습': 범례 도면(또는 범례 영역)을 학습 → 전체 도면 자동 검출 작업이 돌고 개수가 표시된다."""
+    pid = client.post("/api/projects", headers=auth, json={"name": "[테스트] 범례 먼저 학습"}).json()["id"]
+    _upload(client, auth, pid, fixtures / "test_cctv_plan.dxf")
+    sh = wait_done(client, auth, pid)[0]["sheets"][0]
+    # 범례표 영역만 드래그해서 학습 (make_cctv_plan: 범례표 x 36000~57000, y 22800~30000)
+    r = client.post(f"/api/projects/{pid}/legends/learn", headers=auth,
+                    json={"sheet_id": sh["id"], "region": {"x0": 35500, "y0": 22000, "x1": 57500, "y1": 31000}}).json()
+    assert r["learned"] >= 3 and r["job_id"], r
+    for _ in range(120):
+        j = client.get(f"/api/projects/{pid}/jobs/{r['job_id']}", headers=auth).json()
+        if j["status"] in ("done", "failed"):
+            break
+        time.sleep(0.5)
+    assert j["status"] == "done", j
+    files = client.get(f"/api/projects/{pid}/files", headers=auth).json()
+    assert files[0]["sheets"][0]["det_count"] >= 15          # 고정형 12(+기존 1) + PTZ 3 + 접속함 1
+    items = {q["item_name"]: q["qty_total"] for q in client.get(f"/api/projects/{pid}/takeoff/items", headers=auth).json()}
+    assert items.get("PTZ 네트워크 카메라") == 3
+    # 범례가 없는 도면을 통째로 학습하려 하면 안내
+    _upload(client, auth, pid, fixtures / "test_cctv_riser.dxf")
+    sh2 = [f for f in wait_done(client, auth, pid) if f["name"] == "test_cctv_riser.dxf"][0]["sheets"][0]
+    bad = client.post(f"/api/projects/{pid}/legends/learn", headers=auth, json={"sheet_id": sh2["id"]})
+    assert bad.status_code == 400 and "범례" in bad.json()["detail"]

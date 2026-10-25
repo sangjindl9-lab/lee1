@@ -142,7 +142,7 @@ function renderLeft() {
 
 function leftFiles() {
   const unconf = W.sheets.filter(s => !s.scale_confirmed && s.scale_factor).length;
-  let h = (unconf ? `<div class="warnbox">추정 축척이 있는 시트 ${unconf}장이 아직 확정되지 않았습니다. 시트별 경고의 근거(용지·표기)를 확인한 뒤 <button class="sm ok" onclick="api('/api/projects/${W.pid}/sheets/confirm-scales',{method:'POST'}).then(r=>{toast(r.confirmed+'장 축척 확정');refreshAll()})">추정 축척 일괄 확정</button></div>` : "") + `<div class="drop" ondragover="event.preventDefault()" ondrop="dropFiles(event)">DWG·DXF·PDF·JPG·PNG·XLSX 파일을 끌어다 놓거나<br><input type="file" multiple onchange="uploadFiles(this.files)"></div><div class="list">`;
+  let h = (unconf ? `<div class="warnbox">추정 축척이 있는 시트 ${unconf}장이 아직 확정되지 않았습니다. 시트별 경고의 근거(용지·표기)를 확인한 뒤 <button class="sm ok" onclick="api('/api/projects/${W.pid}/sheets/confirm-scales',{method:'POST'}).then(r=>{toast(r.confirmed+'장 축척 확정');refreshAll()})">추정 축척 일괄 확정</button></div>` : "") + `<div class="drop" ondragover="event.preventDefault()" ondrop="dropFiles(event)">DWG·DXF·PDF·JPG·PNG·XLSX 파일을 끌어다 놓거나<br><input type="file" multiple onchange="uploadFiles(this.files)"></div>` + learnGuide() + `<div class="list">`;
   for (const f of W.files) {
     h += `<div class="item" style="flex-direction:column;align-items:stretch"><div class="row" style="justify-content:space-between"><span>${esc(f.name)} <span class="badge ${f.status}">${KO[f.status] || f.status}</span></span><span><button class="sm" onclick="api('/api/projects/${W.pid}/files/${f.id}/reprocess',{method:'POST'}).then(refreshAll)">재분석</button><button class="sm err" onclick="if(confirm('삭제?'))api('/api/projects/${W.pid}/files/${f.id}',{method:'DELETE'}).then(refreshAll)">×</button></span></div>`;
     if (["queued", "processing"].includes(f.status)) h += `<div class="prog"><i style="width:${f.progress}%"></i></div>`;
@@ -150,7 +150,7 @@ function leftFiles() {
     const ws = f.warnings || [];
     if (ws.length > 2) h += `<details class="warns"><summary>⚠ 확인할 안내 ${ws.length}건 (축척·OCR 등) — 눌러서 보기</summary>${ws.map(w => `<div class="warnbox">${esc(w)}</div>`).join("")}</details>`;
     else for (const w of ws) h += `<div class="warnbox">${esc(w)}</div>`;
-    for (const s of f.sheets) h += `<div class="item ${W.sheet && W.sheet.id === s.id ? "sel" : ""}" onclick="openSheet(${s.id})"><span>📄 ${esc(s.drawing_no || "")} ${esc(s.drawing_title || s.sheet_name)} <span class="muted small">${s.drawing_type || ""} ${s.discipline || ""}</span></span><span class="small ${s.scale_confirmed ? "muted" : ""}" style="color:${s.scale_confirmed ? "" : "var(--warn)"}">${s.scale_confirmed ? s.units : "축척 미확정"}</span></div>`;
+    for (const s of f.sheets) h += `<div class="item ${W.sheet && W.sheet.id === s.id ? "sel" : ""}" onclick="openSheet(${s.id})"><span>📄 ${esc(s.drawing_no || "")} ${esc(s.drawing_title || s.sheet_name)} <span class="muted small">${s.drawing_type || ""} ${s.discipline || ""}</span>${s.det_count ? ` <span class="badge verified">검출 ${s.det_count}</span>` : ""}</span><span class="small" style="white-space:nowrap">${s.drawing_type === "범례" ? `<span class="badge auto">범례</span>` : `<button class="sm" title="이 도면의 범례표를 먼저 학습하고 전체 도면에서 자동 검출" onclick="event.stopPropagation();learnSheet(${s.id})">📘 범례로 학습</button>`} <span class="${s.scale_confirmed ? "muted" : ""}" style="color:${s.scale_confirmed ? "" : "var(--warn)"}">${s.scale_confirmed ? s.units : "축척 미확정"}</span></span></div>`;
     h += `</div>`;
   }
   h += `</div>`;
@@ -415,7 +415,7 @@ function initViewer() {
 }
 function toWorld(px, py) { return [(px - V.tx) / V.scale, -(py - V.ty) / V.scale]; }
 function toScreen(x, y) { return [x * V.scale + V.tx, -y * V.scale + V.ty]; }
-function setMode(m) { W.mode = m; W.pts = []; document.querySelectorAll(".vtools button[id^=m_]").forEach(b => b.classList.toggle("on", b.id === "m_" + m)); V.cv.style.cursor = m === "pan" ? "grab" : "crosshair"; $("#vinfo").textContent = { pan: "클릭: 기호·선로 선택 / 드래그: 이동 / 휠: 확대", region: "표 영역을 드래그하여 범례로 등록", measure: "두 점을 클릭 → 실제 거리(m) 입력 시 축척 확정", tally: "집계할 영역을 드래그 → 영역 안 객체 개수·케이블 선 표시 / 객체 클릭: 개별 제외·포함 / 오른쪽 버튼(휴대폰: 두 손가락) 드래그: 화면 이동", add: "범례 기호를 선택한 뒤 도면을 클릭하면 기호가 추가됩니다", sample: "범례 탭에서 기호를 선택한 뒤, 도면 위 실제 기호 하나를 클릭 → 그 모양으로 전체 검색" }[m]; }
+function setMode(m) { W.mode = m; W.pts = []; document.querySelectorAll(".vtools button[id^=m_]").forEach(b => b.classList.toggle("on", b.id === "m_" + m)); V.cv.style.cursor = m === "pan" ? "grab" : "crosshair"; $("#vinfo").textContent = { pan: "클릭: 기호·선로 선택 / 드래그: 이동 / 휠: 확대", region: "범례표 부분만 드래그 → 기호를 학습하고 전체 도면에서 자동 검출", measure: "두 점을 클릭 → 실제 거리(m) 입력 시 축척 확정", tally: "집계할 영역을 드래그 → 영역 안 객체 개수·케이블 선 표시 / 객체 클릭: 개별 제외·포함 / 오른쪽 버튼(휴대폰: 두 손가락) 드래그: 화면 이동", add: "범례 기호를 선택한 뒤 도면을 클릭하면 기호가 추가됩니다", sample: "범례 탭에서 기호를 선택한 뒤, 도면 위 실제 기호 하나를 클릭 → 그 모양으로 전체 검색" }[m]; }
 function fitView() { const b = W.sheet && W.sheet.bbox; if (!b) return; const w = b.x1 - b.x0 || 1, h = b.y1 - b.y0 || 1; V.scale = Math.min(V.cv.width / w, V.cv.height / h) * 0.92; V.tx = (V.cv.width - w * V.scale) / 2 - b.x0 * V.scale; V.ty = (V.cv.height + h * V.scale) / 2 + b.y0 * V.scale; draw(); }
 async function openSheet(id, focusRegion) {
   const s = W.sheets.find(x => x.id === id); if (!s) return;
@@ -479,10 +479,30 @@ async function finishRegion(a, b) {
     if (!confirm(`지정한 영역이 도면의 ${Math.round(ratio * 100)}% 입니다.\n범례 영역 안의 기호는 수량에서 빠지므로, 보통은 범례 '표'만 작게 지정합니다.\n기호 개수를 세려면 '영역 집계'를 쓰십시오.\n\n그래도 이 영역을 범례로 지정할까요?`)) return;
     force = true;
   }
-  const title = prompt("범례표 이름", "사용자 지정 범례"); if (title === null) return;
-  const t = await api(`/api/projects/${W.pid}/legends/region${force ? "?force=1" : ""}`, { method: "POST", json: { sheet_id: W.sheet.id, region, title } });
-  toast(`범례 행 ${t.symbols.length}개 추출`); W.tab = "legend"; setMode("pan"); refreshAll();
+  setMode("pan");
+  await learnAndDetect({ sheet_id: W.sheet.id, region, title: "범례(영역 학습)" });
 }
+function learnGuide() {
+  const syms = W.legends.flatMap(t => t.symbols).filter(x => x.category === "device" && x.status !== "unresolved" && x.item_name);
+  const total = W.sheets.reduce((n, s) => n + (s.det_count || 0), 0);
+  if (!W.sheets.length) return `<div class="guide small">① 전체 PDF·CAD 도면을 올리십시오 → ② 범례 도면에서 <b>📘 범례로 학습</b> 또는 상단 <b>범례 영역 지정</b>으로 범례표를 드래그 → ③ 나머지 도면에서 기호를 자동으로 찾아 표시합니다.</div>`;
+  if (!syms.length) return `<div class="guide small"><b>② 범례 먼저 학습:</b> 아래 목록에서 범례가 있는 도면의 <b>📘 범례로 학습</b>을 누르거나, 도면을 연 뒤 상단 <b>범례 영역 지정</b>으로 범례표만 드래그하십시오. 학습한 기호로 전체 도면을 자동 검출합니다.</div>`;
+  return `<div class="guide small"><b>학습한 범례 기호 ${syms.length}종</b> · 전체 검출 <b>${total}</b>개 <button class="sm" onclick="rerunDetect()">다시 검출</button><div class="learned">${syms.slice(0, 40).map(x => `<span class="lchip" title="${esc(x.spec || "")}">${x.has_image ? `<img class="sym-img" data-src="/api/projects/${W.pid}/legends/symbols/${x.id}/image">` : ""}${esc(x.item_name)} <b>${x.detected_count || 0}</b></span>`).join("")}</div></div>`;
+}
+async function learnSheet(sid) { await learnAndDetect({ sheet_id: sid }); }
+async function learnAndDetect(body) {
+  const r = await api(`/api/projects/${W.pid}/legends/learn`, { method: "POST", json: body });
+  if (!r.job_id) { toast(r.message || "학습할 기호가 없습니다.", true); W.tab = "legend"; return refreshAll(); }
+  toast(`범례 기호 ${r.learned}종 학습 (품명 미확인 ${r.unresolved}행) → 전체 도면 자동 검출 시작`);
+  await refreshAll();
+  const d = await waitJob(r.job_id, `범례 ${r.learned}종으로 전체 도면 검출`);
+  toast(`검출 ${d.detection.detected}개, 물량 ${d.items}행 — 도면에 표시했습니다. 범례 탭에서 품명을 확인하십시오.`);
+  // 범례가 아닌 첫 평면도를 열어 결과 표시
+  await refreshAll();
+  const plan = W.sheets.filter(s => s.drawing_type !== "범례").sort((a, b) => (b.det_count || 0) - (a.det_count || 0))[0];
+  if (plan) await openSheet(plan.id);
+}
+async function rerunDetect() { const { job_id } = await api(`/api/projects/${W.pid}/takeoff/run`, { method: "POST" }); const d = await waitJob(job_id, "학습한 범례로 다시 검출"); toast(`검출 ${d.detection.detected}개`); refreshAll(); }
 async function measureClick(p) {
   W.pts.push(p); if (W.pts.length < 2) return draw();
   const d = Math.hypot(W.pts[1][0] - W.pts[0][0], W.pts[1][1] - W.pts[0][1]);

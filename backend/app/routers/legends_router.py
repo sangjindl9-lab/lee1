@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
@@ -198,3 +199,43 @@ def sample_symbol(pid: int, sid: int, body: ManualSymbolIn, user: User = Depends
     audit(db, user, "legend_sample", pid, symbol=sid, sheet=sh.id)
     db.commit()
     return {**r, "symbol": _sym_out(db, s)}
+
+
+
+class LearnIn(BaseModel):
+    sheet_id: int
+    region: dict | None = None      # 없으면 시트 전체에서 범례표를 찾는다
+    title: str | None = None
+
+
+@router.post("/learn")
+def learn_legend(pid: int, body: LearnIn, user: User = Depends(require_role(*EDIT_ROLES)), db: Session = Depends(get_db)):
+    """'범례 먼저 학습': 선택한 범례 도면(또는 드래그한 범례 영역)의 기호·품명을 익히고,
+    바로 전체 도면 자동 검출(백그라운드 작업)을 시작한다. 범례 도면은 설치 수량에서 제외(도면 종류 = 범례)."""
+    from ..jobs import submit_job
+    get_project_or_403(db, user, pid)
+    s = db.get(DrawingSheet, body.sheet_id)
+    if not s or s.revision.file.project_id != pid:
+        raise HTTPException(404, "시트가 없습니다.")
+    if body.region:
+        r = body.region
+        if not all(k in r for k in ("x0", "y0", "x1", "y1")) or r["x1"] <= r["x0"] or r["y1"] <= r["y0"]:
+            raise HTTPException(400, "영역이 올바르지 않습니다.")
+        tables = [services.legend_from_region(db, pid, s, r, body.title or "범례(영역 학습)")]
+    else:
+        tables = services.auto_detect_legends(db, pid, sheet_ids=[s.id])
+        if not tables:
+            tables = db.query(LegendTable).filter_by(project_id=pid, sheet_id=s.id).all()
+        if not tables:
+            raise HTTPException(400, "이 도면에서 범례표를 찾지 못했습니다. 상단 '범례 영역 지정'으로 범례표 부분만 드래그해 학습하십시오.")
+        s.drawing_type = "범례"
+    services.apply_library(db, pid, user.company_id)
+    syms = [x for t in tables for x in t.symbols]
+    learned = [x for x in syms if x.category == "device" and x.status != SymbolStatus.unresolved and x.fingerprint]
+    unresolved = [x for x in syms if x.status == SymbolStatus.unresolved or not x.item_name]
+    audit(db, user, "legend_learn", pid, sheet=s.id, tables=len(tables), learned=len(learned))
+    db.commit()
+    job_id = submit_job(pid, user.id, "takeoff") if learned else None
+    return {"tables": len(tables), "symbols": len(syms), "learned": len(learned), "unresolved": len(unresolved),
+            "learned_names": [x.item_name for x in learned][:40], "job_id": job_id,
+            "message": None if learned else "기호 모양이 있는 범례 행을 찾지 못했습니다. 범례 탭에서 품명·기호를 확인하십시오."}

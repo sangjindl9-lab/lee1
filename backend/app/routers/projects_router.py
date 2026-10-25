@@ -97,7 +97,16 @@ def _sheet_out(s: DrawingSheet) -> dict:
 @router.get("/{pid}/files")
 def list_files(pid: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
     p = get_project_or_403(db, user, pid)
-    return [_file_out(f) for f in p.files]
+    from sqlalchemy import func
+    from ..models import DetectedSymbol, DetectStatus
+    cnt = dict(db.query(DetectedSymbol.sheet_id, func.count(DetectedSymbol.id))
+               .filter(DetectedSymbol.project_id == pid, DetectedSymbol.status != DetectStatus.excluded)
+               .group_by(DetectedSymbol.sheet_id).all())
+    out = [_file_out(f) for f in p.files]
+    for f in out:
+        for sh in f["sheets"]:
+            sh["det_count"] = int(cnt.get(sh["id"], 0))
+    return out
 
 
 @router.post("/{pid}/files")
