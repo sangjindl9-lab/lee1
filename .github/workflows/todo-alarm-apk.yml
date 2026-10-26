@@ -1,0 +1,43 @@
+name: 할 일 알람 APK 빌드
+on:
+  push:
+    branches: [todo-alarm]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: 패키지 설치
+        run: npm ci
+      - name: 웹 화면을 안드로이드에 반영
+        run: npx cap sync android
+      - name: APK 빌드
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+      - name: 파일 이름 정리
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk todo-alarm.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: todo-alarm-apk
+          path: todo-alarm.apk
+      - name: 다운로드 페이지(릴리스)에 올리기
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete todo-alarm-latest --yes --cleanup-tag || true
+          gh release create todo-alarm-latest todo-alarm.apk \
+            --target "$GITHUB_SHA" \
+            --title "할 일 알람 앱 (최신)" \
+            --notes "휴대폰에서 todo-alarm.apk를 눌러 내려받아 설치하세요."

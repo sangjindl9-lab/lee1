@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">할 일 알람</string>
+    <string name="title_activity_main">할 일 알람</string>
+    <string name="package_name">kr.ssjeonryeok.todoalarm</string>
+    <string name="custom_url_scheme">kr.ssjeonryeok.todoalarm</string>
+</resources>
