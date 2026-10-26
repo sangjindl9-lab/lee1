@@ -293,12 +293,38 @@ function ExtInfo({ r, type }) {
           {r._bidMth && <Field label="입찰방법">{r._bidMth}</Field>}
         </>}
       </dl>
+      {r._org === 'korail' && /^\d{7}/.test(r.bidNtceNo) && <KorailOpeng no={`${r.bidNtceNo.slice(0, 7)}-${(r.bidNtceNo.split('-')[1] || r.bidNtceOrd || '00').slice(-2)}`} />}
       {r._files?.length > 0 && <><h3>첨부파일</h3><ul className="files">{r._files.map((f, i) => <li key={i}><a href={f.url} target="_blank" rel="noreferrer">{f.name}</a></li>)}</ul></>}
       {r._org === 'kwater' && type !== 'bid' && <p className="muted small">수자원공사 결과에는 사업자번호가 없어 업체 연락처는 연결되지 않습니다.</p>}
       {r._amtEstimated && <p className="muted small">방위사업청 파일 데이터에는 투찰금액이 없어 예정가격 × 최종낙찰율로 계산한 추정 금액입니다.</p>}
       {r._org === 'd2b' && type !== 'bid' && !r.bidwinnrNm && <p className="muted small">방위사업청 결과는 개찰 상태까지만 연결돼 있습니다. 낙찰업체·투찰금액은 국방전자조달에서 확인하세요.</p>}
       {r._org === 'kr' && type !== 'bid' && <p className="muted small">국가철도공단은 개찰결과를 1순위 업체만 공개합니다.</p>}
       <p className="links"><a href={url} target="_blank" rel="noreferrer">{site} 바로가기 ↗</a></p>
+    </>
+  );
+}
+
+function KorailOpeng({ no }) {
+  const [s, setS] = useState({ loading: true });
+  useEffect(() => {
+    let alive = true;
+    fetch(`/api/korail/openg/${no}`).then((r) => r.json()).then((d) => alive && setS({ data: d })).catch((e) => alive && setS({ error: e.message }));
+    return () => { alive = false; };
+  }, [no]);
+  const list = s.data?.list || [];
+  return (
+    <>
+      <h3>개찰순위 {s.data?.head?.status ? <span className="muted small">({s.data.head.status})</span> : null}</h3>
+      {s.loading ? <p className="muted">불러오는 중…</p> : s.error || s.data?.error ? <p className="error small">⚠ {s.error || s.data.error}</p> : !list.length ? <p className="muted">개찰결과가 아직 없습니다.</p> : (
+        <div className="table-wrap tight"><table>
+          <thead><tr><th>순위</th><th>업체</th><th>대표</th><th>투찰금액</th><th>투찰률</th><th>비고</th></tr></thead>
+          <tbody>{list.map((c, i) => (
+            <tr key={i}><td>{c.rank}</td><td><CompanyName name={c.name} bizno={c.bizno} ceo={c.ceo} /></td><td>{c.ceo}</td>
+              <td className="num">{Number(c.amt) ? won(c.amt) : ''}</td><td className="num">{c.rate ? `${Number(c.rate).toFixed(3)}%` : ''}</td><td>{c.decision}</td></tr>
+          ))}</tbody>
+        </table></div>
+      )}
+      {s.data?.head?.officer && <p className="muted small">담당 {s.data.head.officer} {s.data.head.tel}</p>}
     </>
   );
 }

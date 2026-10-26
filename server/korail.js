@@ -73,16 +73,26 @@ async function ranged(tag, from, to, fetchChunk) {
 }
 
 // 입찰공고 (공고일 기준)
-export function korailNotices(from, to) {
-  return ranged('notice', from, to, async (f, t) => {
+let BIDTYPES = ['1', '2', '3', '4'];
+const BIDTYPE_KIND = {};
+async function noticeChunk(code, f, t) {
+  try {
     const out = await rfc('ZMME_EBID_INFO_0009F', {
-      I_ZZBIDTYPECODE: '1', I_ZZCTRMETHOD: '', I_BSART: '', I_ZZBIDINV: '', I_DESCRIPTION: '',
+      I_ZZBIDTYPECODE: code, I_ZZCTRMETHOD: '', I_BSART: '', I_ZZBIDINV: '', I_DESCRIPTION: '',
       I_ERDAT_FR: plain(f), I_ERDAT_TO: plain(t), I_SDAT_FR: '', I_SDAT_TO: '', I_LIFNR: '',
     });
-    return tableOf(out).map((x) => {
+    return tableOf(out).map((x) => ({ ...x, _code: code }));
+  } catch (e) { if (/데이터가 없/.test(e.message)) return []; throw e; }
+}
+export function korailNotices(from, to) {
+  return ranged('notice', from, to, async (f, t) => {
+    const all = [];
+    for (const code of BIDTYPES) all.push(...await noticeChunk(code, f, t));
+    const seen = new Set();
+    return all.filter((x) => { const k = `${x.zzbidinv}/${x.zzstnum}`; return !seen.has(k) && seen.add(k); }).map((x) => {
       const no = String(x.zzbidinv || '');
       return {
-        _org: 'korail', _orgNm: '철도공사', _kind: kindOf(x.zzwayofbidding_t, x.description),
+        _org: 'korail', _orgNm: '철도공사', _kind: BIDTYPE_KIND[x._code] || kindOf(x.zzwayofbidding_t, x.description),
         bidNtceNo: no.replace(/-\d+$/, ''), bidNtceOrd: String(x.zzstnum || '00').padStart(3, '0'), bidNtceNm: x.description || '',
         ntceInsttNm: '한국철도공사', dminsttNm: `한국철도공사 ${x.eknam || ''}`.trim(), presmptPrce: '',
         cntrctCnclsMthdNm: [x.zzctrmethod_t, x.zzwayofbidding_t].filter(Boolean).join(' · '),
@@ -96,14 +106,19 @@ export function korailNotices(from, to) {
 }
 
 // 계약 결과 = 낙찰 (계약일 기준 조회, 공사·물품·용역 전부)
-export function korailContracts(from, to) {
+export async function korailContracts(from, to) {
+  const rows = await contractsRaw(from, to);
+  queueBizno(rows);
+  return rows.map((r) => (r.bidwinnrBizno || !vendorBiz.get(r._korailVendor) ? r : { ...r, ...vendorBiz.get(r._korailVendor) }));
+}
+function contractsRaw(from, to) {
   return ranged('cont', from, to, async (f, t) => {
     const all = [];
     for (const poart of POARTS) {
       const out = await rfc('ZMME_EBID_INFO_0014', {
         I_POART: poart, I_EBELN: '', I_ZZCTRDESC: '', I_GUBUN: 'A', I_ZZCONTRWAY: '', I_ZZBIDINV: '',
         I_DAT_FR: plain(f), I_DAT_TO: plain(t),
-      }, '/goods/contList.do');
+      }, '/goods/contList.do').catch((e) => { if (/데이터가 없/.test(e.message)) return {}; throw e; });
       all.push(...tableOf(out).map((x) => ({ ...x, _poart: poart })));
     }
     const seen = new Set();
@@ -124,46 +139,69 @@ export function korailContracts(from, to) {
   });
 }
 // 계약 목록 구분값 (화면: 계약현황). 시작 시 점검 로그로 확인한 값만 사용
-let POARTS = ['2'];
-const POART_KIND = {};
+// 1 물품 · 2 공사 · 3 용역 · 4 외자 (6 매각은 제외) — 2026-10 확인
+const POARTS = ['1', '2', '3', '4'];
+const POART_KIND = { 1: 'Thng', 2: 'Cnstwk', 3: 'Servc', 4: 'Frgcpt' };
 
-// 서버 시작 시 1회: 구분값별 건수 확인 → 실제 쓰는 구분값 결정
+// 낙찰업체 사업자번호: 개찰결과 상세(공고별 참가업체 목록)에 있음 → 업체코드별로 기억해 두고 계약결과에 채움
+const vendorBiz = new Map(); // 철도공사 업체코드 → {bidwinnrBizno, bidwinnrCeoNm}
+const tried = new Set();
+const queue = [];
+let running = false;
+function queueBizno(rows) {
+  for (const r of rows) {
+    if (!r._korailVendor || vendorBiz.has(r._korailVendor) || !/^\d{7}-\d{2}$/.test(r.bidNtceNo) || tried.has(r.bidNtceNo)) continue;
+    tried.add(r.bidNtceNo); queue.push(r.bidNtceNo);
+  }
+  if (!running && queue.length) drain();
+}
+async function drain() {
+  running = true;
+  while (queue.length) {
+    const no = queue.shift();
+    try { await korailOpeng(no); } catch (e) { if (!/데이터가 없/.test(e.message)) console.log(`[korail] 개찰상세 ${no} 실패 ${e.message}`); }
+    await new Promise((r) => setTimeout(r, 400)); // 사이트 부담 줄이기
+  }
+  running = false;
+}
+const opengCache = new Map();
+// 개찰결과 상세: 참가업체 순위·사업자번호·대표자·투찰금액·투찰률
+export async function korailOpeng(no) {
+  if (opengCache.has(no)) return opengCache.get(no);
+  const m = String(no).match(/^(\d{7})-?(\d{2})?$/);
+  if (!m) return null;
+  const out = await rfc('ZMME_EBID_INFO_0016', { I_ZZBIDINV: `${m[1]}-${m[2] || '00'}`, I_ZZSTNUM: m[2] || '00' }, '/goods/openDetail.do');
+  const head = (out.ET_ZSMMEEBID0012 || [])[0] || {};
+  const list = (out.ET_ZSMMEEBID0014 || []).map((x) => ({
+    rank: x.num, name: String(x.name1 || '').replace(/&amp;amp;|&amp;/g, '&'), bizno: String(x.stcd2 || '').replace(/[^0-9]/g, ''), ceo: x.j_1kfrepre || '',
+    amt: x.zzvalue ? String(Math.round(x.zzvalue)) : '', rate: x.zzvalue_rate || '', decision: x.zzdecision_t || '', vendor: x.lifnr,
+  }));
+  for (const c of list) if (c.vendor && c.bizno.length === 10) vendorBiz.set(c.vendor, { bidwinnrBizno: c.bizno, bidwinnrCeoNm: c.ceo });
+  const d = { head: { status: head.openresult_t, opengDt: iso(head.zzopen_dat) + hm(head.zzopen_tim), officer: head.zzpernr_t, tel: head.zztelno, method: head.zzwayofbidding_t, prc: head.zzprcmethod_t }, list };
+  opengCache.set(no, d);
+  if (opengCache.size > 3000) opengCache.delete(opengCache.keys().next().value);
+  return d;
+}
+
+// 서버 시작 시 1회: 입찰공고 구분값 확인 + 최근 계약결과 업체 사업자번호 미리 채우기
 export async function korailWarm() {
   const kst = (ms) => new Date(Date.now() + 9 * 3600e3 - ms).toISOString().slice(0, 10);
   const f = kst(30 * 864e5); const t = kst(0);
-  const found = [];
-  for (const p of ['1', '2', '3', '4', '5', '6']) {
+  const ok = [];
+  for (const code of ['1', '2', '3', '4', '5', '6']) {
     try {
-      const out = await rfc('ZMME_EBID_INFO_0014', { I_POART: p, I_EBELN: '', I_ZZCTRDESC: '', I_GUBUN: 'A', I_ZZCONTRWAY: '', I_ZZBIDINV: '', I_DAT_FR: plain(f), I_DAT_TO: plain(t) }, '/goods/contList.do');
-      const rows = tableOf(out);
-      const ex = rows.slice(0, 3).map((x) => x.zzctrdesc).join(' / ');
-      console.log(`[korail] 계약 구분 ${p} 최근30일 ${rows.length}건 ${ex}`);
-      if (rows.length) found.push([p, rows]);
-    } catch (e) { console.log(`[korail] 계약 구분 ${p} 실패 ${e.message}`); }
+      const rows = await noticeChunk(code, f, t);
+      const k = rows.map((x) => kindOf(x.zzwayofbidding_t, x.description));
+      const by = k.reduce((m, x) => ((m[x] = (m[x] || 0) + 1), m), {});
+      console.log(`[korail] 공고 구분 ${code} 최근30일 ${rows.length}건 ${JSON.stringify(by)} ${rows.slice(0, 2).map((x) => x.description).join(' / ')}`);
+      if (rows.length) { ok.push(code); const top = Object.entries(by).sort((a, b) => b[1] - a[1])[0]; if (top[1] / rows.length > 0.9) BIDTYPE_KIND[code] = top[0]; }
+    } catch (e) { console.log(`[korail] 공고 구분 ${code} 실패 ${e.message}`); }
   }
-  if (found.length) {
-    // 같은 계약이 여러 구분에 겹치면 하나만 씀
-    const sigs = new Map();
-    POARTS = found.filter(([p, rows]) => { const s = rows.map((x) => x.ebeln).sort().join(); if (sigs.has(s)) return false; sigs.set(s, p); return true; }).map(([p]) => p);
-    for (const [p, rows] of found) {
-      const k = rows.map((x) => kindOf(x.zzwayofbidding_txt, x.zzctrdesc));
-      const top = ['Cnstwk', 'Servc', 'Thng'].map((x) => [x, k.filter((y) => y === x).length]).sort((a, b) => b[1] - a[1])[0];
-      if (top[1] / k.length > 0.9) POART_KIND[p] = top[0];
-    }
-    console.log(`[korail] 사용 구분 ${POARTS.join(',')} 종류 ${JSON.stringify(POART_KIND)}`);
-  }
+  if (ok.length) BIDTYPES = ok;
+  console.log(`[korail] 공고 구분 사용 ${BIDTYPES.join(',')} 종류 ${JSON.stringify(BIDTYPE_KIND)}`);
   try {
-    const n = await korailNotices(kst(14 * 864e5), t);
-    const by = n.reduce((m, r) => ((m[r._kind] = (m[r._kind] || 0) + 1), m), {});
-    console.log(`[korail] 입찰공고 최근14일 ${n.length}건 ${JSON.stringify(by)} 예: ${n.slice(0, 2).map((r) => `${r.bidNtceNo} ${r.bidNtceNm} ${r.cntrctCnclsMthdNm}`).join(' / ')}`);
-    // 개찰결과 상세에 사업자번호가 있는지 확인
-    const c = (await korailContracts(f, t)).find((r) => /^\d/.test(r.bidNtceNo));
-    const sample = n[0];
-    for (const [no, st] of [[sample?._korailNo?.replace(/-\d+$/, ''), sample?._korailNo?.split('-')[1] || '00'], [c?.bidNtceNo, '00']]) {
-      if (!no) continue;
-      const out = await rfc('ZMME_EBID_INFO_0016', { I_ZZBIDINV: no, I_ZZSTNUM: st }, '/goods/openDetail.do');
-      const tb = Object.entries(out).filter(([k, v]) => /^ET_/.test(k) && Array.isArray(v)).map(([k, v]) => `${k}:${v.length} ${JSON.stringify(v[0] || {}).slice(0, 600)}`);
-      console.log(`[korail] 개찰상세 ${no}-${st} ${out.E_MSG || ''} ${tb.join(' || ')}`);
-    }
-  } catch (e) { console.log(`[korail] 점검 실패 ${e.message}`); }
+    const c = await korailContracts(kst(90 * 864e5), t);
+    const by = c.reduce((m, r) => ((m[r._kind] = (m[r._kind] || 0) + 1), m), {});
+    console.log(`[korail] 계약결과 최근90일 ${c.length}건 ${JSON.stringify(by)} — 사업자번호 채우기 ${queue.length}건 대기`);
+  } catch (e) { console.log(`[korail] 계약결과 실패 ${e.message}`); }
 }

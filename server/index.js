@@ -293,6 +293,15 @@ async function lookupCompany(b, { deep = true } = {}) {
   return { found: false, bizno: b, usrState, usrError };
 }
 
+// 한국철도공사 개찰결과(공고별 참가업체 순위)
+app.get('/api/korail/openg/:no', async (req, res) => {
+  try {
+    const { korailOpeng } = await import('./korail.js');
+    const d = await korailOpeng(String(req.params.no));
+    res.json(d || { list: [] });
+  } catch (err) { res.status(/데이터가 없/.test(err.message) ? 200 : 502).json(/데이터가 없/.test(err.message) ? { list: [] } : { error: err.message }); }
+});
+
 // 사업자번호 없이 업체명만 있는 경우(철도공사·수자원공사 등) → 나라장터 등록업체에서 이름이 똑같은 곳을 찾아 연락처 조회
 const normCorp = (x) => String(x || '').replace(/\(주\)|㈜|주식회사|\(유\)|유한회사|\(합\)|합자회사|\(사\)|사단법인|\s/g, '');
 const nameBizCache = new Map(); // 정규화된 이름 → {t, bizno}
