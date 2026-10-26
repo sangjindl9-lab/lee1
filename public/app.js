@@ -159,8 +159,8 @@
       busy(''); renderFree();
     } catch (e) { busy(''); toast('검색 실패: ' + e.message, 9000); }
   }
-  function putFree(no, quiet) {
-    const r = free.list.find((x) => x.no === no); if (!r) return;
+  function putFree(no, quiet, obj) {
+    const r = obj || free.list.find((x) => x.no === no); if (!r) return;
     let tgt = $('#freeTarget').value;
     if (tgt === 'new') {
       const nu = { name: r.cls || free.kw, spec: '', unit: r.unit, qtyTotal: '', qtyNow: '', qtyRound: '', designPrice: '', kw: free.kw, filter: free.filter, results: [], slots: {} };
@@ -191,8 +191,7 @@
       for (const x of j.results) {
         if (!x.item) { bad.push(x.error); continue; }
         const it = x.item;
-        if (!free.list.some((y) => y.no === it.no && y.price === it.price)) free.list.unshift(it);
-        putFree(it.no, true);
+        putFree(it.no, true, it); // 검색 결과 목록에는 섞지 않음
         ok.push(`${short(it.co)} ${it.no} ${it.price.toLocaleString()}원` + (x.partial ? ' (본사·인증 확인 필요)' : ''));
       }
       if (ok.length) $('#pasteBox').value = '';

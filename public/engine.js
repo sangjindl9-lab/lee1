@@ -75,7 +75,7 @@
   const colStr = (n) => { let s = ''; while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = (n - m - 1) / 26; } return s; };
   const splitRef = (ref) => { const m = /^([A-Z]+)(\d+)$/.exec(ref); return [m[1], +m[2]]; };
   const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  const unesc = (s) => String(s).replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
+  const unesc = (s) => String(s).replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCodePoint(parseInt(h, 16))).replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(+d)).replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
   const attr = (tag, name) => { const m = new RegExp('\\s' + name + '="([^"]*)"').exec(tag); return m ? m[1] : null; };
 
   // 공유수식 참조 이동 (dr행, dc열)
@@ -163,7 +163,14 @@
       if (typeof v === 'number' && isFinite(v)) return this._put(ref, `<v>${v}</v>`);
       return this._put(ref, `<is><t xml:space="preserve">${esc(v)}</t></is>`, 'inlineStr');
     }
-    setFormula(ref, f) { this._put(ref, `<f>${esc(f.replace(/^=/, ''))}</f>`); }
+    // val: 계산 결과(보호된 보기·뷰어에서도 보이도록 미리 넣어 둠)
+    setFormula(ref, f, val) {
+      const fx = `<f>${esc(String(f).replace(/^=/, ''))}</f>`;
+      if (val === undefined) return this._put(ref, fx);
+      if (typeof val === 'number' && isFinite(val)) return this._put(ref, `${fx}<v>${val}</v>`);
+      return this._put(ref, `${fx}<v>${esc(val)}</v>`, 'str');
+    }
+    cache(ref, val) { const f = this.getFormula(ref); if (f != null) this.setFormula(ref, f, val); }
     clear(ref) { if (this.getRaw(ref)) this._put(ref, null); }
     setHidden(r, hide) {
       let row = this.rows.get(r);
@@ -405,6 +412,70 @@
     // 남는 품목 줄은 숨김 (내역현황·조사표) — 구매요청서는 원본처럼 빈 칸 유지
     for (let k = 0; k < LAYOUT.maxItems; k++) {
       sta.setHidden(T.firstRow + k, k >= items.length);
+    }
+
+    // ── 4-2) 수식 계산값 미리 기록 (엑셀 '보호된 보기'·휴대폰 뷰어는 수식을 계산하지 않아 빈칸으로 보이므로)
+    {
+      const n = (v) => { const x = toNum(v); return typeof x === 'number' && isFinite(x) ? x : 0; };
+      const tr = Math.trunc;
+      const calc = items.map((it) => {
+        const cs = (it.companies || []).slice(0, 3);
+        const pr = cs.map((c) => (c ? n(c.price) : null));
+        const have = pr.filter((x) => x != null);
+        let avg = '';
+        if (have.length === 3) { const mi = pr.indexOf(Math.min(...pr)); const keep = pr.filter((_, i) => i !== mi); avg = tr((keep[0] + keep[1]) / 2); }
+        else if (have.length) avg = tr(have.reduce((a, b) => a + b, 0) / have.length);
+        const qN = n(it.qtyNow), E = n(it.qtyTotal), G = n(it.qtyRound != null && it.qtyRound !== '' ? it.qtyRound : it.qtyNow), H = n(it.designPrice);
+        return { cs, pr, avg, qN, E, G, H };
+      });
+      // 조사표(묶음별)
+      const tot = S.firstRow + LAYOUT.maxItems;
+      groups.forEach((g, gi) => {
+        const sh = surSheets[gi].sheet;
+        const c0 = calc[g.idx[0]].cs;
+        ['H', 'S', 'AB'].forEach((col, j) => sh.cache(col + '3', c0[j] ? String(c0[j].co) : ''));
+        const sums = [0, 0, 0], cnt = [0, 0, 0];
+        for (let j = 0; j < LAYOUT.maxItems; j++) {
+          const r = S.firstRow + j, k = g.idx[j];
+          if (k == null) { ['D', 'G', 'J', 'T', 'AD', 'BF'].forEach((c) => sh.cache(c + r, '')); continue; }
+          const v = calc[k];
+          sh.cache('D' + r, v.qN); sh.cache('G' + r, v.qN);
+          S.companies.forEach((sc, ci) => {
+            const co = v.cs[ci], amtCol = ['J', 'T', 'AD'][ci];
+            sh.cache(sc.no + r, co ? n(co.no) || String(co.no) : '');
+            sh.cache(sc.price + r, co ? v.pr[ci] : '');
+            const amt = co ? tr(v.qN * v.pr[ci]) : '';
+            sh.cache(amtCol + r, amt); if (amt !== '') sums[ci] += amt;
+            const keys = co ? certKeysOf(co.certs) : new Set();
+            cnt[ci] += sc.certKeys.filter((key) => keys.has(key)).length;
+          });
+          sh.cache(S.cols.avg + r, v.avg);
+        }
+        ['J', 'T', 'AD'].forEach((c, ci) => sh.cache(c + tot, sums[ci]));
+        ['K', 'V', 'AE'].forEach((c, ci) => sh.cache(c + tot, cnt[ci]));
+      });
+      // 구매내역현황
+      const sum = { I: 0, J: 0, M: 0, P: 0, S: 0 };
+      for (let k = 0; k < LAYOUT.maxItems; k++) {
+        const r = T.firstRow + k, v = calc[k];
+        if (!v) { ['I', 'J', 'M', 'O', 'P', 'Q', 'R', 'S'].forEach((c) => sta.cache(c + r, '')); continue; }
+        const O = v.avg === '' ? 0 : v.avg;
+        const row = { I: v.E * v.H, J: v.G * v.H, M: 0, O: v.avg, P: tr(v.qN * O), Q: v.E - v.qN, R: v.H - O };
+        row.S = row.J - row.M - row.P;
+        for (const [c, val] of Object.entries(row)) sta.cache(c + r, val);
+        for (const c of Object.keys(sum)) sum[c] += row[c];
+      }
+      for (const c of Object.keys(sum)) for (const r of [7, 8, 9]) sta.cache(c + r, sum[c]);
+      // 구매요청서
+      let mSum = 0;
+      for (let k = 0; k < LAYOUT.maxItems; k++) {
+        const r = R.firstRow + k, v = calc[k], it = items[k];
+        if (!v) { ['A', 'F', 'J', 'K', 'L', 'M'].forEach((c) => req.cache(c + r, '')); continue; }
+        const L = v.avg === '' ? 0 : v.avg, M = tr(v.qN * L); mSum += M;
+        req.cache('A' + r, it.name || ''); req.cache('F' + r, it.spec || ''); req.cache('J' + r, it.unit || '');
+        req.cache('K' + r, v.qN); req.cache('L' + r, v.avg); req.cache('M' + r, M);
+      }
+      ['M13', 'M14', 'M15'].forEach((ref) => req.cache(ref, mSum));
     }
 
     // ── 5) 외형도 그림 교체
