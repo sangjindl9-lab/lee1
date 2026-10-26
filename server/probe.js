@@ -27,18 +27,19 @@ function dump(tag, { status, url, html }) {
   }
 }
 async function korail() {
-  const main = await get('/main.do');
-  // 메뉴 이름 ↔ 주소
-  const menu = [...main.html.matchAll(/fn_myFrame\('([^']+)',\s*'([^']+)'(?:\s*,\s*'?([^')]*)'?)?\);?"[^>]*>([\s\S]{0,80}?)<\/a>/g)].map((m) => `${txt(m[4])}=${m[1]}?code=${m[2]}&gubun=${m[3] || ''}`);
-  console.log(`[PROBE] menu: ${menu.join(' | ')}`);
-  for (const p of ['/goods/inList.do?code=A03&gubun=1', '/goods/contList.do?code=A04&gubun=2', '/goods/inDetail.do?code=A03&gubun=', '/goods/openDetail.do?code=A04&gubun=']) {
+  for (const p of ['/main.do', '/goods/inList.do?code=A03&gubun=1', '/goods/contList.do?code=A04&gubun=2', '/goods/openDetail.do?code=A04&gubun=']) {
     try {
-      const { status, html } = await get(p);
-      const ajax = [...html.matchAll(/(?:url\s*:|\.(?:post|get|ajax)\(\s*)["']([^"']+)["']/g)].map((m) => m[1]);
-      console.log(`[PROBE] ${p} ${status} len=${html.length} ajax: ${[...new Set(ajax)].join(' | ')}`);
-      for (const m of html.matchAll(/\$\.ajax\(\{[\s\S]{0,900}/g)) console.log(`[PROBE]   ajax-src: ${m[0].replace(/\s+/g, ' ').slice(0, 900)}`);
-      const fnSearch = html.match(/function\s+fn_search\w*\s*\([\s\S]{0,900}/);
-      if (fnSearch) console.log(`[PROBE]   fn_search: ${fnSearch[0].replace(/\s+/g, ' ')}`);
+      const { html } = await get(p);
+      for (const m of html.matchAll(/ZFUNCNM"\s*:\s*"(\w+)"/g)) {
+        const pre = html.slice(Math.max(0, m.index - 1500), m.index);
+        const fnName = (pre.match(/function\s+(\w+)\s*\([^)]*\)\s*\{(?![\s\S]*function\s+\w+\s*\()/) || [])[1] || '?';
+        const params = [...pre.slice(pre.lastIndexOf('new Array()')).matchAll(/fn_add_param\(ptab,\s*"(\w+)",\s*([^,]{0,80}),/g)].map((x) => `${x[1]}=${x[2].replace(/\s+/g, '')}`);
+        console.log(`[PROBE] ${p} ${fnName} → ${m[1]} (${params.join(', ')})`);
+      }
+      const tbl = [...html.matchAll(/(?:ET_\w+)/g)].map((x) => x[0]);
+      console.log(`[PROBE] ${p} tables: ${[...new Set(tbl)].join(', ')}`);
+      const fa = html.match(/function\s+fn_add_param[\s\S]{0,500}/);
+      if (fa) console.log(`[PROBE] fn_add_param: ${fa[0].replace(/\s+/g, ' ')}`);
     } catch (e) { console.log(`[PROBE] ${p} 실패 ${e.message}`); }
     await new Promise((r) => setTimeout(r, 800));
   }
