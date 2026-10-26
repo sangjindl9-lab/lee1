@@ -1,0 +1,458 @@
+/*
+ * 관급자재 구매요청서 자동작성 엔진
+ * - 원본 엑셀(양식)을 그대로 열어서 "값 셀"과 "외형도 그림"만 교체한다.
+ * - 서식·테두리·병합·인쇄설정·다른 시트는 건드리지 않는다.
+ * 브라우저(확장프로그램)와 Node(테스트) 양쪽에서 동작.
+ */
+(function (root) {
+  'use strict';
+
+  // ───────────────────────── 양식 위치 정의 (원본 엑셀 분석 결과) ─────────────────────────
+  const LAYOUT = {
+    maxItems: 6,               // 구매요청서·내역현황·조사표가 품목 6줄 구조
+    compare: {                 // 관급단가 비교표_*
+      namePrefix: '관급단가 비교표_',
+      blockHeight: 13,         // 품목 1개 = 13행
+      titleCol: 'C',           // ' □ 품목명 : …'
+      firstDataOffset: 4,      // 블록 시작행 + 4 = 1번 업체 행
+      rowsPerBlock: 7,         // 업체 7칸
+      cols: { co: 'D', loc: 'E', no: 'F', unit: 'G', price: 'H', remark: 'Q' },
+      certCols: ['I', 'J', 'K', 'L', 'M', 'N', 'O'],
+      certKeys: ['품질보증', 'GS인증', '특허', '여성기업', '소상공인', '우수조달', 'G-PASS'],
+      imageCol: 15,            // P열 (0부터)
+      printCols: ['C', 'Q'],
+    },
+    survey: {                  // 단가및인증현황조사(변경)_*
+      namePrefix: '단가및인증현황조사',
+      firstRow: 6,
+      clearRowsTo: 30,         // 6~30행 (12~30행은 숨김행: 예전 ◎ 잔재 정리)
+      title: 'A1',
+      cols: { name: 'A', spec: 'B', avg: 'BF' },
+      companies: [
+        { no: 'H', price: 'I', certCols: ['K', 'L', 'M', 'N', 'O', 'P', 'Q'],
+          certKeys: ['품질보증', 'KS', '성능인증', '여성기업', '소상공인', '우수조달', 'G-PASS'] },
+        { no: 'R', price: 'S', certCols: ['U', 'V', 'W', 'X', 'Y', 'Z', 'AA'],
+          certKeys: ['품질보증', 'KS', '성능인증', '여성기업', '소상공인', 'G-PASS', '장애인기업'] },
+        { no: 'AB', price: 'AC', certCols: ['AE', 'AF', 'AG', 'AH', 'AI', 'AJ', 'AK'],
+          certKeys: ['품질보증', 'KS', '성능인증', '여성기업', '소상공인', 'G-PASS', '장애인기업'] },
+      ],
+    },
+    status: {                  // 구매내역현황
+      name: '구매내역현황',
+      firstRow: 40,
+      cols: { name: 'A', spec: 'B', unit: 'C', qtyTotal: 'E', qtyRound: 'G', designPrice: 'H', qtyNow: 'N' },
+      projectCell: 'A3', roundCells: { G6: '{r}수량', J6: '금 회 {r}' },
+    },
+    request: {                 // 구매요청서
+      name: '구매요청서',
+      firstRow: 16,
+      project: { name: 'E4', type: 'E5', materials: 'E6', period: 'E7', location: 'E8' },
+      roundCell: 'N13',
+    },
+  };
+
+  // 쇼핑몰 인증명 → 양식 열 키
+  const CERT_MATCH = [
+    ['품질보증', /품질보증/],
+    ['GS인증', /GS\s*인증/i],
+    ['특허', /특허/],
+    ['여성기업', /여성기업/],
+    ['소상공인', /소상공인/],
+    ['우수조달', /우수조달/],
+    ['G-PASS', /G-?PASS/i],
+    ['KS', /^KS$|KS인증/],
+    ['성능인증', /성능인증/],
+    ['장애인기업', /장애인기업/],
+  ];
+  function certKeysOf(labels) {
+    const keys = new Set();
+    for (const l of labels || []) for (const [k, re] of CERT_MATCH) if (re.test(String(l).trim())) keys.add(k);
+    return keys;
+  }
+
+  // ───────────────────────── 공통 유틸 ─────────────────────────
+  const colNum = (c) => { let n = 0; for (const ch of c) n = n * 26 + (ch.charCodeAt(0) - 64); return n; };
+  const colStr = (n) => { let s = ''; while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = (n - m - 1) / 26; } return s; };
+  const splitRef = (ref) => { const m = /^([A-Z]+)(\d+)$/.exec(ref); return [m[1], +m[2]]; };
+  const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const unesc = (s) => String(s).replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
+  const attr = (tag, name) => { const m = new RegExp('\\s' + name + '="([^"]*)"').exec(tag); return m ? m[1] : null; };
+
+  // 공유수식 참조 이동 (dr행, dc열)
+  function shiftFormula(f, dr, dc) {
+    let out = '', i = 0;
+    while (i < f.length) {
+      const ch = f[i];
+      if (ch === '"' || ch === "'") {             // 문자열·시트명은 그대로
+        let j = i + 1;
+        while (j < f.length) { if (f[j] === ch) { if (f[j + 1] === ch) { j += 2; continue; } break; } j++; }
+        out += f.slice(i, j + 1); i = j + 1; continue;
+      }
+      const m = /^(\$?)([A-Z]{1,3})(\$?)([0-9]+)(?![0-9A-Za-z_(])/.exec(f.slice(i));
+      const prev = i > 0 ? f[i - 1] : '';
+      if (m && !/[A-Za-z0-9_.]/.test(prev)) {
+        const c = m[1] ? m[2] : colStr(colNum(m[2]) + dc);
+        const r = m[3] ? m[4] : String(+m[4] + dr);
+        out += m[1] + c + m[3] + r; i += m[0].length; continue;
+      }
+      out += ch; i++;
+    }
+    return out;
+  }
+
+  // ───────────────────────── 시트 XML 편집기 ─────────────────────────
+  class Sheet {
+    constructor(xml) {
+      const a = xml.indexOf('<sheetData'), b = xml.indexOf('</sheetData>');
+      if (a < 0) throw new Error('sheetData 없음');
+      if (b < 0) { // <sheetData/>
+        const e = xml.indexOf('>', a);
+        this.head = xml.slice(0, a) + '<sheetData>'; this.tail = '</sheetData>' + xml.slice(e + 1); this.rows = new Map(); return;
+      }
+      const openEnd = xml.indexOf('>', a) + 1;
+      this.head = xml.slice(0, openEnd); this.tail = xml.slice(b);
+      const body = xml.slice(openEnd, b);
+      this.rows = new Map();
+      const rowRe = /<row\b[^>]*?(?:\/>|>[\s\S]*?<\/row>)/g; let m;
+      while ((m = rowRe.exec(body))) {
+        const raw = m[0], openTag = raw.slice(0, raw.indexOf('>') + 1);
+        const r = +attr(openTag, 'r');
+        const cells = new Map();
+        if (!openTag.endsWith('/>')) {
+          const inner = raw.slice(openTag.length, raw.length - 6);
+          const cRe = /<c\b[^>]*?(?:\/>|>[\s\S]*?<\/c>)/g; let cm;
+          while ((cm = cRe.exec(inner))) { const ref = attr(cm[0], 'r'); cells.set(splitRef(ref)[0], { raw: cm[0] }); }
+        }
+        this.rows.set(r, { open: openTag.replace(/\/>$/, '>'), cells, dirty: false });
+      }
+      this.expandShared();
+    }
+    // 공유수식을 개별 수식으로 풀어 둔다 (셀 하나를 고쳐도 다른 셀 수식이 깨지지 않게)
+    expandShared() {
+      const masters = new Map();
+      for (const [r, row] of this.rows) for (const [c, cell] of row.cells) {
+        const fm = /<f\b([^>]*)>([\s\S]*?)<\/f>/.exec(cell.raw);
+        if (fm && /t="shared"/.test(fm[1]) && /ref="/.test(fm[1])) masters.set(attr(fm[0], 'si'), { r, c: colNum(c), f: unesc(fm[2]) });
+      }
+      if (!masters.size) return;
+      for (const [r, row] of this.rows) for (const [c, cell] of row.cells) {
+        const fm = /<f\b([^>]*?)(?:\/>|>([\s\S]*?)<\/f>)/.exec(cell.raw);
+        if (!fm || !/t="shared"/.test(fm[1])) continue;
+        const ms = masters.get(attr(fm[0], 'si'));
+        if (!ms) continue;
+        const nf = shiftFormula(ms.f, r - ms.r, colNum(c) - ms.c);
+        cell.raw = cell.raw.replace(fm[0], '<f>' + esc(nf) + '</f>');
+        row.dirty = true;
+      }
+    }
+    getRaw(ref) { const [c, r] = splitRef(ref); const row = this.rows.get(r); return row && row.cells.get(c) ? row.cells.get(c).raw : null; }
+    getFormula(ref) { const raw = this.getRaw(ref); const m = raw && /<f\b[^>]*>([\s\S]*?)<\/f>/.exec(raw); return m ? unesc(m[1]) : null; }
+    _style(ref) { const raw = this.getRaw(ref); return raw ? attr(raw.slice(0, raw.indexOf('>') + 1), 's') : null; }
+    _put(ref, inner, type) {
+      const [c, r] = splitRef(ref);
+      let row = this.rows.get(r);
+      if (!row) { row = { open: `<row r="${r}">`, cells: new Map(), dirty: true }; this.rows.set(r, row); }
+      const s = this._style(ref);
+      const sAttr = s != null ? ` s="${s}"` : '';
+      const tAttr = type ? ` t="${type}"` : '';
+      row.cells.set(c, { raw: inner == null ? `<c r="${ref}"${sAttr}/>` : `<c r="${ref}"${sAttr}${tAttr}>${inner}</c>` });
+      row.dirty = true;
+    }
+    set(ref, v) {
+      if (v === null || v === undefined || v === '') return this._put(ref, null);
+      if (typeof v === 'number' && isFinite(v)) return this._put(ref, `<v>${v}</v>`);
+      return this._put(ref, `<is><t xml:space="preserve">${esc(v)}</t></is>`, 'inlineStr');
+    }
+    setFormula(ref, f) { this._put(ref, `<f>${esc(f.replace(/^=/, ''))}</f>`); }
+    clear(ref) { if (this.getRaw(ref)) this._put(ref, null); }
+    toXml() {
+      const rs = [...this.rows.keys()].sort((a, b) => a - b);
+      let body = '';
+      for (const r of rs) {
+        const row = this.rows.get(r);
+        const open = row.dirty ? row.open.replace(/\sspans="[^"]*"/, '') : row.open;
+        const cs = [...row.cells.keys()].sort((a, b) => colNum(a) - colNum(b));
+        body += cs.length ? open + cs.map((c) => row.cells.get(c).raw).join('') + '</row>' : open.replace(/>$/, '/>');
+      }
+      return this.head + body + this.tail;
+    }
+  }
+
+  // ───────────────────────── 통합문서 ─────────────────────────
+  async function openBook(JSZip, data) {
+    const zip = await JSZip.loadAsync(data);
+    const wbXml = await zip.file('xl/workbook.xml').async('string');
+    const relXml = await zip.file('xl/_rels/workbook.xml.rels').async('string');
+    const rels = {};
+    for (const m of relXml.matchAll(/<Relationship\b[^>]*>/g)) rels[attr(m[0], 'Id')] = attr(m[0], 'Target');
+    const sheets = [];
+    let idx = 0;
+    for (const m of wbXml.matchAll(/<sheet\b[^>]*>/g)) {
+      const t = m[0];
+      const target = rels[attr(t, 'r:id')];
+      sheets.push({ index: idx++, name: unesc(attr(t, 'name')), hidden: !!attr(t, 'state'), path: 'xl/' + target.replace(/^\/?xl\//, '') });
+    }
+    return { zip, wbXml, sheets };
+  }
+  function findSheet(book, pred, label) {
+    const s = book.sheets.filter((x) => !x.hidden).find(pred) || book.sheets.find(pred);
+    if (!s) throw new Error(`양식에서 "${label}" 시트를 찾지 못했습니다.`);
+    return s;
+  }
+
+  // ───────────────────────── 그림 교체 (비교표 외형도) ─────────────────────────
+  async function drawingOf(zip, sheetPath) {
+    const relPath = sheetPath.replace(/worksheets\/(sheet\d+\.xml)$/, 'worksheets/_rels/$1.rels');
+    const f = zip.file(relPath); if (!f) return null;
+    const x = await f.async('string');
+    const m = /<Relationship\b[^>]*Type="[^"]*\/drawing"[^>]*>/.exec(x);
+    if (!m) return null;
+    const target = attr(m[0], 'Target');
+    const path = 'xl/' + target.replace(/^\.\.\//, '');
+    return { path, relPath: path.replace(/drawings\/(drawing\d+\.xml)$/, 'drawings/_rels/$1.rels') };
+  }
+
+  function anchorPos(a) {
+    const m = /<xdr:from><xdr:col>(\d+)<\/xdr:col><xdr:colOff>-?\d+<\/xdr:colOff><xdr:row>(\d+)<\/xdr:row>/.exec(a);
+    return m ? { col: +m[1], row: +m[2] } : null;
+  }
+
+  // ───────────────────────── 메인: 양식 채우기 ─────────────────────────
+  /**
+   * data = {
+   *   project: { name, type, materials, period, location, round, group },
+   *   items: [{ name, spec, unit, qtyTotal, qtyRound, qtyNow, designPrice,
+   *             companies: [{ co, loc, no, price, certs:[라벨], remark, image:{ bytes:Uint8Array, ext:'jpeg'|'png', w, h } }] }]
+   * }
+   */
+  async function fillWorkbook(JSZip, templateData, data) {
+    const warnings = [];
+    const book = await openBook(JSZip, templateData);
+    const { zip } = book;
+    const items = data.items || [];
+    const P = data.project || {};
+    if (!items.length) throw new Error('품목이 없습니다.');
+    if (items.length > LAYOUT.maxItems) throw new Error(`이 양식은 품목 ${LAYOUT.maxItems}개까지 들어갑니다. (현재 ${items.length}개)`);
+
+    const shCmp = findSheet(book, (s) => s.name.startsWith(LAYOUT.compare.namePrefix), '관급단가 비교표');
+    const shSur = findSheet(book, (s) => s.name.startsWith(LAYOUT.survey.namePrefix), '단가및인증현황조사');
+    const shSta = findSheet(book, (s) => s.name === LAYOUT.status.name, '구매내역현황');
+    const shReq = findSheet(book, (s) => s.name === LAYOUT.request.name, '구매요청서');
+    const load = async (s) => new Sheet(await zip.file(s.path).async('string'));
+    const cmp = await load(shCmp), sur = await load(shSur), sta = await load(shSta), req = await load(shReq);
+
+    const C = LAYOUT.compare, S = LAYOUT.survey, T = LAYOUT.status, R = LAYOUT.request;
+    const round = (P.round || '').trim();
+
+    // ── 1) 관급단가 비교표: 품목 블록 채우기
+    const imagePlan = []; // {row(0-based), image}
+    items.forEach((it, k) => {
+      const start = 1 + C.blockHeight * k;
+      cmp.set(C.titleCol + start, ` □ 품목명 : ${[it.name, it.spec].filter(Boolean).join(' ')}`);
+      for (let j = 0; j < C.rowsPerBlock; j++) {
+        const r = start + C.firstDataOffset + j;
+        const co = (it.companies || [])[j];
+        const put = (col, v) => cmp.set(col + r, v);
+        if (co) {
+          put(C.cols.co, co.co); put(C.cols.loc, co.loc); put(C.cols.no, toNum(co.no));
+          put(C.cols.unit, it.unit || co.unit || ''); put(C.cols.price, toNum(co.price));
+          const keys = certKeysOf(co.certs);
+          C.certCols.forEach((col, i) => put(col, keys.has(C.certKeys[i]) ? '◎' : null));
+          put(C.cols.remark, co.remark || null);
+          if (co.image) imagePlan.push({ row: r - 1, image: co.image });
+        } else {
+          [C.cols.co, C.cols.loc, C.cols.no, C.cols.unit, C.cols.price, C.cols.remark, ...C.certCols].forEach((col) => cmp.clear(col + r));
+        }
+      }
+    });
+
+    // ── 2) 단가및인증현황조사: 품명·규격·인증(◎)·평균단가(최저단가 제외)
+    if (P.group) sur.set(S.title, `관급자재(${P.group}) 조달단가 및 인증현황 조사표`);
+    const firstCos = (items[0].companies || []).slice(0, 3).map((c) => c && c.co);
+    for (let r = S.firstRow; r <= S.clearRowsTo; r++) {
+      const k = r - S.firstRow;
+      const it = items[k];
+      S.companies.forEach((sc, j) => {
+        const co = it && (it.companies || [])[j];
+        const keys = co ? certKeysOf(co.certs) : new Set();
+        sc.certCols.forEach((col, i) => {
+          const want = keys.has(sc.certKeys[i]) ? '◎' : null;
+          if (want) sur.set(col + r, want); else sur.clear(col + r);
+        });
+      });
+      if (it) {
+        sur.set(S.cols.name + r, it.name); sur.set(S.cols.spec + r, it.spec);
+        // 평균단가: 3개 업체 중 최저가 1곳을 뺀 나머지 평균 (양식 "최저단가 제외" 기준)
+        const cs = (it.companies || []).slice(0, 3);
+        if (cs.length === 3 && cs.every(Boolean)) {
+          const pr = cs.map((c) => toNum(c.price));
+          const minIdx = pr.indexOf(Math.min(...pr));
+          const pc = S.companies.map((x) => x.price + r);
+          const keep = minIdx === 0 ? [pc[1], pc[2]] : minIdx === 1 ? [pc[0], pc[2]] : [pc[0], pc[1]];
+          sur.setFormula(S.cols.avg + r, `TRUNC(AVERAGE(${keep.join(',')}),0)`);
+        } else {
+          warnings.push(`${k + 1}번 품목(${it.name} ${it.spec}): 업체 3곳이 모두 선택되지 않아 평균단가를 계산할 수 없습니다.`);
+        }
+        cs.forEach((c, j) => {
+          if (j < 3 && c && firstCos[j] && c.co !== firstCos[j])
+            warnings.push(`${k + 1}번 품목: ${j + 1}번 업체가 "${c.co}"인데, 조사표 머리글은 1번 품목 기준 "${firstCos[j]}"입니다. 업체 순서를 품목마다 같게 맞춰 주세요.`);
+        });
+      }
+    }
+
+    // ── 3) 구매내역현황: 명칭·규격·단위·수량·설계단가
+    if (P.name) sta.set(T.projectCell, ` □ 공    사    명  :  ${P.name}`);
+    if (round) for (const [ref, tpl] of Object.entries(T.roundCells)) sta.set(ref, tpl.replace('{r}', round));
+    for (let k = 0; k < LAYOUT.maxItems; k++) {
+      const r = T.firstRow + k, it = items[k];
+      const cols = T.cols;
+      if (it) {
+        sta.set(cols.name + r, it.name); sta.set(cols.spec + r, it.spec); sta.set(cols.unit + r, it.unit);
+        if (it.qtyTotal !== '' && it.qtyTotal != null) sta.set(cols.qtyTotal + r, toNum(it.qtyTotal));
+        if (it.qtyRound !== '' && it.qtyRound != null) sta.set(cols.qtyRound + r, toNum(it.qtyRound));
+        if (it.designPrice !== '' && it.designPrice != null) sta.set(cols.designPrice + r, toNum(it.designPrice));
+        const nowF = sta.getFormula(cols.qtyNow + r);
+        if (it.qtyNow !== '' && it.qtyNow != null && !(nowF && /^G\d+$/.test(nowF) && toNum(it.qtyNow) === toNum(it.qtyRound)))
+          sta.set(cols.qtyNow + r, toNum(it.qtyNow));
+      } else {
+        [cols.name, cols.spec, cols.unit, cols.qtyTotal, cols.qtyRound, cols.designPrice, cols.qtyNow].forEach((c) => sta.clear(c + r));
+      }
+    }
+
+    // ── 4) 구매요청서: 공사개요
+    for (const [key, ref] of Object.entries(R.project)) if (P[key]) req.set(ref, P[key]);
+    if (round) req.set(R.roundCell, `금회${round}`);
+    // 남는 줄(품목 6개 미만)은 0이 찍히지 않도록 비움
+    for (let k = items.length; k < LAYOUT.maxItems; k++) {
+      const r = R.firstRow + k;
+      ['A', 'F', 'J', 'K', 'L', 'M'].forEach((c) => req.clear(c + r));
+      for (const c of ['A', 'B', 'D', 'G', 'H', 'I', 'J', 'R', 'S', 'T', 'AB', 'AC', 'AD', 'BF', 'BJ']) sur.clear(c + (S.firstRow + k)); // 조사표 빈 줄
+    }
+
+    // ── 5) 외형도 그림 교체
+    const dr = await drawingOf(zip, shCmp.path);
+    if (imagePlan.length && !dr) warnings.push('비교표 시트에 그림 영역이 없어 외형도를 넣지 못했습니다.');
+    if (dr) {
+      let dx = await zip.file(dr.path).async('string');
+      let rx = zip.file(dr.relPath) ? await zip.file(dr.relPath).async('string')
+        : '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>';
+      // 채우는 블록의 업체행(1~7행) P열 그림 제거
+      const targetRows = new Set();
+      items.forEach((_, k) => { for (let j = 0; j < C.rowsPerBlock; j++) targetRows.add(C.blockHeight * k + C.firstDataOffset + j); }); // 0-based
+      dx = dx.replace(/<xdr:(oneCellAnchor|twoCellAnchor|absoluteAnchor)\b[^>]*>[\s\S]*?<\/xdr:\1>/g, (a) => {
+        const p = anchorPos(a);
+        return p && p.col === C.imageCol && targetRows.has(p.row) ? '' : a;
+      });
+      let maxId = 1; for (const m of dx.matchAll(/<xdr:cNvPr id="(\d+)"/g)) maxId = Math.max(maxId, +m[1]);
+      let maxRid = 0; for (const m of rx.matchAll(/Id="rId(\d+)"/g)) maxRid = Math.max(maxRid, +m[1]);
+      const media = Object.keys(zip.files).filter((f) => f.startsWith('xl/media/'));
+      let mediaN = 0; for (const f of media) { const m = /image(\d+)\./.exec(f); if (m) mediaN = Math.max(mediaN, +m[1]); }
+      const MAXW = 4830000, MAXH = 1100000, OFF = 40821; // EMU (원본 외형도 크기 기준)
+      let anchors = '', relAdd = '';
+      for (const { row, image } of imagePlan) {
+        const ext = image.ext === 'png' ? 'png' : 'jpeg';
+        const file = `image${++mediaN}.${ext}`;
+        zip.file('xl/media/' + file, image.bytes);
+        const rid = 'rId' + (++maxRid);
+        relAdd += `<Relationship Id="${rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/${file}"/>`;
+        const sc = Math.min(MAXW / image.w, MAXH / image.h);
+        const cx = Math.round(image.w * sc), cy = Math.round(image.h * sc);
+        const id = ++maxId;
+        anchors += `<xdr:twoCellAnchor editAs="oneCell"><xdr:from><xdr:col>${C.imageCol}</xdr:col><xdr:colOff>${OFF}</xdr:colOff><xdr:row>${row}</xdr:row><xdr:rowOff>${OFF}</xdr:rowOff></xdr:from>` +
+          `<xdr:to><xdr:col>${C.imageCol}</xdr:col><xdr:colOff>${OFF + cx}</xdr:colOff><xdr:row>${row}</xdr:row><xdr:rowOff>${OFF + cy}</xdr:rowOff></xdr:to>` +
+          `<xdr:pic><xdr:nvPicPr><xdr:cNvPr id="${id}" name="외형도 ${id}"/><xdr:cNvPicPr><a:picLocks noChangeAspect="1"/></xdr:cNvPicPr></xdr:nvPicPr>` +
+          `<xdr:blipFill><a:blip xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:embed="${rid}"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill>` +
+          `<xdr:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></xdr:spPr></xdr:pic><xdr:clientData/></xdr:twoCellAnchor>`;
+      }
+      dx = dx.replace('</xdr:wsDr>', anchors + '</xdr:wsDr>');
+      rx = rx.replace('</Relationships>', relAdd + '</Relationships>');
+      zip.file(dr.path, dx); zip.file(dr.relPath, rx);
+      let ct = await zip.file('[Content_Types].xml').async('string');
+      for (const [e, t] of [['png', 'image/png'], ['jpeg', 'image/jpeg']])
+        if (!new RegExp(`Extension="${e}"`, 'i').test(ct)) ct = ct.replace('<Types ', '<Types ').replace(/(<Types\b[^>]*>)/, `$1<Default Extension="${e}" ContentType="${t}"/>`);
+      zip.file('[Content_Types].xml', ct);
+    }
+
+    // ── 6) 인쇄영역(비교표) = 채운 품목 수만큼
+    let wb = book.wbXml;
+    const lastRow = C.blockHeight * items.length;
+    const printRef = `'${shCmp.name.replace(/'/g, "''")}'!$${C.printCols[0]}$1:$${C.printCols[1]}$${lastRow}`;
+    const pa = new RegExp(`<definedName name="_xlnm\\.Print_Area" localSheetId="${shCmp.index}"[^>]*>[^<]*</definedName>`);
+    if (pa.test(wb)) wb = wb.replace(pa, (m) => m.replace(/>[^<]*</, '>' + esc(printRef) + '<'));
+    else warnings.push('비교표 인쇄영역 정의를 찾지 못해 그대로 두었습니다.');
+    // 열 때 수식 전체 재계산
+    wb = /<calcPr\b/.test(wb) ? wb.replace(/<calcPr\b([^>]*?)(\/?)>/, (m, a, sl) => `<calcPr${a.replace(/\sfullCalcOnLoad="[^"]*"/, '')} fullCalcOnLoad="1"${sl}>`)
+      : wb.replace('</workbook>', '<calcPr fullCalcOnLoad="1"/></workbook>');
+    zip.file('xl/workbook.xml', wb);
+
+    // ── 7) 계산체인 제거(엑셀이 다시 만듦) + 시트 저장
+    if (zip.file('xl/calcChain.xml')) {
+      zip.remove('xl/calcChain.xml');
+      let ct = await zip.file('[Content_Types].xml').async('string');
+      ct = ct.replace(/<Override\b[^>]*PartName="\/xl\/calcChain\.xml"[^>]*\/>/, '');
+      zip.file('[Content_Types].xml', ct);
+      let wr = await zip.file('xl/_rels/workbook.xml.rels').async('string');
+      wr = wr.replace(/<Relationship\b[^>]*Target="calcChain\.xml"[^>]*\/>/, '');
+      zip.file('xl/_rels/workbook.xml.rels', wr);
+    }
+    zip.file(shCmp.path, cmp.toXml()); zip.file(shSur.path, sur.toXml());
+    zip.file(shSta.path, sta.toXml()); zip.file(shReq.path, req.toXml());
+
+    const out = await zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE', compressionOptions: { level: 6 } });
+    return { bytes: out, warnings, sheets: { compare: shCmp.name, survey: shSur.name } };
+  }
+
+  // 양식 파일에 이미 들어있는 공사개요·품목을 읽어 입력칸 기본값으로 사용
+  async function readDefaults(JSZip, templateData) {
+    const book = await openBook(JSZip, templateData);
+    const { zip } = book;
+    const ssF = zip.file('xl/sharedStrings.xml');
+    const ss = [];
+    if (ssF) {
+      const x = await ssF.async('string');
+      for (const m of x.matchAll(/<si>([\s\S]*?)<\/si>/g)) ss.push(unesc([...m[1].matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>/g)].map((t) => t[1]).join('')));
+    }
+    const val = (sheet, ref) => {
+      const raw = sheet.getRaw(ref); if (!raw) return '';
+      const t = attr(raw.slice(0, raw.indexOf('>') + 1), 't');
+      if (t === 'inlineStr') return unesc([...raw.matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>/g)].map((m) => m[1]).join(''));
+      const v = /<v>([\s\S]*?)<\/v>/.exec(raw); if (!v) return '';
+      if (t === 's') return ss[+v[1]] || '';
+      if (t === 'str' || t === 'e') return unesc(v[1]);
+      return +v[1];
+    };
+    const shSta = findSheet(book, (s) => s.name === LAYOUT.status.name, '구매내역현황');
+    const shReq = findSheet(book, (s) => s.name === LAYOUT.request.name, '구매요청서');
+    const shSur = findSheet(book, (s) => s.name.startsWith(LAYOUT.survey.namePrefix), '단가및인증현황조사');
+    const sta = new Sheet(await zip.file(shSta.path).async('string'));
+    const req = new Sheet(await zip.file(shReq.path).async('string'));
+    const sur = new Sheet(await zip.file(shSur.path).async('string'));
+    const project = {};
+    for (const [k, ref] of Object.entries(LAYOUT.request.project)) project[k] = String(val(req, ref) || '').trim();
+    const rc = String(val(req, LAYOUT.request.roundCell) || '');
+    project.round = (/(\d+\s*차)/.exec(rc) || [, ''])[1];
+    const shCmp = book.sheets.filter((s) => !s.hidden).find((s) => s.name.startsWith(LAYOUT.compare.namePrefix));
+    project.group = shCmp ? shCmp.name.slice(LAYOUT.compare.namePrefix.length).trim()
+      : (/\(([^)]+)\)/.exec(String(val(sur, LAYOUT.survey.title) || '')) || [, ''])[1];
+    const items = [];
+    const T = LAYOUT.status;
+    for (let k = 0; k < LAYOUT.maxItems; k++) {
+      const r = T.firstRow + k, g = (c) => val(sta, T.cols[c] + r);
+      const name = String(g('name') || '').trim();
+      if (!name) continue;
+      const qtyRound = g('qtyRound');
+      items.push({ name, spec: String(g('spec') || '').trim(), unit: String(g('unit') || '').trim(), qtyTotal: g('qtyTotal'),
+        qtyRound, qtyNow: g('qtyNow') === '' ? qtyRound : g('qtyNow'), designPrice: g('designPrice') });
+    }
+    return { project, items, sheets: book.sheets.filter((s) => !s.hidden).map((s) => s.name) };
+  }
+
+  function toNum(v) {
+    if (typeof v === 'number') return v;
+    const s = String(v == null ? '' : v).replace(/[,\s원]/g, '');
+    return s !== '' && !isNaN(+s) ? +s : v;
+  }
+
+  const api = { fillWorkbook, readDefaults, LAYOUT, certKeysOf, shiftFormula, Sheet, _colNum: colNum, _colStr: colStr };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.GK_ENGINE = api;
+})(typeof self !== 'undefined' ? self : this);

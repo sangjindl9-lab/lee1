@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>관급자재 구매요청서 자동작성</title>
+<link rel="icon" href="icon.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand"><img src="icon.png" alt=""><div><b>관급자재 구매요청서 자동작성</b><small>나라장터 쇼핑몰 검색 → 업체 선택 → 원본 엑셀 양식 그대로 출력</small></div></div>
+  <nav>
+    <a href="#s1">① 양식</a><a href="#s2">② 공사개요</a><a href="#s3">③ 품목</a><a href="#s4">④ 나라장터 검색</a><a href="#s5">⑤ 업체 선택</a>
+  </nav>
+  <button class="primary" data-a="build">📄 엑셀 출력</button>
+</header>
+
+<main>
+  <section class="card" id="s1">
+    <h2>① 원본 엑셀 양식</h2>
+    <div class="row">
+      <label class="file">양식 파일 선택 (.xlsx)<input type="file" accept=".xlsx" id="tplInput"></label>
+      <span id="tplName" class="muted">구매요청서 엑셀 원본을 한 번 선택하면 이 컴퓨터 브라우저에 기억됩니다. 파일은 서버로 올라가지 않습니다.</span>
+      <button class="ghost" data-a="reload" id="reloadBtn" hidden>양식에서 값 다시 읽기</button>
+    </div>
+  </section>
+
+  <section class="card" id="s2">
+    <h2>② 공사 개요</h2>
+    <div class="grid" id="project"></div>
+  </section>
+
+  <section class="card" id="s3">
+    <h2>③ 품목 <small>최대 6개 (양식의 품목 줄 수). 자재 종류는 무엇이든 됩니다 — 검색어만 맞게 넣으세요.</small></h2>
+    <div class="tblwrap"><table class="items"><thead><tr>
+      <th>#</th><th>자재명</th><th>규격</th><th>단위</th><th>설계수량</th><th>금회수량</th><th>설계단가</th>
+      <th>나라장터 검색어</th><th>포함 단어 필터 <i title="쉼표로 구분. 품목명에 모두 들어 있는 제품만 보여줍니다. 비우면 전체.">?</i></th><th></th>
+    </tr></thead><tbody id="items"></tbody></table></div>
+    <div class="row">
+      <button class="ghost" data-a="add">+ 품목 추가</button>
+      <span class="grow"></span>
+      <button data-a="searchAll">🔍 품목 전체 검색</button>
+      <button data-a="auto">공통업체 3곳 자동선택</button>
+    </div>
+  </section>
+
+  <section class="card" id="s4">
+    <h2>④ 나라장터 쇼핑몰 바로 검색 <small>아무 자재나 검색해서 품목에 담을 수 있습니다.</small></h2>
+    <form class="row" id="freeForm">
+      <input id="freeKw" placeholder="예) LED 터널등 200W, 분전반, 케이블트레이 300×60, 가로등주 8m" autocomplete="off">
+      <select id="freeSort"><option value="CTRT_UPRC_ASC">가격 낮은순</option><option value="EVNT_DSCNT_RATE_DESC">쇼핑몰 기본순</option></select>
+      <input id="freeFilter" placeholder="포함 단어 필터 (선택)" style="max-width:220px">
+      <button>검색</button>
+    </form>
+    <div id="facets" class="facets"></div>
+    <div class="row" id="freeBar" hidden>
+      <span id="freeInfo" class="muted"></span><span class="grow"></span>
+      <label>담을 품목 <select id="freeTarget"></select></label>
+    </div>
+    <div class="tblwrap tall"><table class="res"><thead><tr><th></th><th>사진</th><th>업체(제조사)</th><th>물품식별번호</th><th>품목명·규격</th><th>단가</th><th>단위</th><th>본사</th><th>인증</th></tr></thead><tbody id="freeRes"></tbody></table></div>
+    <div class="row center"><button class="ghost" id="freeMore" hidden>다음 100건 더 보기</button></div>
+  </section>
+
+  <section class="card" id="s5">
+    <h2>⑤ 업체 선택 <small>1~3번은 모든 품목에서 같은 업체로 맞춰야 조사표가 맞습니다. 4~7번은 비교표에만 추가로 들어갑니다.</small></h2>
+    <div id="picks"></div>
+  </section>
+</main>
+
+<footer class="bottom">
+  <span class="muted">결과 파일: 원본 양식 그대로 — 값·인증◎·외형도 그림만 바뀌고 금액은 원래 수식으로 계산됩니다.</span>
+  <button class="primary" data-a="build">📄 엑셀 출력</button>
+</footer>
+
+<div class="busy" id="busy" hidden><div class="spin"></div><span></span></div>
+<div class="toast" id="toast" hidden></div>
+
+<script src="jszip.min.js"></script>
+<script src="engine.js"></script>
+<script src="card.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

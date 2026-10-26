@@ -1,0 +1,9 @@
+{
+  "name": "gwangeup-jajae",
+  "version": "1.0.0",
+  "description": "관급자재 구매요청서 자동작성 — 나라장터 쇼핑몰 검색 + 원본 엑셀 양식 자동 입력",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=18" },
+  "license": "UNLICENSED"
+}

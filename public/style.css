@@ -1,0 +1,46 @@
+:root{--b:#1f4fa3;--b2:#e6eefb;--line:#e2e8f0;--bg:#f3f6fb;--txt:#1a202c;--mut:#64748b;--red:#c0392b}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--txt);font:14px/1.45 "Malgun Gothic","맑은 고딕","Apple SD Gothic Neo","Noto Sans KR",sans-serif}
+.top{position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:18px;padding:10px 20px;background:var(--b);color:#fff;box-shadow:0 2px 8px rgba(0,0,0,.15);flex-wrap:wrap}
+.brand{display:flex;gap:10px;align-items:center}.brand img{width:34px;height:34px;border-radius:7px}
+.brand b{font-size:17px;display:block}.brand small{opacity:.85;font-size:12px}
+nav{display:flex;gap:4px;flex:1;flex-wrap:wrap}nav a{color:#fff;text-decoration:none;padding:5px 10px;border-radius:6px;font-size:13px;opacity:.9}nav a:hover{background:rgba(255,255,255,.15)}
+main{max-width:1320px;margin:0 auto;padding:14px 16px 90px}
+.card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:14px;scroll-margin-top:70px}
+h2{margin:0 0 10px;font-size:16px}h2 small{font-weight:normal;color:var(--mut);font-size:12px;margin-left:6px}
+.row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px}.grow{flex:1}.center{justify-content:center}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:8px 14px}
+.grid label{display:flex;flex-direction:column;font-size:12px;color:#475569;gap:3px}
+input,select{font:inherit;padding:6px 8px;border:1px solid #cbd5e1;border-radius:6px;background:#fff;min-width:0;color:inherit}
+input:focus,select:focus{outline:2px solid #93b4ef;border-color:var(--b)}
+#freeKw{flex:1;min-width:260px;font-size:15px;padding:8px 10px}
+button{font:inherit;padding:7px 14px;border-radius:7px;border:1px solid var(--b);background:var(--b);color:#fff;cursor:pointer;white-space:nowrap}
+button:disabled{opacity:.4;cursor:default}button.ghost{background:#fff;color:var(--b)}button.sm{padding:3px 9px;font-size:12px}
+button.primary{background:var(--red);border-color:var(--red);font-size:15px;padding:9px 20px}
+.file{display:inline-block;padding:7px 14px;border:1px dashed var(--b);border-radius:7px;color:var(--b);cursor:pointer}.file input{display:none}
+.ok{color:#15803d}.muted{color:var(--mut);font-size:13px}
+.tblwrap{overflow:auto}.tblwrap.tall{max-height:560px;margin-top:8px}
+table{border-collapse:collapse;width:100%}
+th,td{border-bottom:1px solid var(--line);padding:5px 6px;text-align:left;vertical-align:middle}
+th{background:#f1f5f9;font-size:12px;color:#475569;white-space:nowrap;position:sticky;top:0;z-index:1}
+.items input{width:100%}.items .f-unit{width:56px}.items .f-qtyTotal,.items .f-qtyNow,.items .f-designPrice{width:84px;text-align:right}
+.items .f-name{min-width:120px}.items .f-spec{min-width:130px}.items .f-kw{min-width:180px}.items .f-filter{min-width:140px}
+.res img,.pick img{width:46px;height:46px;object-fit:contain;border:1px solid var(--line);border-radius:4px;background:#fff}
+.res .nm,.pick .nm{max-width:420px;font-size:12px}
+.num{text-align:right;font-weight:bold;white-space:nowrap}
+.cert span{display:inline-block;background:#eef2f7;border-radius:4px;padding:1px 5px;margin:1px;font-size:11px}
+tr.on{background:#fff7e6}
+.facets{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.facets button{background:#fff;color:#334155;border-color:#cbd5e1;padding:3px 10px;font-size:12px;border-radius:14px}
+.facets button.on{background:var(--b);color:#fff;border-color:var(--b)}
+details.it{border:1px solid var(--line);border-radius:8px;margin:8px 0;background:#fff}
+details.it>summary{padding:9px 12px;cursor:pointer;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+details.it .inner{padding:0 12px 12px}
+.chip{background:var(--b2);color:var(--b);border-radius:12px;padding:2px 9px;font-size:12px}
+.chip.warn{background:#fdecea;color:var(--red)}
+.bottom{position:fixed;left:0;right:0;bottom:0;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 20px;background:#fff;border-top:1px solid var(--line);box-shadow:0 -2px 8px rgba(0,0,0,.06);z-index:10}
+.busy{position:fixed;inset:0;background:rgba(255,255,255,.65);display:flex;align-items:center;justify-content:center;gap:12px;font-size:16px;z-index:50}
+.busy[hidden],.toast[hidden]{display:none}
+.spin{width:26px;height:26px;border:4px solid #c7d6f2;border-top-color:var(--b);border-radius:50%;animation:s 1s linear infinite}@keyframes s{to{transform:rotate(360deg)}}
+.toast{position:fixed;left:50%;bottom:70px;transform:translateX(-50%);background:#1e293b;color:#fff;padding:12px 18px;border-radius:9px;max-width:86vw;white-space:pre-wrap;box-shadow:0 8px 24px rgba(0,0,0,.3);z-index:60}
+@media (max-width:700px){nav{display:none}.bottom .muted{display:none}}
