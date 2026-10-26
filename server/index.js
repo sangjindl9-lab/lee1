@@ -750,5 +750,5 @@ app.listen(PORT, () => {
   }
   // 파일 데이터(철도·방위사업청)는 처음 받는 데 1분 이상 걸려서 서버 시작 직후 미리 받아둠
   if (KEY && !MOCK) setTimeout(async () => { for (const src of ['d2bfac', 'kr', 'korail']) await extLoad(src).catch((e) => console.log(`[ext] 미리받기 실패 ${src}: ${e.message}`)); }, 3000);
-  if (process.env.SELFTEST === '1') setTimeout(() => selfTest(`http://localhost:${PORT}`).catch((e) => console.log('[SELFTEST] fail', e.message)), 1000);
+  if (process.env.CHECK !== '0') setTimeout(() => selfTest(`http://localhost:${PORT}`).catch((e) => console.log('[CHECK] fail', e.message)), 120000);
 });
