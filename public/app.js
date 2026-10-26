@@ -13,8 +13,8 @@
     return templateBytes;
   }
   const free = { kw: '', sort: 'CTRT_UPRC_ASC', filter: '', page: 0, total: 0, list: [], facets: [], facet: '' };
-  function load() { try { return JSON.parse(localStorage.getItem('gwj_state')); } catch { return null; } }
-  const save = debounce(() => { try { localStorage.setItem('gwj_state', JSON.stringify(state)); } catch {} }, 300);
+  function load() { try { return JSON.parse(localStorage.getItem('gwj_state_v2')); } catch { return null; } }
+  const save = debounce(() => { try { localStorage.setItem('gwj_state_v2', JSON.stringify(state)); } catch {} }, 300);
 
   // 양식 파일은 용량이 커서 IndexedDB에 보관
   const idb = {
@@ -75,8 +75,9 @@
   }
   function renderTargets() {
     // 담을 품목 선택상자
-    $('#freeTarget').innerHTML = state.items.map((it, i) => `<option value="${i}">${i + 1}. ${esc(it.name)} ${esc(it.spec || '')}</option>`).join('') +
-      (state.items.length < MAX_ITEMS ? '<option value="new">+ 새 품목으로 추가</option>' : '');
+    $('#freeTarget').innerHTML = (state.items.length < MAX_ITEMS || state.items.some(blankItem) ? '<option value="new">+ 새 품목으로 추가</option>' : '') +
+      state.items.map((it, i) => blankItem(it) ? '' : `<option value="${i}">${i + 1}번 품목 (${esc(it.name)} ${esc(it.spec || '')})에 추가</option>`).join('');
+    if (free.target == null) free.target = 'new';
     if (free.target != null && $('#freeTarget').querySelector(`option[value="${free.target}"]`)) $('#freeTarget').value = free.target;
   }
   function renderPicks() {
@@ -144,7 +145,7 @@
     const kw = $('#freeKw').value.trim(); if (!kw) return;
     try {
       busy('나라장터 검색 중…');
-      if (!more) Object.assign(free, { kw, sort: $('#freeSort').value, page: 0, list: [], facet: '' });
+      if (!more) { Object.assign(free, { kw, sort: $('#freeSort').value, page: 0, list: [], facet: '' }); free.target = 'new'; renderTargets(); }
       const j = await api(free.kw, free.page + 1, free.sort);
       free.page = j.page; free.total = j.total;
       const have = new Set(free.list.map((r) => r.no));
@@ -156,9 +157,12 @@
     const r = free.list.find((x) => x.no === no); if (!r) return;
     let tgt = $('#freeTarget').value;
     if (tgt === 'new') {
-      if (state.items.length >= MAX_ITEMS) return toast(`품목은 ${MAX_ITEMS}개까지입니다.`);
-      state.items.push({ name: r.cls || free.kw, spec: '', unit: r.unit, qtyTotal: '', qtyNow: '', qtyRound: '', designPrice: '', kw: free.kw, filter: free.filter, results: [], slots: {} });
-      tgt = String(state.items.length - 1); free.target = tgt;
+      const nu = { name: r.cls || free.kw, spec: '', unit: r.unit, qtyTotal: '', qtyNow: '', qtyRound: '', designPrice: '', kw: free.kw, filter: free.filter, results: [], slots: {} };
+      const bi = state.items.findIndex(blankItem);
+      if (bi >= 0) state.items[bi] = nu;
+      else if (state.items.length >= MAX_ITEMS) return toast(`품목은 ${MAX_ITEMS}개까지입니다.`);
+      else state.items.push(nu);
+      tgt = String(bi >= 0 ? bi : state.items.length - 1); free.target = tgt;
       toast(`${state.items.length}번 품목을 새로 만들었습니다. ②에서 규격·수량을 채워 주세요.`);
     }
     const it = state.items[+tgt]; it.results = it.results || []; it.slots = it.slots || {};
@@ -185,6 +189,8 @@
   async function build() {
     const items = state.items.filter((it) => it.name);
     if (!items.length) return toast('품목을 입력해 주세요.');
+    const summary = items.map((it, i) => `${i + 1}. ${it.name} ${it.spec || ''} — 업체 ${slotList(it).filter(Boolean).map((r) => short(r.co)).join(', ') || '없음'}`).join('\n');
+    if (!confirm(`아래 품목으로 출력합니다. 맞습니까?\n\n${summary}\n\n(다른 품목이 섞여 있으면 [취소] 후 ②에서 삭제하거나 [새로 작성]을 누르세요)`)) return;
     const empty = items.findIndex((it) => !slotList(it).some(Boolean));
     if (empty >= 0) return toast(`${empty + 1}번 품목에 선택한 업체가 없습니다.`);
     const checkedAt = nowStr();
@@ -250,6 +256,7 @@
     if (a === 'one') { const it = state.items[i]; if (!it.kw) Object.assign(it, guessQuery(it)); renderItems(); await searchItems([i]); document.querySelector(`details.it[data-i="${i}"]`)?.scrollIntoView({ behavior: 'smooth' }); }
     if (a === 'searchAll') { state.items.forEach((it) => { if (!it.kw) Object.assign(it, guessQuery(it)); }); renderItems(); await searchItems(state.items.map((_, k) => k)); }
     if (a === 'auto') autoPick();
+    if (a === 'reset') resetAll();
     if (a === 'clearSlots') { state.items[i].slots = {}; save(); renderPicks(); renderFree(); }
     if (a === 'put') putFree(b.dataset.no);
     if (a === 'unput') { const it = state.items[+$('#freeTarget').value]; if (it) { delete it.slots[b.dataset.no]; save(); renderPicks(); renderFree(); } }
@@ -265,6 +272,13 @@
   function esc(s) { return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
   function short(s) { return String(s).replace(/주식회사\s*|\(주\)\s*|㈜\s*/g, ''); }
   function nowStr() { const d = new Date(), p = (n) => String(n).padStart(2, '0'); return `${d.getFullYear()}.${p(d.getMonth() + 1)}.${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; }
+  function blankItem(it) { return !String(it.name || '').trim() && !Object.keys(it.slots || {}).length; }
+  function newItem() { return { name: '', spec: '', unit: '', qtyTotal: '', qtyNow: '', qtyRound: '', designPrice: '', kw: '', filter: '', results: null, slots: {} }; }
+  function resetAll() {
+    if (!confirm('공사개요와 품목·선택한 업체를 모두 지우고 새로 작성할까요?')) return;
+    state = { project: {}, items: [newItem()] }; free.target = 'new'; save(); renderAll();
+    toast('새로 작성합니다. ③에서 자재를 검색해 [담기]를 누르세요.');
+  }
   function debounce(f, ms) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => f(...a), ms); }; }
 
   (async function init() {
