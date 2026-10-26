@@ -17,6 +17,14 @@ function send(res, code, body, type = 'application/json; charset=utf-8', extra =
 function readBody(req) {
   return new Promise((ok, no) => { let d = ''; req.on('data', (c) => { d += c; if (d.length > 1e6) req.destroy(); }); req.on('end', () => ok(d)); req.on('error', no); });
 }
+// 나라장터 연결이 가끔 끊기므로 한 번 더 시도
+async function fetchRetry(url, opt, tries = 2) {
+  let err;
+  for (let i = 0; i < tries; i++) {
+    try { return await fetch(url, { ...opt, signal: AbortSignal.timeout(25000) }); } catch (e) { err = e; await new Promise((r) => setTimeout(r, 800)); }
+  }
+  throw new Error('나라장터 연결 실패(잠시 후 다시 시도해 주세요): ' + (err && err.cause ? err.cause.code || err.cause.message : err && err.message));
+}
 const dec = (s) => String(s || '').replace(/&#(\d+);/g, (_, n) => String.fromCharCode(+n)).replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"');
 
 async function shopSearch({ keyword, page = 1, size = 100, sort = 'CTRT_UPRC_ASC', dtlsPrnmNo = '', etpsNm = '' }) {
@@ -27,10 +35,10 @@ async function shopSearch({ keyword, page = 1, size = 100, sort = 'CTRT_UPRC_ASC
     target: '계300001,계300002,계309999', prchsMthdSeCd: '본010001', srchSeCd: '검030006', rdoIndex: 5,
     dgtlSrvcMallYn: 'N', dscplnEvntYn: 'Y', dtlsPrnmNo, etpsNm,
   } };
-  const r = await fetch(SHOP + '/gm/gms/gmsd/newShopUntySrchApi.do', {
+  const r = await fetchRetry(SHOP + '/gm/gms/gmsd/newShopUntySrchApi.do', {
     method: 'POST',
     headers: { Accept: 'application/json', 'Content-Type': 'application/json;charset=UTF-8', 'User-Agent': UA, Origin: SHOP, Referer: SHOP + '/' },
-    body: JSON.stringify(body), signal: AbortSignal.timeout(25000),
+    body: JSON.stringify(body),
   });
   if (!r.ok) throw new Error('나라장터 응답 오류 ' + r.status);
   const j = await r.json();
@@ -52,10 +60,10 @@ function norm(x) {
 }
 
 async function shopPost(path, body) {
-  const r = await fetch(SHOP + path, {
+  const r = await fetchRetry(SHOP + path, {
     method: 'POST',
     headers: { Accept: 'application/json', 'Content-Type': 'application/json;charset=UTF-8', 'User-Agent': UA, Origin: SHOP, Referer: SHOP + '/' },
-    body: JSON.stringify(body), signal: AbortSignal.timeout(25000),
+    body: JSON.stringify(body),
   });
   if (!r.ok) throw new Error('나라장터 응답 오류 ' + r.status);
   return r.json();
@@ -122,7 +130,7 @@ const server = http.createServer(async (req, res) => {
     if (u.pathname === '/api/img') {
       const src = u.searchParams.get('src') || '';
       if (!/^\/static\/[\w\-./%]+\.(jpe?g|png|gif|bmp|webp)$/i.test(src)) return send(res, 400, { error: 'bad src' });
-      const r = await fetch(SHOP + src, { headers: { 'User-Agent': UA, Referer: SHOP + '/' }, signal: AbortSignal.timeout(20000) });
+      const r = await fetchRetry(SHOP + src, { headers: { 'User-Agent': UA, Referer: SHOP + '/' } });
       if (!r.ok) return send(res, r.status, { error: 'img ' + r.status });
       return send(res, 200, Buffer.from(await r.arrayBuffer()), r.headers.get('content-type') || 'image/jpeg', { 'Cache-Control': 'public, max-age=86400' });
     }
