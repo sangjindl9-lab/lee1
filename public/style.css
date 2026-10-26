@@ -46,3 +46,4 @@ details.it .inner{padding:0 12px 12px}
 @media (max-width:700px){nav{display:none}.bottom .muted{display:none}}
 .paste{background:#f6f9ff;border:1px dashed #9db5e6;border-radius:8px;padding:10px 12px;margin-bottom:10px}
 .paste textarea{flex:1;min-width:260px;font:13px/1.4 Consolas,monospace;padding:6px 8px;border:1px solid #cbd5e1;border-radius:6px;resize:vertical}
+.paste .cur{background:#fff;border-radius:6px;padding:6px 10px;border:1px solid #dbe5f6}

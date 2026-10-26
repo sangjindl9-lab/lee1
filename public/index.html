@@ -41,9 +41,10 @@
   <section class="card" id="s4">
     <h2>③ 나라장터 쇼핑몰 바로 검색 <small>아무 자재나 검색해서 품목에 담을 수 있습니다.</small></h2>
     <div class="paste">
-      <div><b>🔗 상품 주소로 등록</b> <small class="muted">나라장터 쇼핑몰에서 직접 찾은 상품 화면 → <b>[공유]</b> → <b>[URL복사]</b> 한 주소를 붙여넣으세요. 업체 3곳이면 주소 3개를 줄바꿈으로 한 번에 넣으면 됩니다. (물품식별번호 8자리도 가능)</small></div>
+      <div><b>🔗 상품 주소로 등록</b> <small class="muted">나라장터 쇼핑몰에서 직접 찾은 상품 화면 → <b>[공유]</b> → <b>[URL복사]</b> 한 주소를 붙여넣으세요. 한 품목의 업체 주소를 하나씩 또는 여러 개(줄바꿈) 넣으면 모두 같은 품목의 1·2·3…번 업체로 들어갑니다. 다음 자재는 [✚ 다음 품목 시작]을 누른 뒤 넣으세요. (물품식별번호 8자리도 가능)</small></div>
       <div class="row"><textarea id="pasteBox" rows="3" placeholder="https://shop.g2b.go.kr/link/GMSF001_01/?ctrtItemMngNo=0024C0405_1450000525"></textarea>
       <button id="pasteBtn">주소로 등록</button></div>
+      <div class="row cur"><span id="curTarget" class="grow"></span><button type="button" class="ghost" id="nextItem">✚ 다음 품목 시작</button></div>
     </div>
     <form class="row" id="freeForm">
       <input id="freeKw" placeholder="예) LED 터널등 200W, 분전반, 케이블트레이 300×60, 가로등주 8m" autocomplete="off">

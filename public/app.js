@@ -77,8 +77,15 @@
     // 담을 품목 선택상자
     $('#freeTarget').innerHTML = (state.items.length < MAX_ITEMS || state.items.some(blankItem) ? '<option value="new">+ 새 품목으로 추가</option>' : '') +
       state.items.map((it, i) => blankItem(it) ? '' : `<option value="${i}">${i + 1}번 품목 (${esc(it.name)} ${esc(it.spec || '')})에 추가</option>`).join('');
-    if (free.target == null) free.target = 'new';
+    if (free.target == null) { // 새로고침 후: 업체가 3곳 미만인 마지막 품목을 이어서
+      let li = -1; state.items.forEach((it, i) => { if (!blankItem(it)) li = i; });
+      free.target = li >= 0 && Object.keys(state.items[li].slots || {}).length < 3 ? String(li) : 'new';
+    }
     if (free.target != null && $('#freeTarget').querySelector(`option[value="${free.target}"]`)) $('#freeTarget').value = free.target;
+    const ci = state.items[+free.target];
+    $('#curTarget').innerHTML = free.target !== 'new' && ci
+      ? `지금 등록 중: <b>${+free.target + 1}번 품목 (${esc(ci.name)} ${esc(ci.spec || '')})</b> · 업체 <b>${Object.keys(ci.slots || {}).length}곳</b> — 주소를 넣을 때마다 이 품목의 다음 업체로 들어갑니다.`
+      : '다음에 등록하는 상품으로 <b>새 품목</b>을 만듭니다.';
   }
   function renderPicks() {
     $('#picks').innerHTML = state.items.map((it, i) => {
@@ -144,7 +151,7 @@
     const kw = $('#freeKw').value.trim(); if (!kw) return;
     try {
       busy('나라장터 검색 중…');
-      if (!more) { Object.assign(free, { kw, sort: $('#freeSort').value, page: 0, list: [], facet: '' }); free.target = 'new'; renderTargets(); }
+      if (!more) { Object.assign(free, { kw, sort: $('#freeSort').value, page: 0, list: [], facet: '' }); }
       const j = await api(free.kw, free.page + 1, free.sort);
       free.page = j.page; free.total = j.total;
       const have = new Set(free.list.map((r) => r.no));
@@ -163,18 +170,6 @@
       else state.items.push(nu);
       tgt = String(bi >= 0 ? bi : state.items.length - 1); free.target = tgt;
       if (!quiet) toast(`${+tgt + 1}번 품목을 새로 만들었습니다. ②에서 규격·수량을 채워 주세요.`);
-    }
-    // 다른 종류(세부품명)의 제품을 기존 품목에 넣으려 하면 새 품목으로 분리 (예: LED 품목에 발전기)
-    {
-      const cur = state.items[+tgt];
-      const curCls = cur && (cur.results || []).filter((x) => (cur.slots || {})[x.no]).map((x) => x.cls).filter(Boolean);
-      if (cur && r.cls && curCls.length && !curCls.includes(r.cls)) {
-        const nu = { name: r.cls, spec: '', unit: r.unit, qtyTotal: '', qtyNow: '', qtyRound: '', designPrice: '', kw: free.kw, filter: free.filter, results: [], slots: {} };
-        const bi = state.items.findIndex(blankItem);
-        if (bi >= 0) state.items[bi] = nu; else if (state.items.length >= MAX_ITEMS) return toast(`품목은 ${MAX_ITEMS}개까지입니다.`); else state.items.push(nu);
-        tgt = String(bi >= 0 ? bi : state.items.length - 1); free.target = tgt;
-        toast(`"${r.cls}"는 ${cur.name} 품목과 종류가 달라 ${+tgt + 1}번 새 품목으로 넣었습니다.`, 6000);
-      }
     }
     const it = state.items[+tgt]; it.results = it.results || []; it.slots = it.slots || {};
     if (!it.results.some((x) => x.no === r.no)) it.results.push(r);
@@ -201,9 +196,9 @@
         ok.push(`${short(it.co)} ${it.no} ${it.price.toLocaleString()}원` + (x.partial ? ' (본사·인증 확인 필요)' : ''));
       }
       if (ok.length) $('#pasteBox').value = '';
-      const tgt = state.items[+free.target];
-      free.target = 'new'; renderTargets(); // 다음 붙여넣기는 새 품목으로
-      toast((ok.length ? `✔ ${ok.length}건 등록 → ${tgt ? (+free.target + 1) + '번 품목(' + tgt.name + ')' : ''}\n• ${ok.join('\n• ')}` : '') +
+      const ti = +free.target, tgt = state.items[ti];
+      const cnt = tgt ? Object.keys(tgt.slots || {}).length : 0;
+      toast((ok.length ? `✔ ${ok.length}건 등록 → ${tgt ? (ti + 1) + '번 품목(' + tgt.name + ') · 지금 업체 ' + cnt + '곳' : ''}\n• ${ok.join('\n• ')}\n\n같은 품목의 다른 업체 주소를 계속 넣으세요. 다음 자재로 넘어갈 때는 [✚ 다음 품목 시작]을 누르세요.` : '') +
         (bad.length ? `${ok.length ? '\n\n' : ''}✖ ${bad.length}건 실패\n• ${bad.join('\n• ')}` : ''), 12000);
       renderFree();
     } catch (e) { busy(''); toast('주소 등록 실패: ' + e.message, 9000); }
@@ -300,6 +295,7 @@
   $('#freeForm').addEventListener('submit', (e) => { e.preventDefault(); free.filter = $('#freeFilter').value; freeSearch(false); });
   $('#freeMore').addEventListener('click', () => freeSearch(true));
   $('#pasteBtn').addEventListener('click', pasteRegister);
+  $('#nextItem').addEventListener('click', () => { free.target = 'new'; renderTargets(); renderFree(); toast('다음 품목을 시작합니다. 상품 주소를 넣거나 [담기]를 누르면 새 품목이 만들어집니다.'); });
 
   // ───────────── 기타 ─────────────
   function busy(msg) { const b = $('#busy'); b.hidden = !msg; b.querySelector('span').textContent = msg; }
