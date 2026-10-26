@@ -72,3 +72,11 @@ const server = http.createServer(async (req, res) => {
   }
 });
 server.listen(PORT, () => console.log('관급자재 자동작성 서버 실행: ' + PORT));
+
+// 시작 시 나라장터 연결 자가점검 (Render 로그에 결과 기록)
+setTimeout(async () => {
+  try {
+    const r = await shopSearch({ keyword: '케이블트레이 150×60', size: 20 });
+    console.log(`[자가점검] 나라장터 검색 OK — 전체 ${r.total}건, 첫 결과: ${r.list[0] ? r.list[0].co + ' ' + r.list[0].price : '없음'}`);
+  } catch (e) { console.log('[자가점검] 나라장터 검색 실패: ' + (e.cause ? e.cause.code || e.cause.message : e.message)); }
+}, 1500);
