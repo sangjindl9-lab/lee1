@@ -164,6 +164,18 @@
       tgt = String(bi >= 0 ? bi : state.items.length - 1); free.target = tgt;
       if (!quiet) toast(`${+tgt + 1}번 품목을 새로 만들었습니다. ②에서 규격·수량을 채워 주세요.`);
     }
+    // 다른 종류(세부품명)의 제품을 기존 품목에 넣으려 하면 새 품목으로 분리 (예: LED 품목에 발전기)
+    {
+      const cur = state.items[+tgt];
+      const curCls = cur && (cur.results || []).filter((x) => (cur.slots || {})[x.no]).map((x) => x.cls).filter(Boolean);
+      if (cur && r.cls && curCls.length && !curCls.includes(r.cls)) {
+        const nu = { name: r.cls, spec: '', unit: r.unit, qtyTotal: '', qtyNow: '', qtyRound: '', designPrice: '', kw: free.kw, filter: free.filter, results: [], slots: {} };
+        const bi = state.items.findIndex(blankItem);
+        if (bi >= 0) state.items[bi] = nu; else if (state.items.length >= MAX_ITEMS) return toast(`품목은 ${MAX_ITEMS}개까지입니다.`); else state.items.push(nu);
+        tgt = String(bi >= 0 ? bi : state.items.length - 1); free.target = tgt;
+        toast(`"${r.cls}"는 ${cur.name} 품목과 종류가 달라 ${+tgt + 1}번 새 품목으로 넣었습니다.`, 6000);
+      }
+    }
     const it = state.items[+tgt]; it.results = it.results || []; it.slots = it.slots || {};
     if (!it.results.some((x) => x.no === r.no)) it.results.push(r);
     const used = new Set(Object.values(it.slots));

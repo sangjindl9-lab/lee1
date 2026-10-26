@@ -197,7 +197,7 @@
     for (const m of wbXml.matchAll(/<sheet\b[^>]*>/g)) {
       const t = m[0];
       const target = rels[attr(t, 'r:id')];
-      sheets.push({ index: idx++, name: unesc(attr(t, 'name')), hidden: !!attr(t, 'state'), path: 'xl/' + target.replace(/^\/?xl\//, '') });
+      sheets.push({ index: idx++, name: unesc(attr(t, 'name')), hidden: !!attr(t, 'state') && attr(t, 'state') !== 'visible', path: 'xl/' + target.replace(/^\/?xl\//, '') });
     }
     return { zip, wbXml, sheets };
   }
@@ -222,6 +222,49 @@
   function anchorPos(a, px = 'xdr:') {
     const m = new RegExp(`<${px}from><${px}col>(\\d+)</${px}col><${px}colOff>-?\\d+</${px}colOff><${px}row>(\\d+)</${px}row>`).exec(a);
     return m ? { col: +m[1], row: +m[2] } : null;
+  }
+
+  // 시트 복제 (조사표 2장 이상일 때) — 그림(인증마크)까지 복제, 맨 뒤에 추가
+  async function cloneSheet(book, src, newName, xml) {
+    const { zip } = book;
+    const nums = Object.keys(zip.files).map((f) => (/^xl\/worksheets\/sheet(\d+)\.xml$/.exec(f) || [])[1]).filter(Boolean).map(Number);
+    const n = Math.max(...nums) + 1, path = `xl/worksheets/sheet${n}.xml`;
+    zip.file(path, xml);
+    let ct = await zip.file('[Content_Types].xml').async('string');
+    ct = ct.replace('</Types>', `<Override PartName="/${path}" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>`);
+    const srcRel = src.path.replace(/worksheets\/(sheet\d+\.xml)$/, 'worksheets/_rels/$1.rels');
+    if (zip.file(srcRel)) {
+      let rel = await zip.file(srcRel).async('string');
+      const dm = /<Relationship\b[^>]*Type="[^"]*\/drawing"[^>]*Target="([^"]+)"[^>]*\/>/.exec(rel) || /<Relationship\b[^>]*Target="([^"]+)"[^>]*Type="[^"]*\/drawing"[^>]*\/>/.exec(rel);
+      if (dm) {
+        const t = dm[1], dpath = t.startsWith('/') ? t.slice(1) : 'xl/' + t.replace(/^\.\.\//, '');
+        const dn = Math.max(...Object.keys(zip.files).map((f) => +((/^xl\/drawings\/drawing(\d+)\.xml$/.exec(f) || [])[1] || 0))) + 1;
+        const npath = `xl/drawings/drawing${dn}.xml`;
+        zip.file(npath, await zip.file(dpath).async('string'));
+        const drel = dpath.replace(/drawings\/(drawing\d+\.xml)$/, 'drawings/_rels/$1.rels');
+        if (zip.file(drel)) zip.file(npath.replace(/drawings\/(drawing\d+\.xml)$/, 'drawings/_rels/$1.rels'), await zip.file(drel).async('string'));
+        rel = rel.replace(t, t.startsWith('/') ? '/' + npath : '../drawings/drawing' + dn + '.xml');
+        ct = ct.replace('</Types>', `<Override PartName="/${npath}" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/></Types>`);
+      }
+      zip.file(path.replace(/worksheets\/(sheet\d+\.xml)$/, 'worksheets/_rels/$1.rels'), rel);
+    }
+    zip.file('[Content_Types].xml', ct);
+    let wr = await zip.file('xl/_rels/workbook.xml.rels').async('string');
+    let rid = 1; for (const m of wr.matchAll(/Id="rId(\d+)"/g)) rid = Math.max(rid, +m[1] + 1);
+    wr = wr.replace('</Relationships>', `<Relationship Id="rId${rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="/${path}"/></Relationships>`);
+    zip.file('xl/_rels/workbook.xml.rels', wr);
+    let wb = book.wbXml;
+    let sid = 1; for (const m of wb.matchAll(/sheetId="(\d+)"/g)) sid = Math.max(sid, +m[1] + 1);
+    const newIndex = book.sheets.length;
+    wb = wb.replace('</sheets>', `<sheet xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" name="${esc(newName)}" sheetId="${sid}" r:id="rId${rid}"/></sheets>`);
+    const pa = new RegExp(`<definedName name="_xlnm\\.Print_Area" localSheetId="${src.index}"[^>]*>([^<]*)</definedName>`).exec(wb);
+    if (pa) {
+      const ref = unesc(pa[1]).replace(/^'?[^!]*'?!/, `'${newName.replace(/'/g, "''")}'!`);
+      wb = wb.replace('</definedNames>', `<definedName name="_xlnm.Print_Area" localSheetId="${newIndex}">${esc(ref)}</definedName></definedNames>`);
+    }
+    book.wbXml = wb;
+    book.sheets.push({ index: newIndex, name: newName, hidden: false, path });
+    return path;
   }
 
   // ───────────────────────── 메인: 양식 채우기 ─────────────────────────
@@ -273,22 +316,52 @@
       }
     });
 
-    // ── 2) 단가및인증현황조사: 품명·규격·인증(◎)·평균단가(최저단가 제외)
-    if (P.group) sur.set(S.title, `관급자재(${P.group}) 조달단가 및 인증현황 조사표`);
-    const firstCos = (items[0].companies || []).slice(0, 3).map((c) => c && c.co);
-    for (let r = S.firstRow; r <= S.clearRowsTo; r++) {
-      const k = r - S.firstRow;
-      const it = items[k];
-      S.companies.forEach((sc, j) => {
-        const co = it && (it.companies || [])[j];
-        const keys = co ? certKeysOf(co.certs) : new Set();
-        sc.certCols.forEach((col, i) => {
-          const want = keys.has(sc.certKeys[i]) ? '◎' : null;
-          if (want) sur.set(col + r, want); else sur.clear(col + r);
+    // ── 2) 단가및인증현황조사: 1~3번 업체가 같은 품목끼리 묶어 묶음마다 시트 1장 (머리글 업체명이 맞도록)
+    const coKey = (c) => (c ? String(c.co).replace(/주식회사|\(주\)|㈜|\s/g, '') : '-');
+    const groups = [];
+    items.forEach((it, k) => {
+      const key = (it.companies || []).slice(0, 3).map(coKey).join('|');
+      let g = groups.find((x) => x.key === key);
+      if (!g) { g = { key, idx: [] }; groups.push(g); }
+      g.idx.push(k);
+    });
+    const surOrigXml = await zip.file(shSur.path).async('string');
+    const cmpQ = `'${shCmp.name.replace(/'/g, "''")}'`;
+    const surSheets = [];   // { sheet, name, path }
+    for (let gi = 0; gi < groups.length; gi++) {
+      if (gi === 0) { surSheets.push({ sheet: sur, name: shSur.name, path: shSur.path }); continue; }
+      const name = `${shSur.name}(${gi + 1})`;
+      const path = await cloneSheet(book, shSur, name, surOrigXml);
+      surSheets.push({ sheet: new Sheet(surOrigXml.replace(/\stabSelected="1"/, '')), name, path });
+    }
+    const surRowOf = []; // 품목 k → { name, row }
+    groups.forEach((g, gi) => {
+      const { sheet: sh, name: shName } = surSheets[gi];
+      const k0 = g.idx[0];
+      const title = gi === 0 && P.group ? P.group : items[k0].name;
+      sh.set(S.title, `관급자재(${title}) 조달단가 및 인증현황 조사표`);
+      ['H', 'S', 'AB'].forEach((col, j) => sh.setFormula(col + '3', `${cmpQ}!D${5 + C.blockHeight * k0 + j}`));
+      for (let j = 0; j < LAYOUT.maxItems; j++) {
+        const r = S.firstRow + j, k = g.idx[j], it = items[k];
+        sh.setHidden(r, !it);
+        S.companies.forEach((sc, ci) => {
+          const co = it && (it.companies || [])[ci];
+          const keys = co ? certKeysOf(co.certs) : new Set();
+          sc.certCols.forEach((col, i) => { if (keys.has(sc.certKeys[i])) sh.set(col + r, '◎'); else sh.clear(col + r); });
         });
-      });
-      if (it) {
-        sur.set(S.cols.name + r, it.name); sur.set(S.cols.spec + r, it.spec);
+        if (!it) {
+          sh.set(S.cols.name + r, null); sh.set(S.cols.spec + r, null);
+          S.companies.forEach((sc) => { sh.set(sc.no + r, null); sh.set(sc.price + r, null); });
+          continue;
+        }
+        surRowOf[k] = { name: shName, row: r };
+        sh.set(S.cols.name + r, it.name); sh.set(S.cols.spec + r, it.spec);
+        sh.setFormula('D' + r, `IF(A${r}="","",${T.name}!N${T.firstRow + k})`);
+        const b = 5 + C.blockHeight * k;
+        S.companies.forEach((sc, ci) => {
+          sh.setFormula(sc.no + r, `IF(${cmpQ}!F${b + ci}="","",${cmpQ}!F${b + ci})`);
+          sh.setFormula(sc.price + r, `IF(${cmpQ}!H${b + ci}="","",${cmpQ}!H${b + ci})`);
+        });
         // 평균단가: 3개 업체 중 최저가 1곳을 뺀 나머지 평균 (양식 "최저단가 제외" 기준)
         const cs = (it.companies || []).slice(0, 3);
         if (cs.length === 3 && cs.every(Boolean)) {
@@ -296,16 +369,14 @@
           const minIdx = pr.indexOf(Math.min(...pr));
           const pc = S.companies.map((x) => x.price + r);
           const keep = minIdx === 0 ? [pc[1], pc[2]] : minIdx === 1 ? [pc[0], pc[2]] : [pc[0], pc[1]];
-          sur.setFormula(S.cols.avg + r, `TRUNC(AVERAGE(${keep.join(',')}),0)`);
+          sh.setFormula(S.cols.avg + r, `TRUNC(AVERAGE(${keep.join(',')}),0)`);
         } else {
-          warnings.push(`${k + 1}번 품목(${it.name} ${it.spec}): 업체 3곳이 모두 선택되지 않아 평균단가를 계산할 수 없습니다.`);
+          sh.setFormula(S.cols.avg + r, `IF(A${r}="","",TRUNC(AVERAGE(${S.companies.map((x) => x.price + r).join(',')}),0))`);
+          warnings.push(`${k + 1}번 품목(${it.name} ${it.spec || ''}): 업체가 3곳이 아니라서 평균단가를 선택된 업체 평균으로 계산했습니다.`);
         }
-        cs.forEach((c, j) => {
-          if (j < 3 && c && firstCos[j] && c.co !== firstCos[j])
-            warnings.push(`${k + 1}번 품목: ${j + 1}번 업체가 "${c.co}"인데, 조사표 머리글은 1번 품목 기준 "${firstCos[j]}"입니다. 업체 순서를 품목마다 같게 맞춰 주세요.`);
-        });
       }
-    }
+    });
+    if (groups.length > 1) warnings.push(`1~3번 업체 구성이 다른 품목이 있어 조사표를 ${groups.length}장으로 나눠 만들었습니다.`);
 
     // ── 3) 구매내역현황: 명칭·규격·단위·수량·설계단가
     if (P.name) sta.set(T.projectCell, ` □ 공    사    명  :  ${P.name}`);
@@ -318,6 +389,7 @@
         if (it.qtyTotal !== '' && it.qtyTotal != null) sta.set(cols.qtyTotal + r, toNum(it.qtyTotal));
         if (it.qtyRound !== '' && it.qtyRound != null) sta.set(cols.qtyRound + r, toNum(it.qtyRound));
         if (it.designPrice !== '' && it.designPrice != null) sta.set(cols.designPrice + r, toNum(it.designPrice));
+        if (surRowOf[k]) { const q = `'${surRowOf[k].name.replace(/'/g, "''")}'`; sta.setFormula('O' + r, `IF(A${r}="","",${q}!BF${surRowOf[k].row})`); }
         const nowF = sta.getFormula(cols.qtyNow + r);
         if (it.qtyNow !== '' && it.qtyNow != null && !(nowF && /^G\d+$/.test(nowF) && toNum(it.qtyNow) === toNum(it.qtyRound)))
           sta.set(cols.qtyNow + r, toNum(it.qtyNow));
@@ -333,7 +405,6 @@
     // 남는 품목 줄은 숨김 (내역현황·조사표) — 구매요청서는 원본처럼 빈 칸 유지
     for (let k = 0; k < LAYOUT.maxItems; k++) {
       sta.setHidden(T.firstRow + k, k >= items.length);
-      sur.setHidden(S.firstRow + k, k >= items.length);
     }
 
     // ── 5) 외형도 그림 교체
@@ -405,7 +476,8 @@
       wr = wr.replace(/<Relationship\b[^>]*Target="calcChain\.xml"[^>]*\/>/, '');
       zip.file('xl/_rels/workbook.xml.rels', wr);
     }
-    zip.file(shCmp.path, cmp.toXml()); zip.file(shSur.path, sur.toXml());
+    zip.file(shCmp.path, cmp.toXml());
+    for (const x of surSheets) zip.file(x.path, x.sheet.toXml());
     zip.file(shSta.path, sta.toXml()); zip.file(shReq.path, req.toXml());
 
     const out = await zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE', compressionOptions: { level: 6 } });
