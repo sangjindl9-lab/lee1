@@ -1,0 +1,1202 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>검측서류 작성·관리</title>
+<style>
+:root{
+  --bg:#eef0f3; --panel:#fff; --line:#cfd4dc; --line2:#e5e8ec; --text:#14181f; --muted:#646b76;
+  --accent:#1f4fbf; --accent-weak:#e6edfb; --danger:#b42318; --warn:#9a5b00; --warn-bg:#fff6dd; --ok:#0b7a4b;
+  --uifont:"Malgun Gothic","맑은 고딕","Apple SD Gothic Neo","Noto Sans KR","Noto Sans CJK KR",sans-serif;
+  --docfont:"Malgun Gothic","맑은 고딕","Apple SD Gothic Neo","Noto Sans KR","Noto Sans CJK KR",sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{font-family:var(--uifont);font-size:14px;color:var(--text);background:var(--bg)}
+button,input,select,textarea{font:inherit;color:inherit}
+#app{display:grid;grid-template-columns:200px 1fr;grid-template-rows:52px 1fr;height:100vh}
+header{grid-column:1/3;display:flex;align-items:center;gap:14px;padding:0 16px;background:#1b2a44;color:#fff}
+header h1{font-size:16px;margin:0;font-weight:700;letter-spacing:-.2px}
+header .site-pick{display:flex;align-items:center;gap:6px;margin-left:18px;font-size:13px}
+header select{background:#fff;color:#111;border-radius:4px;border:0;padding:5px 8px;max-width:420px}
+header .sp{flex:1}
+#saveState{font-size:12px;opacity:.85}
+nav{background:#fff;border-right:1px solid var(--line);padding:10px 0;overflow:auto}
+nav a{display:block;padding:10px 18px;color:var(--text);text-decoration:none;cursor:pointer;border-left:3px solid transparent}
+nav a:hover{background:#f4f6f9}
+nav a.on{background:var(--accent-weak);border-left-color:var(--accent);color:var(--accent);font-weight:700}
+main{overflow:auto;padding:16px 20px 40px;position:relative}
+main.editor-mode{padding:0;overflow:hidden}
+#errBar{display:none;position:fixed;top:56px;left:50%;transform:translateX(-50%);z-index:50;background:var(--danger);color:#fff;padding:10px 16px;border-radius:6px;max-width:80vw;box-shadow:0 4px 14px rgba(0,0,0,.25)}
+#errBar.on{display:flex;gap:12px;align-items:center}
+#errBar button{background:#fff;color:var(--danger);border:0;border-radius:4px;padding:3px 8px;cursor:pointer}
+#toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:#1b2a44;color:#fff;padding:9px 18px;border-radius:6px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:60}
+#toast.on{opacity:1}
+h2{font-size:19px;margin:2px 0 14px}
+h3{font-size:15px;margin:0 0 10px}
+h3 small,h4 small{font-weight:400;color:var(--muted);font-size:12px;margin-left:6px}
+h4{font-size:13.5px;margin:14px 0 8px;color:#333}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px 16px;margin-bottom:14px}
+.muted{color:var(--muted);font-size:12.5px}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:6px 0}
+.sp{flex:1}
+.btn{border:1px solid var(--line);background:#fff;border-radius:5px;padding:6px 12px;cursor:pointer;white-space:nowrap}
+.btn:hover{background:#f3f5f8}
+.btn.pri{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.pri:hover{background:#1a43a3}
+.btn.dan{color:var(--danger);border-color:#e7b4ae}
+.btn.sm{padding:3px 8px;font-size:12.5px}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.fld{display:flex;flex-direction:column;gap:3px;font-size:12.5px;color:#3b414b;min-width:0}
+.fld>span{font-weight:600}
+.fld small{color:var(--muted);font-weight:400}
+.fld input,.fld select,.fld textarea, input.in, select.in, textarea.in{border:1px solid var(--line);border-radius:4px;padding:6px 8px;background:#fff;font-size:13.5px;width:100%;min-width:0}
+.fld textarea,textarea.in{resize:vertical;line-height:1.4}
+input:focus,select:focus,textarea:focus{outline:2px solid #9db6ee;outline-offset:-1px;border-color:#7d9be0}
+.need input{background:#fff3cd;border-color:#e0a800}
+.grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 12px}
+.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px 12px}
+.grid4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px 12px}
+.span2{grid-column:span 2}.span3{grid-column:span 3}.span4{grid-column:1/-1}
+.chk{display:inline-flex;align-items:center;gap:5px;font-size:13px;cursor:pointer}
+table.lt{width:100%;border-collapse:collapse;background:#fff;font-size:13px}
+table.lt th,table.lt td{border-bottom:1px solid var(--line2);padding:7px 8px;text-align:left;vertical-align:middle}
+table.lt th{background:#f5f7fa;font-weight:700;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:1;white-space:nowrap}
+table.lt tr:hover td{background:#fafbfd}
+table.lt td.nw{white-space:nowrap}
+table.et{width:100%;border-collapse:collapse;font-size:13px}
+table.et th{background:#f5f7fa;padding:6px;border:1px solid var(--line2);font-weight:700;white-space:nowrap}
+table.et td{border:1px solid var(--line2);padding:3px;vertical-align:top}
+table.et td input,table.et td select,table.et td textarea{width:100%;border:1px solid transparent;border-radius:3px;padding:4px 5px;background:transparent;font-size:13px}
+table.et td input:hover,table.et td select:hover,table.et td textarea:hover{border-color:var(--line)}
+table.et td textarea{resize:vertical;min-height:34px;line-height:1.35}
+table.et td.ops{white-space:nowrap;vertical-align:middle}
+table.et td.c{text-align:center;vertical-align:middle}
+.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:12px;background:#eef1f5;color:#333;white-space:nowrap}
+.st-작성중{background:#eef1f5}.st-요청서작성완료{background:#e6edfb;color:#1f4fbf}.st-제출완료{background:#e3f4ff;color:#075985}
+.st-검측완료{background:#e3f6ec;color:#0b7a4b}.st-보완필요{background:#fff1e0;color:#9a5b00}.st-재검측{background:#fde8e8;color:#b42318}.st-종결{background:#e9e9ef;color:#444}
+.re-tag{color:#c00;font-weight:700}
+.stats{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px}
+.stat{background:#fff;border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+.stat b{display:block;font-size:22px;margin-top:2px}
+.banner{background:var(--warn-bg);border:1px solid #f0cf7a;color:#6b4200;border-radius:6px;padding:9px 12px;margin-bottom:12px;font-size:13px}
+.banner.info{background:#eef4ff;border-color:#bcd0f5;color:#22407a}
+.empty{padding:28px;text-align:center;color:var(--muted)}
+details>summary{cursor:pointer;font-weight:700;font-size:15px;margin-bottom:8px}
+/* editor */
+.ed{display:grid;grid-template-columns:minmax(520px,47%) 1fr;height:calc(100vh - 52px)}
+.ed-left{overflow:auto;padding:0 16px 60px;border-right:1px solid var(--line)}
+.ed-bar{position:sticky;top:0;z-index:5;background:var(--bg);display:flex;gap:8px;align-items:center;padding:12px 0 10px;border-bottom:1px solid var(--line);margin-bottom:12px}
+.dirty{color:var(--warn);font-size:12.5px;visibility:hidden}.dirty.on{visibility:visible}
+.ed-right{display:flex;flex-direction:column;overflow:hidden;background:#d9dde3}
+.pv-tabs{display:flex;gap:4px;padding:8px 12px;background:#cfd4db;align-items:center;flex-wrap:wrap}
+.pv-tabs button{border:1px solid #aab2bd;background:#eef0f3;border-radius:4px;padding:4px 10px;cursor:pointer;font-size:12.5px}
+.pv-tabs button.on{background:#1b2a44;color:#fff;border-color:#1b2a44}
+.pv-scroll{flex:1;overflow:auto;padding:14px}
+.pv-pages .page{margin:0 auto 14px;box-shadow:0 2px 8px rgba(0,0,0,.18)}
+.pv-warn{background:#fde8e8;color:#8a1c12;padding:6px 10px;font-size:12.5px;display:none}
+.pv-warn.on{display:block}
+.noRow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:10px 0 4px;padding:8px 10px;background:#f5f7fa;border-radius:6px}
+.noRow b{font-size:15px}
+.noRow input:not([type=checkbox]){border:1px solid var(--line);border-radius:4px;padding:5px 8px;min-width:280px}
+.snap{margin-top:10px;font-size:12.5px;background:#fafbfc;border:1px dashed var(--line);border-radius:6px;padding:8px 10px;line-height:1.6}
+.wk-list{max-height:170px;overflow:auto;border:1px solid var(--line2);border-radius:5px;padding:4px 8px;background:#fcfcfd;margin:6px 0}
+.wk-list label{display:flex;gap:8px;padding:3px 0;font-size:13px;cursor:pointer}
+.wk-list label.added{color:var(--muted)}
+.ovr{display:grid;grid-template-columns:150px 1fr;gap:6px 10px;align-items:center;font-size:13px}
+.ovr .h{grid-column:1/-1;font-weight:700;margin-top:6px;color:#333}
+.split{display:grid;grid-template-columns:260px 1fr;gap:14px;align-items:start}
+.list-pick a{display:block;padding:8px 10px;border-radius:5px;cursor:pointer;color:inherit;text-decoration:none;border:1px solid transparent}
+.list-pick a.on{background:var(--accent-weak);border-color:#bcd0f5;font-weight:700}
+.list-pick a:hover{background:#f3f5f8}
+/* 사진 편집 목록 */
+.ph-list{display:flex;flex-direction:column;gap:8px;margin-top:8px}
+.ph-row{display:grid;grid-template-columns:132px 1fr auto;gap:10px;align-items:start;border:1px solid var(--line2);border-radius:6px;padding:8px;background:#fcfcfd}
+.ph-row .thumb{width:132px;height:99px;background:#eef0f3;border-radius:4px;display:flex;align-items:center;justify-content:center;overflow:hidden;font-size:12px;color:var(--muted)}
+.ph-row .thumb img{max-width:100%;max-height:100%;display:block}
+.ph-row .pf{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 8px}
+.ph-row .ops{display:flex;flex-direction:column;gap:4px}
+.ph-drop{border:2px dashed #9db6ee;background:#f3f7ff;border-radius:6px;padding:14px;text-align:center;color:#22407a;margin-top:8px}
+.ph-drop.on{background:#dfe9ff}
+#stage{position:absolute;left:-20000px;top:0;visibility:hidden;pointer-events:none}
+#printArea{display:none}
+.modal-bg{position:fixed;inset:0;background:rgba(15,20,30,.45);display:flex;align-items:center;justify-content:center;z-index:70}
+.modal{background:#fff;border-radius:8px;padding:18px 20px;min-width:380px;max-width:640px;box-shadow:0 10px 40px rgba(0,0,0,.3)}
+.modal h3{margin-bottom:12px}
+.modal .row{justify-content:flex-end;margin-top:16px}
+
+/* ===================== 문서(출력) 서식 ===================== */
+.page{width:210mm;height:296.8mm;background:#fff;color:#000;position:relative;overflow:hidden;
+  padding:15mm 17mm 12mm 19mm;font-family:var(--docfont);font-size:10.5pt;line-height:1.35;
+  -webkit-print-color-adjust:exact;print-color-adjust:exact}
+.page .pbody{height:100%;overflow:hidden}
+.page.flow{height:auto;min-height:296.8mm;overflow:visible}
+.page.flow .pbody{height:auto;overflow:visible}
+.page .remark{position:absolute;top:9mm;right:14mm;color:#d00000;font-weight:700;font-size:16pt}
+.page .pno{position:absolute;bottom:7mm;left:0;right:0;text-align:center;font-size:9pt;color:#333}
+.page h1{font-size:20pt;font-weight:700;text-align:center;margin:0}
+.page .t-req{letter-spacing:.42em;margin:0 0 5mm;text-indent:.42em}
+.page .t-res{letter-spacing:.42em;margin:0 0 4mm;text-indent:.42em}
+.page .t-cl{margin:8mm 0 10mm;letter-spacing:.05em}
+.page .t-ro{font-size:15pt;margin:6mm 0 7mm}
+.page .dline{text-align:right;margin:0 6mm 3.5mm 0}
+.page .ln{margin:0 0 3mm 2mm;white-space:pre-wrap;word-break:keep-all;overflow-wrap:anywhere}
+.page .ln.lead{margin-bottom:3mm}
+.page table.doc{width:100%;border-collapse:collapse;table-layout:fixed;border:2px solid #000}
+.page table.doc th,.page table.doc td{border:1px solid #000;padding:1.4mm 2mm;text-align:center;vertical-align:middle;font-weight:400;
+  white-space:pre-wrap;word-break:keep-all;overflow-wrap:anywhere}
+.page table.doc td.left,.page table.doc th.left{text-align:left}
+.page table.t1 tr{height:8.6mm}
+.page table.t2 tr{height:8.6mm}
+.page .signline{text-align:right;margin:2mm 8mm 0 0;min-height:10mm;display:flex;justify-content:flex-end;align-items:center;gap:8mm}
+.page .in{display:inline-block;min-width:11mm;text-align:center}
+.page .cut{border-top:2px dashed #000;margin:2mm 0 7mm}
+.page .projline{margin:5mm 0 1mm 1mm;white-space:pre-wrap;word-break:keep-all}
+.page .sig2{display:grid;grid-template-columns:auto 26mm 12mm;justify-content:end;align-items:center;gap:0 6mm;min-height:11mm;margin-right:8mm}
+.page .notes{margin-top:3mm;font-size:9.5pt;line-height:1.6}
+.page .notes .red{color:#d00000;font-weight:700}
+.page table.info tr{height:10.5mm}
+.page table.cl{margin-top:8mm}
+.page table.cl thead tr{height:12mm}
+.page table.cl tbody tr{height:10.6mm}
+.page table.cl td.it{text-align:left;font-size:9.5pt;padding-left:calc(2mm + 1.25em);text-indent:-1.25em}
+.page table.cl td.crit{font-size:9.5pt}
+.page table.cl td.sym{font-size:13pt;font-weight:700}
+.page table.cl td.act{font-size:9pt}
+.page table.foot{border-top:3px double #000}
+.page table.foot tr{height:10.6mm}
+.page table.foot th.small{font-size:8.5pt;letter-spacing:-.5px;padding-left:1mm;padding-right:1mm}
+.page table.foot td.sg{text-align:center}
+.page .legend{margin-top:2.5mm;font-size:9pt;text-align:right;white-space:pre-wrap}
+.page .conthead{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:1.5px solid #000;padding-bottom:2mm;margin:2mm 0 5mm;font-size:10pt}
+.page .conthead b{font-size:13pt}
+.page .ro-proj{margin:0 0 3mm 4mm;white-space:pre-wrap;word-break:keep-all}
+.page table.ro{border:1.5px solid #000;font-size:9.5pt}
+.page table.ro thead tr{height:9mm}
+.page table.ro tbody tr{height:8.4mm}
+.page table.ro th,.page table.ro td{padding:1mm 1mm}
+.page table.ro td.sm{font-size:8.5pt}
+.page .ro-foot{display:flex;justify-content:space-between;gap:10mm;margin:4mm 6mm 0 1mm}
+.page .ro-foot span:first-child{white-space:pre-wrap;word-break:keep-all}
+.page .ro-foot span:last-child{white-space:nowrap;margin-right:16mm}
+.page .ro-sign{display:flex;justify-content:flex-end;align-items:center;gap:8mm;margin:10mm 22mm 0 0;min-height:12mm}
+.page .ro-guide{margin-top:12mm;line-height:1.9}
+.page .t-ph{font-size:20pt;letter-spacing:.6em;text-indent:.6em;margin:3mm 0 7mm}
+.page .ph-proj{margin:0 0 2mm 1mm;white-space:pre-wrap;word-break:keep-all}
+.page .ph-grid{display:grid;gap:4mm}
+.page .ph-grid.ph4{grid-template-columns:1fr 1fr}
+.page .ph-grid.ph2{grid-template-columns:1fr}
+.page .ph-cell{border:2px solid #000;break-inside:avoid}
+.page .ph-img{height:99mm;padding:2mm;display:flex;align-items:center;justify-content:center;overflow:hidden}
+.page .ph-img img{width:100%;height:100%;display:block}
+.page .ph-img .noimg{color:#888;font-size:10pt}
+.page table.ph-t{width:100%;border-collapse:collapse;table-layout:fixed;border-top:1px solid #000}
+.page table.ph-t th,.page table.ph-t td{border:1px solid #000;border-bottom:0;padding:1mm 1.5mm;text-align:center;font-weight:400;height:8.5mm;word-break:keep-all;overflow-wrap:anywhere}
+.page table.ph-t tr:first-child th,.page table.ph-t tr:first-child td{border-top:0}
+.page table.ph-t tr th:first-child{border-left:0}.page table.ph-t tr td:last-child{border-right:0}
+.page .ph4 table.ph-t{font-size:8.5pt}
+.page .ph4 table.ph-t th,.page .ph4 table.ph-t td{padding:.8mm .8mm;height:8mm}
+
+@page{size:A4 portrait;margin:0}
+@media print{
+  html,body{background:#fff;height:auto}
+  #app,#stage,#errBar,#toast,.modal-bg{display:none!important}
+  #printArea{display:block!important}
+  #printArea .page{margin:0;box-shadow:none;break-after:page;page-break-after:always}
+  #printArea .page:last-child{break-after:auto;page-break-after:auto}
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>검측서류 작성·관리</h1>
+    <div class="site-pick">현재 현장 <select id="curSite"></select></div>
+    <span class="sp"></span>
+    <span id="saveState"></span>
+    <form id="logoutForm" method="post" action="/logout" style="display:none;margin:0"><button class="btn sm" style="background:transparent;color:#fff;border-color:#5b6b88">로그아웃</button></form>
+  </header>
+  <nav id="nav"></nav>
+  <main id="main"></main>
+</div>
+<div id="errBar"><span id="errMsg"></span><button onclick="hideErr()">닫기</button></div>
+<div id="toast"></div>
+<div id="stage"></div>
+<div id="printArea"></div>
+<datalist id="dlResult"><option value="합격"><option value="불합격"><option value="보완 후 재검측"><option value="조건부 합격"></datalist>
+
+<script>
+'use strict';
+/* ============================================================
+   검측서류 작성·관리 프로그램 (단일 파일, 서버 없음)
+   저장: 브라우저 localStorage  키 'gcms.data.v1'
+   ============================================================ */
+const STORE_KEY='gcms.data.v1';
+const BACKUP_FORMAT='gcms-backup', BACKUP_VERSION=2, DATA_VERSION=1;
+const STATUSES=['작성 중','요청서 작성 완료','제출 완료','검측 완료','보완 필요','재검측','종결'];
+const RES_OPTS=[['','미입력'],['ok','적합'],['ng','부적합'],['na','해당 없음']];
+const FONTS={malgun:'"Malgun Gothic","맑은 고딕","Apple SD Gothic Neo","Noto Sans KR","Noto Sans CJK KR",sans-serif',
+  gulim:'Gulim,"굴림","Malgun Gothic","Noto Sans CJK KR",sans-serif',
+  batang:'Batang,"바탕","AppleMyungjo","Noto Serif CJK KR","Noto Serif KR",serif'};
+
+const $=(s,r=document)=>r.querySelector(s);
+const $$=(s,r=document)=>[...r.querySelectorAll(s)];
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
+const clone=o=>JSON.parse(JSON.stringify(o));
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const has=x=>x!=null&&String(x).trim()!=='';
+const arr=x=>Array.isArray(x)?x:[];
+const nowISO=()=>new Date().toISOString();
+function today(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
+function parseD(s){const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(s||'');return m?{y:+m[1],m:+m[2],d:+m[3]}:null}
+function fK(s,pad){const p=parseD(s);if(!p)return '';const mm=pad?String(p.m).padStart(2,'0'):p.m,dd=pad?String(p.d).padStart(2,'0'):p.d;return `${p.y}년 ${mm}월 ${dd}일`}
+const BLANK_DATE='&emsp;&emsp;&ensp;&nbsp;년&emsp;&ensp;&nbsp;월&emsp;&ensp;&nbsp;일';
+function fSlash(s){const p=parseD(s);return p?`${p.y}/${p.m}/${p.d}`:''}
+function fLocal(iso){if(!iso)return '';const d=new Date(iso);if(isNaN(d))return '';return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`}
+function spaced(n){n=String(n||'').trim();return /^[가-힣]{2,3}$/.test(n)?n.split('').join(' '):n}
+function getPath(o,p){return p.split('.').reduce((a,k)=>a==null?a:a[k],o)}
+function setPath(o,p,v){const ks=p.split('.');let t=o;for(let i=0;i<ks.length-1;i++){if(t[ks[i]]==null)t[ks[i]]={};t=t[ks[i]]}t[ks[ks.length-1]]=v}
+function nl(s){return esc(s)}
+
+/* ---------------- 데이터 기본형 ---------------- */
+function defaultSettings(){return {currentSiteId:null,symbols:{ok:'O',ng:'X',na:'/'},legendText:'',showLegend:false,reMode:'same',seqDigits:2,docFont:'malgun',lastEditedId:null,photoPerPage:4,photoFit:'contain'}}
+function normSite(s){s=s||{};return Object.assign({id:uid(),name:'',contractor:'',prefix:'',field:'전기',fieldCustom:'',recipient:'',siteAgent:'',inspector:'',
+  cmTitle:'전기건설사업관리기술인',cmName:'',chiefTitle:'책임건설사업관리기술인',chiefName:'',attachDefault:'',createdAt:nowISO(),updatedAt:nowISO()},s)}
+function normWorker(w){w=w||{};return Object.assign({id:uid(),org:'',position:'',name:'',birth:'',active:true,memo:''},w)}
+function normTpl(t){t=t||{};const o=Object.assign({id:uid(),name:'',note:'',items:[],updatedAt:nowISO()},t);o.items=arr(o.items).map(i=>Object.assign({id:uid(),text:'',criterion:''},i));return o}
+function normInsp(d){d=d||{};const id=d.id||uid();
+  const o=Object.assign({id,rootId:id,siteId:'',site:{},round:1,seq:null,numKey:null,docNo:'',manualNo:false,isRe:false,reOf:null,reIndex:0,reBaseNo:'',
+    writeDate:'',reqDate:'',reqTime:'',majorWork:'',work:'',subWork:'',location:'',part:'',workContent:'',checkMatter:'검측체크리스트 참조',
+    contractorCheckDate:'',defaultWorkDate:'',actualDate:'',resultDate:'',result:'',instruction:'',memo:'',status:'작성 중',
+    resultAttach:'감리원의 체크리스트 검측결과',showCmName:false,needDateCheck:false,createdAt:nowISO(),updatedAt:nowISO()},d);
+  o.disp=Object.assign({reqWork:'',reqSub:'',reqPart:'',resPart:'',clWork:'',clSub:'',clLoc:'',clPart:'',rosterLoc:''},d.disp||{});
+  o.attach=Object.assign({checklist:true,roster:true,photo:true,design:false,extra:'',override:''},d.attach||{});
+  o.site=Object.assign(siteSnapshot(normSite({})),d.site||{});
+  o.checklist=Object.assign({templateId:null,templateName:'',items:[]},d.checklist||{});
+  o.checklist.items=arr(o.checklist.items).map(i=>Object.assign({id:uid(),text:'',criterion:'',c:'',s:'',action:''},i));
+  o.participants=arr(d.participants).map(p=>Object.assign({id:uid(),workerId:null,workDate:'',locWork:'',org:'',position:'',name:'',birth:'',content:''},p));
+  o.photos=arr(d.photos).filter(p=>p&&has(p.photoId)).map(p=>Object.assign({id:uid(),photoId:'',work:'',content:'',location:'',date:''},p));
+  if(!STATUSES.includes(o.status))o.status='작성 중';
+  return o}
+function siteSnapshot(s){const o=clone(s);delete o.id;delete o.createdAt;delete o.updatedAt;return o}
+function fieldName(s){return s.field==='직접 입력'?(s.fieldCustom||'').trim():s.field}
+function normalizeData(o){o=o||{};const d={version:DATA_VERSION,sites:arr(o.sites).map(normSite),workers:arr(o.workers).map(normWorker),
+  templates:arr(o.templates).map(normTpl),inspections:arr(o.inspections).map(normInsp),
+  settings:Object.assign(defaultSettings(),o.settings||{}),counters:Object.assign({},o.counters||{})};
+  d.settings.symbols=Object.assign(defaultSettings().symbols,(o.settings||{}).symbols||{});return d}
+
+/* ---------------- 저장소 ---------------- */
+let data, state={view:'dashboard',draft:null,dirty:false,isNew:false,pvTab:'all',clSel:new Set(),
+  lf:{siteId:'__cur',work:'',from:'',to:'',status:'',q:''},lgSel:new Set(),tplSel:null,siteSel:null,pvId:null,pvPart:'all',wq:'',printPrepared:false};
+
+function showErr(m){$('#errMsg').textContent=m;$('#errBar').classList.add('on')}
+function hideErr(){$('#errBar').classList.remove('on')}
+let toastT;function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('on');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('on'),1800)}
+/* 저장 방식: EXE(로컬 서버)로 실행하면 파일 저장, HTML을 직접 열면 브라우저 저장 */
+const SERVER=(()=>{if(location.protocol!=='http:')return null;try{const x=new XMLHttpRequest();x.open('GET','/api/ping',false);x.send();
+  if(x.status===401){location.replace('/login');throw new Error('login')}
+  if(x.status===200){const o=JSON.parse(x.responseText);return o&&o.app==='gcms'?o:null}}catch(e){if(e.message==='login')throw e}return null})();
+const WEB=!!(SERVER&&SERVER.web);
+function toLogin(){if(WEB){location.href='/login?expired=1'}}
+let serverRev=null;
+function storeGet(){
+  if(SERVER){const x=new XMLHttpRequest();x.open('GET','/api/data',false);x.send();serverRev=x.getResponseHeader('X-Rev');
+    if(x.status===401){toLogin();throw new Error('로그인이 만료되었습니다.')}
+    if(x.status===204)return null;if(x.status!==200)throw new Error('데이터 파일을 읽지 못했습니다 (HTTP '+x.status+') '+x.responseText);return x.responseText}
+  return localStorage.getItem(STORE_KEY)}
+function storeSet(txt){
+  if(SERVER){const x=new XMLHttpRequest();
+    try{x.open('PUT','/api/data',false);x.setRequestHeader('Content-Type','application/json');x.setRequestHeader('X-GCMS','1');x.setRequestHeader('X-Base-Rev',serverRev||'');x.send(txt)}
+    catch(e){throw new Error('프로그램(EXE)과 연결이 끊겼습니다. 프로그램이 종료되었을 수 있습니다. 프로그램을 다시 실행하세요.')}
+    if(x.status===401){toLogin();throw new Error('로그인이 만료되었습니다. 다시 로그인한 뒤 저장하세요.')}
+    if(x.status===409){const e=new Error('conflict');e.conflict=true;throw e}
+    if(x.status!==200)throw new Error((x.responseText||'파일 저장 오류')+' (HTTP '+x.status+')');
+    serverRev=x.getResponseHeader('X-Rev');return}
+  localStorage.setItem(STORE_KEY,txt)}
+/* ---------------- 사진 저장소 ----------------
+   EXE: 데이터 폴더의 photos\<id>.jpg  /  HTML 직접 실행: 브라우저 IndexedDB */
+const PHOTO_MAX=1800,PHOTO_Q=0.85;
+const photoCache=new Map();
+let idbP=null;
+function idb(){if(!idbP)idbP=new Promise((res,rej)=>{const r=indexedDB.open('gcms-photos',1);r.onupgradeneeded=()=>r.result.createObjectStore('photos');r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)});return idbP}
+function idbTx(mode,fn){return idb().then(db=>new Promise((res,rej)=>{const tx=db.transaction('photos',mode);const out=fn(tx.objectStore('photos'));
+  tx.oncomplete=()=>res(out&&'result' in out?out.result:out);tx.onerror=()=>rej(tx.error);tx.onabort=()=>rej(tx.error||new Error('사진 저장이 취소되었습니다(저장 공간 부족 가능)'))}))}
+async function photoPut(id,blob){
+  if(SERVER){let r;try{r=await fetch('/api/photos/'+id,{method:'PUT',headers:{'X-GCMS':'1','Content-Type':blob.type||'image/jpeg'},body:blob})}catch(e){throw new Error('프로그램(EXE)과 연결이 끊겼습니다.')}
+    if(r.status===401){toLogin();throw new Error('로그인이 만료되었습니다.')}
+    if(!r.ok)throw new Error('사진 저장 실패: '+(await r.text())+' (HTTP '+r.status+')');return}
+  await idbTx('readwrite',st=>{st.put({blob,created:Date.now()},id)});photoCache.set(id,URL.createObjectURL(blob))}
+async function photoBlob(id){
+  if(SERVER){const r=await fetch('/api/photos/'+id);return r.ok?r.blob():null}
+  const v=await idbTx('readonly',st=>st.get(id));return v&&v.blob?v.blob:null}
+async function photoDel(id){
+  try{if(SERVER){await fetch('/api/photos/'+id,{method:'DELETE',headers:{'X-GCMS':'1'}});return}
+    await idbTx('readwrite',st=>{st.delete(id)});const u=photoCache.get(id);if(u){URL.revokeObjectURL(u);photoCache.delete(id)}}catch(e){console.warn('사진 삭제 실패',e)}}
+async function photoList(){
+  if(SERVER){const r=await fetch('/api/photos',{cache:'no-store'});return r.ok?r.json():[]}
+  const db=await idb();return new Promise((res,rej)=>{const out=[];const tx=db.transaction('photos');const c=tx.objectStore('photos').openCursor();
+    c.onsuccess=()=>{const cur=c.result;if(cur){out.push({id:cur.key,created:(cur.value&&cur.value.created)||0});cur.continue()}};tx.oncomplete=()=>res(out);tx.onerror=()=>rej(tx.error)})}
+function photoSrc(id){return SERVER?'/api/photos/'+encodeURIComponent(id):(photoCache.get(id)||'')}
+async function ensurePhotos(ids){if(SERVER)return false;let n=0;
+  for(const id of ids){if(photoCache.has(id))continue;try{const b=await photoBlob(id);if(b){photoCache.set(id,URL.createObjectURL(b));n++}}catch(e){}}return n>0}
+function allPhotoIds(list){return list.flatMap(d=>arr(d.photos).map(p=>p.photoId))}
+async function decodeImage(src){
+  try{return await createImageBitmap(src,{imageOrientation:'from-image'})}catch(e){}
+  return new Promise((res,rej)=>{const im=new Image();im.onload=()=>res(im);im.onerror=()=>rej(new Error('이미지를 열 수 없는 형식입니다'));im.src=URL.createObjectURL(src)})}
+async function compressImage(file,rot=0){
+  const bmp=await decodeImage(file);const w0=bmp.width,h0=bmp.height;const sc=Math.min(1,PHOTO_MAX/Math.max(w0,h0));
+  const w=Math.round(w0*sc),h=Math.round(h0*sc);const sw=rot%180?h:w,sh=rot%180?w:h;
+  const c=document.createElement('canvas');c.width=sw;c.height=sh;const g=c.getContext('2d');g.fillStyle='#fff';g.fillRect(0,0,sw,sh);
+  g.translate(sw/2,sh/2);g.rotate(rot*Math.PI/180);g.drawImage(bmp,-w/2,-h/2,w,h);
+  return new Promise((res,rej)=>c.toBlob(b=>b?res(b):rej(new Error('이미지 변환 실패')),'image/jpeg',PHOTO_Q))}
+async function sweepPhotos(){/* 어디에도 연결되지 않은 지 하루 지난 사진 정리 (저장 안 한 작성 중 사진 보호) */
+  try{const ref=new Set(allPhotoIds(data.inspections));const cut=Date.now()-86400000;
+    for(const p of await photoList())if(!ref.has(p.id)&&(+p.created||0)<cut)await photoDel(p.id)}catch(e){console.warn(e)}}
+function storeLabel(){return WEB?'서버에 저장됨':SERVER?'파일에 저장됨':'브라우저에 저장됨'}
+/* 실행 중 신호: 인쇄 대화상자가 떠 있어도 멈추지 않도록 별도 작업 스레드(Worker)에서 보냄 */
+if(SERVER){try{const src=`setInterval(()=>{fetch('${location.origin}/api/ping',{cache:'no-store'}).catch(()=>{})},5000)`;
+  new Worker(URL.createObjectURL(new Blob([src],{type:'text/javascript'})))}catch(e){setInterval(()=>{fetch('/api/ping',{cache:'no-store'}).catch(()=>{})},5000)}}
+function load(){
+  let raw=null;
+  try{raw=storeGet()}catch(e){showErr((SERVER?'':'브라우저 저장소를 읽을 수 없습니다. ')+e.message);data=normalizeData({});applyFont();state.loadFailed=true;return}
+  if(raw){
+    try{data=normalizeData(JSON.parse(raw))}
+    catch(e){if(!SERVER){try{localStorage.setItem('gcms.corrupt.'+Date.now(),raw)}catch(_){}}
+      showErr('저장된 데이터를 읽지 못했습니다. 원본은 별도 키로 보관했습니다. 백업 파일로 복원하세요. ('+e.message+')');data=normalizeData({})}
+  }else{data=normalizeData({});seed();persist()}
+  baseSnap=JSON.stringify(data);applyLocalPrefs();applyFont()}
+/* 여러 사람이 쓰는 웹/여러 창: 현재 현장 선택은 이 브라우저에만 기억 */
+const LOCAL_KEYS=['currentSiteId','lastEditedId'];
+function applyLocalPrefs(){if(!SERVER)return;try{const o=JSON.parse(localStorage.getItem('gcms.local')||'{}');
+  if(o.currentSiteId&&data.sites.some(s=>s.id===o.currentSiteId))data.settings.currentSiteId=o.currentSiteId;if(o.lastEditedId)data.settings.lastEditedId=o.lastEditedId}catch(e){}}
+function saveLocalPrefs(){if(!SERVER)return;try{localStorage.setItem('gcms.local',JSON.stringify({currentSiteId:data.settings.currentSiteId,lastEditedId:data.settings.lastEditedId}))}catch(e){}}
+/* 3-방향 병합: 내가 마지막으로 받은 상태(base) 이후 내가 바꾼 기록만 최신 서버 데이터(theirs)에 반영 */
+let baseSnap=null;
+function threeWay(base,mine,theirs){const out=clone(theirs);const changed=[];
+  for(const k of ['sites','workers','templates','inspections']){
+    const B=new Map(arr(base[k]).map(x=>[x.id,JSON.stringify(x)])),M=new Map(arr(mine[k]).map(x=>[x.id,x]));
+    for(const id of B.keys())if(!M.has(id))out[k]=out[k].filter(x=>x.id!==id);
+    for(const [id,x] of M){if(B.get(id)===JSON.stringify(x))continue;const i=out[k].findIndex(y=>y.id===id);if(i>=0)out[k][i]=clone(x);else out[k].push(clone(x));if(k==='inspections')changed.push(id)}}
+  for(const key in mine.counters)out.counters[key]=Math.max(+mine.counters[key]||0,+out.counters[key]||0);
+  for(const key in mine.settings)if(LOCAL_KEYS.includes(key)||JSON.stringify(mine.settings[key])!==JSON.stringify((base.settings||{})[key]))out.settings[key]=clone(mine.settings[key]);
+  return {out,changed}}
+/* 동시에 같은 번호를 쓴 경우 내 쪽 새 기록에 다음 번호를 다시 매김 */
+function fixDupNumbers(ids){const msgs=[];
+  for(const id of ids){const d=data.inspections.find(x=>x.id===id);if(!d||d.manualNo||d.isRe||!d.numKey||d.numKey.startsWith('re:')||d.numKey==='manual')continue;
+    if(dupOf(d,d.docNo)){const old=d.docNo,key=numKeyOf(d),seq=nextSeq(key,d.id);data.counters[key]=seq;d.seq=seq;d.docNo=buildNo(d.site,d.round,seq);
+      if(state.draft&&state.draft.id===id){state.draft.docNo=d.docNo;state.draft.seq=seq;state.draft.numKey=key}msgs.push(`${old} → ${d.docNo}`)}}
+  return msgs}
+/* 서버의 최신 데이터 받아오기(변경 없으면 null) */
+function fetchTheirs(){const raw=storeGet();return raw?normalizeData(JSON.parse(raw)):normalizeData({})}
+function persist(){
+  try{if(state.loadFailed)throw new Error('처음에 데이터를 읽지 못해 덮어쓰기를 막았습니다. 프로그램을 다시 실행하세요.');
+    saveLocalPrefs();
+    try{storeSet(JSON.stringify(data))}
+    catch(e){if(!e.conflict)throw e;
+      /* 다른 사용자(창)가 먼저 저장함 → 최신 데이터에 내 변경만 합쳐서 다시 저장 */
+      let msgs=[];
+      for(let t=0;t<3;t++){const theirs=fetchTheirs();const m=threeWay(JSON.parse(baseSnap||'{}'),data,theirs);data=normalizeData(m.out);msgs=fixDupNumbers(m.changed);
+        try{storeSet(JSON.stringify(data));break}catch(e2){if(!e2.conflict||t===2)throw e2.conflict?new Error('다른 사용자의 저장이 계속 겹칩니다. 잠시 후 다시 저장하세요.'):e2}}
+      toast('다른 사용자(창)의 변경 내용과 합쳐서 저장했습니다.');
+      if(msgs.length)setTimeout(()=>alert('같은 검측번호를 다른 사용자가 먼저 사용해 번호를 바꿨습니다.\n'+msgs.join('\n')),50)}
+    baseSnap=JSON.stringify(data);$('#saveState').textContent=storeLabel()+' · '+fLocal(nowISO()).slice(11);return true}
+  catch(e){const q=(e&&(e.name==='QuotaExceededError'||e.code===22));
+    showErr('저장 실패: '+(q?'브라우저 저장 공간이 부족합니다.':(e.message||e))+' — 방금 변경한 내용은 저장되지 않았습니다. [백업 및 복원]에서 백업 파일을 내려받아 두세요.');
+    $('#saveState').textContent='⚠ 저장 실패';return false}}
+/* 변경을 시도하고 저장 실패 시 되돌림 */
+function commit(fn){const before=JSON.stringify(data);try{fn()}catch(e){data=normalizeData(JSON.parse(before));throw e}
+  if(!persist()){data=normalizeData(JSON.parse(before));return false}return true}
+function applyFont(){document.documentElement.style.setProperty('--docfont',FONTS[data.settings.docFont]||FONTS.malgun)}
+
+/* ---------------- 초기 예시 데이터 (가상 인물) ---------------- */
+const PIPE_ITEMS=[
+ ['자재의 종류 및 규격이 도면과 일치하는가','설계도면/KEC규정'],
+ ['전선관의 굴곡반경, 굴곡부위 상태는 양호한가',''],
+ ['전선관의 상호간, box간과의 접속시 적정 접속재를 사용하였는가',''],
+ ['전선관의 지지간격은 규정치에 적합한가',''],
+ ['전선관의 상호간 또는 기타(약전,가스,수도)간 적정 이격거리를 확보하였는가',''],
+ ['전선관 설치 후 이물질 유입을 방지하도록 적정한 조치를 하였는가',''],
+ ["매입 전선관의 경우 CON'C 타설시 파손 및 흔들림의 방지를 위하여 조치를 하였는가.",''],
+ ['각종함(박스,단자함, 분전함 등)의 위치 및 지지태는 양호한가.','']];
+function seed(){
+  const site=normSite({name:'(예시) 국도○호선 ○○-○○ 도로건설 전기공사',contractor:'㈜가나전기',prefix:'예시',field:'전기',
+    recipient:'(예시) 국도○호선 ○○-○○ 도로건설 전기공사 책임감리원',siteAgent:'홍길동',inspector:'홍길동',cmName:'김가상',chiefName:'이가상'});
+  data.sites.push(site);data.settings.currentSiteId=site.id;
+  const W=[['㈜가나전기','현장대리인','홍길동','70.01.01'],['㈜가나전기','공사관리','김철수','75.03.15'],
+    ['㈜가나전기','내선전공','이영희','80.07.20'],['㈜가나전기','내선전공','박민수','85.11.02'],['㈜가나전기','배전전공','최지훈','90.05.30']];
+  const ws=W.map(w=>normWorker({org:w[0],position:w[1],name:w[2],birth:w[3]}));data.workers.push(...ws);
+  const tpl=normTpl({name:'배관공사 (전선관·박스 매입)',note:'첨부 검측서류 3차-06호 체크리스트 8개 항목 원문',items:PIPE_ITEMS.map(x=>({text:x[0],criterion:x[1]}))});
+  data.templates.push(tpl);
+  const d=normInsp({siteId:site.id,site:siteSnapshot(site),round:3,writeDate:'2026-05-12',reqDate:'2026-05-12',
+    majorWork:'터널설비공사',work:'배관공사',subWork:'박스및 배관 매입',location:'지상공동구 연결부',part:'박스및 배관',workContent:'박스및 배관 매입',
+    contractorCheckDate:'2026-05-12',defaultWorkDate:'2026-05-12',status:'요청서 작성 완료',
+    disp:{clLoc:'터널 지상공동구 연결부',rosterLoc:'박스및 배관매입공사'},
+    checklist:{templateId:tpl.id,templateName:tpl.name,items:tpl.items.map(i=>({text:i.text,criterion:i.criterion,c:'ok'}))},
+    participants:ws.slice(0,4).map((w,i)=>({workerId:w.id,org:w.org,position:w.position,name:w.name,birth:w.birth,content:i===0?'현장대리인':i===1?'공사관리':''}))});
+  d.seq=6;d.numKey=numKeyOf(d);d.docNo=buildNo(d.site,3,6);data.counters[d.numKey]=6;
+  data.inspections.push(d)}
+
+/* ---------------- 검측번호 ---------------- */
+function numKeyOf(d){return `${d.siteId}|${fieldName(d.site)}|${d.round}`}
+function buildNo(site,round,seq){const dg=Math.max(1,Math.min(5,+data.settings.seqDigits||2));
+  return `${site.prefix||''}-검측(${fieldName(site)})-${round}차-${String(seq).padStart(dg,'0')}호`}
+function maxExistingSeq(key,exceptId){let m=0;for(const o of data.inspections)if(o.id!==exceptId&&o.numKey===key&&+o.seq>m)m=+o.seq;return m}
+function nextSeq(key,exceptId){return Math.max(+data.counters[key]||0,maxExistingSeq(key,exceptId))+1}
+function resolveNo(d,commitIt){
+  if(d.manualNo)return {docNo:(d.docNo||'').trim(),manual:true};
+  if(d.docNo&&d.numKey&&(d.numKey.startsWith('re:')||d.numKey===numKeyOf(d)))return {docNo:d.docNo,seq:d.seq,numKey:d.numKey};
+  if(d.isRe&&data.settings.reMode!=='new'){
+    const base=d.reBaseNo||'';
+    const no=data.settings.reMode==='same'?base:`${base}-재${d.reIndex}`;
+    return {docNo:no,seq:null,numKey:'re:'+d.rootId,tentative:!commitIt}}
+  const key=numKeyOf(d),seq=nextSeq(key,d.id);
+  if(commitIt)data.counters[key]=Math.max(+data.counters[key]||0,seq);
+  return {docNo:buildNo(d.site,d.round,seq),seq,numKey:key,tentative:!commitIt}}
+function dupOf(d,no){return data.inspections.find(o=>o.id!==d.id&&o.siteId===d.siteId&&o.docNo===no&&!(o.rootId===d.rootId&&(o.isRe||d.isRe)))}
+
+/* ---------------- 표시값 계산 ---------------- */
+function attachText(d){const a=d.attach;if(has(a.override))return a.override.trim();
+  const l=[];if(a.checklist)l.push('시공자의 검측 체크리스트');if(a.roster)l.push('공사참여실명부');if(a.photo&&arr(d.photos).length)l.push('사진대지');if(a.design)l.push('관련 설계도서(별도 첨부)');
+  if(has(a.extra))l.push(a.extra.trim());return l.join(', ')}
+function V(d){
+  const auto={reqWork:d.work,reqSub:d.subWork,reqPart:d.location,resPart:[d.location,d.subWork].filter(has).join(' '),
+    clWork:has(d.majorWork)?d.majorWork:d.work,clSub:has(d.majorWork)?d.work:d.subWork,clLoc:d.location,clPart:d.part,rosterLoc:has(d.subWork)?d.subWork:d.work};
+  const rn=resolveNo(d,false);const o={auto,docNo:rn.docNo||'',tentative:!!rn.tentative};o.resNo=o.docNo?'(감)'+o.docNo:'';
+  for(const k in auto)o[k]=has(d.disp[k])?d.disp[k]:(auto[k]||'');
+  o.attach=attachText(d);return o}
+function symOf(v){const s=data.settings.symbols;return v==='ok'?s.ok:v==='ng'?s.ng:v==='na'?s.na:''}
+function legendOf(){const s=data.settings.symbols;return has(data.settings.legendText)?data.settings.legendText:`${s.ok} : 적합　　${s.ng} : 부적합　　${s.na} : 해당 없음`}
+
+/* ================= 문서 렌더링 (A4) ================= */
+function mkPage(html,flow){const p=document.createElement('div');p.className='page'+(flow?' flow':'');p.innerHTML=`<div class="pbody">${html}</div>`;$('#stage').appendChild(p);return p}
+function over(p){const b=$('.pbody',p);return b.scrollHeight>b.clientHeight+1}
+function trOf(html){const t=document.createElement('tbody');t.innerHTML=html.trim();return t.firstElementChild}
+function reMark(d,p){if(d.isRe){const m=document.createElement('div');m.className='remark';m.textContent='(재)';p.appendChild(m)}}
+
+function pageReqRes(d){
+  const s=d.site,v=V(d);
+  const reqDT=has(d.reqDate)?fK(d.reqDate,true)+(has(d.reqTime)?' '+esc(d.reqTime):''):'';
+  const html=`
+  <h1 class="t-req">검측요청서</h1>
+  <div class="dline">${has(d.writeDate)?fK(d.writeDate,false):BLANK_DATE}</div>
+  <p class="ln">번&ensp;호 : ${esc(v.docNo)}</p>
+  <p class="ln">수&ensp;신 : ${esc(s.recipient)}</p>
+  <p class="ln lead">다음과 같은 세부 공종에 대하여 검측 요청 하오니 검사 후 승인하여 주시기 바랍니다.</p>
+  <table class="doc t1"><colgroup><col style="width:28%"><col style="width:23.6%"><col style="width:24.4%"><col style="width:24%"></colgroup>
+   <tr><th>위 치 및 공 종</th><td>${esc(v.reqWork)}</td><th>세부공종</th><td>${esc(v.reqSub)}</td></tr>
+   <tr><th>검 측 부 위</th><td colspan="3">${esc(v.reqPart)}</td></tr>
+   <tr><th>검측 요구 일시</th><td colspan="3">${reqDT}</td></tr>
+   <tr><th>검 측 사 항</th><td colspan="3">${esc(d.checkMatter)}</td></tr>
+   <tr><td colspan="4" class="left">붙&ensp;임 : ${esc(v.attach)}</td></tr>
+  </table>
+  <div class="signline"><span>현장 대리인</span><span>${esc(spaced(s.siteAgent))}</span><span class="in">(인)</span></div>
+  <div class="cut"></div>
+  <h1 class="t-res">검측결과통보</h1>
+  <div class="dline">${has(d.resultDate)?fK(d.resultDate,true):BLANK_DATE}</div>
+  <p class="ln">번&ensp;호 : ${esc(v.resNo)}</p>
+  <p class="ln">수&ensp;신 : 현장 대리인</p>
+  <p class="ln lead">검측 요청서&ensp;번&ensp;호 : ${esc(v.docNo)} 에 대한 검측결과를 다음과 같이 통보합니다.</p>
+  <table class="doc t2"><colgroup><col style="width:14.5%"><col style="width:37.5%"><col style="width:12%"><col style="width:36%"></colgroup>
+   <tr><th>검측부위</th><td>${esc(v.resPart)}</td><th>검측일시</th><td>${has(d.actualDate)?fK(d.actualDate,true):BLANK_DATE}</td></tr>
+   <tr><th>검측 결과</th><td colspan="3" class="left">${esc(d.result)}</td></tr>
+   <tr><th>지시 사항</th><td colspan="3" class="left">${esc(d.instruction)}</td></tr>
+   <tr><td colspan="4" class="left">붙&ensp;임 : ${esc(d.resultAttach)}</td></tr>
+  </table>
+  <div class="projline">${esc(s.name)}</div>
+  <div class="sig2"><span>${esc(s.cmTitle)}</span><span>${esc(spaced(s.cmName))}</span><span>(인)</span></div>
+  <div class="sig2"><span>${esc(s.chiefTitle)}</span><span>${esc(spaced(s.chiefName))}</span><span>(인)</span></div>
+  <div class="notes">주) ① 재검측시에는 붉은 글씨로 <span class="red">"(재)"</span> 를 우측 상단에 작성함<br>&emsp;&ensp;② 2 부 작성하여 시공자, 감리원 각 1부 보관</div>`;
+  const p=mkPage(html,true);reMark(d,p);return [p]}
+
+function contHead(d,title){return `<div class="conthead"><b>${title} (계속)</b><span>문서번호 : ${esc(V(d).docNo)}</span></div>`}
+
+/* 행 단위 자동 쪽나눔: 넘치면 다음 쪽으로, 다음 쪽에는 문서번호와 표 제목행 반복 */
+function paginate({d,firstHTML,contHTML,rows,blankRow,minRows,footerHTML,tsel}){
+  const pages=[];let pg=mkPage(firstHTML);pages.push(pg);let tb=$(tsel+' tbody',pg),count=0;
+  const newPage=()=>{pg=mkPage(contHTML);pages.push(pg);tb=$(tsel+' tbody',pg)};
+  for(const r of rows){const tr=trOf(r);tb.appendChild(tr);
+    if(over(pg)&&tb.children.length>1){tr.remove();newPage();tb.appendChild(tr)}count++}
+  const fw=document.createElement('div');fw.innerHTML=footerHTML;$('.pbody',pg).appendChild(fw);
+  if(over(pg)){fw.remove();const last=tb.lastElementChild;newPage();
+    if(last&&last.parentNode&&last.parentNode.children.length>1){tb.appendChild(last)}
+    $('.pbody',pg).appendChild(fw)}
+  while(count<minRows){const tr=trOf(blankRow);tb.appendChild(tr);if(over(pg)){tr.remove();break}count++}
+  pages.forEach((p,i)=>{reMark(d,p);if(pages.length>1){const n=document.createElement('div');n.className='pno';n.textContent=`${i+1} / ${pages.length}`;p.appendChild(n)}});
+  return pages}
+
+function pagesChecklist(d){
+  const s=d.site,v=V(d);
+  const colsInfo=`<colgroup><col style="width:20%"><col style="width:31.8%"><col style="width:19.9%"><col style="width:28.3%"></colgroup>`;
+  const tableHead=`<table class="doc cl"><colgroup><col style="width:41%"><col style="width:30.6%"><col style="width:9.1%"><col style="width:9.3%"><col style="width:10%"></colgroup>
+   <thead><tr><th>세부검사항목</th><th>검사기준</th><th>시공자</th><th>감리자</th><th>조치<br>사항</th></tr></thead><tbody></tbody></table>`;
+  const first=`<h1 class="t-cl">검측 체크리스트</h1>
+   <table class="doc info">${colsInfo}
+    <tr><th>공&ensp;사&ensp;명</th><td colspan="3">${esc(s.name)}</td></tr>
+    <tr><th>공&emsp;&emsp;종</th><td>${esc(v.clWork)}</td><th>세부공종</th><td>${esc(v.clSub)}</td></tr>
+    <tr><th>위&emsp;&emsp;치</th><td>${esc(v.clLoc)}</td><th>부&emsp;&emsp;위</th><td>${esc(v.clPart)}</td></tr>
+   </table>${tableHead}`;
+  const cont=contHead(d,'검측 체크리스트')+tableHead;
+  const rows=d.checklist.items.map((it,i)=>`<tr><td class="it">${i+1}. ${esc(it.text)}</td><td class="crit">${esc(it.criterion)}</td>
+     <td class="sym">${esc(symOf(it.c))}</td><td class="sym">${esc(symOf(it.s))}</td><td class="act">${esc(it.action)}</td></tr>`);
+  const blank=`<tr><td></td><td></td><td></td><td></td><td></td></tr>`;
+  const foot=`<table class="doc foot">${colsInfo}
+    <tr><th>시공자 점검일자</th><td>${has(d.contractorCheckDate)?fK(d.contractorCheckDate,true):BLANK_DATE}</td><th>점검직원</th>
+        <td class="sg">${esc(spaced(s.inspector))}&emsp;<span class="in">(인)</span></td></tr>
+    <tr><th>분야별 기술인<br>검측일자</th><td>${has(d.actualDate)?fK(d.actualDate,true):BLANK_DATE}</td><th class="small">${esc(s.cmTitle)}</th>
+        <td class="sg">${d.showCmName?esc(spaced(s.cmName)):''}&emsp;<span class="in">(인)</span></td></tr>
+   </table>${data.settings.showLegend?`<div class="legend">${esc(legendOf())}</div>`:''}`;
+  return paginate({d,firstHTML:first,contHTML:cont,rows,blankRow:blank,minRows:12,footerHTML:foot,tsel:'table.cl'})}
+
+function pagesRoster(d){
+  const s=d.site,v=V(d);
+  const tableHead=`<table class="doc ro"><colgroup><col style="width:11.3%"><col style="width:22.4%"><col style="width:13.3%"><col style="width:9.8%"><col style="width:8.4%"><col style="width:11%"><col style="width:12%"><col style="width:11.8%"></colgroup>
+   <thead><tr><th>작업일</th><th>작업위치및공종</th><th>소속</th><th>직위</th><th>성명</th><th>생년월일</th><th>공사내용</th><th>서명</th></tr></thead><tbody></tbody></table>`;
+  const first=`<h1 class="t-ro">공사참여기술자(기능공 포함) 실명부</h1><div class="ro-proj">공사명: ${esc(s.name)}</div>${tableHead}`;
+  const cont=contHead(d,'공사참여기술자(기능공 포함) 실명부')+`<div class="ro-proj">공사명: ${esc(s.name)}</div>`+tableHead;
+  const sm=(t,n=7)=>String(t||'').length>n?' class="sm"':'';
+  const rows=d.participants.map(p=>{const wd=has(p.workDate)?p.workDate:d.defaultWorkDate;const loc=has(p.locWork)?p.locWork:v.rosterLoc;const ct=has(p.content)?p.content:d.workContent;
+    return `<tr><td>${esc(fSlash(wd))}</td><td${sm(loc,10)}>${esc(loc)}</td><td${sm(p.org)}>${esc(p.org)}</td><td${sm(p.position,4)}>${esc(p.position)}</td><td>${esc(p.name)}</td><td>${esc(p.birth)}</td><td${sm(ct)}>${esc(ct)}</td><td></td></tr>`});
+  const blank=`<tr><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>`;
+  const foot=`<div class="ro-foot"><span>${esc(s.name)}</span><span>${has(d.writeDate)?fK(d.writeDate,false):BLANK_DATE}</span></div>
+   <div class="ro-sign"><span>현장 대리인</span><span>${esc(spaced(s.siteAgent))}</span><span class="in">(인)</span></div>
+   <div class="ro-guide">* 작성 및 기재요령<br>&nbsp;- 직위란에는 책임자, 공사관리, ○○전공 등으로 표기합니다.<br>&nbsp;- 공사내용란에는 참여기술자가 직접 공사한 내용을 기재합니다.</div>`;
+  return paginate({d,firstHTML:first,contHTML:cont,rows,blankRow:blank,minRows:10,footerHTML:foot,tsel:'table.ro'})}
+
+function fDot(s){const p=parseD(s);return p?`${p.y}. ${String(p.m).padStart(2,'0')}. ${String(p.d).padStart(2,'0')}.`:''}
+function photoVals(d,p){return {work:has(p.work)?p.work:d.work,content:has(p.content)?p.content:(has(d.subWork)?d.subWork:d.workContent),
+  location:has(p.location)?p.location:d.location,date:has(p.date)?p.date:d.defaultWorkDate}}
+function pagesPhotos(d){const ph=arr(d.photos);if(!ph.length)return [];
+  const per=+data.settings.photoPerPage===2?2:4,fit=data.settings.photoFit==='cover'?'cover':'contain',s=d.site,pages=[];
+  for(let i=0;i<ph.length;i+=per){
+    const cells=ph.slice(i,i+per).map(p=>{const v=photoVals(d,p),src=photoSrc(p.photoId);
+      return `<div class="ph-cell"><div class="ph-img">${src?`<img src="${src}" style="object-fit:${fit}" alt="">`:'<span class="noimg">사진을 불러오는 중이거나 찾을 수 없습니다</span>'}</div>
+       <table class="ph-t"><colgroup><col style="width:15%"><col style="width:35%"><col style="width:15%"><col style="width:35%"></colgroup>
+        <tr><th>공 종</th><td>${esc(v.work)}</td><th>내 용</th><td>${esc(v.content)}</td></tr>
+        <tr><th>위 치</th><td>${esc(v.location)}</td><th>날 짜</th><td>${esc(fDot(v.date))}</td></tr></table></div>`}).join('');
+    pages.push(mkPage(`<h1 class="t-ph">사진대지</h1><div class="ph-proj">공사명: ${esc(s.name)}</div><div class="ph-grid ph${per}">${cells}</div>`))}
+  pages.forEach((p,i)=>{reMark(d,p);if(pages.length>1){const n=document.createElement('div');n.className='pno';n.textContent=`사진 ${i+1} / ${pages.length}`;p.appendChild(n)}});
+  return pages}
+
+/* part: all | p1 | p2 | p3 | p4 */
+function docPages(d,part){const out=[];
+  if(part==='all'||part==='p1')out.push(...pageReqRes(d));
+  if(part==='all'||part==='p2')out.push(...pagesChecklist(d));
+  if(part==='all'||part==='p3')out.push(...pagesRoster(d));
+  if(part==='all'||part==='p4')out.push(...pagesPhotos(d));
+  return out}
+function renderPagesInto(target,list,part){target.innerHTML='';let warn=[];
+  for(const d of list){const ps=docPages(d,part);
+    for(const p of ps){if(p.classList.contains('flow')){const mm=p.offsetHeight/3.7795;if(mm>298)warn.push(`${V(d).docNo||'(번호 미정)'} 검측요청서·결과통보 내용이 길어 A4 1쪽을 넘습니다. 문구를 줄이거나 표시값을 조정하세요.`)}target.appendChild(p)}}
+  $('#stage').innerHTML='';
+  if(!SERVER){const miss=allPhotoIds(list).filter(id=>!photoCache.has(id));
+    if(miss.length&&!renderPagesInto._busy){renderPagesInto._busy=true;ensurePhotos(miss).then(ch=>{renderPagesInto._busy=false;if(ch&&target.isConnected)renderPagesInto(target,list,part)})}}
+  return warn}
+
+/* ---------------- 인쇄 ---------------- */
+const PART_NAMES={all:'전체 묶음',p1:'검측요청서·결과통보',p2:'검측 체크리스트',p3:'공사참여자 실명부',p4:'사진대지'};
+async function doPrint(list,part){if(!list.length){alert('인쇄할 검측서류가 없습니다.');return}
+  if(part==='p4'&&!allPhotoIds(list).length){alert('사진이 없어 사진대지를 인쇄할 수 없습니다.');return}
+  await ensurePhotos(allPhotoIds(list));
+  const pa=$('#printArea');const w=renderPagesInto(pa,list,part);if(w.length)toast(w[0]);
+  const ims=$$('img',pa);if(ims.length){toast('사진을 준비하는 중…');await Promise.all(ims.map(im=>im.complete?0:new Promise(r=>{im.onload=im.onerror=r})))}
+  state.printPrepared=true;setTimeout(()=>window.print(),60)}
+window.addEventListener('beforeprint',()=>{if(state.printPrepared)return;
+  let list=[],part='all';
+  if(state.view==='editor'&&state.draft){list=[state.draft];part=state.pvTab}
+  else if(state.view==='preview'){const d=data.inspections.find(x=>x.id===state.pvId);if(d){list=[d];part=state.pvPart}}
+  if(list.length)renderPagesInto($('#printArea'),list,part);else $('#printArea').innerHTML=''});
+window.addEventListener('afterprint',()=>{state.printPrepared=false});
+
+/* ================= 화면 ================= */
+const VIEWS=[['dashboard','대시보드'],['sites','현장 기본정보'],['ledger','검측대장'],['editor','검측 작성·수정'],['templates','체크리스트 템플릿'],['workers','인력대장'],['preview','출력 미리보기'],['backup','백업·복원 / 설정']];
+function curSite(){return data.sites.find(s=>s.id===data.settings.currentSiteId)||data.sites[0]||null}
+function siteName(id){const s=data.sites.find(x=>x.id===id);return s?s.name:'(삭제된 현장)'}
+function renderHeader(){if(WEB)$('#logoutForm').style.display='';const sel=$('#curSite');const c=curSite();
+  sel.innerHTML=data.sites.length?data.sites.map(s=>`<option value="${s.id}" ${c&&c.id===s.id?'selected':''}>${esc(s.name||'(이름 없음)')}</option>`).join(''):'<option value="">(현장을 먼저 등록하세요)</option>';
+  $('#nav').innerHTML=VIEWS.map(([k,n])=>`<a data-act="go" data-v="${k}" class="${state.view===k?'on':''}">${n}</a>`).join('')}
+function go(v,force){
+  if(!force&&state.view==='editor'&&v!=='editor'&&state.dirty&&!confirm('저장하지 않은 변경 내용이 있습니다. 이동하면 변경 내용이 사라집니다. 이동할까요?'))return;
+  if(state.view==='editor'&&v!=='editor'){state.draft=null;state.dirty=false}
+  state.view=v;render()}
+function render(){renderHeader();const m=$('#main');m.classList.toggle('editor-mode',state.view==='editor'&&!!state.draft);
+  ({dashboard:vDashboard,sites:vSites,ledger:vLedger,editor:vEditor,templates:vTemplates,workers:vWorkers,preview:vPreview,backup:vBackup})[state.view]();}
+
+/* ---------- 대시보드 ---------- */
+function vDashboard(){const c=curSite();const list=data.inspections.filter(d=>c&&d.siteId===c.id);
+  const cnt=Object.fromEntries(STATUSES.map(s=>[s,0]));list.forEach(d=>cnt[d.status]++);
+  const recent=[...list].sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt)).slice(0,8);
+  let nextInfo='';if(c){const lr=lastRound(c.id)||1;const dm={siteId:c.id,site:siteSnapshot(c),round:lr};nextInfo=`다음 자동 번호 (${lr}차): <b>${esc(buildNo(dm.site,lr,nextSeq(numKeyOf(dm))))}</b>`}
+  $('#main').innerHTML=`<h2>대시보드</h2>
+  ${!c?`<div class="banner">등록된 현장이 없습니다. [현장 기본정보]에서 현장을 먼저 등록하세요.</div>`:`
+  <div class="card"><div class="row"><div><b>${esc(c.name)}</b><div class="muted">${esc(c.contractor)} · 분야 ${esc(fieldName(c))} · 현장대리인 ${esc(c.siteAgent)}</div></div><span class="sp"></span>
+   <button class="btn pri" data-act="new-insp">＋ 새 검측 작성</button><button class="btn" data-act="go" data-v="ledger">검측대장 보기</button></div>
+   <div class="muted" style="margin-top:6px">${nextInfo}</div></div>
+  <div class="stats"><div class="stat">전체<b>${list.length}</b></div>${STATUSES.map(s=>`<div class="stat">${s}<b>${cnt[s]}</b></div>`).join('')}</div>
+  <div class="card" style="margin-top:14px"><h3>최근 수정한 검측</h3>${recent.length?`<table class="lt"><thead><tr><th>문서번호</th><th>공종 / 세부공종</th><th>위치</th><th>검측 요구일</th><th>상태</th><th>수정일</th><th></th></tr></thead><tbody>
+   ${recent.map(d=>`<tr><td class="nw">${d.isRe?'<span class="re-tag">(재)</span> ':''}${esc(d.docNo)}</td><td>${esc(d.work)} / ${esc(d.subWork)}</td><td>${esc(d.location)}</td><td class="nw">${esc(d.reqDate)}</td><td>${badge(d.status)}</td><td class="nw">${fLocal(d.updatedAt)}</td><td><button class="btn sm" data-act="edit" data-id="${d.id}">수정</button></td></tr>`).join('')}
+   </tbody></table>`:'<div class="empty">아직 작성한 검측이 없습니다.</div>'}</div>`}
+  <div class="muted">${WEB?'데이터는 웹 서버에 저장되어 여러 PC에서 함께 씁니다.':SERVER?'데이터는 이 PC의 데이터 폴더에 파일로 저장됩니다.':'데이터는 이 PC의 이 브라우저에만 저장됩니다.'} 정기적으로 [백업·복원]에서 JSON 백업을 받아 두세요.</div>`}
+function badge(s){return `<span class="badge st-${s.replace(/\s/g,'')}">${esc(s)}</span>`}
+function lastRound(siteId){const l=data.inspections.filter(d=>d.siteId===siteId).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt));return l.length?+l[0].round||1:0}
+
+/* ---------- 현장 기본정보 ---------- */
+function vSites(){
+  if(!state.siteSel||(state.siteSel!=='__new'&&!data.sites.find(s=>s.id===state.siteSel)))state.siteSel=(curSite()||{}).id||'__new';
+  const s=state.siteSel==='__new'?normSite({}):data.sites.find(x=>x.id===state.siteSel);
+  const f=(label,k,o={})=>`<label class="fld ${o.cls||''}"><span>${label}</span><input data-sf="${k}" value="${esc(s[k])}" placeholder="${esc(o.ph||'')}">${o.hint?`<small>${o.hint}</small>`:''}</label>`;
+  const cnt=id=>data.inspections.filter(d=>d.siteId===id).length;
+  $('#main').innerHTML=`<h2>현장 기본정보</h2>
+  <div class="split"><div class="card list-pick"><div class="row"><b>현장 목록</b><span class="sp"></span><button class="btn sm pri" data-act="site-new">＋ 새 현장</button></div>
+   ${data.sites.map(x=>`<a data-act="site-sel" data-id="${x.id}" class="${x.id===state.siteSel?'on':''}">${esc(x.name||'(이름 없음)')}<div class="muted">${esc(x.prefix)} · ${esc(fieldName(x))} · 검측 ${cnt(x.id)}건</div></a>`).join('')||'<div class="muted">등록된 현장 없음</div>'}</div>
+  <div class="card" id="siteForm"><h3>${state.siteSel==='__new'?'새 현장 등록':'현장 정보 수정'}</h3>
+   <div class="grid2">
+    ${f('공사명','name',{cls:'span2',ph:'예) 국도5호선 ○○-○○ 도로건설 전기공사'})}
+    ${f('시공사명','contractor')}
+    ${f('문서번호 접두어','prefix',{ph:'예) 이원',hint:'번호 예: <접두어>-검측(<분야>)-3차-06호'})}
+    <label class="fld"><span>공사 분야</span><select data-sf="field">${['전기','정보통신','직접 입력'].map(x=>`<option ${s.field===x?'selected':''}>${x}</option>`).join('')}</select></label>
+    ${f('분야 직접 입력','fieldCustom',{ph:'예) 소방',hint:'공사 분야가 “직접 입력”일 때 사용'})}
+    ${f('수신처 (검측요청서 수신)','recipient',{cls:'span2',ph:'예) ○○ 도로건설 전기공사 책임감리원'})}
+    ${f('현장대리인','siteAgent')}
+    ${f('시공자 점검직원','inspector',{hint:'체크리스트 하단 점검직원'})}
+    ${f('분야별 건설사업관리기술인 직책','cmTitle')}
+    ${f('분야별 건설사업관리기술인 성명','cmName')}
+    ${f('책임건설사업관리기술인 직책','chiefTitle')}
+    ${f('책임건설사업관리기술인 성명','chiefName')}
+    ${f('기본 붙임 문구 (추가 붙임)','attachDefault',{cls:'span2',ph:'예) 자재승인서 사본',hint:'새 검측 작성 시 요청서 붙임에 추가됩니다. 체크리스트·실명부는 자동 포함'})}
+   </div>
+   <div class="row" style="margin-top:14px"><button class="btn pri" data-act="site-save">저장</button>
+    ${state.siteSel!=='__new'?`<button class="btn dan" data-act="site-del">현장 삭제</button>`:''}<span class="sp"></span>
+    <span class="muted">수정해도 이미 저장한 검측서류의 공사정보·담당자는 바뀌지 않습니다.</span></div>
+  </div></div>`}
+
+/* ---------- 검측대장 ---------- */
+function filtered(){const f=state.lf;const sid=f.siteId==='__cur'?(curSite()||{}).id:f.siteId;
+  return data.inspections.filter(d=>{
+    if(sid&&d.siteId!==sid)return false;
+    if(f.status&&d.status!==f.status)return false;
+    if(has(f.work)){const w=f.work.trim();if(![d.majorWork,d.work,d.subWork].some(x=>(x||'').includes(w)))return false}
+    if(f.from&&!(d.reqDate&&d.reqDate>=f.from))return false;
+    if(f.to&&!(d.reqDate&&d.reqDate<=f.to))return false;
+    if(has(f.q)){const q=f.q.trim();if(![d.docNo,d.location,d.part,d.disp.clLoc,d.disp.reqPart].some(x=>(x||'').includes(q)))return false}
+    return true}).sort((a,b)=>(b.reqDate||'').localeCompare(a.reqDate||'')||b.docNo.localeCompare(a.docNo,'ko',{numeric:true}))}
+function vLedger(){const f=state.lf;
+  $('#main').innerHTML=`<h2>검측대장</h2>
+  <div class="card"><div class="grid4" style="grid-template-columns:1.6fr 1fr 1fr 1fr 1fr 1.4fr">
+   <label class="fld"><span>현장</span><select data-lf="siteId"><option value="__cur" ${f.siteId==='__cur'?'selected':''}>현재 현장</option><option value="" ${f.siteId===''?'selected':''}>전체 현장</option>${data.sites.map(s=>`<option value="${s.id}" ${f.siteId===s.id?'selected':''}>${esc(s.name)}</option>`).join('')}</select></label>
+   <label class="fld"><span>공종 (포함)</span><input data-lf="work" value="${esc(f.work)}" placeholder="대공종·공종·세부공종"></label>
+   <label class="fld"><span>요구일 From</span><input type="date" data-lf="from" value="${esc(f.from)}"></label>
+   <label class="fld"><span>요구일 To</span><input type="date" data-lf="to" value="${esc(f.to)}"></label>
+   <label class="fld"><span>진행상태</span><select data-lf="status"><option value="">전체</option>${STATUSES.map(s=>`<option ${f.status===s?'selected':''}>${s}</option>`).join('')}</select></label>
+   <label class="fld"><span>검색 (문서번호·위치)</span><input data-lf="q" value="${esc(f.q)}" placeholder="예) 06호, 공동구"></label>
+  </div>
+  <div class="row" style="margin-top:10px"><button class="btn pri" data-act="new-insp">＋ 신규 작성</button><button class="btn" data-act="lg-csv">CSV 내보내기</button>
+   <span class="sp"></span><span class="muted">선택한 검측</span><select id="lgPart" class="in" style="width:auto">${Object.entries(PART_NAMES).map(([k,n])=>`<option value="${k}">${n}</option>`).join('')}</select><button class="btn" data-act="lg-print-sel">일괄 인쇄</button></div></div>
+  <div class="card" style="padding:0;overflow:auto"><table class="lt"><thead><tr><th><input type="checkbox" data-act="lg-selall"></th><th>문서번호</th><th>공사명</th><th>공종 / 세부공종</th><th>위치</th><th>검측 요구일</th><th>실제 검측일</th><th>진행상태</th><th>검측결과</th><th>수정일</th><th>작업</th></tr></thead><tbody id="lgBody"></tbody></table></div>`;
+  renderLedgerBody()}
+function renderLedgerBody(){const l=filtered();
+  $('#lgBody').innerHTML=l.length?l.map(d=>`<tr>
+   <td><input type="checkbox" data-lgsel="${d.id}" ${state.lgSel.has(d.id)?'checked':''}></td>
+   <td class="nw">${d.isRe?'<span class="re-tag">(재)</span> ':''}<a href="#" data-act="edit" data-id="${d.id}">${esc(d.docNo)}</a></td>
+   <td>${esc(d.site.name)}</td><td>${esc(d.work)}${has(d.subWork)?' / '+esc(d.subWork):''}</td><td>${esc(d.location)}</td>
+   <td class="nw">${esc(d.reqDate)}${has(d.reqTime)?' '+esc(d.reqTime):''}</td><td class="nw">${esc(d.actualDate)}</td>
+   <td><select class="in" style="width:auto;padding:3px 4px" data-status="${d.id}">${STATUSES.map(s=>`<option ${d.status===s?'selected':''}>${s}</option>`).join('')}</select></td>
+   <td>${esc(d.result)}</td><td class="nw muted">${fLocal(d.updatedAt)}</td>
+   <td class="nw"><button class="btn sm" data-act="edit" data-id="${d.id}">수정</button> <button class="btn sm" data-act="copy" data-id="${d.id}">복사</button> <button class="btn sm" data-act="reinsp" data-id="${d.id}">재검측</button> <button class="btn sm" data-act="print1" data-id="${d.id}">인쇄</button> <button class="btn sm dan" data-act="del" data-id="${d.id}">삭제</button></td></tr>`).join('')
+   :`<tr><td colspan="11" class="empty">조건에 맞는 검측이 없습니다.</td></tr>`}
+function csvExport(){const l=filtered();const H=['문서번호','결과통보번호','재검측','원검측번호','공사명','대공종','공종','세부공종','작업위치','검측부위','작성일','검측요구일','요구시간','시공자점검일','실제검측일','결과통보일','진행상태','검측결과','지시사항','참여인원','수정일'];
+  const q=v=>{v=String(v??'');return /[",\n\r]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v};
+  const rows=l.map(d=>[d.docNo,'(감)'+d.docNo,d.isRe?'Y':'',d.isRe?d.reBaseNo:'',d.site.name,d.majorWork,d.work,d.subWork,d.location,d.part,d.writeDate,d.reqDate,d.reqTime,d.contractorCheckDate,d.actualDate,d.resultDate,d.status,d.result,d.instruction,d.participants.length,fLocal(d.updatedAt)]);
+  const txt='﻿'+[H,...rows].map(r=>r.map(q).join(',')).join('\r\n');
+  download(new Blob([txt],{type:'text/csv;charset=utf-8'}),`검측대장_${today()}.csv`)}
+function download(blob,name){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},500)}
+
+/* ---------- 검측 생성/복사/재검측 ---------- */
+function newInspection(){const c=curSite();if(!c){alert('현장을 먼저 등록하세요.');go('sites');return}
+  const d=normInsp({siteId:c.id,site:siteSnapshot(c),round:lastRound(c.id)||1,writeDate:today(),attach:{checklist:true,roster:true,design:false,extra:c.attachDefault||'',override:''}});
+  openDraft(d,true)}
+function copyBase(src,site){const id=uid();
+  return normInsp({id,rootId:id,siteId:site.id,site:siteSnapshot(site),round:src.round,
+    majorWork:src.majorWork,work:src.work,subWork:src.subWork,location:src.location,part:src.part,workContent:src.workContent,checkMatter:src.checkMatter,
+    disp:clone(src.disp),attach:Object.assign(clone(src.attach)),resultAttach:src.resultAttach,showCmName:src.showCmName,
+    checklist:{templateId:src.checklist.templateId,templateName:src.checklist.templateName,items:src.checklist.items.map(i=>({text:i.text,criterion:i.criterion,c:'',s:'',action:''}))},
+    participants:src.participants.map(p=>({workerId:p.workerId,locWork:p.locWork,org:p.org,position:p.position,name:p.name,birth:p.birth,content:p.content,workDate:''})),
+    status:'작성 중',needDateCheck:true})}
+function copyInspection(id){const src=data.inspections.find(x=>x.id===id);if(!src)return;
+  const site=data.sites.find(s=>s.id===src.siteId);if(!site){alert('원 검측의 현장이 삭제되어 복사할 수 없습니다.');return}
+  openDraft(copyBase(src,site),true);toast('복사본을 만들었습니다. 날짜를 확인하고 저장하세요.')}
+function reinspect(id){const src=data.inspections.find(x=>x.id===id);if(!src)return;
+  const site=data.sites.find(s=>s.id===src.siteId);if(!site){alert('원 검측의 현장이 삭제되었습니다.');return}
+  const d=copyBase(src,site);d.isRe=true;d.reOf=src.id;d.rootId=src.rootId;
+  const root=data.inspections.find(x=>x.id===src.rootId)||src;d.reBaseNo=root.docNo;
+  d.reIndex=Math.max(0,...data.inspections.filter(x=>x.rootId===src.rootId&&x.isRe).map(x=>+x.reIndex||0))+1;
+  d.memo=`원 검측 ${src.docNo} 의 재검측`;openDraft(d,true);toast('재검측 기록을 만들었습니다. 원 검측의 상태는 직접 변경하세요.')}
+function openDraft(d,isNew){state.draft=clone(d);state.isNew=isNew;state.dirty=!!isNew;state.clSel=new Set();state.view='editor';render()}
+function editInspection(id){const d=data.inspections.find(x=>x.id===id);if(!d)return;if(state.view==='editor'&&state.dirty&&!confirm('저장하지 않은 변경 내용이 사라집니다. 계속할까요?'))return;openDraft(d,false)}
+
+function saveDraft(){const d=state.draft;
+  if(!data.sites.find(s=>s.id===d.siteId)){alert('현장이 지정되지 않았습니다.');return false}
+  if(!(+d.round>0)){alert('차수를 1 이상의 숫자로 입력하세요.');return false}
+  if(d.manualNo&&!has(d.docNo)){alert('검측번호를 입력하세요.');return false}
+  const miss=missingDates(d);
+  if(d.needDateCheck&&miss.length&&!confirm(`다음 날짜가 비어 있습니다: ${miss.join(', ')}\n그래도 저장할까요?`))return false;
+  const tryNo=resolveNo(d,false).docNo;const dup=dupOf(d,tryNo);
+  if(dup){alert(`같은 현장에 이미 같은 검측번호가 있습니다: ${tryNo}\n번호를 수동으로 바꾸거나 차수를 확인하세요.`);return false}
+  const prevSaved=data.inspections.find(x=>x.id===d.id);const prevPh=prevSaved?allPhotoIds([prevSaved]):[];
+  const ok=commit(()=>{
+    const rn=resolveNo(d,true);d.docNo=rn.docNo;
+    if(rn.manual){d.numKey='manual';d.seq=null;
+      const m=/(\d+)호$/.exec(d.docNo);if(m&&d.docNo===buildNo(d.site,d.round,+m[1])){const k=numKeyOf(d);d.numKey=k;d.seq=+m[1];data.counters[k]=Math.max(+data.counters[k]||0,+m[1])}}
+    else{d.numKey=rn.numKey;d.seq=rn.seq??null}
+    if(d.needDateCheck&&!miss.length)d.needDateCheck=false;
+    d.updatedAt=nowISO();const rec=clone(d);
+    const i=data.inspections.findIndex(x=>x.id===d.id);if(i>=0)data.inspections[i]=rec;else data.inspections.push(rec);
+    data.settings.lastEditedId=d.id;state.pvId=d.id});
+  if(!ok)return false;
+  {const now=new Set(allPhotoIds([d]));prevPh.filter(id=>!now.has(id)).forEach(photoDel)}
+  state.isNew=false;state.dirty=false;toast('저장했습니다: '+d.docNo);renderEditorForm();schedulePreview(true);return true}
+function missingDates(d){const m=[];if(!has(d.writeDate))m.push('작성일');if(!has(d.reqDate))m.push('검측 요구일');if(!has(d.contractorCheckDate))m.push('시공자 점검일');
+  if(!has(d.defaultWorkDate)&&d.participants.some(p=>!has(p.workDate)))m.push('작업일');return m}
+
+/* ---------- 검측 작성·수정 화면 ---------- */
+function vEditor(){
+  if(!state.draft){const c=curSite();const recent=data.inspections.filter(d=>!c||d.siteId===c.id).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt)).slice(0,12);
+    $('#main').innerHTML=`<h2>검측 작성·수정</h2><div class="card"><div class="row"><button class="btn pri" data-act="new-insp">＋ 새 검측 작성</button><span class="muted">또는 아래에서 수정할 검측을 선택하세요.</span></div></div>
+    <div class="card list-pick">${recent.map(d=>`<a data-act="edit" data-id="${d.id}">${d.isRe?'<span class="re-tag">(재)</span> ':''}${esc(d.docNo)} <span class="muted">· ${esc(d.work)} / ${esc(d.location)} · ${esc(d.status)}</span></a>`).join('')||'<div class="muted">검측이 없습니다.</div>'}</div>`;return}
+  $('#main').innerHTML=`<div class="ed"><div class="ed-left" id="edLeft"></div>
+   <div class="ed-right"><div class="pv-tabs">${Object.entries(PART_NAMES).map(([k,n])=>`<button data-act="pv-tab" data-p="${k}" class="${state.pvTab===k?'on':''}">${n}</button>`).join('')}
+    <span class="sp"></span><span class="muted" style="color:#333">미리보기 · A4</span></div>
+    <div class="pv-warn" id="pvWarn"></div><div class="pv-scroll" id="pvScroll"><div class="pv-pages" id="pvPages"></div></div></div></div>`;
+  renderEditorForm();schedulePreview(true)}
+function uniq(k){return [...new Set(data.inspections.map(d=>d[k]).filter(has))].slice(0,80)}
+function F(label,path,o={}){const d=state.draft;const v=getPath(d,path)??'';
+  return `<label class="fld ${o.cls||''}" data-wrap="${path}"><span>${label}</span><input type="${o.type||'text'}" data-f="${path}" value="${esc(v)}" placeholder="${esc(o.ph||'')}" ${o.list?`list="${o.list}"`:''} ${o.min?`min="${o.min}"`:''}>${o.hint?`<small>${o.hint}</small>`:''}</label>`}
+function TA(label,path,o={}){const v=getPath(state.draft,path)??'';return `<label class="fld ${o.cls||''}"><span>${label}</span><textarea rows="${o.rows||2}" data-f="${path}" placeholder="${esc(o.ph||'')}">${esc(v)}</textarea>${o.hint?`<small>${o.hint}</small>`:''}</label>`}
+function renderEditorForm(){const L=$('#edLeft');if(!L)return;const st=L.scrollTop;const d=state.draft,v=V(d),s=d.site;
+  const miss=d.needDateCheck?missingDates(d):[];
+  const ov=(label,k)=>`<span>${label}</span><input class="in" data-f="disp.${k}" data-auto="${k}" value="${esc(d.disp[k])}" placeholder="자동: ${esc(v.auto[k]||'(빈칸)')}">`;
+  L.innerHTML=`
+  <div class="ed-bar"><b>${state.isNew?(d.isRe?'재검측 작성':'새 검측 작성'):'검측 수정'}</b><span id="dirtyFlag" class="dirty ${state.dirty?'on':''}">● 저장 안 됨</span><span class="sp"></span>
+   <button class="btn pri" data-act="ed-save">저장</button><button class="btn" data-act="ed-print">인쇄</button>
+   ${!state.isNew?`<button class="btn" data-act="copy" data-id="${d.id}">복사하여 새 검측</button>`:''}<button class="btn" data-act="ed-close">닫기</button></div>
+  ${miss.length?`<div class="banner"><b>날짜 확인 필요</b> — 복사·재검측으로 만든 서류입니다. 다음 날짜를 새로 입력하세요: ${miss.join(', ')}</div>`:''}
+  <section class="card"><h3>문서 정보</h3>
+   <div class="grid3">
+    <label class="fld"><span>현장</span><select data-f="siteId" ${state.isNew&&!d.isRe?'':'disabled'}>${data.sites.map(x=>`<option value="${x.id}" ${x.id===d.siteId?'selected':''}>${esc(x.name)}</option>`).join('')}</select></label>
+    ${F('차수','round',{type:'number',min:1})}
+    <label class="fld"><span>진행상태 (직접 관리)</span><select data-f="status">${STATUSES.map(x=>`<option ${d.status===x?'selected':''}>${x}</option>`).join('')}</select></label>
+   </div>
+   <div class="noRow"><span>검측번호</span>${d.manualNo?`<input data-f="docNo" value="${esc(d.docNo)}">`:`<b id="noDisp">${esc(v.docNo)}</b><small class="muted" id="noTent">${v.tentative?'(저장 시 확정)':''}</small>`}
+    <span class="sp"></span><label class="chk"><input type="checkbox" data-f="manualNo" ${d.manualNo?'checked':''}> 수동 입력</label></div>
+   <div class="muted">결과통보 번호: <span id="resNoDisp">${esc(v.resNo)}</span>${d.isRe?` · <span class="re-tag">재검측 ${d.reIndex}회</span> (원 검측 ${esc(d.reBaseNo)})`:''}</div>
+   <div class="snap"><b>이 서류에 보존된 공사정보</b> (작성 당시 기준)<br>공사명: ${esc(s.name)}<br>수신: ${esc(s.recipient)} · 현장대리인: ${esc(s.siteAgent)} · 점검직원: ${esc(s.inspector)}<br>
+    ${esc(s.cmTitle)} ${esc(s.cmName)} · ${esc(s.chiefTitle)} ${esc(s.chiefName)}
+    <div class="row"><button class="btn sm" data-act="ed-resnap">현재 현장 기본정보로 다시 불러오기</button><span class="muted">기본정보를 고쳐도 이 서류는 자동으로 바뀌지 않습니다.</span></div></div>
+  </section>
+  <section class="card"><h3>날짜 <small>각 날짜는 따로 저장됩니다</small></h3>
+   <div class="grid4">
+    ${F('작성일','writeDate',{type:'date',hint:'요청서 상단 · 실명부 하단'}).replace('class="fld ','class="fld '+(miss.includes('작성일')?'need ':''))}
+    ${F('검측 요구일','reqDate',{type:'date',hint:'요청서 검측 요구 일시'}).replace('class="fld ','class="fld '+(miss.includes('검측 요구일')?'need ':''))}
+    ${F('요구 시간 (선택)','reqTime',{type:'time'})}
+    ${F('시공자 점검일','contractorCheckDate',{type:'date',hint:'체크리스트 하단'}).replace('class="fld ','class="fld '+(miss.includes('시공자 점검일')?'need ':''))}
+    ${F('기본 작업일','defaultWorkDate',{type:'date',hint:'참여자별 작업일이 비면 사용'}).replace('class="fld ','class="fld '+(miss.includes('작업일')?'need ':''))}
+   </div>
+   <div class="row"><button class="btn sm" data-act="same-date">같은 날짜 적용: 작성일 → 요구일·점검일·기본 작업일</button></div>
+  </section>
+  <section class="card"><h3>공종 · 위치</h3>
+   <div class="grid3">
+    ${F('대공종','majorWork',{list:'dlMajor',ph:'예) 터널설비공사'})}${F('공종','work',{list:'dlWork',ph:'예) 배관공사'})}${F('세부공종','subWork',{list:'dlSub',ph:'예) 박스및 배관 매입'})}
+    ${F('작업위치','location',{list:'dlLoc',cls:'span2',ph:'예) 지상공동구 연결부'})}${F('검측부위','part',{ph:'예) 박스및 배관'})}
+    ${TA('작업내용','workContent',{cls:'span2',hint:'실명부 공사내용 기본값'})}${TA('검측사항','checkMatter')}
+   </div>
+   <datalist id="dlMajor">${uniq('majorWork').map(x=>`<option value="${esc(x)}">`).join('')}</datalist><datalist id="dlWork">${uniq('work').map(x=>`<option value="${esc(x)}">`).join('')}</datalist>
+   <datalist id="dlSub">${uniq('subWork').map(x=>`<option value="${esc(x)}">`).join('')}</datalist><datalist id="dlLoc">${uniq('location').map(x=>`<option value="${esc(x)}">`).join('')}</datalist>
+  </section>
+  <section class="card"><details open><summary>서류별 표시값 <small>비워 두면 위 입력값이 자동으로 들어갑니다</small></summary>
+   <div class="ovr">
+    <div class="h">검측요청서</div>${ov('위치 및 공종','reqWork')}${ov('세부공종','reqSub')}${ov('검측 부위','reqPart')}
+    <div class="h">검측결과통보</div>${ov('검측부위','resPart')}
+    <div class="h">검측 체크리스트</div>${ov('공종','clWork')}${ov('세부공종','clSub')}${ov('위치','clLoc')}${ov('부위','clPart')}
+    <div class="h">실명부</div>${ov('작업위치및공종 (기본)','rosterLoc')}
+   </div></details></section>
+  <section class="card"><h3>붙임</h3>
+   <div class="row"><label class="chk"><input type="checkbox" data-f="attach.checklist" ${d.attach.checklist?'checked':''}> 시공자의 검측 체크리스트</label>
+    <label class="chk"><input type="checkbox" data-f="attach.roster" ${d.attach.roster?'checked':''}> 공사참여실명부</label>
+    <label class="chk"><input type="checkbox" data-f="attach.photo" ${d.attach.photo?'checked':''}> 사진대지 <span class="muted">(사진이 있을 때만)</span></label>
+    <label class="chk"><input type="checkbox" data-f="attach.design" ${d.attach.design?'checked':''}> 관련 설계도서 (별도 첨부)</label></div>
+   <div class="grid2">${F('추가 붙임','attach.extra',{ph:'실제로 함께 제출하는 서류만 적으세요'})}${F('붙임 문구 직접 수정 (입력 시 위 선택 무시)','attach.override')}</div>
+   <div class="muted" style="margin-top:6px">출력될 문구: <b id="attPrev">${esc(v.attach)}</b></div>
+  </section>
+  <div id="clSec">${clSectionHTML()}</div>
+  <div id="ptSec">${ptSectionHTML()}</div>
+  <div id="phSec">${phSectionHTML()}</div>
+  <section class="card"><h3>감리 작성란 <small>비워 두면 공란으로 출력, 서명란은 항상 공란</small></h3>
+   <div class="grid4">${F('실제 검측일','actualDate',{type:'date',hint:'결과통보 검측일시 · 체크리스트 기술인 검측일자'})}${F('결과통보일','resultDate',{type:'date',hint:'결과통보 상단'})}
+    ${F('검측결과','result',{list:'dlResult',cls:'span2',ph:'예) 합격'})}
+    ${TA('지시사항','instruction',{cls:'span4'})}${F('결과통보 붙임','resultAttach',{cls:'span4'})}</div>
+   <div class="row"><button class="btn sm" data-act="same-date2">같은 날짜 적용: 실제 검측일 → 결과통보일</button>
+    <label class="chk"><input type="checkbox" data-f="showCmName" ${d.showCmName?'checked':''}> 체크리스트 하단에 분야별 기술인 성명 표시</label></div>
+  </section>
+  <section class="card"><h3>내부 관리 메모 <small>출력되지 않음</small></h3>${TA('','memo',{rows:3})}</section>`;
+  L.scrollTop=st}
+
+function resOpts(v){return RES_OPTS.map(([k,n])=>`<option value="${k}" ${v===k?'selected':''}>${n}</option>`).join('')}
+function clSectionHTML(){const d=state.draft,it=d.checklist.items;
+  return `<section class="card"><h3>검측 체크리스트 <small>적용 템플릿: ${esc(d.checklist.templateName||'없음')} · 작성 당시 항목이 이 서류에 따로 보존됩니다</small></h3>
+  <div class="row"><select id="tplPick" class="in" style="width:auto;max-width:300px">${data.templates.map(t=>`<option value="${t.id}" ${t.id===d.checklist.templateId?'selected':''}>${esc(t.name)} (${t.items.length})</option>`).join('')}</select>
+   <button class="btn sm" data-act="cl-load">템플릿 불러오기</button><button class="btn sm" data-act="cl-saveTpl">현재 항목을 새 템플릿으로 저장</button></div>
+  <div class="row" style="background:#f5f7fa;padding:6px 8px;border-radius:5px"><span>선택한 항목(${state.clSel.size})의</span>
+   <select id="bulkWho" class="in" style="width:auto"><option value="c">시공자</option><option value="s">감리자</option></select> 결과를
+   <select id="bulkVal" class="in" style="width:auto">${resOpts('ok')}</select><button class="btn sm" data-act="cl-bulk">일괄 적용</button>
+   <span class="sp"></span><span class="muted">기본값은 모두 미입력</span></div>
+  <table class="et"><thead><tr><th><input type="checkbox" data-act="cl-selall" ${it.length&&state.clSel.size===it.length?'checked':''}></th><th>#</th><th style="width:36%">세부검사항목</th><th>검사기준</th><th>시공자</th><th>감리자</th><th>조치사항</th><th></th></tr></thead><tbody>
+  ${it.map((x,i)=>`<tr><td class="c"><input type="checkbox" data-csel="${x.id}" ${state.clSel.has(x.id)?'checked':''}></td><td class="c">${i+1}</td>
+   <td><textarea data-ci="${i}" data-cf="text" rows="2">${esc(x.text)}</textarea></td><td><textarea data-ci="${i}" data-cf="criterion" rows="2" placeholder="직접 입력">${esc(x.criterion)}</textarea></td>
+   <td><select data-ci="${i}" data-cf="c">${resOpts(x.c)}</select></td><td><select data-ci="${i}" data-cf="s">${resOpts(x.s)}</select></td>
+   <td><input data-ci="${i}" data-cf="action" value="${esc(x.action)}"></td>
+   <td class="ops"><button class="btn sm" data-act="cl-up" data-i="${i}" title="위로">▲</button><button class="btn sm" data-act="cl-down" data-i="${i}" title="아래로">▼</button><button class="btn sm dan" data-act="cl-del" data-i="${i}" title="삭제">✕</button></td></tr>`).join('')||'<tr><td colspan="8" class="empty">항목이 없습니다. 템플릿을 불러오거나 항목을 추가하세요.</td></tr>'}
+  </tbody></table><div class="row"><button class="btn sm" data-act="cl-add">＋ 항목 추가</button></div></section>`}
+function ptSectionHTML(){const d=state.draft,v=V(d);const added=new Set(d.participants.map(p=>p.workerId).filter(Boolean));
+  const ws=data.workers.filter(w=>w.active);
+  return `<section class="card"><h3>공사참여자 실명부 <small>인력대장에서 체크해 불러온 뒤 개인별로 수정</small></h3>
+   <div class="row"><input id="wkq" class="in" style="max-width:220px" placeholder="이름·소속·직위 검색"><button class="btn sm" data-act="pt-add">선택 인원 추가</button><button class="btn sm" data-act="pt-blank">빈 행 추가</button><span class="sp"></span><a href="#" data-act="go" data-v="workers" class="muted">인력대장 관리 →</a></div>
+   <div class="wk-list" id="wkList">${ws.map(w=>`<label class="${added.has(w.id)?'added':''}" data-s="${esc((w.name+w.org+w.position).toLowerCase())}"><input type="checkbox" class="wkpick" value="${w.id}" ${added.has(w.id)?'disabled':''}> ${esc(w.name)} <span class="muted">${esc(w.org)} · ${esc(w.position)} · ${esc(w.birth)}${added.has(w.id)?' · 추가됨':''}</span></label>`).join('')||'<div class="muted">인력대장에 등록된 인원이 없습니다.</div>'}</div>
+   <table class="et"><thead><tr><th>작업일</th><th>작업위치및공종</th><th>소속</th><th>직위</th><th>성명</th><th>생년월일</th><th>공사내용</th><th></th></tr></thead><tbody>
+   ${d.participants.map((p,i)=>`<tr>
+     <td><input type="date" data-pi="${i}" data-pf="workDate" value="${esc(p.workDate)}" title="비우면 기본 작업일"><div class="muted" data-pauto="date" style="font-size:11px;padding:0 4px">${has(p.workDate)?'':'기본: '+esc(d.defaultWorkDate||'미입력')}</div></td>
+     <td><input data-pi="${i}" data-pf="locWork" value="${esc(p.locWork)}" data-pauto="loc" placeholder="자동: ${esc(v.rosterLoc)}"></td>
+     <td><input data-pi="${i}" data-pf="org" value="${esc(p.org)}"></td><td><input data-pi="${i}" data-pf="position" value="${esc(p.position)}"></td>
+     <td><input data-pi="${i}" data-pf="name" value="${esc(p.name)}"></td><td><input data-pi="${i}" data-pf="birth" value="${esc(p.birth)}" placeholder="yy.mm.dd"></td>
+     <td><input data-pi="${i}" data-pf="content" value="${esc(p.content)}" data-pauto="content" placeholder="자동: ${esc(d.workContent)}"></td>
+     <td class="ops"><button class="btn sm" data-act="pt-up" data-i="${i}">▲</button><button class="btn sm" data-act="pt-down" data-i="${i}">▼</button><button class="btn sm dan" data-act="pt-del" data-i="${i}">✕</button></td></tr>`).join('')||'<tr><td colspan="8" class="empty">참여자가 없습니다.</td></tr>'}
+   </tbody></table><div class="muted" style="margin-top:6px">인력대장을 나중에 고쳐도 이 서류의 참여자 정보는 바뀌지 않습니다.</div></section>`}
+
+function phSectionHTML(){const d=state.draft,ph=d.photos,st=data.settings;
+  return `<section class="card"><h3>사진대지 <small>사진 ${ph.length}장 · 한 쪽에 ${+st.photoPerPage===2?2:4}장 · ${Math.ceil(ph.length/(+st.photoPerPage===2?2:4))||0}쪽</small></h3>
+   <div class="row"><label class="btn pri sm" style="cursor:pointer">＋ 사진 추가<input type="file" id="phFile" accept="image/*" multiple hidden></label>
+    <span class="muted">여러 장 한꺼번에 선택하거나 아래 칸에 끌어다 놓으세요</span><span class="sp"></span>
+    <select class="in" style="width:auto" data-st="photoPerPage"><option value="4" ${+st.photoPerPage!==2?'selected':''}>한 쪽 4장</option><option value="2" ${+st.photoPerPage===2?'selected':''}>한 쪽 2장 (원본)</option></select>
+    <select class="in" style="width:auto" data-st="photoFit"><option value="contain" ${st.photoFit!=='cover'?'selected':''}>사진 전체 보이기</option><option value="cover" ${st.photoFit==='cover'?'selected':''}>칸에 꽉 채우기(가장자리 잘림)</option></select></div>
+   <div class="ph-drop" id="phDrop">사진 파일을 여기에 끌어다 놓기 (JPG · PNG)</div>
+   <div class="ph-list">${ph.map((p,i)=>{const v=photoVals(d,p),src=photoSrc(p.photoId);return `<div class="ph-row">
+     <div class="thumb">${src?`<img src="${src}" alt="">`:'불러오는 중'}</div>
+     <div class="pf">
+      <label class="fld"><span>${i+1}. 공종</span><input data-hi="${i}" data-hf="work" value="${esc(p.work)}" placeholder="자동: ${esc(d.work)}"></label>
+      <label class="fld"><span>내용</span><input data-hi="${i}" data-hf="content" value="${esc(p.content)}" placeholder="자동: ${esc(v.content&&!has(p.content)?v.content:'')}"></label>
+      <label class="fld"><span>위치</span><input data-hi="${i}" data-hf="location" value="${esc(p.location)}" placeholder="자동: ${esc(d.location)}"></label>
+      <label class="fld"><span>날짜 <small>비우면 기본 작업일</small></span><input type="date" data-hi="${i}" data-hf="date" value="${esc(p.date)}"></label>
+     </div>
+     <div class="ops"><button class="btn sm" data-act="ph-up" data-i="${i}" title="앞으로">▲</button><button class="btn sm" data-act="ph-down" data-i="${i}" title="뒤로">▼</button>
+      <button class="btn sm" data-act="ph-rot" data-i="${i}" title="오른쪽으로 90° 회전">⟳</button><button class="btn sm dan" data-act="ph-del" data-i="${i}" title="삭제">✕</button></div></div>`}).join('')}</div>
+   ${ph.length?'':'<div class="muted" style="margin-top:6px">사진이 없으면 사진대지는 출력되지 않습니다.</div>'}
+   <div class="muted" style="margin-top:6px">사진은 긴 변 ${PHOTO_MAX}px JPG로 줄여 저장합니다. 검측 복사·재검측 때는 사진이 복사되지 않습니다.</div></section>`}
+function phRefresh(dirty=true){if(dirty)markDirty();const el=$('#phSec');if(el)el.innerHTML=phSectionHTML();schedulePreview(true);
+  if(!SERVER){const miss=state.draft.photos.map(p=>p.photoId).filter(id=>!photoCache.has(id));if(miss.length)ensurePhotos(miss).then(ch=>{if(ch&&state.draft){const e=$('#phSec');if(e)e.innerHTML=phSectionHTML();schedulePreview(true)}})}}
+async function addPhotos(files){const d=state.draft;if(!d)return;
+  files=files.filter(f=>/^image\//.test(f.type)||/\.(jpe?g|png|webp|bmp|gif|heic)$/i.test(f.name));if(!files.length){alert('사진 파일(JPG·PNG)을 선택하세요.');return}
+  const fails=[];let n=0;
+  for(const f of files){n++;toast(`사진 처리 중 ${n} / ${files.length}`);
+    try{const b=await compressImage(f);const id=uid();await photoPut(id,b);
+      if(state.draft!==d)return;d.photos.push({id:uid(),photoId:id,work:'',content:'',location:'',date:''})}
+    catch(e){fails.push(`${f.name}: ${/heic/i.test(f.name)?'HEIC(아이폰 기본 형식)는 지원하지 않습니다. JPG로 바꿔 주세요.':e.message}`)}}
+  phRefresh();if(fails.length)showErr('추가하지 못한 사진 — '+fails.join(' / '));else toast(`사진 ${files.length}장을 추가했습니다.`)}
+
+let pvTimer=null;
+function schedulePreview(now){clearTimeout(pvTimer);if(now)return renderPreview();pvTimer=setTimeout(renderPreview,140)}
+function renderPreview(){const box=$('#pvPages');if(!box||!state.draft)return;const d=state.draft,v=V(d);
+  const w=renderPagesInto(box,[d],state.pvTab);const pw=$('#pvWarn');pw.textContent=w.join(' ');pw.classList.toggle('on',w.length>0);
+  fitZoom();
+  const nd=$('#noDisp');if(nd)nd.textContent=v.docNo;const nt=$('#noTent');if(nt)nt.textContent=v.tentative?'(저장 시 확정)':'';
+  const rn=$('#resNoDisp');if(rn)rn.textContent=v.resNo;const ap=$('#attPrev');if(ap)ap.textContent=v.attach;
+  $$('[data-auto]').forEach(el=>el.placeholder='자동: '+(v.auto[el.dataset.auto]||'(빈칸)'));
+  $$('input[data-pauto="loc"]').forEach(el=>el.placeholder='자동: '+v.rosterLoc);
+  $$('input[data-pauto="content"]').forEach(el=>el.placeholder='자동: '+d.workContent);
+  $$('#ptSec tbody tr').forEach((tr,i)=>{const p=d.participants[i];const x=tr.querySelector('[data-pauto="date"]');if(p&&x)x.textContent=has(p.workDate)?'':'기본: '+(d.defaultWorkDate||'미입력')})}
+function fitZoom(){const sc=$('#pvScroll'),box=$('#pvPages');if(!sc||!box)return;const z=Math.min(1,Math.max(.35,(sc.clientWidth-30)/794));box.style.zoom=z}
+window.addEventListener('resize',()=>{if(state.view==='editor')fitZoom();if(state.view==='preview')fitZoomPv()});
+function markDirty(){state.dirty=true;const f=$('#dirtyFlag');if(f)f.classList.add('on')}
+
+/* ---------- 체크리스트 템플릿 ---------- */
+function vTemplates(){
+  if(!data.templates.find(t=>t.id===state.tplSel))state.tplSel=(data.templates[0]||{}).id||null;
+  const t=data.templates.find(x=>x.id===state.tplSel);
+  const s=data.settings.symbols;
+  $('#main').innerHTML=`<h2>공종별 체크리스트 템플릿</h2>
+  <div class="split"><div class="card list-pick"><div class="row"><b>템플릿</b><span class="sp"></span><button class="btn sm pri" data-act="tpl-new">＋ 새 템플릿</button></div>
+   ${data.templates.map(x=>`<a data-act="tpl-sel" data-id="${x.id}" class="${x.id===state.tplSel?'on':''}">${esc(x.name||'(이름 없음)')}<div class="muted">${x.items.length}개 항목</div></a>`).join('')||'<div class="muted">템플릿 없음</div>'}
+   <div class="muted" style="margin-top:10px">결과 기호: 적합 ${esc(s.ok)} · 부적합 ${esc(s.ng)} · 해당 없음 ${esc(s.na)}<br>(기호·범례는 [백업·복원 / 설정]에서 변경)</div></div>
+  <div class="card">${t?`
+   <div class="grid2"><label class="fld"><span>템플릿 이름</span><input data-tf="name" value="${esc(t.name)}"></label><label class="fld"><span>메모</span><input data-tf="note" value="${esc(t.note)}"></label></div>
+   <div class="banner info" style="margin-top:10px">검사기준은 원본 서류나 설계도서에 있는 기준만 직접 입력하세요. 템플릿을 고쳐도 이미 저장한 검측서류의 항목은 바뀌지 않습니다. (자동 저장)</div>
+   <table class="et"><thead><tr><th>#</th><th style="width:55%">세부검사항목</th><th>검사기준</th><th></th></tr></thead><tbody>
+   ${t.items.map((x,i)=>`<tr><td class="c">${i+1}</td><td><textarea data-ti="${i}" data-tk="text" rows="2">${esc(x.text)}</textarea></td><td><textarea data-ti="${i}" data-tk="criterion" rows="2" placeholder="직접 입력">${esc(x.criterion)}</textarea></td>
+    <td class="ops"><button class="btn sm" data-act="ti-up" data-i="${i}">▲</button><button class="btn sm" data-act="ti-down" data-i="${i}">▼</button><button class="btn sm dan" data-act="ti-del" data-i="${i}">✕</button></td></tr>`).join('')||'<tr><td colspan="4" class="empty">항목이 없습니다.</td></tr>'}
+   </tbody></table>
+   <div class="row" style="margin-top:10px"><button class="btn sm" data-act="ti-add">＋ 항목 추가</button><span class="sp"></span><button class="btn sm" data-act="tpl-copy">템플릿 복사</button><button class="btn sm dan" data-act="tpl-del">템플릿 삭제</button></div>`
+   :'<div class="empty">왼쪽에서 템플릿을 선택하거나 새로 만드세요.</div>'}</div></div>`}
+function curTpl(){return data.templates.find(x=>x.id===state.tplSel)}
+
+/* ---------- 인력대장 ---------- */
+function vWorkers(){const q=state.wq.trim();
+  const l=data.workers.filter(w=>!q||(w.name+w.org+w.position+w.birth).includes(q));
+  $('#main').innerHTML=`<h2>인력대장</h2>
+  <div class="card"><h3>인원 추가</h3><div class="grid4" style="grid-template-columns:1.3fr 1fr 1fr 1fr auto">
+   <label class="fld"><span>소속</span><input id="nwOrg" value="${esc((data.workers[data.workers.length-1]||{}).org||'')}"></label><label class="fld"><span>직위 또는 직종</span><input id="nwPos" placeholder="예) 내선전공"></label>
+   <label class="fld"><span>성명</span><input id="nwName"></label><label class="fld"><span>생년월일</span><input id="nwBirth" placeholder="예) 80.01.01"></label>
+   <div style="align-self:end"><button class="btn pri" data-act="wk-add">추가</button></div></div>
+   <div class="muted" style="margin-top:6px">생년월일은 원본 서식처럼 yy.mm.dd 형태로 적으면 그대로 출력됩니다. 개인정보이므로 백업 파일 관리에 유의하세요.</div></div>
+  <div class="card" style="padding:0"><div class="row" style="padding:10px 12px"><input id="wkSearch" class="in" style="max-width:260px" placeholder="검색" value="${esc(state.wq)}"><span class="muted">${l.length}명 · 수정은 바로 저장 · 미사용 인원은 참여자 선택 목록에서 숨김</span></div>
+  <table class="et"><thead><tr><th>소속</th><th>직위·직종</th><th>성명</th><th>생년월일</th><th>사용</th><th>참여 이력</th><th></th></tr></thead><tbody>
+  ${l.map(w=>{const n=data.inspections.filter(d=>d.participants.some(p=>p.workerId===w.id)).length;return `<tr>
+   <td><input data-wf="org" data-id="${w.id}" value="${esc(w.org)}"></td><td><input data-wf="position" data-id="${w.id}" value="${esc(w.position)}"></td>
+   <td><input data-wf="name" data-id="${w.id}" value="${esc(w.name)}"></td><td><input data-wf="birth" data-id="${w.id}" value="${esc(w.birth)}"></td>
+   <td class="c"><input type="checkbox" data-wf="active" data-id="${w.id}" ${w.active?'checked':''}></td><td class="c">${n}건</td>
+   <td class="ops"><button class="btn sm dan" data-act="wk-del" data-id="${w.id}">삭제</button></td></tr>`}).join('')||'<tr><td colspan="7" class="empty">등록된 인원이 없습니다.</td></tr>'}
+  </tbody></table></div>`}
+
+/* ---------- 출력 미리보기 ---------- */
+function vPreview(){
+  const list=[...data.inspections].sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt));
+  if(!list.find(d=>d.id===state.pvId))state.pvId=data.settings.lastEditedId&&list.find(d=>d.id===data.settings.lastEditedId)?data.settings.lastEditedId:(list[0]||{}).id;
+  $('#main').innerHTML=`<h2>출력 미리보기</h2>
+  <div class="card"><div class="row"><select id="pvSel" class="in" style="max-width:520px">${list.map(d=>`<option value="${d.id}" ${d.id===state.pvId?'selected':''}>${d.isRe?'(재) ':''}${esc(d.docNo)} · ${esc(d.work)} / ${esc(d.location)} · ${esc(siteName(d.siteId))}</option>`).join('')}</select>
+   ${Object.entries(PART_NAMES).map(([k,n])=>`<button class="btn sm ${state.pvPart===k?'pri':''}" data-act="pv-part" data-p="${k}">${n}</button>`).join('')}
+   <span class="sp"></span><button class="btn pri" data-act="pv-print">인쇄 / PDF로 저장</button></div>
+   <div class="muted">인쇄 창에서 대상 프린터를 <b>“PDF로 저장”</b>으로 고르면 PDF 파일로 저장됩니다. 용지 A4·세로, 여백 “없음” 또는 “기본값”, 배율 100%, “머리글/바닥글” 해제를 권장합니다. 사진대지·도면은 출력하지 않습니다.</div></div>
+  <div class="pv-warn" id="pvWarn2"></div><div id="pvScroll2" style="background:#d9dde3;padding:14px;border-radius:8px"><div class="pv-pages" id="pvPages2"></div></div>`;
+  const d=list.find(x=>x.id===state.pvId);
+  if(d){const w=renderPagesInto($('#pvPages2'),[d],state.pvPart);const pw=$('#pvWarn2');pw.textContent=w.join(' ');pw.classList.toggle('on',w.length>0);fitZoomPv()}
+  else $('#pvPages2').innerHTML='<div class="empty">저장된 검측이 없습니다.</div>'}
+function fitZoomPv(){const sc=$('#pvScroll2'),b=$('#pvPages2');if(sc&&b)b.style.zoom=Math.min(1,Math.max(.35,(sc.clientWidth-30)/794))}
+
+/* ---------- 백업 · 복원 · 설정 ---------- */
+function vBackup(){const st=data.settings,sy=st.symbols;
+  let used='-';try{used=(JSON.stringify(data).length/1024).toFixed(0)+' KB'}catch(e){}
+  const keys={};for(const k in data.counters)keys[k]={last:+data.counters[k]};
+  for(const d of data.inspections)if(d.numKey&&!d.numKey.startsWith('re:')&&d.numKey!=='manual'){keys[d.numKey]=keys[d.numKey]||{last:0};keys[d.numKey].count=(keys[d.numKey].count||0)+1}
+  const krows=Object.entries(keys).map(([k,o])=>{const [sid,field,round]=k.split('|');const site=data.sites.find(s=>s.id===sid);if(!site)return '';
+    const nx=nextSeq(k);return `<tr><td>${esc(site.name)}</td><td>${esc(field)}</td><td class="c">${esc(round)}차</td><td class="c">${maxExistingSeq(k)}</td><td class="c">${+data.counters[k]||0}</td><td>${esc(buildNo(Object.assign(siteSnapshot(site),{field:field==='전기'||field==='정보통신'?field:'직접 입력',fieldCustom:field}),round,nx))}</td></tr>`}).join('');
+  $('#main').innerHTML=`<h2>백업 · 복원 / 설정</h2>
+  <div class="card"><h3>데이터 저장 위치</h3>
+   ${WEB?`<div>모든 데이터는 <b>웹 서버(Railway)의 저장 공간</b>에 저장되어, 로그인한 모든 PC·사용자가 같은 데이터를 봅니다. 현재 크기 약 ${used}.</div>
+   <div class="muted">서버에서 하루 중 처음 저장할 때 이전 상태를 날짜별로 자동 보관합니다(최근 60개). 여러 사람이 동시에 저장하면 서로 바꾼 기록끼리 합쳐서 저장하고, 같은 검측을 동시에 고친 경우에는 나중에 저장한 내용이 남습니다.</div>
+   <div class="banner" style="margin-top:8px">서버 장애에 대비해 <b>JSON 백업을 정기적으로 내려받아</b> 두세요.</div>`
+   :SERVER?`<div>모든 데이터는 이 PC의 아래 폴더에 <b>data.json</b> 파일로 저장됩니다. 현재 크기 약 ${used}.</div>
+   <div class="row"><code style="background:#f5f7fa;padding:4px 8px;border-radius:4px">${esc(SERVER.dataDir)}</code><button class="btn sm" data-act="open-folder">폴더 열기</button></div>
+   <div class="muted">하루 중 처음 저장할 때 이전 상태가 <b>backups</b> 폴더에 날짜별로 자동 보관됩니다(최근 60개).</div>
+   <div class="banner" style="margin-top:8px">이 데이터는 <b>다른 PC로 자동 동기화되지 않습니다.</b> 다른 PC에서 쓰려면 JSON 백업 파일을 옮겨 복원하세요.</div>`
+   :`<div>모든 데이터는 <b>이 PC의 이 브라우저</b> 내부 저장소(localStorage, 키 <code>${STORE_KEY}</code>)에 저장됩니다. 현재 사용량 약 ${used}.</div>
+   <div class="banner" style="margin-top:8px">브라우저 저장 데이터는 <b>다른 PC나 다른 브라우저로 자동 동기화되지 않습니다.</b> 브라우저의 “인터넷 사용 기록/사이트 데이터 삭제”를 하면 함께 지워질 수 있으므로 JSON 백업을 정기적으로 받아 두세요.</div>`}</div>
+  <div class="card"><h3>백업 (JSON)</h3><div class="muted">현장·인력대장·체크리스트 템플릿·검측 기록·사진·설정 전체를 한 파일로 저장합니다. 백업 형식 버전 ${BACKUP_VERSION}.</div>
+   <div class="row"><button class="btn pri" data-act="bk-export">전체 백업 내려받기</button><span class="muted">현장 ${data.sites.length} · 인력 ${data.workers.length} · 템플릿 ${data.templates.length} · 검측 ${data.inspections.length}</span></div></div>
+  <div class="card"><h3>복원</h3><div class="muted">백업 파일을 선택하면 형식과 필수값을 먼저 검사하고, 확인을 받은 뒤 현재 데이터 전체를 교체합니다.</div>
+   <div class="row"><input type="file" id="bkFile" accept=".json,application/json"></div><div id="bkResult"></div></div>
+  <div class="card"><h3>검측번호 설정</h3>
+   <div class="muted">생성 기준: <b>&lt;현장 접두어&gt;-검측(&lt;분야&gt;)-&lt;차수&gt;차-&lt;일련번호&gt;호</b> · 현장·분야·차수별로 따로 매김 · 다음 번호 = max(발급 기록, 현존 최대 번호) + 1 이므로 삭제한 번호는 자동 재사용하지 않습니다. 수동 번호도 중복 저장은 막습니다.</div>
+   <div class="grid3" style="margin-top:10px">
+    <label class="fld"><span>일련번호 자릿수</span><input type="number" min="1" max="5" data-st="seqDigits" value="${esc(st.seqDigits)}"><small>2 → 06호</small></label>
+    <label class="fld span2"><span>재검측 번호 부여 방식</span><select data-st="reMode">
+     <option value="same" ${st.reMode==='same'?'selected':''}>원 검측과 같은 번호 사용 (우측 상단 붉은 “(재)”로 구분)</option>
+     <option value="suffix" ${st.reMode==='suffix'?'selected':''}>원 번호 뒤에 “-재1, -재2…” 붙이기</option>
+     <option value="new" ${st.reMode==='new'?'selected':''}>새 일련번호 부여</option></select><small>이미 저장한 번호는 바뀌지 않고, 이후 새로 만드는 재검측에 적용됩니다.</small></label></div>
+   <table class="et" style="margin-top:10px"><thead><tr><th>현장</th><th>분야</th><th>차수</th><th>현존 최대</th><th>발급 기록</th><th>다음 번호</th></tr></thead><tbody>${krows||'<tr><td colspan="6" class="empty">발급 기록 없음</td></tr>'}</tbody></table></div>
+  <div class="card"><h3>체크리스트 출력 기호 · 범례 · 글꼴</h3>
+   <div class="grid4">
+    <label class="fld"><span>적합</span><input data-sy="ok" value="${esc(sy.ok)}"></label><label class="fld"><span>부적합</span><input data-sy="ng" value="${esc(sy.ng)}"></label>
+    <label class="fld"><span>해당 없음</span><input data-sy="na" value="${esc(sy.na)}"></label>
+    <label class="fld"><span>문서 글꼴</span><select data-st="docFont"><option value="malgun" ${st.docFont==='malgun'?'selected':''}>맑은 고딕</option><option value="gulim" ${st.docFont==='gulim'?'selected':''}>굴림</option><option value="batang" ${st.docFont==='batang'?'selected':''}>바탕</option></select></label>
+    <label class="fld span3"><span>범례 문구 (비우면 기호로 자동 생성)</span><input data-st="legendText" value="${esc(st.legendText)}" placeholder="${esc(legendOf())}"></label>
+    <label class="chk" style="align-self:end"><input type="checkbox" data-st="showLegend" ${st.showLegend?'checked':''}> 체크리스트 하단에 범례 출력</label></div>
+   <div class="muted">미입력은 항상 빈칸으로 출력됩니다.</div></div>`}
+
+function validateBackup(o){const e=[];
+  if(!o||typeof o!=='object')return ['JSON 객체가 아닙니다.'];
+  if(o.format!==BACKUP_FORMAT)e.push(`이 프로그램의 백업 파일이 아닙니다 (format="${o.format??''}").`);
+  if(o.photos!=null&&(typeof o.photos!=='object'||Array.isArray(o.photos)))e.push('사진 항목 형식이 올바르지 않습니다.');
+  if(typeof o.version!=='number')e.push('백업 형식 버전이 없습니다.');else if(o.version>BACKUP_VERSION)e.push(`더 새로운 버전(${o.version})의 백업입니다. 프로그램을 최신으로 바꾼 뒤 복원하세요.`);
+  const d=o.data;if(!d||typeof d!=='object')return e.concat(['data 항목이 없습니다.']);
+  for(const k of ['sites','workers','templates','inspections'])if(!Array.isArray(d[k]))e.push(`${k} 목록이 없습니다.`);
+  if(e.length)return e;
+  const sid=new Set();d.sites.forEach((s,i)=>{if(!s||!has(s.id))e.push(`현장 ${i+1}: id 없음`);if(!has(s&&s.name))e.push(`현장 ${i+1}: 공사명 없음`);sid.add(s&&s.id)});
+  d.workers.forEach((w,i)=>{if(!w||!has(w.id)||!has(w.name))e.push(`인력 ${i+1}: id 또는 성명 없음`)});
+  d.templates.forEach((t,i)=>{if(!t||!has(t.id)||!Array.isArray(t.items))e.push(`템플릿 ${i+1}: id 또는 항목 목록 없음`)});
+  const ids=new Set();d.inspections.forEach((x,i)=>{if(!x||!has(x.id))e.push(`검측 ${i+1}: id 없음`);else if(ids.has(x.id))e.push(`검측 ${i+1}: 중복 id`);ids.add(x&&x.id);
+    if(!has(x&&x.docNo))e.push(`검측 ${i+1}: 검측번호 없음`);if(x&&!sid.has(x.siteId))e.push(`검측 ${i+1} (${x.docNo}): 연결된 현장이 백업에 없음`);
+    if(x&&(!Array.isArray(x.checklist&&x.checklist.items)||!Array.isArray(x.participants)))e.push(`검측 ${i+1}: 체크리스트 또는 참여자 형식 오류`)});
+  return e.slice(0,30)}
+const blobToDataURL=b=>new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=()=>rej(r.error);r.readAsDataURL(b)});
+async function exportBackup(){const ids=[...new Set(allPhotoIds(data.inspections))];const photos={},miss=[];let n=0;
+  for(const id of ids){n++;if(ids.length>3)toast(`사진 담는 중 ${n} / ${ids.length}`);try{const b=await photoBlob(id);if(b)photos[id]=await blobToDataURL(b);else miss.push(id)}catch(e){miss.push(id)}}
+  const o={format:BACKUP_FORMAT,version:BACKUP_VERSION,app:'검측서류 작성·관리',exportedAt:nowISO(),data:clone(data),photos};
+  download(new Blob([JSON.stringify(o)],{type:'application/json'}),`검측서류_백업_${today()}.json`);
+  if(miss.length)showErr(`사진 ${miss.length}장은 저장소에서 찾지 못해 백업에 넣지 못했습니다.`);else toast(`백업 파일을 내려받았습니다${ids.length?` (사진 ${ids.length}장 포함)`:''}.`)}
+function handleRestore(file){const out=$('#bkResult');const r=new FileReader();
+  r.onload=()=>{let o;try{o=JSON.parse(r.result)}catch(e){out.innerHTML=`<div class="banner" style="background:#fde8e8">JSON 파일을 읽을 수 없습니다: ${esc(e.message)}</div>`;return}
+    const errs=validateBackup(o);
+    if(errs.length){out.innerHTML=`<div class="banner" style="background:#fde8e8;border-color:#f1b0a8"><b>복원할 수 없습니다.</b><ul>${errs.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div>`;return}
+    const d=o.data;
+    modal(`<h3>데이터 복원 확인</h3><p>백업 시각: ${esc(fLocal(o.exportedAt))}<br>현장 ${d.sites.length} · 인력 ${d.workers.length} · 템플릿 ${d.templates.length} · 검측 ${d.inspections.length} · 사진 ${Object.keys(o.photos||{}).length}</p>
+     <div class="banner">복원하면 <b>현재 데이터(현장 ${data.sites.length} · 검측 ${data.inspections.length})가 모두 교체</b>됩니다. 먼저 현재 데이터를 백업하는 것을 권장합니다.</div>
+     <div class="row"><button class="btn" data-act="bk-export">현재 데이터 먼저 백업</button><button class="btn" data-act="modal-close">취소</button><button class="btn pri" id="doRestore">복원 실행</button></div>`);
+    $('#doRestore').onclick=async()=>{const btn=$('#doRestore');btn.disabled=true;
+      const ph=Object.entries(o.photos||{});let n=0;
+      try{for(const [id,url] of ph){n++;btn.textContent=`사진 복원 ${n}/${ph.length}`;if(!/^[a-z0-9]{6,40}$/.test(id))continue;const b=await (await fetch(url)).blob();await photoPut(id,b)}}
+      catch(e){btn.disabled=false;btn.textContent='복원 실행';alert('사진을 복원하지 못해 중단했습니다. 기존 데이터는 그대로입니다.\n'+e.message);return}
+      const before=data;data=normalizeData(d);
+      if(!persist()){data=before;alert('저장 공간 문제로 복원하지 못했습니다. 기존 데이터는 그대로입니다.');return}
+      applyFont();closeModal();state.draft=null;state.dirty=false;toast('복원했습니다.');render()}};
+  r.onerror=()=>{out.innerHTML='<div class="banner">파일을 읽지 못했습니다.</div>'};r.readAsText(file,'utf-8')}
+function modal(html){closeModal();const b=document.createElement('div');b.className='modal-bg';b.id='modalBg';b.innerHTML=`<div class="modal">${html}</div>`;document.body.appendChild(b)}
+function closeModal(){const m=$('#modalBg');if(m)m.remove()}
+
+/* ================= 이벤트 ================= */
+const A={
+  go:(el)=>go(el.dataset.v),
+  'new-insp':()=>{if(state.view==='editor'&&state.dirty&&!confirm('저장하지 않은 변경 내용이 사라집니다. 계속할까요?'))return;newInspection()},
+  edit:(el,e)=>{e.preventDefault();editInspection(el.dataset.id)},
+  copy:(el)=>{if(state.view==='editor'&&state.dirty&&!confirm('저장하지 않은 변경 내용이 사라집니다. 계속할까요?'))return;copyInspection(el.dataset.id)},
+  reinsp:(el)=>reinspect(el.dataset.id),
+  print1:(el)=>{const d=data.inspections.find(x=>x.id===el.dataset.id);if(d)doPrint([d],'all')},
+  del:(el)=>{const d=data.inspections.find(x=>x.id===el.dataset.id);if(!d)return;
+    if(!confirm(`검측 ${d.docNo} 을(를) 삭제할까요?${d.photos.length?`\n사진 ${d.photos.length}장도 함께 삭제됩니다.`:''}\n삭제한 번호는 자동으로 다시 사용되지 않습니다. 이 작업은 되돌릴 수 없습니다.`))return;
+    if(commit(()=>{data.inspections=data.inspections.filter(x=>x.id!==d.id)}))allPhotoIds([d]).forEach(photoDel);state.lgSel.delete(d.id);render();toast('삭제했습니다.')},
+  'lg-csv':csvExport,
+  'lg-selall':(el)=>{const l=filtered();if(el.checked)l.forEach(d=>state.lgSel.add(d.id));else state.lgSel.clear();renderLedgerBody()},
+  'lg-print-sel':()=>{const l=filtered().filter(d=>state.lgSel.has(d.id));if(!l.length){alert('인쇄할 검측을 체크하세요.');return}doPrint(l,$('#lgPart').value)},
+  // 현장
+  'site-new':()=>{state.siteSel='__new';vSites()},
+  'site-sel':(el)=>{state.siteSel=el.dataset.id;vSites()},
+  'site-save':()=>{const o={};$$('[data-sf]').forEach(i=>o[i.dataset.sf]=i.value.trim());
+    if(!has(o.name)){alert('공사명을 입력하세요.');return}if(!has(o.prefix)){alert('문서번호 접두어를 입력하세요.');return}
+    if(o.field==='직접 입력'&&!has(o.fieldCustom)){alert('공사 분야를 직접 입력하세요.');return}
+    let id=state.siteSel;
+    const ok=commit(()=>{if(id==='__new'){const s=normSite(o);data.sites.push(s);id=s.id;if(!data.settings.currentSiteId)data.settings.currentSiteId=id}
+      else{const s=data.sites.find(x=>x.id===id);Object.assign(s,o,{updatedAt:nowISO()})}});
+    if(ok){state.siteSel=id;toast('현장 정보를 저장했습니다.');render()}},
+  'site-del':()=>{const s=data.sites.find(x=>x.id===state.siteSel);if(!s)return;const n=data.inspections.filter(d=>d.siteId===s.id).length;
+    if(n){alert(`이 현장에 검측 ${n}건이 있어 삭제할 수 없습니다. 검측을 먼저 삭제하거나 백업 후 정리하세요.`);return}
+    if(!confirm(`현장 “${s.name}”을(를) 삭제할까요?`))return;
+    commit(()=>{data.sites=data.sites.filter(x=>x.id!==s.id);if(data.settings.currentSiteId===s.id)data.settings.currentSiteId=(data.sites[0]||{}).id||null});state.siteSel=null;render()},
+  // 편집기
+  'ed-save':()=>saveDraft(),
+  'ed-close':()=>go('ledger'),
+  'ed-print':()=>{if(state.dirty||state.isNew){if(!confirm('인쇄하기 전에 저장합니다. 저장할까요?'))return;if(!saveDraft())return}doPrint([state.draft],state.pvTab)},
+  'ed-resnap':()=>{const s=data.sites.find(x=>x.id===state.draft.siteId);if(!s){alert('현장이 삭제되어 불러올 수 없습니다.');return}
+    if(!confirm('이 서류의 공사명·수신·담당자 정보를 현재 현장 기본정보로 바꿉니다.\n이미 제출한 서류라면 내용이 달라질 수 있습니다. 계속할까요?'))return;
+    state.draft.site=siteSnapshot(s);markDirty();renderEditorForm();schedulePreview(true)},
+  'same-date':()=>{const d=state.draft;if(!has(d.writeDate)){alert('작성일을 먼저 입력하세요.');return}
+    d.reqDate=d.writeDate;d.contractorCheckDate=d.writeDate;d.defaultWorkDate=d.writeDate;markDirty();renderEditorForm();schedulePreview(true);toast('요구일·점검일·기본 작업일에 작성일을 적용했습니다.')},
+  'same-date2':()=>{const d=state.draft;if(!has(d.actualDate)){alert('실제 검측일을 먼저 입력하세요.');return}d.resultDate=d.actualDate;markDirty();renderEditorForm();schedulePreview(true)},
+  'pv-tab':(el)=>{state.pvTab=el.dataset.p;$$('.pv-tabs button').forEach(b=>b.classList.toggle('on',b.dataset.p===state.pvTab));schedulePreview(true)},
+  'cl-load':()=>{const t=data.templates.find(x=>x.id===$('#tplPick').value);if(!t)return;const d=state.draft;
+    if(d.checklist.items.length&&!confirm(`현재 체크리스트 ${d.checklist.items.length}개 항목을 “${t.name}” 템플릿 항목으로 교체할까요? 입력한 결과도 지워집니다.`))return;
+    d.checklist={templateId:t.id,templateName:t.name,items:t.items.map(i=>({id:uid(),text:i.text,criterion:i.criterion,c:'',s:'',action:''}))};state.clSel.clear();clRefresh()},
+  'cl-saveTpl':()=>{const d=state.draft;if(!d.checklist.items.length){alert('항목이 없습니다.');return}const n=prompt('새 템플릿 이름',(d.work||'')+' 체크리스트');if(!has(n))return;
+    commit(()=>{data.templates.push(normTpl({name:n.trim(),items:d.checklist.items.map(i=>({text:i.text,criterion:i.criterion}))}))});toast('템플릿으로 저장했습니다.');clRefresh(false)},
+  'cl-selall':(el)=>{const it=state.draft.checklist.items;if(el.checked)it.forEach(x=>state.clSel.add(x.id));else state.clSel.clear();clRefresh(false)},
+  'cl-bulk':()=>{if(!state.clSel.size){alert('적용할 항목을 체크하세요.');return}const who=$('#bulkWho').value,val=$('#bulkVal').value;
+    state.draft.checklist.items.forEach(x=>{if(state.clSel.has(x.id))x[who]=val});clRefresh()},
+  'cl-add':()=>{state.draft.checklist.items.push({id:uid(),text:'',criterion:'',c:'',s:'',action:''});clRefresh()},
+  'cl-del':(el)=>{const it=state.draft.checklist.items,i=+el.dataset.i;if(!confirm(`${i+1}번 항목을 삭제할까요?`))return;state.clSel.delete(it[i].id);it.splice(i,1);clRefresh()},
+  'cl-up':(el)=>{mv(state.draft.checklist.items,+el.dataset.i,-1);clRefresh()},
+  'cl-down':(el)=>{mv(state.draft.checklist.items,+el.dataset.i,1);clRefresh()},
+  'pt-add':()=>{const ids=$$('.wkpick:checked').map(x=>x.value);if(!ids.length){alert('추가할 인원을 체크하세요.');return}
+    for(const id of ids){const w=data.workers.find(x=>x.id===id);if(w)state.draft.participants.push({id:uid(),workerId:w.id,workDate:'',locWork:'',org:w.org,position:w.position,name:w.name,birth:w.birth,content:''})}ptRefresh()},
+  'ph-up':(el)=>{mv(state.draft.photos,+el.dataset.i,-1);phRefresh()},
+  'ph-down':(el)=>{mv(state.draft.photos,+el.dataset.i,1);phRefresh()},
+  'ph-del':(el)=>{if(!confirm(`${+el.dataset.i+1}번 사진을 사진대지에서 뺄까요?`))return;state.draft.photos.splice(+el.dataset.i,1);phRefresh()},
+  'ph-rot':async(el)=>{const d=state.draft,p=d.photos[+el.dataset.i];if(!p)return;
+    try{const b=await photoBlob(p.photoId);if(!b)throw new Error('원본 사진을 찾을 수 없습니다');const nb=await compressImage(b,90);const id=uid();await photoPut(id,nb);p.photoId=id;phRefresh()}
+    catch(e){showErr('회전 실패: '+e.message)}},
+  'pt-blank':()=>{state.draft.participants.push({id:uid(),workerId:null,workDate:'',locWork:'',org:'',position:'',name:'',birth:'',content:''});ptRefresh()},
+  'pt-del':(el)=>{state.draft.participants.splice(+el.dataset.i,1);ptRefresh()},
+  'pt-up':(el)=>{mv(state.draft.participants,+el.dataset.i,-1);ptRefresh()},
+  'pt-down':(el)=>{mv(state.draft.participants,+el.dataset.i,1);ptRefresh()},
+  // 템플릿
+  'tpl-new':()=>{const n=prompt('새 템플릿 이름 (예: 접지공사, 케이블 포설)');if(!has(n))return;const t=normTpl({name:n.trim()});commit(()=>data.templates.push(t));state.tplSel=t.id;vTemplates()},
+  'tpl-sel':(el)=>{state.tplSel=el.dataset.id;vTemplates()},
+  'tpl-copy':()=>{const t=curTpl();if(!t)return;const n=prompt('복사본 이름',t.name+' (복사)');if(!has(n))return;
+    const c=normTpl({name:n.trim(),note:t.note,items:t.items.map(i=>({text:i.text,criterion:i.criterion}))});commit(()=>data.templates.push(c));state.tplSel=c.id;vTemplates()},
+  'tpl-del':()=>{const t=curTpl();if(!t||!confirm(`템플릿 “${t.name}”을(를) 삭제할까요?\n이미 작성한 검측서류의 항목은 그대로 남습니다.`))return;commit(()=>{data.templates=data.templates.filter(x=>x.id!==t.id)});state.tplSel=null;vTemplates()},
+  'ti-add':()=>{const t=curTpl();commit(()=>{t.items.push({id:uid(),text:'',criterion:''});t.updatedAt=nowISO()});vTemplates()},
+  'ti-del':(el)=>{const t=curTpl();if(!confirm('항목을 삭제할까요?'))return;commit(()=>t.items.splice(+el.dataset.i,1));vTemplates()},
+  'ti-up':(el)=>{const t=curTpl();commit(()=>mv(t.items,+el.dataset.i,-1));vTemplates()},
+  'ti-down':(el)=>{const t=curTpl();commit(()=>mv(t.items,+el.dataset.i,1));vTemplates()},
+  // 인력
+  'wk-add':()=>{const o={org:$('#nwOrg').value.trim(),position:$('#nwPos').value.trim(),name:$('#nwName').value.trim(),birth:$('#nwBirth').value.trim()};
+    if(!has(o.name)){alert('성명을 입력하세요.');return}commit(()=>data.workers.push(normWorker(o)));vWorkers();$('#nwPos').focus()},
+  'wk-del':(el)=>{const w=data.workers.find(x=>x.id===el.dataset.id);if(!w||!confirm(`${w.name} 을(를) 인력대장에서 삭제할까요?\n이미 작성한 검측서류의 참여자 정보는 유지됩니다.`))return;
+    commit(()=>{data.workers=data.workers.filter(x=>x.id!==w.id)});vWorkers()},
+  // 미리보기
+  'pv-part':(el)=>{state.pvPart=el.dataset.p;vPreview()},
+  'pv-print':()=>{const d=data.inspections.find(x=>x.id===state.pvId);if(d)doPrint([d],state.pvPart)},
+  // 백업
+  'bk-export':exportBackup,
+  'open-folder':()=>{fetch('/api/open-folder',{method:'POST',headers:{'X-GCMS':'1'}}).catch(()=>alert('폴더를 열지 못했습니다.'))},
+  'modal-close':closeModal,
+};
+function mv(a,i,dir){const j=i+dir;if(j<0||j>=a.length)return;[a[i],a[j]]=[a[j],a[i]]}
+function clRefresh(dirty=true){if(dirty)markDirty();$('#clSec').innerHTML=clSectionHTML();schedulePreview(true)}
+function ptRefresh(){markDirty();$('#ptSec').innerHTML=ptSectionHTML();schedulePreview(true)}
+
+document.addEventListener('click',e=>{const el=e.target.closest('[data-act]');if(!el)return;const f=A[el.dataset.act];if(!f)return;
+  if(el.tagName==='A')e.preventDefault();try{f(el,e)}catch(err){console.error(err);showErr('오류: '+err.message)}});
+
+function onInput(e){const t=e.target;
+  if(state.view==='editor'&&state.draft){const d=state.draft;
+    if(t.dataset.f){const p=t.dataset.f;let v=t.type==='checkbox'?t.checked:t.value;
+      if(p==='round')v=t.value===''?'':Math.max(1,parseInt(t.value,10)||1);
+      if(p==='siteId'){const s=data.sites.find(x=>x.id===v);if(!s)return;d.siteId=s.id;d.site=siteSnapshot(s);d.numKey=null;d.docNo='';markDirty();renderEditorForm();schedulePreview(true);return}
+      if(p==='manualNo'){if(v){d.docNo=V(d).docNo}else{if(d.numKey==='manual'){d.numKey=null;d.docNo=''}}d.manualNo=v;markDirty();renderEditorForm();schedulePreview(true);return}
+      setPath(d,p,v);markDirty();
+      if(p==='defaultWorkDate'||p==='writeDate'||p==='reqDate'||p==='contractorCheckDate'){const w=t.closest('.fld');if(w&&has(v))w.classList.remove('need')}
+      schedulePreview();return}
+    if(t.dataset.ci!=null){const it=d.checklist.items[+t.dataset.ci];if(it){it[t.dataset.cf]=t.value;markDirty();schedulePreview()}return}
+    if(t.dataset.csel){if(t.checked)state.clSel.add(t.dataset.csel);else state.clSel.delete(t.dataset.csel);return}
+    if(t.dataset.pi!=null){const p=d.participants[+t.dataset.pi];if(p){p[t.dataset.pf]=t.value;markDirty();schedulePreview()}return}
+    if(t.dataset.hi!=null){const p=d.photos[+t.dataset.hi];if(p){p[t.dataset.hf]=t.value;markDirty();schedulePreview()}return}
+    if(t.id==='wkq'){const q=t.value.trim().toLowerCase();$$('#wkList label').forEach(l=>l.style.display=!q||l.dataset.s.includes(q)?'':'none');return}
+  }
+  if(t.dataset.lf){state.lf[t.dataset.lf]=t.value;renderLedgerBody();return}
+  if(t.dataset.lgsel){if(t.checked)state.lgSel.add(t.dataset.lgsel);else state.lgSel.delete(t.dataset.lgsel);return}
+  if(t.id==='wkSearch'){state.wq=t.value;clearTimeout(onInput.t);onInput.t=setTimeout(()=>{vWorkers();const s=$('#wkSearch');s.focus();s.setSelectionRange(s.value.length,s.value.length)},250);return}
+  if(t.id==='pvSel'){state.pvId=t.value;vPreview();return}
+}
+function onChange(e){const t=e.target;
+  if(t.dataset.status){const d=data.inspections.find(x=>x.id===t.dataset.status);if(d){commit(()=>{d.status=t.value;d.updatedAt=nowISO()});toast('상태 변경: '+t.value);renderLedgerBody()}return}
+  if(t.dataset.tf||t.dataset.tk){const tp=curTpl();if(!tp)return;commit(()=>{if(t.dataset.tf)tp[t.dataset.tf]=t.value;else tp.items[+t.dataset.ti][t.dataset.tk]=t.value;tp.updatedAt=nowISO()});
+    if(t.dataset.tf==='name')$$('.list-pick a.on').forEach(a=>a.firstChild.textContent=t.value||'(이름 없음)');toast('템플릿 저장됨');return}
+  if(t.dataset.wf){const w=data.workers.find(x=>x.id===t.dataset.id);if(w){commit(()=>{w[t.dataset.wf]=t.type==='checkbox'?t.checked:t.value.trim()});toast('인력대장 저장됨')}return}
+  if(t.dataset.sy){commit(()=>{data.settings.symbols[t.dataset.sy]=t.value});toast('저장됨');return}
+  if(t.dataset.st){const k=t.dataset.st;let v=t.type==='checkbox'?t.checked:t.value;if(k==='seqDigits')v=Math.max(1,Math.min(5,parseInt(v,10)||2));
+    if(k==='photoPerPage')v=+v===2?2:4;
+    commit(()=>{data.settings[k]=v});if(k==='docFont')applyFont();toast('설정 저장됨');if(state.view==='editor'&&state.draft){if(k.startsWith('photo'))phRefresh(false);else schedulePreview(true)}if(k==='seqDigits')vBackup();return}
+  if(t.id==='bkFile'&&t.files[0]){handleRestore(t.files[0]);t.value='';return}
+  if(t.id==='phFile'&&t.files.length){const fs=[...t.files];t.value='';addPhotos(fs);return}
+  if(t.id==='curSite'){if(state.view==='editor'&&state.dirty&&!confirm('저장하지 않은 변경 내용이 사라집니다. 계속할까요?')){renderHeader();return}
+    commit(()=>{data.settings.currentSiteId=t.value});if(state.view==='editor'){state.draft=null;state.dirty=false}state.siteSel=t.value;render();return}
+  if(state.view==='editor'&&(t.dataset.f||t.dataset.ci!=null||t.dataset.pi!=null||t.dataset.csel))onInput(e);
+}
+document.addEventListener('input',e=>{if(e.target.type==='checkbox'||e.target.tagName==='SELECT')return;onInput(e)});
+document.addEventListener('change',e=>{const t=e.target;if(t.type==='checkbox'||t.tagName==='SELECT'){if(t.dataset.f||t.dataset.ci!=null||t.dataset.csel||t.dataset.lf||t.dataset.lgsel||t.id==='pvSel'){onInput(e);return}}onChange(e)});
+document.addEventListener('dragover',e=>{if(e.dataTransfer&&[...e.dataTransfer.types].includes('Files')){e.preventDefault();const z=$('#phDrop');if(z)z.classList.toggle('on',!!e.target.closest('#phSec'))}});
+document.addEventListener('dragleave',e=>{const z=$('#phDrop');if(z&&!e.relatedTarget)z.classList.remove('on')});
+document.addEventListener('drop',e=>{if(!e.dataTransfer||!e.dataTransfer.files.length)return;e.preventDefault();const z=$('#phDrop');if(z)z.classList.remove('on');
+  if(state.view==='editor'&&state.draft)addPhotos([...e.dataTransfer.files]);else toast('사진은 검측 작성 화면의 사진대지 칸에 끌어다 놓으세요.')});
+document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='s'&&state.view==='editor'&&state.draft){e.preventDefault();saveDraft()}});
+window.addEventListener('beforeunload',e=>{if(state.view==='editor'&&state.dirty){e.preventDefault();e.returnValue=''}});
+window.addEventListener('storage',e=>{if(!SERVER&&e.key===STORE_KEY)showErr('다른 탭에서 데이터가 변경되었습니다. 덮어쓰기를 막으려면 이 탭을 새로고침하세요.')});
+
+load();render();if(!state.loadFailed)setTimeout(sweepPhotos,3000);
+/* 다른 사용자(창)가 저장한 내용을 30초마다 확인해 반영 (작성 중인 서류는 건드리지 않음) */
+if(SERVER&&!state.loadFailed)setInterval(async()=>{
+  if(document.hidden)return;
+  try{const r=await fetch('/api/rev',{cache:'no-store'});if(r.status===401){toLogin();return}if(!r.ok)return;const rv=(await r.text()).trim();
+    if(!rv||rv===serverRev)return;
+    const theirs=fetchTheirs();const m=threeWay(JSON.parse(baseSnap||'{}'),data,theirs);data=normalizeData(m.out);applyLocalPrefs();baseSnap=JSON.stringify(theirs);
+    const f=document.activeElement;const typing=f&&/^(INPUT|TEXTAREA|SELECT)$/.test(f.tagName);
+    if(state.view==='editor'&&state.draft){renderHeader()}else if(!typing&&!$('#modalBg')){render()}
+    $('#saveState').textContent='최신 내용 반영 · '+fLocal(nowISO()).slice(11)}catch(e){}},30000);
+</script>
+</body>
+</html>
