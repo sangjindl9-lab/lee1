@@ -27,22 +27,29 @@ function dump(tag, { status, url, html }) {
   }
 }
 async function korail() {
-  for (const p of ['/main.do', '/goods/inList.do?code=A03&gubun=1', '/goods/contList.do?code=A04&gubun=2', '/goods/openDetail.do?code=A04&gubun=']) {
-    try {
-      const { html } = await get(p);
-      for (const m of html.matchAll(/ZFUNCNM"\s*:\s*"(\w+)"/g)) {
-        const pre = html.slice(Math.max(0, m.index - 1500), m.index);
-        const fnName = (pre.match(/function\s+(\w+)\s*\([^)]*\)\s*\{(?![\s\S]*function\s+\w+\s*\()/) || [])[1] || '?';
-        const params = [...pre.slice(pre.lastIndexOf('new Array()')).matchAll(/fn_add_param\(ptab,\s*"(\w+)",\s*([^,]{0,80}),/g)].map((x) => `${x[1]}=${x[2].replace(/\s+/g, '')}`);
-        console.log(`[PROBE] ${p} ${fnName} → ${m[1]} (${params.join(', ')})`);
-      }
-      const tbl = [...html.matchAll(/(?:ET_\w+)/g)].map((x) => x[0]);
-      console.log(`[PROBE] ${p} tables: ${[...new Set(tbl)].join(', ')}`);
-      const fa = html.match(/function\s+fn_add_param[\s\S]{0,500}/);
-      if (fa) console.log(`[PROBE] fn_add_param: ${fa[0].replace(/\s+/g, ' ')}`);
-    } catch (e) { console.log(`[PROBE] ${p} 실패 ${e.message}`); }
-    await new Promise((r) => setTimeout(r, 800));
+  const vm = await import('node:vm');
+  const pages = {};
+  for (const p of ['/goods/inList.do?code=A03&gubun=1', '/js/common.js']) { pages[p] = (await get(p)).html; await new Promise((r) => setTimeout(r, 500)); }
+  const all = pages['/js/common.js'] + pages['/goods/inList.do?code=A03&gubun=1'];
+  const fa = all.match(/function\s+fn_add_param\s*\([^)]*\)\s*\{[\s\S]*?\n\s*\}/);
+  console.log(`[PROBE] fn_add_param: ${fa ? fa[0].replace(/\s+/g, ' ').slice(0, 800) : '없음'}`);
+  const inl = pages['/goods/inList.do?code=A03&gubun=1'];
+  for (const m of inl.matchAll(/ZFUNCNM['"]?\s*[:=]\s*['"](\w+)['"]/g)) {
+    const pre = inl.slice(Math.max(0, m.index - 2500), m.index);
+    console.log(`[PROBE] inList → ${m[1]} :: ${pre.slice(pre.lastIndexOf('new Array()')).replace(/\s+/g, ' ').slice(0, 1500)}`);
   }
+  if (!fa) return;
+  const ctx = {}; vm.createContext(ctx); vm.runInContext(fa[0], ctx);
+  const call = async (fn, params) => {
+    let ptab = [];
+    for (const [k, v] of params) ptab = ctx.fn_add_param(ptab, k, v, false);
+    const r = await fetch(B + '/comnRfc.do', { method: 'POST', headers: { 'User-Agent': UA, 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8', 'X-Requested-With': 'XMLHttpRequest', Referer: B + '/goods/inList.do', ...(cookie ? { Cookie: cookie } : {}) },
+      body: new URLSearchParams({ p: JSON.stringify(ptab), fn: JSON.stringify({ ZFUNCNM: fn }) }), signal: AbortSignal.timeout(30000) });
+    const t = await r.text();
+    console.log(`[PROBE] call ${fn} → ${r.status} len=${t.length} ${t.slice(0, 1800)}`);
+  };
+  const ymd = (ms) => new Date(Date.now() + 9 * 3600e3 - ms).toISOString().slice(0, 10).replaceAll('-', '');
+  await call('ZMME_EBID_INFO_0014', [['I_POART', '2'], ['I_EBELN', ''], ['I_ZZCTRDESC', ''], ['I_GUBUN', 'A'], ['I_ZZCONTRWAY', ''], ['I_ZZBIDINV', ''], ['I_DAT_FR', ymd(30 * 864e5)], ['I_DAT_TO', ymd(0)]]);
 }
 async function g2bOrgs(base) {
   const kst = (ms) => new Date(Date.now() + 9 * 3600e3 - ms).toISOString().slice(0, 10).replaceAll('-', '');
