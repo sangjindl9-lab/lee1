@@ -731,7 +731,7 @@ function reinspect(id){const src=data.inspections.find(x=>x.id===id);if(!src)ret
   const root=data.inspections.find(x=>x.id===src.rootId)||src;d.reBaseNo=root.docNo;
   d.reIndex=Math.max(0,...data.inspections.filter(x=>x.rootId===src.rootId&&x.isRe).map(x=>+x.reIndex||0))+1;
   d.memo=`원 검측 ${src.docNo} 의 재검측`;openDraft(d,true);toast('재검측 기록을 만들었습니다. 원 검측의 상태는 직접 변경하세요.')}
-function openDraft(d,isNew){state.draft=clone(d);state.isNew=isNew;state.dirty=!!isNew;state.clSel=new Set();state.view='editor';render()}
+function openDraft(d,isNew){state.draft=clone(d);state.isNew=isNew;state.dirty=!!isNew;state.clSel=new Set();state.ptSel=new Set();state.view='editor';render()}
 function editInspection(id){const d=data.inspections.find(x=>x.id===id);if(!d)return;if(state.view==='editor'&&state.dirty&&!confirm('저장하지 않은 변경 내용이 사라집니다. 계속할까요?'))return;openDraft(d,false)}
 
 function saveDraft(){const d=state.draft;
@@ -861,15 +861,20 @@ function ptSectionHTML(){const d=state.draft,v=V(d);const added=new Set(d.partic
   return `<section class="card"><h3>공사참여자 실명부 <small>인력대장에서 체크해 불러온 뒤 개인별로 수정</small></h3>
    <div class="row"><input id="wkq" class="in" style="max-width:220px" placeholder="이름·소속·직위 검색"><button class="btn sm" data-act="pt-add">선택 인원 추가</button><button class="btn sm" data-act="pt-blank">빈 행 추가</button><span class="sp"></span><a href="#" data-act="go" data-v="workers" class="muted">인력대장 관리 →</a></div>
    <div class="wk-list" id="wkList">${ws.map(w=>`<label class="${added.has(w.id)?'added':''}" data-s="${esc((w.name+w.org+w.position).toLowerCase())}"><input type="checkbox" class="wkpick" value="${w.id}" ${added.has(w.id)?'disabled':''}> ${esc(w.name)} <span class="muted">${esc(w.org)} · ${esc(w.position)} · ${esc(w.birth)}${added.has(w.id)?' · 추가됨':''}</span></label>`).join('')||'<div class="muted">인력대장에 등록된 인원이 없습니다.</div>'}</div>
-   <table class="et"><thead><tr><th>작업일</th><th>작업위치및공종</th><th>소속</th><th>직위</th><th>성명</th><th>생년월일</th><th>공사내용</th><th></th></tr></thead><tbody>
+   ${d.participants.length?`<div class="row" style="background:#f5f7fa;padding:6px 8px;border-radius:5px">
+    <b style="font-size:13px">작업일 일괄 적용</b><input type="date" id="ptBulkDate" class="in" style="width:auto" value="${esc(state.ptBulkDate||d.defaultWorkDate||'')}">
+    <button class="btn sm" data-act="pt-date-sel">체크한 인원(${(state.ptSel||new Set()).size}명)에 적용</button><button class="btn sm" data-act="pt-date-all">전체 ${d.participants.length}명에 적용</button>
+    <span class="sp"></span><button class="btn sm" data-act="pt-date-clear" title="개별 작업일을 지우면 기본 작업일이 출력됩니다">개별 날짜 비우기</button></div>`:''}
+   <div style="overflow-x:auto"><table class="et" style="min-width:860px"><thead><tr><th><input type="checkbox" data-act="pt-selall" ${d.participants.length&&(state.ptSel||new Set()).size===d.participants.length?'checked':''} title="전체 선택"></th><th>작업일</th><th>작업위치및공종</th><th>소속</th><th>직위</th><th>성명</th><th>생년월일</th><th>공사내용</th><th></th></tr></thead><tbody>
    ${d.participants.map((p,i)=>`<tr>
+     <td class="c"><input type="checkbox" data-psel="${p.id}" ${(state.ptSel||new Set()).has(p.id)?'checked':''}></td>
      <td><input type="date" data-pi="${i}" data-pf="workDate" value="${esc(p.workDate)}" title="비우면 기본 작업일"><div class="muted" data-pauto="date" style="font-size:11px;padding:0 4px">${has(p.workDate)?'':'기본: '+esc(d.defaultWorkDate||'미입력')}</div></td>
      <td><input data-pi="${i}" data-pf="locWork" value="${esc(p.locWork)}" data-pauto="loc" placeholder="자동: ${esc(v.rosterLoc)}"></td>
      <td><input data-pi="${i}" data-pf="org" value="${esc(p.org)}"></td><td><input data-pi="${i}" data-pf="position" value="${esc(p.position)}"></td>
      <td><input data-pi="${i}" data-pf="name" value="${esc(p.name)}"></td><td><input data-pi="${i}" data-pf="birth" value="${esc(p.birth)}" placeholder="yy.mm.dd"></td>
      <td><input data-pi="${i}" data-pf="content" value="${esc(p.content)}" data-pauto="content" placeholder="자동: ${esc(d.workContent)}"></td>
-     <td class="ops"><button class="btn sm" data-act="pt-up" data-i="${i}">▲</button><button class="btn sm" data-act="pt-down" data-i="${i}">▼</button><button class="btn sm dan" data-act="pt-del" data-i="${i}">✕</button></td></tr>`).join('')||'<tr><td colspan="8" class="empty">참여자가 없습니다.</td></tr>'}
-   </tbody></table><div class="muted" style="margin-top:6px">인력대장을 나중에 고쳐도 이 서류의 참여자 정보는 바뀌지 않습니다.</div></section>`}
+     <td class="ops"><button class="btn sm" data-act="pt-up" data-i="${i}">▲</button><button class="btn sm" data-act="pt-down" data-i="${i}">▼</button><button class="btn sm dan" data-act="pt-del" data-i="${i}">✕</button></td></tr>`).join('')||'<tr><td colspan="9" class="empty">참여자가 없습니다.</td></tr>'}
+   </tbody></table></div><div class="muted" style="margin-top:6px">인력대장을 나중에 고쳐도 이 서류의 참여자 정보는 바뀌지 않습니다.</div></section>`}
 
 function phSectionHTML(){const d=state.draft,ph=d.photos,st=data.settings;
   return `<section class="card"><h3>사진대지 <small>사진 ${ph.length}장 · 한 쪽에 ${+st.photoPerPage===2?2:4}장 · ${Math.ceil(ph.length/(+st.photoPerPage===2?2:4))||0}쪽</small></h3>
@@ -1109,7 +1114,13 @@ const A={
     try{const b=await photoBlob(p.photoId);if(!b)throw new Error('원본 사진을 찾을 수 없습니다');const nb=await compressImage(b,90);const id=uid();await photoPut(id,nb);p.photoId=id;phRefresh()}
     catch(e){showErr('회전 실패: '+e.message)}},
   'pt-blank':()=>{state.draft.participants.push({id:uid(),workerId:null,workDate:'',locWork:'',org:'',position:'',name:'',birth:'',content:''});ptRefresh()},
-  'pt-del':(el)=>{state.draft.participants.splice(+el.dataset.i,1);ptRefresh()},
+  'pt-del':(el)=>{const r=state.draft.participants.splice(+el.dataset.i,1)[0];if(r&&state.ptSel)state.ptSel.delete(r.id);ptRefresh()},
+  'pt-selall':(el)=>{state.ptSel=new Set(el.checked?state.draft.participants.map(p=>p.id):[]);ptRefresh(false)},
+  'pt-date-sel':()=>ptBulkDate(false),
+  'pt-date-all':()=>ptBulkDate(true),
+  'pt-date-clear':()=>{const d=state.draft,sel=state.ptSel||new Set();const tgt=sel.size?d.participants.filter(p=>sel.has(p.id)):d.participants;
+    if(!confirm(`${sel.size?'체크한 '+tgt.length+'명':'전체 '+tgt.length+'명'}의 개별 작업일을 비웁니다. 비운 사람은 기본 작업일(${d.defaultWorkDate||'미입력'})로 출력됩니다. 계속할까요?`))return;
+    tgt.forEach(p=>p.workDate='');ptRefresh();toast(`${tgt.length}명의 개별 작업일을 비웠습니다.`)},
   'pt-up':(el)=>{mv(state.draft.participants,+el.dataset.i,-1);ptRefresh()},
   'pt-down':(el)=>{mv(state.draft.participants,+el.dataset.i,1);ptRefresh()},
   // 템플릿
@@ -1137,7 +1148,12 @@ const A={
 };
 function mv(a,i,dir){const j=i+dir;if(j<0||j>=a.length)return;[a[i],a[j]]=[a[j],a[i]]}
 function clRefresh(dirty=true){if(dirty)markDirty();$('#clSec').innerHTML=clSectionHTML();schedulePreview(true)}
-function ptRefresh(){markDirty();$('#ptSec').innerHTML=ptSectionHTML();schedulePreview(true)}
+function ptRefresh(dirty=true){if(dirty)markDirty();$('#ptSec').innerHTML=ptSectionHTML();schedulePreview(true)}
+function ptBulkDate(all){const d=state.draft,v=($('#ptBulkDate')||{}).value||'';state.ptBulkDate=v;
+  if(!v){alert('적용할 작업일을 먼저 고르세요.');return}
+  const sel=state.ptSel||new Set();const tgt=all?d.participants:d.participants.filter(p=>sel.has(p.id));
+  if(!tgt.length){alert('작업일을 적용할 인원을 체크하세요. (전체에 넣으려면 “전체 적용”)');return}
+  tgt.forEach(p=>p.workDate=v);ptRefresh();toast(`${tgt.length}명의 작업일을 ${fSlash(v)}로 적용했습니다.`)}
 
 document.addEventListener('click',e=>{const el=e.target.closest('[data-act]');if(!el)return;const f=A[el.dataset.act];if(!f)return;
   if(el.tagName==='A')e.preventDefault();try{f(el,e)}catch(err){console.error(err);showErr('오류: '+err.message)}});
@@ -1153,6 +1169,8 @@ function onInput(e){const t=e.target;
       schedulePreview();return}
     if(t.dataset.ci!=null){const it=d.checklist.items[+t.dataset.ci];if(it){it[t.dataset.cf]=t.value;markDirty();schedulePreview()}return}
     if(t.dataset.csel){if(t.checked)state.clSel.add(t.dataset.csel);else state.clSel.delete(t.dataset.csel);return}
+    if(t.dataset.psel){state.ptSel=state.ptSel||new Set();if(t.checked)state.ptSel.add(t.dataset.psel);else state.ptSel.delete(t.dataset.psel);ptRefresh(false);return}
+    if(t.id==='ptBulkDate'){state.ptBulkDate=t.value;return}
     if(t.dataset.pi!=null){const p=d.participants[+t.dataset.pi];if(p){p[t.dataset.pf]=t.value;markDirty();schedulePreview()}return}
     if(t.dataset.hi!=null){const p=d.photos[+t.dataset.hi];if(p){p[t.dataset.hf]=t.value;markDirty();schedulePreview()}return}
     if(t.id==='wkq'){const q=t.value.trim().toLowerCase();$$('#wkList label').forEach(l=>l.style.display=!q||l.dataset.s.includes(q)?'':'none');return}
@@ -1178,7 +1196,7 @@ function onChange(e){const t=e.target;
   if(state.view==='editor'&&(t.dataset.f||t.dataset.ci!=null||t.dataset.pi!=null||t.dataset.csel))onInput(e);
 }
 document.addEventListener('input',e=>{if(e.target.type==='checkbox'||e.target.tagName==='SELECT')return;onInput(e)});
-document.addEventListener('change',e=>{const t=e.target;if(t.type==='checkbox'||t.tagName==='SELECT'){if(t.dataset.f||t.dataset.ci!=null||t.dataset.csel||t.dataset.lf||t.dataset.lgsel||t.id==='pvSel'){onInput(e);return}}onChange(e)});
+document.addEventListener('change',e=>{const t=e.target;if(t.type==='checkbox'||t.tagName==='SELECT'){if(t.dataset.f||t.dataset.ci!=null||t.dataset.csel||t.dataset.psel||t.dataset.lf||t.dataset.lgsel||t.id==='pvSel'){onInput(e);return}}onChange(e)});
 document.addEventListener('dragover',e=>{if(e.dataTransfer&&[...e.dataTransfer.types].includes('Files')){e.preventDefault();const z=$('#phDrop');if(z)z.classList.toggle('on',!!e.target.closest('#phSec'))}});
 document.addEventListener('dragleave',e=>{const z=$('#phDrop');if(z&&!e.relatedTarget)z.classList.remove('on')});
 document.addEventListener('drop',e=>{if(!e.dataTransfer||!e.dataTransfer.files.length)return;e.preventDefault();const z=$('#phDrop');if(z)z.classList.remove('on');
