@@ -115,7 +115,7 @@ export default function App() {
           </>}
       </main>
 
-      <footer className="foot">자료: 조달청 나라장터 (공공데이터포털 OpenAPI) · 실제 입찰 전 나라장터 원문을 꼭 확인하세요. · 버전 10.26-앱{!/NarabidApp/.test(navigator.userAgent) && <> · <a href="https://github.com/sangjindl9-lab/lee1/releases/download/app-latest/narabid.apk">안드로이드 앱 받기</a></>}</footer>
+      <footer className="foot">자료: 조달청 나라장터 (공공데이터포털 OpenAPI) · 실제 입찰 전 나라장터 원문을 꼭 확인하세요. · 버전 10.26-철도{!/NarabidApp/.test(navigator.userAgent) && <> · <a href="https://github.com/sangjindl9-lab/lee1/releases/download/app-latest/narabid.apk">안드로이드 앱 받기</a></>}</footer>
 
       {company && <CompanyCard info={company} onClose={closeCompany} />}
       {sel && <Detail sel={sel} onClose={close} onOpen={setSel} myBizno={myBizno} starred={starred} onStar={onStar} />}

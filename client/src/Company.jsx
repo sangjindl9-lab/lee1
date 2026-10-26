@@ -8,7 +8,6 @@ export function openCompany(info) {
 
 export function CompanyName({ name, bizno, ceo, tel, adrs, children }) {
   if (!name) return <>-</>;
-  if (!bizno) return <>{children || name}</>;
   return (
     <button type="button" className="corp-link" title="업체 정보 보기"
       onClick={(e) => { e.stopPropagation(); openCompany({ name, bizno, ceo, tel, adrs }); }}>
@@ -23,13 +22,14 @@ export default function CompanyCard({ info, onClose }) {
   const known = false; // 항상 등록업체 정보로 최신 연락처 확인
 
   useEffect(() => {
-    if (known || b.length !== 10) { setS({ loading: false, data: null, error: '' }); return; }
+    const byName = b.length !== 10 && info.name;
+    if (known || (b.length !== 10 && !byName)) { setS({ loading: false, data: null, error: '' }); return; }
     let alive = true;
-    fetch(`/api/company/${b}`).then((r) => r.json())
+    fetch(byName ? `/api/company-by-name?name=${encodeURIComponent(info.name)}` : `/api/company/${b}`).then((r) => r.json())
       .then((d) => alive && setS({ loading: false, data: d.error ? null : d, error: d.error || '' }))
       .catch((e) => alive && setS({ loading: false, data: null, error: e.message }));
     return () => { alive = false; };
-  }, [b, known]);
+  }, [b, known, info.name]);
 
   useEffect(() => {
     const h = (e) => e.key === 'Escape' && onClose();
@@ -56,7 +56,7 @@ export default function CompanyCard({ info, onClose }) {
         </header>
         <dl className="corp-dl">
           <dt>대표자</dt><dd>{ceo || '-'}</dd>
-          <dt>사업자번호</dt><dd>{fmtBizno(b)}</dd>
+          <dt>사업자번호</dt><dd>{fmtBizno(b || d?.bizno || '') || '-'}</dd>
           <dt>주소</dt>
           <dd>{s.loading ? <span className="muted">찾는 중…</span> : adrs ? <>{adrs} {mapHref && <a href={mapHref} target="_blank" rel="noreferrer" className="mini">지도</a>}</> : <span className="muted">정보 없음</span>}</dd>
           <dt>전화번호</dt>
@@ -68,12 +68,13 @@ export default function CompanyCard({ info, onClose }) {
           )}
         </dl>
         {!s.loading && !adrs && !tel && (
-          <p className="muted small">나라장터 등록업체 정보에서 이 업체를 찾지 못했습니다.</p>
+          <p className="muted small">나라장터 등록업체 정보에서 이 업체를 찾지 못했습니다.{b.length !== 10 ? ' (사업자번호가 없는 자료라 업체명이 똑같은 곳을 찾았습니다)' : ''}</p>
         )}
         {s.data?.usrState === 'notRegistered' && (
           <p className="error small">사용자정보서비스 API 활용신청이 필요합니다. 공공데이터포털에서 「조달청_나라장터 사용자정보 서비스」를 신청하면 모든 업체 연락처가 나옵니다.</p>
         )}
         {s.error && <p className="error small">⚠ {s.error}</p>}
+        {d && b.length !== 10 && <p className="muted small">※ 이 기관 자료에는 사업자번호가 없어 업체명이 똑같은 나라장터 등록업체를 찾아 보여줍니다.</p>}
         {d?.source === 'usr' && <p className="muted small">출처: 나라장터 등록업체 정보 (조달청 사용자정보서비스)</p>}
         {d?.source === 'award' && d?.lastBid && (
           <p className="muted small">연락처 출처: 최근 낙찰 「{d.lastBid}」 {d.lastDate ? `(${String(d.lastDate).slice(0, 10)})` : ''}{Number(d.lastAmt) ? ` · ${won(d.lastAmt)}원` : ''}</p>

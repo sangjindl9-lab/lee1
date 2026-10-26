@@ -293,6 +293,47 @@ async function lookupCompany(b, { deep = true } = {}) {
   return { found: false, bizno: b, usrState, usrError };
 }
 
+// 사업자번호 없이 업체명만 있는 경우(철도공사·수자원공사 등) → 나라장터 등록업체에서 이름이 똑같은 곳을 찾아 연락처 조회
+const normCorp = (x) => String(x || '').replace(/\(주\)|㈜|주식회사|\(유\)|유한회사|\(합\)|합자회사|\(사\)|사단법인|\s/g, '');
+const nameBizCache = new Map(); // 정규화된 이름 → {t, bizno}
+async function biznoByName(name, { quickOnly = false } = {}) {
+  const nq = normCorp(name);
+  if (nq.length < 2) return '';
+  const hit = nameBizCache.get(nq);
+  if (hit && Date.now() - hit.t < 7 * 86400000) return hit.bizno;
+  let b = '';
+  for (const c of companies.values()) if (normCorp(c.name) === nq) { b = c.bizno; break; }
+  if (!b) for (const { data } of cache.values()) for (const it of data?.items || []) {
+    if (it.bidwinnrBizno && normCorp(it.bidwinnrNm) === nq) { b = String(it.bidwinnrBizno); break; }
+  }
+  if (!b) {
+    for (const { data } of corpSearchCache.values()) for (const c of data.items || []) if (normCorp(c.name) === nq) { b = c.bizno; break; }
+  }
+  if (!b && quickOnly) return '';
+  if (!b && !MOCK && KEY) {
+    // 등록연도별로 업체명 검색 (최근 연도부터, 찾으면 중단)
+    const q = name.replace(/\(주\)|㈜|주식회사|\(유\)|유한회사/g, '').trim();
+    const nowY = new Date(Date.now() + 9 * 3600 * 1000).getUTCFullYear();
+    const years = []; for (let y = nowY; y >= 2000; y--) years.push(y);
+    for (let i = 0; i < years.length && !b; i += 13) {
+      const res = await pool(years.slice(i, i + 13).map((y) => () => upstream('usr', 'getPrcrmntCorpBasicInfo02', { inqryDiv: '1', inqryBgnDt: `${y}01010000`, inqryEndDt: `${y}12312359`, corpNm: q, numOfRows: 100, pageNo: 1 }).catch(() => ({ items: [] }))), 13);
+      for (const d of res) for (const c of d?.items || []) if (!b && normCorp(c.corpNm) === nq) b = String(c.bizno);
+    }
+  }
+  nameBizCache.set(nq, { t: Date.now(), bizno: b });
+  if (nameBizCache.size > 5000) nameBizCache.delete(nameBizCache.keys().next().value);
+  return b;
+}
+app.get('/api/company-by-name', async (req, res) => {
+  const name = String(req.query.name || '').trim();
+  if (normCorp(name).length < 2) return res.status(400).json({ error: '업체명이 필요합니다' });
+  try {
+    const b = await biznoByName(name);
+    if (!b) return res.json({ found: false, name, notFoundByName: true });
+    res.json(await lookupCompany(b));
+  } catch (err) { res.status(502).json({ error: `업체 정보 조회 실패: ${err.message}` }); }
+});
+
 app.get('/api/company/:bizno', async (req, res) => {
   const b = String(req.params.bizno).replace(/[^0-9]/g, '');
   if (b.length !== 10) return res.status(400).json({ error: '사업자번호 10자리가 필요합니다' });
@@ -682,6 +723,8 @@ app.get('/api/award/:kind', async (req, res) => {
       Promise.all(kinds.map((k) => awardForKind(k, params))),
       withExt ? extAwards(kind, params, { key: KEY, extLoad }).catch((e) => { console.log(`[unify] award 실패 ${e.message}`); return []; }) : [],
     ]);
+    // 사업자번호 없는 기관 자료: 이미 알고 있는 업체면 사업자번호 채움 (추가 조회 없이)
+    for (const r of ext) if (!r.bidwinnrBizno && r.bidwinnrNm) r.bidwinnrBizno = await biznoByName(r.bidwinnrNm, { quickOnly: true });
     const rows = parts.flatMap((p) => p.rows).map((r) => ({ ...r, _org: 'g2b' })).concat(ext)
       .sort((a, b) => String(b.opengDt).localeCompare(String(a.opengDt)));
     const size = Number(params.numOfRows || 20); const page = Number(params.pageNo || 1);
@@ -750,6 +793,6 @@ app.listen(PORT, () => {
   }
   // 파일 데이터(철도·방위사업청)는 처음 받는 데 1분 이상 걸려서 서버 시작 직후 미리 받아둠
   if (KEY && !MOCK) setTimeout(async () => { for (const src of ['d2bfac', 'kr', 'korail']) await extLoad(src).catch((e) => console.log(`[ext] 미리받기 실패 ${src}: ${e.message}`)); }, 3000);
-  if (process.env.PROBE !== '0') import('./probe.js').then((m) => m.probe(`http://localhost:${PORT}`)).catch((e) => console.log('[PROBE] fail', e.message));
+  if (!MOCK && KEY) import('./korail.js').then((m) => m.korailWarm()).catch((e) => console.log('[korail] warm fail', e.message));
   if (process.env.CHECK !== '0') setTimeout(() => selfTest(`http://localhost:${PORT}`).catch((e) => console.log('[CHECK] fail', e.message)), 120000);
 });

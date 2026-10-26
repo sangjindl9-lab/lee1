@@ -3,6 +3,7 @@ import { kwSearch } from './kwater.js';
 import { krResults } from './krbid.js';
 import { kepcoNotices } from './kepco.js';
 import { d2bRows, d2bNoticeRow, d2bResultRow } from './d2b.js';
+import { korailNotices, korailContracts } from './korail.js';
 
 // 업종 체크박스 → 공고명 키워드 (다른 기관은 업종 정보가 없어 공고명으로 판단)
 const INDUSTRY_WORDS = [
@@ -88,8 +89,16 @@ export async function extBids(kind, p, { key, extLoad }) {
       rows.push(r);
     })).catch((e) => console.log(`[unify] 방위사업청 공고 실패: ${e.message}`)));
   }
+  // 한국철도공사 (전자조달 실시간) — 공고일 기준. 실패하면 공공데이터 파일로 대신
+  let korailLive = false;
+  if (!byOpeng) {
+    jobs.push(korailNotices(from, to).then((list) => { korailLive = true; list.forEach((r) => { if (r._kind === kind) rows.push(r); }); })
+      .catch((e) => console.log(`[unify] 철도공사 실시간 실패: ${e.message}`)));
+  }
+  await Promise.all(jobs.splice(0));
   // 국가철도공단·한국철도공사 (공공데이터 파일)
   for (const src of ['kr', 'korail']) {
+    if (src === 'korail' && korailLive) continue;
     jobs.push(extLoad(src).then((d) => d.rows.forEach((x) => {
       if (KIND_OF(x.kindNm || '', x.bidNtceNm) !== kind) return;
       const date = byOpeng ? x.opengDt : (x.ntceDt || x.beginDt);
@@ -169,6 +178,14 @@ export async function extAwards(kind, p, { key, extLoad }) {
       sucsfbidLwltRate: x.lowerRate, cntrctCnclsMthdNm: x.method, _plnprc: x.plnprc, _krKey: x.key, bidNtceDtlUrl: 'https://ebid.kr.or.kr/',
     });
   })).catch((e) => console.log(`[unify] 철도공단 개찰 실패: ${e.message}`)));
+  // 한국철도공사 계약결과(실시간): 계약일로 조회한 뒤 개찰일이 기간 안인 것만
+  {
+    const today = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
+    const until = new Date(Math.min(new Date(today), new Date(to).getTime() + 60 * 86400000)).toISOString().slice(0, 10);
+    jobs.push(korailContracts(from, until).then((list) => list.forEach((r) => {
+      if (want(r._kind) && inRange(r.opengDt, from, to)) rows.push(r);
+    })).catch((e) => console.log(`[unify] 철도공사 계약 실패: ${e.message}`)));
+  }
   await Promise.all(jobs);
   return rows.filter((r) => {
     if (!commonFilter(r, p)) return false;
