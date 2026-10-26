@@ -7,7 +7,7 @@ const path = require('path');
 const PORT = process.env.PORT || 3000;
 const SHOP = process.env.SHOP_BASE || 'https://shop.g2b.go.kr';
 const PUB = path.join(__dirname, 'public');
-const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.png': 'image/png', '.json': 'application/json' };
+const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.png': 'image/png', '.json': 'application/json', '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' };
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36';
 
 function send(res, code, body, type = 'application/json; charset=utf-8', extra = {}) {

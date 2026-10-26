@@ -7,7 +7,11 @@
 
   // ───────────── 상태 저장 (이 브라우저에만) ─────────────
   let state = load() || { project: {}, items: [] };
-  let templateBytes = null, templateName = '';
+  let templateBytes = null;
+  async function getTemplate() {
+    if (!templateBytes) { const r = await fetch('gwangeup_template.xlsx', { cache: 'no-cache' }); if (!r.ok) throw new Error('내장 양식을 불러오지 못했습니다.'); templateBytes = new Uint8Array(await r.arrayBuffer()); }
+    return templateBytes;
+  }
   const free = { kw: '', sort: 'CTRT_UPRC_ASC', filter: '', page: 0, total: 0, list: [], facets: [], facet: '' };
   function load() { try { return JSON.parse(localStorage.getItem('gwj_state')); } catch { return null; } }
   const save = debounce(() => { try { localStorage.setItem('gwj_state', JSON.stringify(state)); } catch {} }, 300);
@@ -65,8 +69,11 @@
     const F = ['name', 'spec', 'unit', 'qtyTotal', 'qtyNow', 'designPrice', 'kw', 'filter'];
     $('#items').innerHTML = state.items.map((it, i) => `<tr data-i="${i}"><td>${i + 1}</td>${F.map((k) => `<td><input data-f="${k}" class="f-${k}" value="${esc(it[k] ?? '')}"></td>`).join('')}
       <td><button class="ghost sm" data-a="one" data-i="${i}">검색</button> <button class="ghost sm" data-a="del" data-i="${i}">삭제</button></td></tr>`).join('')
-      || `<tr><td colspan="10" class="muted">양식 파일을 선택하면 품목을 자동으로 읽어옵니다. 직접 [+ 품목 추가] 해도 됩니다.</td></tr>`;
+      || `<tr><td colspan="10" class="muted">[+ 품목 추가]로 직접 입력하거나, ③ 나라장터 검색 결과에서 [담기]를 누르면 품목이 생깁니다.</td></tr>`;
     document.querySelector('[data-a=add]').disabled = state.items.length >= MAX_ITEMS;
+    renderTargets();
+  }
+  function renderTargets() {
     // 담을 품목 선택상자
     $('#freeTarget').innerHTML = state.items.map((it, i) => `<option value="${i}">${i + 1}. ${esc(it.name)} ${esc(it.spec || '')}</option>`).join('') +
       (state.items.length < MAX_ITEMS ? '<option value="new">+ 새 품목으로 추가</option>' : '');
@@ -83,7 +90,7 @@
         <button class="ghost sm" data-a="one" data-i="${i}">이 품목 다시 검색</button><button class="ghost sm" data-a="clearSlots" data-i="${i}">선택 지우기</button></div>
         <div class="tblwrap tall"><table class="pick"><thead><tr><th>번호</th><th>사진</th><th>업체(제조사)</th><th>물품식별번호</th><th>품목명·규격</th><th>단가</th><th>단위</th><th>본사</th><th>인증</th></tr></thead><tbody>
         ${list.slice(0, 300).map((r) => rowHtml(r, `<select data-slot="${r.no}" data-i="${i}"><option value="">-</option>${Array.from({ length: MAX_SLOTS }, (_, k) => `<option ${(it.slots || {})[r.no] == k + 1 ? 'selected' : ''}>${k + 1}</option>`).join('')}</select>`, (it.slots || {})[r.no])).join('')
-          || '<tr><td colspan="9" class="muted">결과 없음 — 검색어나 필터를 바꾸거나, ④ 나라장터 검색에서 직접 담으세요.</td></tr>'}
+          || '<tr><td colspan="9" class="muted">결과 없음 — 검색어나 필터를 바꾸거나, ③ 나라장터 검색에서 직접 담으세요.</td></tr>'}
         </tbody></table></div></div></details>`;
     }).join('') || '<p class="muted">품목이 없습니다.</p>';
   }
@@ -130,7 +137,7 @@
         it._open = idx.length === 1;
       }
       busy(''); save(); renderPicks();
-      if (idx.length > 1) toast('검색 완료. [공통업체 3곳 자동선택]을 누르거나 ⑤에서 직접 고르세요.');
+      if (idx.length > 1) toast('검색 완료. [공통업체 3곳 자동선택]을 누르거나 ④에서 직접 고르세요.');
     } catch (e) { busy(''); toast('검색 실패: ' + e.message, 9000); }
   }
   async function freeSearch(more) {
@@ -152,7 +159,7 @@
       if (state.items.length >= MAX_ITEMS) return toast(`품목은 ${MAX_ITEMS}개까지입니다.`);
       state.items.push({ name: r.cls || free.kw, spec: '', unit: r.unit, qtyTotal: '', qtyNow: '', qtyRound: '', designPrice: '', kw: free.kw, filter: free.filter, results: [], slots: {} });
       tgt = String(state.items.length - 1); free.target = tgt;
-      toast(`${state.items.length}번 품목을 새로 만들었습니다. ③에서 규격·수량을 채워 주세요.`);
+      toast(`${state.items.length}번 품목을 새로 만들었습니다. ②에서 규격·수량을 채워 주세요.`);
     }
     const it = state.items[+tgt]; it.results = it.results || []; it.slots = it.slots || {};
     if (!it.results.some((x) => x.no === r.no)) it.results.push(r);
@@ -172,11 +179,10 @@
     items.forEach((it, i) => { it.slots = {}; ranked.forEach((c, j) => { const r = per[i].get(c.k); if (r) it.slots[r.no] = j + 1; }); });
     save(); renderPicks(); renderFree();
     const miss = ranked.filter((c) => c.n < items.length);
-    toast(`공통업체: ${ranked.map((c, j) => `${j + 1}번 ${short(c.name)}`).join(', ')}` + (miss.length ? `\n※ ${miss.map((c) => short(c.name)).join(', ')}: 일부 품목에 제품이 없습니다. ⑤에서 확인하세요.` : ''), 8000);
+    toast(`공통업체: ${ranked.map((c, j) => `${j + 1}번 ${short(c.name)}`).join(', ')}` + (miss.length ? `\n※ ${miss.map((c) => short(c.name)).join(', ')}: 일부 품목에 제품이 없습니다. ④에서 확인하세요.` : ''), 8000);
   }
 
   async function build() {
-    if (!templateBytes) { location.hash = '#s1'; return toast('먼저 ① 원본 엑셀 양식 파일을 선택해 주세요.'); }
     const items = state.items.filter((it) => it.name);
     if (!items.length) return toast('품목을 입력해 주세요.');
     const empty = items.findIndex((it) => !slotList(it).some(Boolean));
@@ -198,7 +204,7 @@
         data.items.push({ name: it.name, spec: it.spec, unit: it.unit, qtyTotal: it.qtyTotal, qtyRound: it.qtyRound ?? it.qtyNow, qtyNow: it.qtyNow, designPrice: it.designPrice, companies });
       }
       busy('원본 양식에 채우는 중…');
-      const res = await E.fillWorkbook(JSZip, templateBytes, data);
+      const res = await E.fillWorkbook(JSZip, await getTemplate(), data);
       const fname = `관급자재 구매요청서_${(state.project.group || '자재').replace(/[\\/:*?"<>|]/g, '')}_${checkedAt.slice(0, 10).replace(/\./g, '')}.xlsx`;
       download(res.bytes, fname); busy('');
       toast(res.warnings.length ? `✔ ${fname} 저장됨\n확인할 점 ${res.warnings.length}건:\n• ${res.warnings.join('\n• ')}` : `✔ ${fname} 저장됨 (다운로드 폴더). 엑셀로 열면 금액이 자동 계산됩니다.`, res.warnings.length ? 16000 : 7000);
@@ -215,28 +221,6 @@
     setTimeout(() => URL.revokeObjectURL(url), 60000);
   }
 
-  async function setTemplate(file) {
-    busy('양식 파일 읽는 중…');
-    templateBytes = new Uint8Array(await file.arrayBuffer()); templateName = file.name;
-    try { await idb.set('template', { name: file.name, bytes: templateBytes }); } catch {}
-    showTpl();
-    await applyDefaults(!state.items.length || confirm('양식 파일의 공사개요·품목으로 입력칸을 바꿀까요?\n(취소하면 지금 입력한 내용을 유지합니다)'));
-    busy('');
-  }
-  async function applyDefaults(force) {
-    try {
-      const d = await E.readDefaults(JSZip, templateBytes);
-      for (const [k, v] of Object.entries(d.project)) if (force || !state.project[k]) state.project[k] = v;
-      if (force) state.items = d.items.map((it) => ({ ...it, ...guessQuery(it), results: null, slots: {} }));
-      save(); renderAll();
-      toast(`양식에서 공사개요와 품목 ${d.items.length}개를 읽었습니다.`);
-    } catch (e) { toast('양식 읽기 실패: ' + e.message, 9000); }
-  }
-  function showTpl() {
-    $('#tplName').innerHTML = templateBytes ? `<span class="ok">✔ ${esc(templateName)}</span> <span class="muted">(이 브라우저에 기억됨)</span>` : $('#tplName').innerHTML;
-    $('#reloadBtn').hidden = !templateBytes;
-  }
-
   // ───────────── 이벤트 ─────────────
   document.addEventListener('input', (e) => {
     const t = e.target;
@@ -245,10 +229,9 @@
   });
   document.addEventListener('change', async (e) => {
     const t = e.target;
-    if (t.id === 'tplInput' && t.files[0]) await setTemplate(t.files[0]);
     if (t.id === 'freeTarget') { free.target = t.value; renderFree(); }
     if (t.id === 'freeFilter') { free.filter = t.value; renderFree(); }
-    if (t.dataset.f && ['name', 'spec', 'filter'].includes(t.dataset.f)) { renderPicks(); renderItems(); }
+    if (t.dataset.f && ['name', 'spec', 'filter'].includes(t.dataset.f)) { renderPicks(); renderTargets(); } // 표는 다시 그리지 않음(입력 중 포커스 유지)
     if (t.dataset.a === 'showAll') { const it = state.items[+t.dataset.i]; it.showAll = t.checked; it._open = true; save(); renderPicks(); }
     if (t.dataset.slot) {
       const it = state.items[+t.dataset.i]; it.slots = it.slots || {}; const v = +t.value || 0;
@@ -268,7 +251,6 @@
     if (a === 'searchAll') { state.items.forEach((it) => { if (!it.kw) Object.assign(it, guessQuery(it)); }); renderItems(); await searchItems(state.items.map((_, k) => k)); }
     if (a === 'auto') autoPick();
     if (a === 'clearSlots') { state.items[i].slots = {}; save(); renderPicks(); renderFree(); }
-    if (a === 'reload') applyDefaults(confirm('양식 파일의 공사개요·품목으로 입력칸을 바꿀까요?'));
     if (a === 'put') putFree(b.dataset.no);
     if (a === 'unput') { const it = state.items[+$('#freeTarget').value]; if (it) { delete it.slots[b.dataset.no]; save(); renderPicks(); renderFree(); } }
   });
@@ -287,7 +269,8 @@
 
   (async function init() {
     renderAll();
-    try { const t = await idb.get('template'); if (t && t.bytes) { templateBytes = t.bytes instanceof Uint8Array ? t.bytes : new Uint8Array(t.bytes); templateName = t.name; showTpl(); } } catch {}
+    if (!state.items.length) { state.items.push({ name: '', spec: '', unit: '', qtyTotal: '', qtyNow: '', qtyRound: '', designPrice: '', kw: '', filter: '', results: null, slots: {} }); renderAll(); }
+    getTemplate().catch(() => {});
   })();
   window.GWJ = { state: () => state, free, guessQuery, autoPick };
 })();

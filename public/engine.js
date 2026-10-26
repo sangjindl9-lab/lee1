@@ -9,9 +9,9 @@
 
   // ───────────────────────── 양식 위치 정의 (원본 엑셀 분석 결과) ─────────────────────────
   const LAYOUT = {
-    maxItems: 6,               // 구매요청서·내역현황·조사표가 품목 6줄 구조
+    maxItems: 20,              // 내장 양식 품목 줄 수
     compare: {                 // 관급단가 비교표_*
-      namePrefix: '관급단가 비교표_',
+      namePrefix: '관급단가 비교표',
       blockHeight: 13,         // 품목 1개 = 13행
       titleCol: 'C',           // ' □ 품목명 : …'
       firstDataOffset: 4,      // 블록 시작행 + 4 = 1번 업체 행
@@ -25,7 +25,7 @@
     survey: {                  // 단가및인증현황조사(변경)_*
       namePrefix: '단가및인증현황조사',
       firstRow: 6,
-      clearRowsTo: 30,         // 6~30행 (12~30행은 숨김행: 예전 ◎ 잔재 정리)
+      clearRowsTo: 25,         // 6~25행 (품목 20줄)
       title: 'A1',
       cols: { name: 'A', spec: 'B', avg: 'BF' },
       companies: [
@@ -39,7 +39,7 @@
     },
     status: {                  // 구매내역현황
       name: '구매내역현황',
-      firstRow: 40,
+      firstRow: 10, sectionCell: 'A9',
       cols: { name: 'A', spec: 'B', unit: 'C', qtyTotal: 'E', qtyRound: 'G', designPrice: 'H', qtyNow: 'N' },
       projectCell: 'A3', roundCells: { G6: '{r}수량', J6: '금 회 {r}' },
     },
@@ -47,7 +47,7 @@
       name: '구매요청서',
       firstRow: 16,
       project: { name: 'E4', type: 'E5', materials: 'E6', period: 'E7', location: 'E8' },
-      roundCell: 'N13',
+      roundCell: 'N13', sectionCell: 'A15',
     },
   };
 
@@ -165,6 +165,13 @@
     }
     setFormula(ref, f) { this._put(ref, `<f>${esc(f.replace(/^=/, ''))}</f>`); }
     clear(ref) { if (this.getRaw(ref)) this._put(ref, null); }
+    setHidden(r, hide) {
+      let row = this.rows.get(r);
+      if (!row) { row = { open: `<row r="${r}">`, cells: new Map(), dirty: true }; this.rows.set(r, row); }
+      let o = row.open.replace(/\shidden="[^"]*"/, '');
+      if (hide) o = o.replace(/>$/, ' hidden="1">');
+      row.open = o; row.dirty = true;
+    }
     toXml() {
       const rs = [...this.rows.keys()].sort((a, b) => a - b);
       let body = '';
@@ -208,12 +215,12 @@
     const m = /<Relationship\b[^>]*Type="[^"]*\/drawing"[^>]*>/.exec(x);
     if (!m) return null;
     const target = attr(m[0], 'Target');
-    const path = 'xl/' + target.replace(/^\.\.\//, '');
+    const path = target.startsWith('/') ? target.slice(1) : 'xl/' + target.replace(/^\.\.\//, '');
     return { path, relPath: path.replace(/drawings\/(drawing\d+\.xml)$/, 'drawings/_rels/$1.rels') };
   }
 
-  function anchorPos(a) {
-    const m = /<xdr:from><xdr:col>(\d+)<\/xdr:col><xdr:colOff>-?\d+<\/xdr:colOff><xdr:row>(\d+)<\/xdr:row>/.exec(a);
+  function anchorPos(a, px = 'xdr:') {
+    const m = new RegExp(`<${px}from><${px}col>(\\d+)</${px}col><${px}colOff>-?\\d+</${px}colOff><${px}row>(\\d+)</${px}row>`).exec(a);
     return m ? { col: +m[1], row: +m[2] } : null;
   }
 
@@ -322,11 +329,11 @@
     // ── 4) 구매요청서: 공사개요
     for (const [key, ref] of Object.entries(R.project)) if (P[key]) req.set(ref, P[key]);
     if (round) req.set(R.roundCell, `금회${round}`);
-    // 남는 줄(품목 6개 미만)은 0이 찍히지 않도록 비움
-    for (let k = items.length; k < LAYOUT.maxItems; k++) {
-      const r = R.firstRow + k;
-      ['A', 'F', 'J', 'K', 'L', 'M'].forEach((c) => req.clear(c + r));
-      for (const c of ['A', 'B', 'D', 'G', 'H', 'I', 'J', 'R', 'S', 'T', 'AB', 'AC', 'AD', 'BF', 'BJ']) sur.clear(c + (S.firstRow + k)); // 조사표 빈 줄
+    if (P.type) { req.set(R.sectionCell, P.type); sta.set(T.sectionCell, ' ' + P.type); }
+    // 남는 품목 줄은 숨김 (내역현황·조사표) — 구매요청서는 원본처럼 빈 칸 유지
+    for (let k = 0; k < LAYOUT.maxItems; k++) {
+      sta.setHidden(T.firstRow + k, k >= items.length);
+      sur.setHidden(S.firstRow + k, k >= items.length);
     }
 
     // ── 5) 외형도 그림 교체
@@ -339,15 +346,16 @@
       // 채우는 블록의 업체행(1~7행) P열 그림 제거
       const targetRows = new Set();
       items.forEach((_, k) => { for (let j = 0; j < C.rowsPerBlock; j++) targetRows.add(C.blockHeight * k + C.firstDataOffset + j); }); // 0-based
-      dx = dx.replace(/<xdr:(oneCellAnchor|twoCellAnchor|absoluteAnchor)\b[^>]*>[\s\S]*?<\/xdr:\1>/g, (a) => {
-        const p = anchorPos(a);
+      const px = (/<(\w+:)?wsDr\b/.exec(dx) || [])[1] || ''; // 'xdr:' 또는 접두어 없음
+      dx = dx.replace(new RegExp(`<${px}(oneCellAnchor|twoCellAnchor|absoluteAnchor)\\b[^>]*>[\\s\\S]*?</${px}\\1>`, 'g'), (a) => {
+        const p = anchorPos(a, px);
         return p && p.col === C.imageCol && targetRows.has(p.row) ? '' : a;
       });
-      let maxId = 1; for (const m of dx.matchAll(/<xdr:cNvPr id="(\d+)"/g)) maxId = Math.max(maxId, +m[1]);
+      let maxId = 1; for (const m of dx.matchAll(/cNvPr id="(\d+)"/g)) maxId = Math.max(maxId, +m[1]);
       let maxRid = 0; for (const m of rx.matchAll(/Id="rId(\d+)"/g)) maxRid = Math.max(maxRid, +m[1]);
       const media = Object.keys(zip.files).filter((f) => f.startsWith('xl/media/'));
       let mediaN = 0; for (const f of media) { const m = /image(\d+)\./.exec(f); if (m) mediaN = Math.max(mediaN, +m[1]); }
-      const MAXW = 4830000, MAXH = 1100000, OFF = 40821; // EMU (원본 외형도 크기 기준)
+      const MAXW = 4600000, MAXH = 1100000, OFF = 40821; // EMU (원본 외형도 크기 기준)
       let anchors = '', relAdd = '';
       for (const { row, image } of imagePlan) {
         const ext = image.ext === 'png' ? 'png' : 'jpeg';
@@ -364,7 +372,9 @@
           `<xdr:blipFill><a:blip xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:embed="${rid}"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill>` +
           `<xdr:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></xdr:spPr></xdr:pic><xdr:clientData/></xdr:twoCellAnchor>`;
       }
-      dx = dx.replace('</xdr:wsDr>', anchors + '</xdr:wsDr>');
+      const A = 'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"';
+      anchors = anchors.replace(/<xdr:twoCellAnchor editAs="oneCell">/g, `<xdr:twoCellAnchor editAs="oneCell" ${A}>`).replace(/<(\/?)xdr:/g, `<$1${px}`);
+      dx = dx.replace(`</${px}wsDr>`, anchors + `</${px}wsDr>`);
       rx = rx.replace('</Relationships>', relAdd + '</Relationships>');
       zip.file(dr.path, dx); zip.file(dr.relPath, rx);
       let ct = await zip.file('[Content_Types].xml').async('string');
