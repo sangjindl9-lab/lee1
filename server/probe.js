@@ -31,7 +31,9 @@ async function korail() {
   const pages = {};
   for (const p of ['/goods/inList.do?code=A03&gubun=1', '/js/common.js']) { pages[p] = (await get(p)).html; await new Promise((r) => setTimeout(r, 500)); }
   const all = pages['/js/common.js'] + pages['/goods/inList.do?code=A03&gubun=1'];
-  const fa = all.match(/function\s+fn_add_param\s*\([^)]*\)\s*\{[\s\S]*?\n\s*\}/);
+  const i0 = all.search(/function\s+fn_add_param\s*\(/);
+  let fa = null;
+  if (i0 >= 0) { let d = 0, j = all.indexOf('{', i0); for (let k = j; k < all.length; k++) { if (all[k] === '{') d++; else if (all[k] === '}' && --d === 0) { fa = [all.slice(i0, k + 1)]; break; } } }
   console.log(`[PROBE] fn_add_param: ${fa ? fa[0].replace(/\s+/g, ' ').slice(0, 800) : '없음'}`);
   const inl = pages['/goods/inList.do?code=A03&gubun=1'];
   for (const m of inl.matchAll(/ZFUNCNM['"]?\s*[:=]\s*['"](\w+)['"]/g)) {
@@ -39,7 +41,7 @@ async function korail() {
     console.log(`[PROBE] inList → ${m[1]} :: ${pre.slice(pre.lastIndexOf('new Array()')).replace(/\s+/g, ' ').slice(0, 1500)}`);
   }
   if (!fa) return;
-  const ctx = {}; vm.createContext(ctx); vm.runInContext(fa[0], ctx);
+  const ctx = {}; vm.createContext(ctx); vm.runInContext(fa[0], ctx); console.log(`[PROBE] sample ptab: ${JSON.stringify(ctx.fn_add_param([], 'I_X', '1', false))}`);
   const call = async (fn, params) => {
     let ptab = [];
     for (const [k, v] of params) ptab = ctx.fn_add_param(ptab, k, v, false);
@@ -49,6 +51,7 @@ async function korail() {
     console.log(`[PROBE] call ${fn} → ${r.status} len=${t.length} ${t.slice(0, 1800)}`);
   };
   const ymd = (ms) => new Date(Date.now() + 9 * 3600e3 - ms).toISOString().slice(0, 10).replaceAll('-', '');
+  await call('ZMME_EBID_INFO_0009F', [['I_ZZBIDTYPECODE', '1'], ['I_ZZCTRMETHOD', ''], ['I_BSART', ''], ['I_ZZBIDINV', ''], ['I_DESCRIPTION', ''], ['I_ERDAT_FR', ymd(14 * 864e5)], ['I_ERDAT_TO', ymd(0)], ['I_SDAT_FR', ''], ['I_SDAT_TO', ''], ['I_LIFNR', '']]);
   await call('ZMME_EBID_INFO_0014', [['I_POART', '2'], ['I_EBELN', ''], ['I_ZZCTRDESC', ''], ['I_GUBUN', 'A'], ['I_ZZCONTRWAY', ''], ['I_ZZBIDINV', ''], ['I_DAT_FR', ymd(30 * 864e5)], ['I_DAT_TO', ymd(0)]]);
 }
 async function g2bOrgs(base) {
