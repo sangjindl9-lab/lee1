@@ -25,6 +25,7 @@
   --accent:#ffb03a; --accent-ink:#1d1300; --accent-soft:#3a2a0d;
   --done:#6c7686; --danger:#ff6b6b; --high:#ff6b6b; --mid:#ffb03a; --low:#6cc293;
   --overlay:rgba(0,0,0,.65); color-scheme:dark}
+[hidden]{display:none!important}
 *{box-sizing:border-box}
 html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 body{margin:0}
@@ -295,9 +296,9 @@ function openAlarm(t){
   try{navigator.vibrate&&navigator.vibrate([400,200,400])}catch(e){}
 }
 function closeAlarm(){clearInterval(beepTimer);$('modal').hidden=true;active=null;save();render()}
-$('mStop').onclick=()=>{active.fired=true;active.snooze=null;closeAlarm()};
-$('mSnooze').onclick=()=>{active.snooze=Date.now()+5*60000;active.fired=false;closeAlarm()};
-$('mDone').onclick=()=>{active.done=true;active.fired=true;closeAlarm()};
+$('mStop').onclick=()=>{if(!active)return closeAlarm();active.fired=true;active.snooze=null;closeAlarm()};
+$('mSnooze').onclick=()=>{if(!active)return closeAlarm();active.snooze=Date.now()+5*60000;active.fired=false;closeAlarm()};
+$('mDone').onclick=()=>{if(!active)return closeAlarm();active.done=true;active.fired=true;closeAlarm()};
 
 function tick(){
   const n=new Date();
