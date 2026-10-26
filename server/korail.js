@@ -164,10 +164,11 @@ async function drain() {
   }
   running = false;
 }
-const opengCache = new Map();
+const opengCache = new Map(); // 공고번호 → {t, d}
 // 개찰결과 상세: 참가업체 순위·사업자번호·대표자·투찰금액·투찰률
 export async function korailOpeng(no) {
-  if (opengCache.has(no)) return opengCache.get(no);
+  const c0 = opengCache.get(no);
+  if (c0 && (c0.final || Date.now() - c0.t < 30 * 60 * 1000)) return c0.d;
   const m = String(no).match(/^(\d{7})-?(\d{2})?$/);
   if (!m) return null;
   const out = await rfc('ZMME_EBID_INFO_0016', { I_ZZBIDINV: `${m[1]}-${m[2] || '00'}`, I_ZZSTNUM: m[2] || '00' }, '/goods/openDetail.do');
@@ -178,9 +179,35 @@ export async function korailOpeng(no) {
   }));
   for (const c of list) if (c.vendor && c.bizno.length === 10) vendorBiz.set(c.vendor, { bidwinnrBizno: c.bizno, bidwinnrCeoNm: c.ceo });
   const d = { head: { status: head.openresult_t, opengDt: iso(head.zzopen_dat) + hm(head.zzopen_tim), officer: head.zzpernr_t, tel: head.zztelno, method: head.zzwayofbidding_t, prc: head.zzprcmethod_t }, list };
-  opengCache.set(no, d);
+  opengCache.set(no, { t: Date.now(), d, final: list.length > 0 && /낙찰|계약|확정|상신/.test(head.openresult_t || '') });
   if (opengCache.size > 3000) opengCache.delete(opengCache.keys().next().value);
   return d;
+}
+
+// 개찰결과(1순위) — 마감이 지난 공고마다 개찰상세를 조회. 계약 전 단계까지 실시간으로 보임
+export async function korailOpengRows(from, to) {
+  const back = new Date(new Date(from).getTime() - 60 * 86400000).toISOString().slice(0, 10);
+  const notices = await korailNotices(back, to);
+  const now = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 16).replace('T', ' ');
+  const targets = notices.filter((r) => r.bidClseDt && r.bidClseDt.slice(0, 10) >= from && r.bidClseDt.slice(0, 10) <= to && r.bidClseDt <= now);
+  const out = [];
+  let i = 0;
+  await Promise.all([0, 1, 2].map(async () => {
+    while (i < targets.length) {
+      const r = targets[i++];
+      const no = `${r.bidNtceNo}-${r.bidNtceOrd.slice(-2)}`;
+      let d = null;
+      try { d = await korailOpeng(no); } catch (e) { if (!/데이터가 없/.test(e.message)) console.log(`[korail] 개찰 ${no} 실패 ${e.message}`); }
+      const top = d?.list?.find((c) => Number(c.rank) === 1) || d?.list?.[0];
+      if (!top) continue;
+      out.push({
+        ...r, bidNtceNo: no, awardStatus: d.head.status || '개찰', bidwinnrNm: top.name, bidwinnrBizno: top.bizno, bidwinnrCeoNm: top.ceo,
+        sucsfbidAmt: top.amt, sucsfbidRate: top.rate ? Number(top.rate).toFixed(3) : '', prtcptCnum: String(d.list.length),
+        opengDt: d.head.opengDt || r.bidClseDt, rlOpengDt: d.head.opengDt || r.bidClseDt, _officer: d.head.officer || '',
+      });
+    }
+  }));
+  return out;
 }
 
 // 서버 시작 시 1회: 입찰공고 구분값 확인 + 최근 계약결과 업체 사업자번호 미리 채우기

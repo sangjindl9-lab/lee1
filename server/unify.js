@@ -3,7 +3,7 @@ import { kwSearch } from './kwater.js';
 import { krResults } from './krbid.js';
 import { kepcoNotices } from './kepco.js';
 import { d2bRows, d2bNoticeRow, d2bResultRow } from './d2b.js';
-import { korailNotices, korailContracts } from './korail.js';
+import { korailNotices, korailContracts, korailOpengRows } from './korail.js';
 
 // 업종 체크박스 → 공고명 키워드 (다른 기관은 업종 정보가 없어 공고명으로 판단)
 const INDUSTRY_WORDS = [
@@ -182,9 +182,15 @@ export async function extAwards(kind, p, { key, extLoad }) {
   {
     const today = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
     const until = new Date(Math.min(new Date(today), new Date(to).getTime() + 60 * 86400000)).toISOString().slice(0, 10);
-    jobs.push(korailContracts(from, until).then((list) => list.forEach((r) => {
-      if (want(r._kind) && inRange(r.opengDt, from, to)) rows.push(r);
-    })).catch((e) => console.log(`[unify] 철도공사 계약 실패: ${e.message}`)));
+    // 계약결과(확정)를 우선, 아직 계약 전인 건은 개찰결과 1순위로
+    jobs.push(Promise.all([
+      korailContracts(from, until).catch((e) => { console.log(`[unify] 철도공사 계약 실패: ${e.message}`); return []; }),
+      korailOpengRows(from, to).catch((e) => { console.log(`[unify] 철도공사 개찰 실패: ${e.message}`); return []; }),
+    ]).then(([cont, openg]) => {
+      const done = new Set();
+      for (const r of cont) if (want(r._kind) && inRange(r.opengDt, from, to)) { rows.push(r); done.add(r.bidNtceNo); }
+      for (const r of openg) if (want(r._kind) && !done.has(r.bidNtceNo)) rows.push(r);
+    }));
   }
   await Promise.all(jobs);
   return rows.filter((r) => {
