@@ -92,5 +92,11 @@ export async function exportExcel(rows, columns, filename) {
   ws['!cols'] = columns.map((c) => ({ wch: c.wch || 14 }));
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, '목록');
+  // 안드로이드 앱 안에서는 브라우저 다운로드가 안 되므로 앱에 파일을 넘겨 '다운로드' 폴더에 저장
+  if (window.NarabidApp?.saveFile) {
+    const b64 = XLSX.write(wb, { bookType: 'xlsx', type: 'base64' });
+    window.NarabidApp.saveFile(filename, b64, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    return;
+  }
   XLSX.writeFile(wb, filename);
 }
