@@ -28,12 +28,18 @@ function dump(tag, { status, url, html }) {
 }
 async function korail() {
   const main = await get('/main.do');
-  const m = main.html.match(/function\s+fn_myFrame[\s\S]{0,900}/);
-  console.log(`[PROBE] fn_myFrame: ${m ? m[0].replace(/\s+/g, ' ') : '없음'}`);
-  const m2 = main.html.match(/function\s+fn_bid_content[\s\S]{0,400}/);
-  console.log(`[PROBE] fn_bid_content: ${m2 ? m2[0].replace(/\s+/g, ' ') : '없음'}`);
-  for (const p of ['/goods/inList.do?code=A03&gubun=1', '/goods/inList.do?code=A03&gubun=5', '/goods/contList.do?code=A04&gubun=2', '/goods/contList.do?code=A06&gubun=6', '/enterprise/bidInfo.do?code=A031']) {
-    try { dump(p, await get(p)); } catch (e) { console.log(`[PROBE] ${p} 실패 ${e.message}`); }
+  // 메뉴 이름 ↔ 주소
+  const menu = [...main.html.matchAll(/fn_myFrame\('([^']+)',\s*'([^']+)'(?:\s*,\s*'?([^')]*)'?)?\);?"[^>]*>([\s\S]{0,80}?)<\/a>/g)].map((m) => `${txt(m[4])}=${m[1]}?code=${m[2]}&gubun=${m[3] || ''}`);
+  console.log(`[PROBE] menu: ${menu.join(' | ')}`);
+  for (const p of ['/goods/inList.do?code=A03&gubun=1', '/goods/contList.do?code=A04&gubun=2', '/goods/inDetail.do?code=A03&gubun=', '/goods/openDetail.do?code=A04&gubun=']) {
+    try {
+      const { status, html } = await get(p);
+      const ajax = [...html.matchAll(/(?:url\s*:|\.(?:post|get|ajax)\(\s*)["']([^"']+)["']/g)].map((m) => m[1]);
+      console.log(`[PROBE] ${p} ${status} len=${html.length} ajax: ${[...new Set(ajax)].join(' | ')}`);
+      for (const m of html.matchAll(/\$\.ajax\(\{[\s\S]{0,900}/g)) console.log(`[PROBE]   ajax-src: ${m[0].replace(/\s+/g, ' ').slice(0, 900)}`);
+      const fnSearch = html.match(/function\s+fn_search\w*\s*\([\s\S]{0,900}/);
+      if (fnSearch) console.log(`[PROBE]   fn_search: ${fnSearch[0].replace(/\s+/g, ' ')}`);
+    } catch (e) { console.log(`[PROBE] ${p} 실패 ${e.message}`); }
     await new Promise((r) => setTimeout(r, 800));
   }
 }
@@ -57,6 +63,4 @@ async function g2bOrgs(base) {
 }
 export async function probe(base) {
   await korail().catch((e) => console.log('[PROBE] korail fail', e.message));
-  await new Promise((r) => setTimeout(r, 30000));
-  await g2bOrgs(base).catch((e) => console.log('[PROBE] g2b fail', e.message));
 }
