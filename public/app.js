@@ -102,7 +102,6 @@
   }
   function renderFree() {
     const list = free.list.filter((r) => (!free.facet || r.cls === free.facet) && passes(r, free.filter));
-    $('#freeBar').hidden = !free.kw;
     $('#freeInfo').textContent = free.kw ? `"${free.kw}" 전체 ${free.total.toLocaleString()}건 중 ${free.list.length}건 불러옴 · 표시 ${list.length}건` : '';
     const cls = {}; for (const r of free.list) if (r.cls) cls[r.cls] = (cls[r.cls] || 0) + 1;
     $('#facets').innerHTML = Object.keys(cls).length > 1 ? `<span class="muted">세부품명:</span><button class="${free.facet ? '' : 'on'}" data-facet="">전체</button>` +
@@ -153,7 +152,7 @@
       busy(''); renderFree();
     } catch (e) { busy(''); toast('검색 실패: ' + e.message, 9000); }
   }
-  function putFree(no) {
+  function putFree(no, quiet) {
     const r = free.list.find((x) => x.no === no); if (!r) return;
     let tgt = $('#freeTarget').value;
     if (tgt === 'new') {
@@ -163,7 +162,7 @@
       else if (state.items.length >= MAX_ITEMS) return toast(`품목은 ${MAX_ITEMS}개까지입니다.`);
       else state.items.push(nu);
       tgt = String(bi >= 0 ? bi : state.items.length - 1); free.target = tgt;
-      toast(`${state.items.length}번 품목을 새로 만들었습니다. ②에서 규격·수량을 채워 주세요.`);
+      if (!quiet) toast(`${+tgt + 1}번 품목을 새로 만들었습니다. ②에서 규격·수량을 채워 주세요.`);
     }
     const it = state.items[+tgt]; it.results = it.results || []; it.slots = it.slots || {};
     if (!it.results.some((x) => x.no === r.no)) it.results.push(r);
@@ -172,6 +171,30 @@
     if (s > MAX_SLOTS) return toast('업체 칸(1~7번)이 모두 찼습니다.');
     it.slots[r.no] = s; it.results.sort((a, b) => a.price - b.price);
     save(); renderItems(); renderPicks(); renderFree();
+  }
+  async function pasteRegister() {
+    const text = $('#pasteBox').value.trim();
+    if (!text) return toast('상품 주소를 붙여넣어 주세요.');
+    try {
+      busy('나라장터에서 상품 정보를 가져오는 중…');
+      const r = await fetch('/api/resolve', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) });
+      const j = await r.json(); busy('');
+      if (!r.ok || j.error) throw new Error(j.error || '실패');
+      const ok = [], bad = [];
+      for (const x of j.results) {
+        if (!x.item) { bad.push(x.error); continue; }
+        const it = x.item;
+        if (!free.list.some((y) => y.no === it.no && y.price === it.price)) free.list.unshift(it);
+        putFree(it.no, true);
+        ok.push(`${short(it.co)} ${it.no} ${it.price.toLocaleString()}원` + (x.partial ? ' (본사·인증 확인 필요)' : ''));
+      }
+      if (ok.length) $('#pasteBox').value = '';
+      const tgt = state.items[+free.target];
+      free.target = 'new'; renderTargets(); // 다음 붙여넣기는 새 품목으로
+      toast((ok.length ? `✔ ${ok.length}건 등록 → ${tgt ? (+free.target + 1) + '번 품목(' + tgt.name + ')' : ''}\n• ${ok.join('\n• ')}` : '') +
+        (bad.length ? `${ok.length ? '\n\n' : ''}✖ ${bad.length}건 실패\n• ${bad.join('\n• ')}` : ''), 12000);
+      renderFree();
+    } catch (e) { busy(''); toast('주소 등록 실패: ' + e.message, 9000); }
   }
   function autoPick() {
     const items = state.items.filter((it) => (it.results || []).length);
@@ -264,6 +287,7 @@
   document.addEventListener('toggle', (e) => { const d = e.target; if (d.matches && d.matches('details.it')) state.items[+d.dataset.i]._open = d.open; }, true);
   $('#freeForm').addEventListener('submit', (e) => { e.preventDefault(); free.filter = $('#freeFilter').value; freeSearch(false); });
   $('#freeMore').addEventListener('click', () => freeSearch(true));
+  $('#pasteBtn').addEventListener('click', pasteRegister);
 
   // ───────────── 기타 ─────────────
   function busy(msg) { const b = $('#busy'); b.hidden = !msg; b.querySelector('span').textContent = msg; }
