@@ -1,0 +1,389 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>에스에스전력 휴가대장</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&family=Nanum+Myeongjo:wght@800&display=swap">
+<style>
+/* 레이아웃: 상단 제목+탭, 아래 단일 작업 영역. 서류철(휴가원) 느낌의 남색 잉크 + 원본 표시용 붉은 인주색 */
+:root{
+  --bg:#f2f4f6; --surface:#ffffff; --ink:#17202b; --muted:#5b6674; --line:#d8dde4;
+  --accent:#1f4e79; --accent-soft:#e3ecf5; --seal:#c3382c; --seal-soft:#fbe9e7; --good:#2f7a4a;
+  --f-display:"Nanum Myeongjo",serif;
+  --f-body:"IBM Plex Sans KR","Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+  --f-num:"IBM Plex Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#11151a; --surface:#1a2028; --ink:#e5e9ee; --muted:#97a1ad; --line:#2d3540;
+  --accent:#86b4e2; --accent-soft:#1e2c3b; --seal:#ee6c60; --seal-soft:#3a1f1d; --good:#6cc08a; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#11151a; --surface:#1a2028; --ink:#e5e9ee; --muted:#97a1ad; --line:#2d3540;
+  --accent:#86b4e2; --accent-soft:#1e2c3b; --seal:#ee6c60; --seal-soft:#3a1f1d; --good:#6cc08a; color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0}[hidden]{display:none!important}img{max-width:100%}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.55}
+.wrap{max-width:1080px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 48px;display:flex;flex-direction:column;gap:18px}
+header{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px;border-bottom:2px solid var(--ink);padding-bottom:12px}
+h1{font-family:var(--f-display);font-size:28px;margin:0;letter-spacing:.02em;text-wrap:balance}
+.sub{color:var(--muted);font-size:13px}
+nav{display:flex;gap:4px;flex-wrap:wrap}
+nav button{font:inherit;font-weight:600;font-size:14px;padding:8px 14px;border:1px solid var(--line);background:var(--surface);color:var(--muted);border-radius:6px;cursor:pointer}
+nav button[aria-selected="true"]{background:var(--accent);border-color:var(--accent);color:var(--surface)}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:20px;display:flex;flex-direction:column;gap:16px}
+h2{font-size:17px;margin:0;font-weight:700}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px}
+label.f{display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:600;color:var(--muted);min-width:0}
+input,select,textarea{font:inherit;font-size:15px;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:9px 10px;width:100%}
+textarea{resize:vertical;min-height:64px}
+input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.btn{font:inherit;font-weight:600;font-size:14px;padding:9px 16px;border-radius:6px;border:1px solid var(--accent);background:var(--accent);color:var(--surface);cursor:pointer}
+.btn.ghost{background:transparent;color:var(--accent)}
+.btn.danger{border-color:var(--seal);background:var(--seal);color:var(--surface)}
+.btn.sm{padding:5px 10px;font-size:13px}
+.btn:disabled{opacity:.5;cursor:default}
+.chk{display:flex;gap:6px;align-items:center;font-size:14px;color:var(--ink);font-weight:500}
+.chk input{width:auto}
+.hint{font-size:13px;color:var(--muted)}
+.num{font-family:var(--f-num);font-variant-numeric:tabular-nums}
+.drop{border:1.5px dashed var(--line);border-radius:8px;padding:16px;display:flex;flex-direction:column;gap:10px;align-items:flex-start}
+.thumbs{display:flex;flex-wrap:wrap;gap:10px}
+.thumb{width:96px;display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--muted);word-break:break-all}
+.thumb .box{width:96px;height:120px;border:1px solid var(--line);border-radius:4px;background:var(--bg);display:flex;align-items:center;justify-content:center;overflow:hidden;font-family:var(--f-num);font-size:13px;color:var(--seal)}
+.thumb img{width:100%;height:100%;object-fit:cover}
+.thumb button{font:inherit;font-size:11px;border:none;background:none;color:var(--seal);cursor:pointer;padding:0;text-align:left}
+.filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.list{display:flex;flex-direction:column;border-top:1px solid var(--line)}
+.item{display:grid;grid-template-columns:150px 90px 1fr auto;gap:12px;align-items:center;padding:12px 4px;border-bottom:1px solid var(--line)}
+.item .who{font-weight:700}
+.item .meta{font-size:13px;color:var(--muted);min-width:0;overflow-wrap:anywhere}
+.tag{display:inline-block;font-size:12px;font-weight:600;padding:2px 8px;border-radius:999px;background:var(--accent-soft);color:var(--accent);white-space:nowrap}
+.tag.free{background:var(--bg);color:var(--muted);border:1px solid var(--line)}
+.orig{display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:700;color:var(--seal);border:1.5px solid var(--seal);border-radius:999px;padding:1px 8px;background:none;cursor:pointer;font-family:inherit}
+.noorig{font-size:12px;color:var(--muted)}
+.acts{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+@media (max-width:640px){.item{grid-template-columns:1fr auto}.item .c-date{grid-column:1/-1;order:-1;font-size:13px;color:var(--muted)}.item .acts{grid-column:1/-1;justify-content:flex-start}}
+.tbl-wrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;min-width:640px;font-size:14px}
+th,td{padding:10px 8px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
+th{font-size:12px;color:var(--muted);font-weight:600;letter-spacing:.03em}
+td.r,th.r{text-align:right}
+.bar{width:90px;height:6px;border-radius:3px;background:var(--line);overflow:hidden}
+.bar i{display:block;height:100%;background:var(--accent)}
+.left-low{color:var(--seal);font-weight:700}
+.empty{padding:28px 8px;text-align:center;color:var(--muted)}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:10px 18px;border-radius:6px;font-size:14px;font-weight:600;z-index:20}
+.modal{position:fixed;inset:0;background:rgba(10,14,20,.72);z-index:30;display:flex;flex-direction:column;padding:calc(12px + env(safe-area-inset-top,0px)) max(12px,env(safe-area-inset-right,0px)) calc(12px + env(safe-area-inset-bottom,0px)) max(12px,env(safe-area-inset-left,0px));gap:10px}
+.modal .bar2{display:flex;justify-content:space-between;align-items:center;gap:8px;color:#fff;flex-wrap:wrap}
+.modal .view{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;overflow:auto}
+.modal img{max-width:100%;max-height:100%;background:#fff}
+.modal a.pdf{color:#fff;font-weight:700;font-size:16px;border:1.5px solid #fff;border-radius:6px;padding:12px 18px;text-decoration:none}
+.notice{font-size:13px;padding:10px 12px;border-radius:6px;background:var(--seal-soft);color:var(--seal)}
+.confirm{display:flex;gap:6px;align-items:center;font-size:13px;color:var(--seal);font-weight:600}
+</style>
+</head><body>
+
+<div class="wrap">
+  <header>
+    <div>
+      <h1>휴가대장</h1>
+      <div class="sub">㈜에스에스전력 · 제출받은 휴가원을 입력하고 원본을 함께 보관합니다 · <a href="/logout" style="color:var(--muted)">로그아웃</a></div>
+    </div>
+    <nav role="tablist">
+      <button role="tab" data-tab="input" aria-selected="true">서류 입력</button>
+      <button role="tab" data-tab="ledger" aria-selected="false">휴가대장</button>
+      <button role="tab" data-tab="status" aria-selected="false">연차 현황</button>
+      <button role="tab" data-tab="emps" aria-selected="false">직원</button>
+    </nav>
+  </header>
+
+  <div id="modeNote" class="notice" hidden></div>
+
+  <!-- 서류 입력 -->
+  <section class="panel" id="tab-input">
+    <div class="row" style="justify-content:space-between"><h2 id="formTitle">휴가원 입력</h2><button class="btn ghost sm" id="cancelEdit" hidden>수정 취소</button></div>
+    <div id="noEmpNote" class="hint" hidden>먼저 <b>직원</b> 탭에서 직원을 등록하세요.</div>
+    <div class="grid">
+      <label class="f">직원<select id="fEmp"></select></label>
+      <label class="f">휴가 종류<select id="fType"></select></label>
+      <label class="f">시작일<input type="date" id="fStart"></label>
+      <label class="f" id="endWrap">종료일<input type="date" id="fEnd"></label>
+      <label class="f">사용 일수<input type="number" step="0.25" min="0" id="fDays" class="num"></label>
+      <label class="f">서류 제출일<input type="date" id="fSubmit"></label>
+    </div>
+    <label class="chk"><input type="checkbox" id="fDeduct"> 연차에서 차감</label>
+    <label class="f">사유<input type="text" id="fReason" placeholder="예: 개인 사유, 가족 행사"></label>
+    <label class="f">비고<textarea id="fNote" placeholder="대체근무자, 연락처 등"></textarea></label>
+    <div class="drop">
+      <div><b>원본 서류</b> <span class="hint">휴가원 사진·스캔본(JPG, PNG) 또는 PDF</span></div>
+      <input type="file" id="fFiles" accept="image/*,application/pdf" multiple>
+      <div class="thumbs" id="thumbs"></div>
+      <div class="hint" id="uploadNote" hidden>이 화면에서는 원본 파일을 저장할 수 없습니다. 편집 권한이 있는 계정으로 열어주세요.</div>
+    </div>
+    <div class="row"><button class="btn" id="saveLeave">저장</button><span class="hint" id="calcHint"></span></div>
+  </section>
+
+  <!-- 휴가대장 -->
+  <section class="panel" id="tab-ledger" hidden>
+    <div class="row" style="justify-content:space-between"><h2>휴가대장</h2><button class="btn ghost sm" id="csvBtn" hidden>엑셀(CSV) 내려받기</button></div>
+    <div class="filters">
+      <label class="f">직원<select id="qEmp"></select></label>
+      <label class="f">연도<select id="qYear"></select></label>
+      <label class="f">월<select id="qMonth"></select></label>
+      <label class="f">종류<select id="qType"></select></label>
+    </div>
+    <div class="hint" id="ledgerSum"></div>
+    <div class="list" id="ledger"></div>
+  </section>
+
+  <!-- 연차 현황 -->
+  <section class="panel" id="tab-status" hidden>
+    <div class="row" style="justify-content:space-between;align-items:flex-end">
+      <h2>연차 현황</h2>
+      <label class="f" style="width:170px">기준일<input type="date" id="asOf"></label>
+    </div>
+    <div class="hint">입사일 기준 산정(근로기준법 제60조): 1년 미만은 1개월 개근마다 1일(최대 11일), 1년 이상 15일, 3년차부터 2년마다 1일 가산(최대 25일). 조정 일수로 이월·회계연도 차이를 보정하세요.</div>
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>직원</th><th>입사일</th><th>근속</th><th>산정 기간</th><th class="r">발생</th><th class="r">조정</th><th class="r">사용</th><th class="r">잔여</th><th></th></tr></thead>
+      <tbody id="statusBody"></tbody>
+    </table></div>
+  </section>
+
+  <!-- 직원 -->
+  <section class="panel" id="tab-emps" hidden>
+    <h2 id="empTitle">직원 등록</h2>
+    <div class="grid">
+      <label class="f">이름<input type="text" id="eName"></label>
+      <label class="f">부서·직위<input type="text" id="ePos" placeholder="예: 공사부 / 기사"></label>
+      <label class="f">입사일<input type="date" id="eHire"></label>
+      <label class="f">조정 일수<input type="number" step="0.5" id="eAdj" class="num" placeholder="0"></label>
+    </div>
+    <label class="chk"><input type="checkbox" id="eLeft"> 퇴사자 (목록에서 숨김)</label>
+    <div class="row"><button class="btn" id="saveEmp">직원 저장</button><button class="btn ghost" id="cancelEmp" hidden>취소</button></div>
+    <div class="list" id="empList"></div>
+  </section>
+</div>
+
+<div class="modal" id="modal" hidden>
+  <div class="bar2"><b id="mTitle"></b><div class="row"><button class="btn sm ghost" style="color:#fff;border-color:#fff" id="mPrev">이전</button><button class="btn sm ghost" style="color:#fff;border-color:#fff" id="mNext">다음</button><button class="btn sm" id="mClose">닫기</button></div></div>
+  <div class="view" id="mView"></div>
+</div>
+
+<script>
+(function(){
+const $=id=>document.getElementById(id);
+const TYPES=[
+  {k:"연차",u:1,d:true},{k:"오전반차",u:.5,d:true,half:true},{k:"오후반차",u:.5,d:true,half:true},
+  {k:"반반차",u:.25,d:true,half:true},{k:"하계휴가",u:1,d:true},{k:"경조사휴가",u:1,d:false},
+  {k:"병가",u:1,d:false},{k:"공가",u:1,d:false},{k:"출산·육아",u:1,d:false},{k:"기타",u:1,d:false}];
+const TMAP=Object.fromEntries(TYPES.map(t=>[t.k,t]));
+// 공휴일(대체공휴일 포함) 2026–2027
+const HOL=new Set(["2026-01-01","2026-02-16","2026-02-17","2026-02-18","2026-03-01","2026-03-02","2026-05-01","2026-05-05","2026-05-24","2026-05-25","2026-06-03","2026-06-06","2026-08-15","2026-08-17","2026-09-24","2026-09-25","2026-09-26","2026-09-28","2026-10-03","2026-10-05","2026-10-09","2026-12-25",
+"2027-01-01","2027-02-06","2027-02-07","2027-02-08","2027-02-09","2027-03-01","2027-05-05","2027-05-13","2027-06-06","2027-08-15","2027-08-16","2027-09-14","2027-09-15","2027-09-16","2027-10-03","2027-10-04","2027-10-09","2027-10-11","2027-12-25","2027-12-27"]);
+
+const S={emps:[],leaves:[],db:null,assets:null,dl:null,editId:null,editEmp:null,keepFiles:[],newFiles:[],confirmDel:null,modal:null};
+
+// ---------- 날짜 ----------
+const pd=s=>{const [y,m,d]=s.split("-").map(Number);return new Date(y,m-1,d)};
+const fd=d=>d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+const today=()=>fd(new Date());
+const addY=(d,n)=>new Date(d.getFullYear()+n,d.getMonth(),d.getDate());
+const addM=(d,n)=>new Date(d.getFullYear(),d.getMonth()+n,d.getDate());
+const isWork=d=>{const w=d.getDay();return w!==0&&w!==6&&!HOL.has(fd(d))};
+function workdays(a,b){if(!a||!b)return 0;let x=pd(a),e=pd(b),n=0;if(e<x)return 0;while(x<=e){if(isWork(x))n++;x.setDate(x.getDate()+1)}return n}
+function fullYears(h,a){let y=a.getFullYear()-h.getFullYear();if(addY(h,y)>a)y--;return Math.max(0,y)}
+function fullMonths(h,a){let m=(a.getFullYear()-h.getFullYear())*12+a.getMonth()-h.getMonth();if(addM(h,m)>a)m--;return Math.max(0,m)}
+const kd=s=>s?s.slice(2).replace(/-/g,"."):"";
+const fmtN=n=>(Math.round(n*100)/100).toString();
+
+function annual(emp,asOfS){
+  if(!emp.hire)return null;
+  const h=pd(emp.hire),a=pd(asOfS);if(a<h)return {granted:0,start:emp.hire,end:emp.hire,yrs:0,mos:0};
+  const yrs=fullYears(h,a);let start,end,granted;
+  if(yrs<1){start=h;end=addY(h,1);granted=Math.min(11,fullMonths(h,a))}
+  else{start=addY(h,yrs);end=addY(h,yrs+1);granted=Math.min(25,15+Math.floor((yrs-1)/2))}
+  const ps=fd(start),pe=fd(end);
+  const used=S.leaves.filter(l=>l.empId===emp.id&&l.deduct&&l.start>=ps&&l.start<pe).reduce((s,l)=>s+(+l.days||0),0);
+  const adj=+emp.adj||0;
+  return {granted,adj,used,left:granted+adj-used,start:ps,end:fd(new Date(end.getTime()-864e5)),yrs,mos:fullMonths(h,a)};
+}
+
+// ---------- 저장소 (서버) ----------
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+async function api(method,url,body,headers){
+  const r=await fetch(url,{method,headers:headers||(body!=null?{"Content-Type":"application/json"}:{}),body:body==null?undefined:(body instanceof Blob?body:JSON.stringify(body))});
+  if(r.status===401){location.reload();throw {message:"다시 로그인하세요"}}
+  const j=await r.json().catch(()=>({}));if(!r.ok)throw {message:j.error||("오류 "+r.status)};return j;
+}
+async function load(){try{const j=await api("GET","/api/data");S.emps=j.emps||[];S.leaves=j.leaves||[];renderAll()}catch(e){toast("데이터를 불러오지 못했습니다")}}
+async function put(col,id,data){await api("PUT",`/api/${col}/${id}`,data);await load()}
+async function del(col,id){await api("DELETE",`/api/${col}/${id}`);await load()}
+S.assets={upload:f=>api("POST","/api/files",f,{"Content-Type":f.type||"application/octet-stream","X-Filename":encodeURIComponent(f.name)}),
+  delete:id=>api("DELETE","/api/files/"+id)};
+S.dl={save:async({filename,data})=>{const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([data],{type:"text/csv;charset=utf-8"}));a.download=filename;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1000)}};
+function toast(t){const el=document.createElement("div");el.className="toast";el.textContent=t;document.body.appendChild(el);setTimeout(()=>el.remove(),2200)}
+const empName=id=>(S.emps.find(e=>e.id===id)||{}).name||"(삭제된 직원)";
+const activeEmps=()=>S.emps.filter(e=>!e.left).sort((a,b)=>a.name.localeCompare(b.name,"ko"));
+
+// ---------- 탭 ----------
+document.querySelectorAll("nav button").forEach(b=>b.addEventListener("click",()=>showTab(b.dataset.tab)));
+function showTab(t){document.querySelectorAll("nav button").forEach(b=>b.setAttribute("aria-selected",b.dataset.tab===t));
+  ["input","ledger","status","emps"].forEach(k=>$("tab-"+k).hidden=k!==t);try{localStorage.setItem("hyugaTab",t)}catch(e){}}
+
+// ---------- 입력 폼 ----------
+$("fType").innerHTML=TYPES.map(t=>`<option>${t.k}</option>`).join("");
+$("qType").innerHTML='<option value="">전체</option>'+TYPES.map(t=>`<option>${t.k}</option>`).join("");
+$("qMonth").innerHTML='<option value="">전체</option>'+Array.from({length:12},(_,i)=>`<option value="${String(i+1).padStart(2,"0")}">${i+1}월</option>`).join("");
+let daysTouched=false;
+function recalc(){
+  const t=TMAP[$("fType").value];$("endWrap").hidden=!!t.half;
+  if(t.half)$("fEnd").value=$("fStart").value;
+  if(!daysTouched){const n=t.half?($("fStart").value?t.u:0):workdays($("fStart").value,$("fEnd").value)*t.u;$("fDays").value=n?fmtN(n):""}
+  const e=S.emps.find(x=>x.id===$("fEmp").value);
+  if(e&&$("fStart").value&&$("fDeduct").checked){const a=annual(e,$("fStart").value);if(a){const cur=S.editId?(S.leaves.find(l=>l.id===S.editId)||{}):{};const back=cur.deduct&&cur.empId===e.id&&cur.start>=a.start&&cur.start<=a.end?(+cur.days||0):0;
+    const after=a.left+back-(+$("fDays").value||0);$("calcHint").innerHTML=`${e.name} 잔여 연차 <span class="num">${fmtN(a.left+back)}</span>일 → 저장 후 <span class="num ${after<0?"left-low":""}">${fmtN(after)}</span>일`;return}}
+  $("calcHint").textContent="";
+}
+$("fType").addEventListener("change",()=>{daysTouched=false;$("fDeduct").checked=TMAP[$("fType").value].d;recalc()});
+$("fStart").addEventListener("change",()=>{if(!$("fEnd").value||$("fEnd").value<$("fStart").value)$("fEnd").value=$("fStart").value;daysTouched=false;recalc()});
+$("fEnd").addEventListener("change",()=>{daysTouched=false;recalc()});
+$("fEmp").addEventListener("change",recalc);$("fDeduct").addEventListener("change",recalc);
+$("fDays").addEventListener("input",()=>{daysTouched=true;recalc()});
+$("fFiles").addEventListener("change",e=>{for(const f of e.target.files){if(f.size>20*1024*1024){toast(f.name+" 은(는) 20MB를 넘어 올릴 수 없습니다");continue}S.newFiles.push({file:f,url:URL.createObjectURL(f)})}e.target.value="";renderThumbs()});
+function renderThumbs(){
+  const kept=S.keepFiles.map((f,i)=>`<div class="thumb"><div class="box">${f.type&&f.type.startsWith("image")?`<img src="${f.url}" alt="">`:"PDF"}</div><span>${esc(f.name||"원본")}</span><button data-rk="${i}">빼기</button></div>`);
+  const nw=S.newFiles.map((f,i)=>`<div class="thumb"><div class="box">${f.file.type.startsWith("image")?`<img src="${f.url}" alt="">`:"PDF"}</div><span>${esc(f.file.name)}</span><button data-rn="${i}">빼기</button></div>`);
+  $("thumbs").innerHTML=kept.concat(nw).join("");
+}
+$("thumbs").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;if(b.dataset.rk!=null)S.keepFiles.splice(+b.dataset.rk,1);else{const f=S.newFiles.splice(+b.dataset.rn,1)[0];URL.revokeObjectURL(f.url)}renderThumbs()});
+function resetForm(){
+  S.editId=null;S.keepFiles=[];S.newFiles.forEach(f=>URL.revokeObjectURL(f.url));S.newFiles=[];daysTouched=false;
+  $("fType").value="연차";$("fStart").value=today();$("fEnd").value=today();$("fSubmit").value=today();
+  $("fReason").value="";$("fNote").value="";$("fDeduct").checked=true;$("formTitle").textContent="휴가원 입력";$("cancelEdit").hidden=true;$("saveLeave").textContent="저장";renderThumbs();recalc();
+}
+$("cancelEdit").addEventListener("click",resetForm);
+$("saveLeave").addEventListener("click",async()=>{
+  const empId=$("fEmp").value,start=$("fStart").value,type=$("fType").value;
+  if(!empId){toast("직원을 선택하세요");return}
+  if(!start){toast("시작일을 입력하세요");return}
+  const end=TMAP[type].half?start:($("fEnd").value||start);
+  if(end<start){toast("종료일이 시작일보다 빠릅니다");return}
+  const btn=$("saveLeave");btn.disabled=true;
+  try{
+    const files=S.keepFiles.slice();
+    if(S.newFiles.length){
+      if(!S.assets)throw {message:"원본 파일을 저장할 수 없는 화면입니다"};
+      for(let i=0;i<S.newFiles.length;i++){btn.textContent=`원본 올리는 중 ${i+1}/${S.newFiles.length}`;
+        const f=S.newFiles[i].file;const r=await S.assets.upload(f);files.push({id:r.id,url:r.url,name:f.name,type:r.contentType||f.type})}
+    }
+    const id=S.editId||uid();const old=S.leaves.find(l=>l.id===id);
+    await put("leaves",id,{empId,type,start,end,days:+$("fDays").value||0,deduct:$("fDeduct").checked,submitted:$("fSubmit").value,reason:$("fReason").value.trim(),note:$("fNote").value.trim(),files,createdAt:old?old.createdAt:new Date().toISOString()});
+    if(old&&S.assets){const keep=new Set(files.map(f=>f.id));for(const f of old.files||[])if(!keep.has(f.id))S.assets.delete(f.id).catch(()=>{})}
+    toast(S.editId?"수정했습니다":"저장했습니다");const keepEmp=empId;resetForm();$("fEmp").value=keepEmp;recalc();
+  }catch(e){toast("저장하지 못했습니다: "+(e&&e.message||"다시 시도하세요"))}
+  btn.disabled=false;btn.textContent=S.editId?"수정 저장":"저장";
+});
+function editLeave(id){const l=S.leaves.find(x=>x.id===id);if(!l)return;resetForm();S.editId=id;
+  $("fEmp").value=l.empId;$("fType").value=l.type;$("fStart").value=l.start;$("fEnd").value=l.end;$("fDays").value=l.days;daysTouched=true;
+  $("fDeduct").checked=!!l.deduct;$("fSubmit").value=l.submitted||"";$("fReason").value=l.reason||"";$("fNote").value=l.note||"";
+  S.keepFiles=(l.files||[]).slice();renderThumbs();$("formTitle").textContent="휴가원 수정";$("cancelEdit").hidden=false;$("saveLeave").textContent="수정 저장";recalc();showTab("input");window.scrollTo(0,0)}
+
+// ---------- 대장 ----------
+["qEmp","qYear","qMonth","qType"].forEach(id=>$(id).addEventListener("change",renderLedger));
+function filtered(){const e=$("qEmp").value,y=$("qYear").value,m=$("qMonth").value,t=$("qType").value;
+  return S.leaves.filter(l=>(!e||l.empId===e)&&(!y||l.start.slice(0,4)===y)&&(!m||l.start.slice(5,7)===m)&&(!t||l.type===t)).sort((a,b)=>b.start.localeCompare(a.start))}
+function renderLedger(){
+  const rows=filtered();const tot=rows.reduce((s,l)=>s+(+l.days||0),0),ded=rows.filter(l=>l.deduct).reduce((s,l)=>s+(+l.days||0),0);
+  $("ledgerSum").innerHTML=rows.length?`<span class="num">${rows.length}</span>건 · 합계 <span class="num">${fmtN(tot)}</span>일 (연차 차감 <span class="num">${fmtN(ded)}</span>일) · 원본 미등록 <span class="num">${rows.filter(l=>!(l.files||[]).length).length}</span>건`:"";
+  if(!rows.length){$("ledger").innerHTML=`<div class="empty">${S.leaves.length?"조건에 맞는 휴가 기록이 없습니다.":"아직 입력한 휴가원이 없습니다. <b>서류 입력</b> 탭에서 첫 서류를 입력하세요."}</div>`;return}
+  $("ledger").innerHTML=rows.map(l=>{const n=(l.files||[]).length;
+    const range=l.start===l.end?kd(l.start):`${kd(l.start)} ~ ${kd(l.end)}`;
+    const acts=S.confirmDel===l.id?`<span class="confirm">삭제할까요?<button class="btn sm danger" data-del="${l.id}">삭제</button><button class="btn sm ghost" data-nodel>취소</button></span>`:`<button class="btn sm ghost" data-edit="${l.id}">수정</button><button class="btn sm ghost" style="color:var(--seal);border-color:var(--seal)" data-ask="${l.id}">삭제</button>`;
+    return `<div class="item"><div class="c-date num">${range}</div>
+      <div class="who">${esc(empName(l.empId))}</div>
+      <div class="meta"><span class="tag ${l.deduct?"":"free"}">${l.type} <span class="num">${fmtN(+l.days||0)}</span>일</span> ${esc(l.reason||"")}${l.submitted?` · 제출 ${kd(l.submitted)}`:""}${l.note?` · ${esc(l.note)}`:""}
+        <div style="margin-top:4px">${n?`<button class="orig" data-view="${l.id}">원본 ${n}장 보기</button>`:`<span class="noorig">원본 미등록</span>`}</div></div>
+      <div class="acts">${acts}</div></div>`}).join("");
+}
+$("ledger").addEventListener("click",async e=>{const b=e.target.closest("button");if(!b)return;
+  if(b.dataset.edit)editLeave(b.dataset.edit);
+  else if(b.dataset.ask){S.confirmDel=b.dataset.ask;renderLedger()}
+  else if(b.hasAttribute("data-nodel")){S.confirmDel=null;renderLedger()}
+  else if(b.dataset.del){const l=S.leaves.find(x=>x.id===b.dataset.del);S.confirmDel=null;
+    try{await del("leaves",b.dataset.del);if(S.assets&&l)for(const f of l.files||[])S.assets.delete(f.id).catch(()=>{});toast("삭제했습니다")}catch(err){toast("삭제하지 못했습니다")}}
+  else if(b.dataset.view)openModal(b.dataset.view,0);
+});
+$("csvBtn").addEventListener("click",async()=>{
+  const rows=filtered().slice().reverse();const q=v=>`"${String(v??"").replace(/"/g,'""')}"`;
+  const head=["직원","휴가종류","시작일","종료일","일수","연차차감","사유","서류제출일","비고","원본"];
+  const lines=[head.map(q).join(",")].concat(rows.map(l=>[empName(l.empId),l.type,l.start,l.end,l.days,l.deduct?"Y":"N",l.reason,l.submitted,l.note,(l.files||[]).length?"등록":"미등록"].map(q).join(",")));
+  try{await S.dl.save({filename:`휴가대장_${$("qYear").value||"전체"}${$("qMonth").value?"-"+$("qMonth").value:""}.csv`,data:"﻿"+lines.join("\r\n")})}catch(e){if(e&&e.code!=="declined")toast("파일을 만들지 못했습니다")}
+});
+
+// ---------- 원본 보기 ----------
+function openModal(id,i){const l=S.leaves.find(x=>x.id===id);if(!l||!(l.files||[]).length)return;S.modal={id,i};drawModal();$("modal").hidden=false}
+function drawModal(){const l=S.leaves.find(x=>x.id===S.modal.id);const fs=l.files;const i=S.modal.i;const f=fs[i];const src="/files/"+f.id;
+  $("mTitle").textContent=`${empName(l.empId)} · ${l.type} ${kd(l.start)} — 원본 ${i+1}/${fs.length}`;
+  $("mView").innerHTML=f.type&&f.type.startsWith("image")?`<img src="${src}" alt="휴가원 원본">`:`<a class="pdf" href="${src}" target="_blank" rel="noopener">PDF 원본 열기 (${esc(f.name||"")})</a>`;
+  $("mPrev").hidden=$("mNext").hidden=fs.length<2}
+$("mClose").addEventListener("click",()=>{$("modal").hidden=true});
+$("mPrev").addEventListener("click",()=>{const n=S.leaves.find(x=>x.id===S.modal.id).files.length;S.modal.i=(S.modal.i-1+n)%n;drawModal()});
+$("mNext").addEventListener("click",()=>{const n=S.leaves.find(x=>x.id===S.modal.id).files.length;S.modal.i=(S.modal.i+1)%n;drawModal()});
+document.addEventListener("keydown",e=>{if(e.key==="Escape")$("modal").hidden=true});
+
+// ---------- 연차 현황 ----------
+$("asOf").value=today();$("asOf").addEventListener("change",renderStatus);
+function renderStatus(){
+  const list=activeEmps();
+  if(!list.length){$("statusBody").innerHTML=`<tr><td colspan="9" class="empty">등록된 직원이 없습니다.</td></tr>`;return}
+  $("statusBody").innerHTML=list.map(e=>{const a=annual(e,$("asOf").value||today());
+    if(!a)return `<tr><td><b>${esc(e.name)}</b></td><td colspan="8" class="hint">입사일을 입력하면 계산됩니다</td></tr>`;
+    const tot=a.granted+a.adj,pct=tot>0?Math.min(100,a.used/tot*100):0;
+    return `<tr><td><b>${esc(e.name)}</b><div class="hint">${esc(e.pos||"")}</div></td><td class="num">${kd(e.hire)}</td>
+      <td>${a.yrs?a.yrs+"년":a.mos+"개월"}</td><td class="num">${kd(a.start)} ~ ${kd(a.end)}</td>
+      <td class="r num">${fmtN(a.granted)}</td><td class="r num">${a.adj?fmtN(a.adj):"-"}</td><td class="r num">${fmtN(a.used)}</td>
+      <td class="r num ${a.left<=1?"left-low":""}">${fmtN(a.left)}</td><td><div class="bar"><i style="width:${pct}%"></i></div></td></tr>`}).join("");
+}
+
+// ---------- 직원 ----------
+function resetEmp(){S.editEmp=null;["eName","ePos","eHire","eAdj"].forEach(i=>$(i).value="");$("eLeft").checked=false;$("empTitle").textContent="직원 등록";$("cancelEmp").hidden=true;$("saveEmp").textContent="직원 저장"}
+$("cancelEmp").addEventListener("click",resetEmp);
+$("saveEmp").addEventListener("click",async()=>{const name=$("eName").value.trim();if(!name){toast("이름을 입력하세요");return}
+  const id=S.editEmp||uid();try{await put("employees",id,{name,pos:$("ePos").value.trim(),hire:$("eHire").value,adj:+$("eAdj").value||0,left:$("eLeft").checked});toast(S.editEmp?"수정했습니다":"등록했습니다");resetEmp()}catch(e){toast("저장하지 못했습니다")}});
+function renderEmps(){
+  const list=S.emps.slice().sort((a,b)=>(a.left-b.left)||a.name.localeCompare(b.name,"ko"));
+  if(!list.length){$("empList").innerHTML=`<div class="empty">이름과 입사일을 넣고 첫 직원을 등록하세요.</div>`;return}
+  $("empList").innerHTML=list.map(e=>{const cnt=S.leaves.filter(l=>l.empId===e.id).length;
+    const acts=S.confirmDel==="e:"+e.id?`<span class="confirm">${cnt?`휴가 기록 ${cnt}건이 남습니다. `:""}삭제할까요?<button class="btn sm danger" data-edel="${e.id}">삭제</button><button class="btn sm ghost" data-nodel>취소</button></span>`:`<button class="btn sm ghost" data-eedit="${e.id}">수정</button><button class="btn sm ghost" style="color:var(--seal);border-color:var(--seal)" data-eask="${e.id}">삭제</button>`;
+    return `<div class="item"><div class="c-date num">${e.hire?"입사 "+kd(e.hire):"입사일 미입력"}</div><div class="who">${esc(e.name)}</div>
+      <div class="meta">${esc(e.pos||"")}${e.adj?` · 조정 ${fmtN(e.adj)}일`:""}${e.left?` · <span class="tag free">퇴사</span>`:""} · 휴가 기록 <span class="num">${cnt}</span>건</div><div class="acts">${acts}</div></div>`}).join("");
+}
+$("empList").addEventListener("click",async e=>{const b=e.target.closest("button");if(!b)return;
+  if(b.dataset.eedit){const x=S.emps.find(v=>v.id===b.dataset.eedit);S.editEmp=x.id;$("eName").value=x.name;$("ePos").value=x.pos||"";$("eHire").value=x.hire||"";$("eAdj").value=x.adj||"";$("eLeft").checked=!!x.left;$("empTitle").textContent="직원 수정";$("cancelEmp").hidden=false;$("saveEmp").textContent="수정 저장";window.scrollTo(0,0)}
+  else if(b.dataset.eask){S.confirmDel="e:"+b.dataset.eask;renderEmps()}
+  else if(b.hasAttribute("data-nodel")){S.confirmDel=null;renderEmps()}
+  else if(b.dataset.edel){S.confirmDel=null;try{await del("employees",b.dataset.edel);toast("삭제했습니다")}catch(err){toast("삭제하지 못했습니다")}}
+});
+
+// ---------- 공통 렌더 ----------
+function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
+function fillSelect(el,opts,first){const v=el.value;el.innerHTML=(first||"")+opts;if([...el.options].some(o=>o.value===v))el.value=v}
+function renderAll(){
+  const act=activeEmps();
+  fillSelect($("fEmp"),act.map(e=>`<option value="${e.id}">${esc(e.name)}</option>`).join(""),'<option value="">선택</option>');
+  if(S.editId){const l=S.leaves.find(x=>x.id===S.editId);if(l&&!act.some(e=>e.id===l.empId))$("fEmp").insertAdjacentHTML("beforeend",`<option value="${l.empId}">${esc(empName(l.empId))}</option>`),$("fEmp").value=l.empId}
+  fillSelect($("qEmp"),S.emps.map(e=>`<option value="${e.id}">${esc(e.name)}</option>`).join(""),'<option value="">전체</option>');
+  const ys=[...new Set(S.leaves.map(l=>l.start.slice(0,4)).concat([today().slice(0,4)]))].sort().reverse();
+  const yv=$("qYear").value;$("qYear").innerHTML='<option value="">전체</option>'+ys.map(y=>`<option>${y}</option>`).join("");$("qYear").value=yv||"";
+  $("noEmpNote").hidden=act.length>0;
+  renderLedger();renderStatus();renderEmps();recalc();
+}
+
+// ---------- 시작 ----------
+let initTab="input";try{initTab=localStorage.getItem("hyugaTab")||"input"}catch(e){}
+showTab(["input","ledger","status","emps"].includes(initTab)?initTab:"input");
+resetForm();renderAll();
+$("csvBtn").hidden=false;load();
+document.addEventListener("visibilitychange",()=>{if(!document.hidden)load()});
+})();
+</script>
+</body></html>

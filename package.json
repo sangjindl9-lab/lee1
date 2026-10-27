@@ -1,0 +1,1 @@
+{"name":"hyuga","version":"1.0.0","private":true,"description":"에스에스전력 휴가대장","main":"server.js","scripts":{"start":"node server.js"},"engines":{"node":">=18"}}
