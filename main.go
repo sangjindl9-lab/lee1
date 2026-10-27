@@ -221,6 +221,9 @@ func handleData(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		rev = time.Now().UnixNano()
+		if webMode {
+			log.Printf("저장: %d바이트 (%s)", len(b), clientIP(r))
+		}
 		w.Header().Set("X-Rev", strconv.FormatInt(rev, 10))
 		w.Write([]byte("ok"))
 	default:
