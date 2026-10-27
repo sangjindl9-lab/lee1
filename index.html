@@ -666,9 +666,27 @@ function vSites(){
     ${f('기본 붙임 문구 (추가 붙임)','attachDefault',{cls:'span2',ph:'예) 자재승인서 사본',hint:'새 검측 작성 시 요청서 붙임에 추가됩니다. 체크리스트·실명부는 자동 포함'})}
    </div>
    <div class="row" style="margin-top:14px"><button class="btn pri" data-act="site-save">저장</button>
-    ${state.siteSel!=='__new'?`<button class="btn dan" data-act="site-del">현장 삭제</button>`:''}<span class="sp"></span>
-    <span class="muted">수정해도 이미 저장한 검측서류의 공사정보·담당자는 바뀌지 않습니다.</span></div>
+    ${state.siteSel!=='__new'?`<button class="btn" data-act="site-prop">기존 검측서류에 현재 정보 반영</button><button class="btn dan" data-act="site-del">현장 삭제</button>`:''}<span class="sp"></span>
+    <span class="muted">저장할 때 기존 검측서류에도 반영할지 물어봅니다.</span></div>
   </div></div>`}
+
+/* 현장 정보를 바꾼 뒤 기존 검측서류에도 반영할지 묻기 (문서번호 관련 항목은 제외) */
+const PROP_LABELS={name:'공사명',contractor:'시공사명',recipient:'수신처',siteAgent:'현장대리인',inspector:'시공자 점검직원',cmTitle:'분야별 건설사업관리기술인 직책',cmName:'분야별 건설사업관리기술인 성명',chiefTitle:'책임건설사업관리기술인 직책',chiefName:'책임건설사업관리기술인 성명'};
+const PROP_OPEN=['작성 중','요청서 작성 완료','보완 필요','재검측'];
+function askPropagate(siteId,old){const s=data.sites.find(x=>x.id===siteId);if(!s)return;
+  const mine=data.inspections.filter(d=>d.siteId===siteId);
+  const keys=Object.keys(PROP_LABELS).filter(k=>old?(old[k]||'')!==(s[k]||''):mine.some(d=>(d.site[k]||'')!==(s[k]||'')));
+  if(!keys.length){if(!old)toast('모든 검측서류가 현재 현장 정보와 같습니다.');return}
+  const all=mine.filter(d=>keys.some(k=>d.site[k]!==s[k]));if(!all.length)return;
+  const open=all.filter(d=>PROP_OPEN.includes(d.status));state.prop={siteId,keys};
+  modal(`<h3>기존 검측서류에도 반영할까요?</h3>
+   <p>${old?'바뀐 항목':'현재 현장 정보와 다른 항목'}: ${keys.map(k=>`<b>${PROP_LABELS[k]}</b> (${old?esc(old[k]||'빈칸')+' → ':'→ '}${esc(s[k]||'빈칸')})`).join('<br>')}</p>
+   <p class="muted">이미 작성한 검측서류는 작성 당시 정보를 따로 보관하고 있어 자동으로 바뀌지 않습니다. 이 현장에서 다른 정보가 남아 있는 서류는 ${all.length}건입니다.<br>
+   검측번호(접두어·분야)는 바뀌지 않습니다.</p>
+   <div class="row" style="flex-wrap:wrap"><button class="btn" data-act="prop-apply" data-m="none">반영 안 함</button>
+    <button class="btn" data-act="prop-apply" data-m="open" ${open.length?'':'disabled'}>제출 전 서류만 (${open.length}건)</button>
+    <button class="btn pri" data-act="prop-apply" data-m="all">전체 (${all.length}건)</button></div>
+   <div class="muted" style="margin-top:6px">제출 전 서류 = 진행상태가 작성 중 · 요청서 작성 완료 · 보완 필요 · 재검측인 서류</div>`)}
 
 /* ---------- 검측대장 ---------- */
 function filtered(){const f=state.lf;const sid=f.siteId==='__cur'?(curSite()||{}).id:f.siteId;
@@ -1074,10 +1092,16 @@ const A={
   'site-save':()=>{const o={};$$('[data-sf]').forEach(i=>o[i.dataset.sf]=i.value.trim());
     if(!has(o.name)){alert('공사명을 입력하세요.');return}if(!has(o.prefix)){alert('문서번호 접두어를 입력하세요.');return}
     if(o.field==='직접 입력'&&!has(o.fieldCustom)){alert('공사 분야를 직접 입력하세요.');return}
-    let id=state.siteSel;
+    let id=state.siteSel;const old=id==='__new'?null:clone(data.sites.find(x=>x.id===id)||{});
     const ok=commit(()=>{if(id==='__new'){const s=normSite(o);data.sites.push(s);id=s.id;if(!data.settings.currentSiteId)data.settings.currentSiteId=id}
       else{const s=data.sites.find(x=>x.id===id);Object.assign(s,o,{updatedAt:nowISO()})}});
-    if(ok){state.siteSel=id;toast('현장 정보를 저장했습니다.');render()}},
+    if(ok){state.siteSel=id;toast('현장 정보를 저장했습니다.');render();if(old)askPropagate(id,old)}},
+  'site-prop':()=>askPropagate(state.siteSel,null),
+  'prop-apply':(el)=>{const p=state.prop;if(!p)return;const mode=el.dataset.m;closeModal();state.prop=null;if(mode==='none')return;
+    const s=data.sites.find(x=>x.id===p.siteId);if(!s)return;
+    const tgt=data.inspections.filter(d=>d.siteId===s.id&&(mode==='all'||PROP_OPEN.includes(d.status))&&p.keys.some(k=>d.site[k]!==s[k]));
+    if(!tgt.length){toast('바꿀 검측서류가 없습니다.');return}
+    if(commit(()=>{tgt.forEach(d=>{p.keys.forEach(k=>{d.site[k]=s[k]});d.updatedAt=nowISO()})}))toast(`검측서류 ${tgt.length}건에 바뀐 정보를 반영했습니다.`);render()},
   'site-del':()=>{const s=data.sites.find(x=>x.id===state.siteSel);if(!s)return;const n=data.inspections.filter(d=>d.siteId===s.id).length;
     if(n){alert(`이 현장에 검측 ${n}건이 있어 삭제할 수 없습니다. 검측을 먼저 삭제하거나 백업 후 정리하세요.`);return}
     if(!confirm(`현장 “${s.name}”을(를) 삭제할까요?`))return;
