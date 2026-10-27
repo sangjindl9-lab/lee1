@@ -79,6 +79,34 @@ td.r,th.r{text-align:right}
 .modal a.pdf{color:#fff;font-weight:700;font-size:16px;border:1.5px solid #fff;border-radius:6px;padding:12px 18px;text-decoration:none}
 .notice{font-size:13px;padding:10px 12px;border-radius:6px;background:var(--seal-soft);color:var(--seal)}
 .confirm{display:flex;gap:6px;align-items:center;font-size:13px;color:var(--seal);font-weight:600}
+#printArea{display:none}
+@media print{
+  body{background:#fff!important;color:#000!important}
+  .wrap,.toast,.modal{display:none!important}
+  #printArea{display:block}
+}
+/* 인쇄 양식: 흑백, 명조 제목, 표 테두리 */
+#printArea{padding:0 3px;font-family:"Malgun Gothic","Apple SD Gothic Neo",var(--f-body);color:#000;font-size:10pt;line-height:1.35}
+#printArea .pg{page-break-after:always;break-after:page}
+#printArea .pg:last-child{page-break-after:auto;break-after:auto}
+#printArea .ph{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:10px}
+#printArea h1{font-family:"Nanum Myeongjo",serif;font-size:20pt;letter-spacing:.35em;margin:6px 0 4px}
+#printArea .pmeta{font-size:9.5pt}
+#printArea table.sign{border-collapse:collapse;min-width:0;width:auto}
+#printArea table.sign td,#printArea table.sign th{border:1px solid #000;width:62px;text-align:center;padding:3px;font-size:9pt;white-space:nowrap}
+#printArea table.sign td{height:48px}
+#printArea table.sign th.v{width:18px;writing-mode:vertical-rl;letter-spacing:.3em}
+#printArea table.pt{border-collapse:collapse;width:100%;min-width:0;font-size:9pt}
+#printArea table.pt th,#printArea table.pt td{border:1px solid #000;padding:4px 5px;white-space:normal;color:#000}
+#printArea table.pt th{background:#eee;text-align:center;font-weight:700;font-size:9pt;letter-spacing:0;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+#printArea table.pt td.c{text-align:center}
+#printArea table.pt td.r{text-align:right;font-variant-numeric:tabular-nums}
+#printArea table.pt tr{page-break-inside:avoid;break-inside:avoid}
+#printArea table.pt thead{display:table-header-group}
+#printArea table.pt tfoot td{font-weight:700;background:#f6f6f6;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+#printArea .pfoot{margin-top:10px;padding-top:5px;border-top:1px solid #000;font-size:9pt;display:flex;justify-content:space-between}
+#printArea .emph{font-weight:700}
+.printbar{display:flex;gap:6px;flex-wrap:wrap}
 </style>
 </head><body>
 
@@ -125,7 +153,8 @@ td.r,th.r{text-align:right}
 
   <!-- 휴가대장 -->
   <section class="panel" id="tab-ledger" hidden>
-    <div class="row" style="justify-content:space-between"><h2>휴가대장</h2><button class="btn ghost sm" id="csvBtn" hidden>엑셀(CSV) 내려받기</button></div>
+    <div class="row" style="justify-content:space-between"><h2>휴가대장</h2><div class="printbar"><button class="btn sm" id="printLedger">휴가대장 인쇄</button><button class="btn ghost sm" id="csvBtn" hidden>엑셀(CSV) 내려받기</button></div></div>
+    <div class="hint">인쇄는 아래 조건(직원·연도·월·종류)으로 걸러진 목록 그대로 나옵니다.</div>
     <div class="filters">
       <label class="f">직원<select id="qEmp"></select></label>
       <label class="f">연도<select id="qYear"></select></label>
@@ -140,7 +169,11 @@ td.r,th.r{text-align:right}
   <section class="panel" id="tab-status" hidden>
     <div class="row" style="justify-content:space-between;align-items:flex-end">
       <h2>연차 현황</h2>
-      <label class="f" style="width:170px">기준일<input type="date" id="asOf"></label>
+      <div class="row" style="align-items:flex-end">
+        <label class="f" style="width:170px">기준일<input type="date" id="asOf"></label>
+        <label class="f" style="width:150px">인쇄 범위<select id="prScope"><option value="all">현황 + 직원별 내역</option><option value="sum">현황표만</option><option value="detail">직원별 내역만</option></select></label>
+        <button class="btn sm" id="printAnnual" style="margin-bottom:2px">연차대장 인쇄</button>
+      </div>
     </div>
     <div class="hint">입사일 기준 산정(근로기준법 제60조): 1년 미만은 1개월 개근마다 1일(최대 11일), 1년 이상 15일, 3년차부터 2년마다 1일 가산(최대 25일). 조정 일수로 이월·회계연도 차이를 보정하세요.</div>
     <div class="tbl-wrap"><table>
@@ -183,6 +216,7 @@ td.r,th.r{text-align:right}
   </section>
 </div>
 
+<div id="printArea"></div>
 <div class="modal" id="modal" hidden>
   <div class="bar2"><b id="mTitle"></b><div class="row"><button class="btn sm ghost" style="color:#fff;border-color:#fff" id="mPrev">이전</button><button class="btn sm ghost" style="color:#fff;border-color:#fff" id="mNext">다음</button><button class="btn sm" id="mClose">닫기</button></div></div>
   <div class="view" id="mView"></div>
@@ -217,7 +251,7 @@ const fmtN=n=>(Math.round(n*100)/100).toString();
 
 function annual(emp,asOfS){
   if(!emp.hire)return null;
-  const h=pd(emp.hire),a=pd(asOfS);if(a<h)return {granted:0,start:emp.hire,end:emp.hire,yrs:0,mos:0};
+  const h=pd(emp.hire),a=pd(asOfS);if(a<h)return {granted:0,adj:+emp.adj||0,used:0,left:+emp.adj||0,start:emp.hire,end:emp.hire,yrs:0,mos:0};
   const yrs=fullYears(h,a);let start,end,granted;
   if(yrs<1){start=h;end=addY(h,1);granted=Math.min(11,fullMonths(h,a))}
   else{start=addY(h,yrs);end=addY(h,yrs+1);granted=Math.min(25,15+Math.floor((yrs-1)/2))}
@@ -382,6 +416,62 @@ $("empList").addEventListener("click",async e=>{const b=e.target.closest("button
   else if(b.dataset.eask){S.confirmDel="e:"+b.dataset.eask;renderEmps()}
   else if(b.hasAttribute("data-nodel")){S.confirmDel=null;renderEmps()}
   else if(b.dataset.edel){S.confirmDel=null;try{await del("employees",b.dataset.edel);toast("삭제했습니다")}catch(err){toast("삭제하지 못했습니다")}}
+});
+
+// ---------- 인쇄 ----------
+const COMPANY="주식회사 에스에스전력";
+const krDate=s=>{if(!s)return "";const [y,m,d]=s.split("-");return `${y}. ${+m}. ${+d}.`};
+const WD="일월화수목금토";
+const rangeTxt=l=>l.start===l.end?`${krDate(l.start)}(${WD[pd(l.start).getDay()]})`:`${krDate(l.start)} ~ ${krDate(l.end)}`;
+const signBox=()=>`<table class="sign"><tr><th class="v" rowspan="2">결재</th><th>담 당</th><th>대표이사</th></tr><tr><td></td><td></td></tr></table>`;
+function pageHead(title,meta){return `<div class="ph"><div><h1>${title}</h1><div class="pmeta">${meta}</div></div>${signBox()}</div>`}
+const nowTxt=()=>{const d=new Date();return `${d.getFullYear()}. ${d.getMonth()+1}. ${d.getDate()}. ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`};
+const pfoot=()=>`<div class="pfoot"><span class="emph">${COMPANY}</span><span>출력 일시 ${nowTxt()}</span></div>`;
+function setPage(landscape){let st=$("pageStyle");if(!st){st=document.createElement("style");st.id="pageStyle";document.head.appendChild(st)}
+  st.textContent=`@page{size:A4 ${landscape?"landscape":"portrait"};margin:12mm 10mm}`}
+function doPrint(html,landscape){$("printArea").innerHTML=html;setPage(landscape);
+  const fire=()=>setTimeout(()=>window.print(),50);document.fonts&&document.fonts.ready?document.fonts.ready.then(fire):fire()}
+
+$("printLedger").addEventListener("click",()=>{
+  const rows=filtered().slice().reverse();
+  if(!rows.length){toast("인쇄할 휴가 기록이 없습니다");return}
+  const e=$("qEmp").value,y=$("qYear").value,m=$("qMonth").value,t=$("qType").value;
+  const cond=[y?y+"년":"전체 기간",m?(+m)+"월":"",e?empName(e):"전 직원",t||"전 종류"].filter(Boolean).join(" · ");
+  const tot=rows.reduce((s,l)=>s+(+l.days||0),0),ded=rows.filter(l=>l.deduct).reduce((s,l)=>s+(+l.days||0),0);
+  const body=rows.map((l,i)=>{const emp=S.emps.find(x=>x.id===l.empId)||{};return `<tr><td class="c">${i+1}</td><td class="c">${esc(empName(l.empId))}</td><td class="c">${esc(emp.pos||"")}</td><td class="c">${l.type}</td>
+    <td class="c">${rangeTxt(l)}</td><td class="r">${fmtN(+l.days||0)}</td><td class="c">${l.deduct?"차감":"-"}</td><td>${esc(l.reason||"")}</td>
+    <td class="c">${l.submitted?krDate(l.submitted):""}</td><td class="c">${(l.files||[]).length?"보관":"미등록"}</td><td>${esc(l.note||"")}</td></tr>`}).join("");
+  doPrint(`<div class="pg">${pageHead("휴 가 대 장",`${COMPANY} · 조회 조건: ${esc(cond)}`)}
+    <table class="pt"><thead><tr><th style="width:4%">번호</th><th style="width:8%">성명</th><th style="width:9%">부서·직위</th><th style="width:8%">휴가 종류</th><th style="width:19%">기간</th><th style="width:5%">일수</th><th style="width:5%">연차</th><th>사유</th><th style="width:9%">서류 제출일</th><th style="width:6%">원본</th><th style="width:13%">비고</th></tr></thead>
+    <tbody>${body}</tbody><tfoot><tr><td colspan="5" class="c">합 계 (${rows.length}건)</td><td class="r">${fmtN(tot)}</td><td colspan="5">연차 차감 ${fmtN(ded)}일 · 미차감 ${fmtN(tot-ded)}일</td></tr></tfoot></table>${pfoot()}</div>`,true);
+});
+
+$("printAnnual").addEventListener("click",()=>{
+  const asOf=$("asOf").value||today();const list=activeEmps().filter(e=>e.hire);
+  if(!list.length){toast("입사일이 입력된 직원이 없습니다");return}
+  const scope=$("prScope").value;let html="";
+  if(scope!=="detail"){
+    const rows=list.map((e,i)=>{const a=annual(e,asOf);return `<tr><td class="c">${i+1}</td><td class="c">${esc(e.name)}</td><td class="c">${esc(e.pos||"")}</td><td class="c">${krDate(e.hire)}</td>
+      <td class="c">${a.yrs?a.yrs+"년 "+(a.mos-a.yrs*12)+"개월":a.mos+"개월"}</td><td class="c">${krDate(a.start)} ~ ${krDate(a.end)}</td>
+      <td class="r">${fmtN(a.granted)}</td><td class="r">${a.adj?fmtN(a.adj):""}</td><td class="r">${fmtN(a.granted+a.adj)}</td><td class="r">${fmtN(a.used)}</td><td class="r emph">${fmtN(a.left)}</td><td></td></tr>`}).join("");
+    html+=`<div class="pg">${pageHead("연 차 대 장",`${COMPANY} · 기준일 ${krDate(asOf)} · 입사일 기준(근로기준법 제60조)`)}
+      <table class="pt"><thead><tr><th style="width:4%">번호</th><th style="width:8%">성명</th><th style="width:10%">부서·직위</th><th style="width:10%">입사일</th><th style="width:9%">근속</th><th style="width:20%">산정 기간</th><th style="width:6%">발생</th><th style="width:6%">조정</th><th style="width:6%">합계</th><th style="width:6%">사용</th><th style="width:6%">잔여</th><th>확인</th></tr></thead><tbody>${rows}</tbody></table>
+      <div class="pmeta" style="margin-top:6px">※ 1년 미만: 1개월 개근 시 1일(최대 11일) / 1년 이상: 15일, 3년차부터 2년마다 1일 가산(최대 25일). 조정은 이월·회계연도 보정분.</div>${pfoot()}</div>`;
+  }
+  if(scope!=="sum"){
+    list.forEach(e=>{const a=annual(e,asOf);
+      const ls=S.leaves.filter(l=>l.empId===e.id&&l.start>=a.start&&l.start<=a.end).sort((x,y)=>x.start.localeCompare(y.start));
+      let bal=a.granted+a.adj;
+      const rows=ls.map((l,i)=>{if(l.deduct)bal-=(+l.days||0);return `<tr><td class="c">${i+1}</td><td class="c">${l.type}</td><td class="c">${rangeTxt(l)}</td><td class="r">${fmtN(+l.days||0)}</td>
+        <td class="c">${l.deduct?"차감":"-"}</td><td class="r">${l.deduct?fmtN(bal):""}</td><td>${esc(l.reason||"")}</td><td class="c">${l.submitted?krDate(l.submitted):""}</td><td></td></tr>`}).join("")||`<tr><td colspan="9" class="c" style="padding:14px">산정 기간 중 사용 내역 없음</td></tr>`;
+      html+=`<div class="pg">${pageHead("연차 사용 대장",`${COMPANY} · 기준일 ${krDate(asOf)}`)}
+        <table class="pt" style="margin-bottom:8px"><tr><th style="width:12%">성명</th><td style="width:21%">${esc(e.name)}</td><th style="width:12%">부서·직위</th><td style="width:21%">${esc(e.pos||"")}</td><th style="width:12%">입사일</th><td>${krDate(e.hire)}</td></tr>
+        <tr><th>산정 기간</th><td colspan="3">${krDate(a.start)} ~ ${krDate(a.end)}</td><th>근속</th><td>${a.yrs?a.yrs+"년 "+(a.mos-a.yrs*12)+"개월":a.mos+"개월"}</td></tr>
+        <tr><th>발생 연차</th><td>${fmtN(a.granted)}일${a.adj?` (조정 ${fmtN(a.adj)}일)`:""}</td><th>사용</th><td>${fmtN(a.used)}일</td><th>잔여</th><td class="emph">${fmtN(a.left)}일</td></tr></table>
+        <table class="pt"><thead><tr><th style="width:5%">번호</th><th style="width:10%">휴가 종류</th><th style="width:24%">기간</th><th style="width:6%">일수</th><th style="width:6%">연차</th><th style="width:7%">잔여</th><th>사유</th><th style="width:11%">서류 제출일</th><th style="width:9%">본인 확인</th></tr></thead><tbody>${rows}</tbody></table>${pfoot()}</div>`;
+    });
+  }
+  doPrint(html,false);
 });
 
 // ---------- 백업 ----------
