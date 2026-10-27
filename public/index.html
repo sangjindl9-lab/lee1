@@ -93,6 +93,7 @@ td.r,th.r{text-align:right}
       <button role="tab" data-tab="ledger" aria-selected="false">휴가대장</button>
       <button role="tab" data-tab="status" aria-selected="false">연차 현황</button>
       <button role="tab" data-tab="emps" aria-selected="false">직원</button>
+      <button role="tab" data-tab="backup" aria-selected="false">백업</button>
     </nav>
   </header>
 
@@ -146,6 +147,25 @@ td.r,th.r{text-align:right}
       <thead><tr><th>직원</th><th>입사일</th><th>근속</th><th>산정 기간</th><th class="r">발생</th><th class="r">조정</th><th class="r">사용</th><th class="r">잔여</th><th></th></tr></thead>
       <tbody id="statusBody"></tbody>
     </table></div>
+  </section>
+
+  <!-- 백업 -->
+  <section class="panel" id="tab-backup" hidden>
+    <h2>백업</h2>
+    <div id="bkWarn" class="notice" hidden></div>
+    <div class="hint" id="bkInfo">불러오는 중…</div>
+    <div class="row"><a class="btn" id="bkDown" href="/api/backup" style="text-decoration:none">전체 백업 내려받기 (ZIP)</a></div>
+    <div class="hint">ZIP 안에 전체 데이터(db.json), 원본 서류(files 폴더), 엑셀로 열 수 있는 휴가대장.csv가 들어 있습니다. 내려받은 파일은 PC·USB·구글드라이브 등 서버 밖에 보관하세요. 한 달에 한 번 이상 권장합니다.</div>
+    <hr style="border:0;border-top:1px solid var(--line);width:100%;margin:4px 0">
+    <h2>복원</h2>
+    <div class="hint">백업 ZIP을 올리면 지금 데이터를 <b>모두 지우고</b> 백업 시점으로 되돌립니다. 복원 직전 상태는 서버에 자동으로 한 부 보관됩니다.</div>
+    <div class="row"><input type="file" id="rsFile" accept=".zip,application/zip" style="max-width:360px"></div>
+    <div class="row" id="rsConfirm" hidden><span class="confirm" id="rsMsg"></span><button class="btn sm danger" id="rsGo">복원 실행</button><button class="btn sm ghost" id="rsCancel">취소</button></div>
+    <div class="hint" id="rsStatus"></div>
+    <hr style="border:0;border-top:1px solid var(--line);width:100%;margin:4px 0">
+    <h2>서버 자동 백업</h2>
+    <div class="hint">데이터가 바뀐 날 하루 한 번, 그리고 복원 직전에 서버 안에 자동으로 저장합니다(최근 10개). 같은 서버에 있으므로 서버 밖 보관용 백업을 대신하지는 못합니다.</div>
+    <div class="list" id="bkAuto"></div>
   </section>
 
   <!-- 직원 -->
@@ -226,8 +246,8 @@ const activeEmps=()=>S.emps.filter(e=>!e.left).sort((a,b)=>a.name.localeCompare(
 
 // ---------- 탭 ----------
 document.querySelectorAll("nav button").forEach(b=>b.addEventListener("click",()=>showTab(b.dataset.tab)));
-function showTab(t){document.querySelectorAll("nav button").forEach(b=>b.setAttribute("aria-selected",b.dataset.tab===t));
-  ["input","ledger","status","emps"].forEach(k=>$("tab-"+k).hidden=k!==t);try{localStorage.setItem("hyugaTab",t)}catch(e){}}
+function showTab(t){if(t==="backup")loadBackupInfo();document.querySelectorAll("nav button").forEach(b=>b.setAttribute("aria-selected",b.dataset.tab===t));
+  ["input","ledger","status","emps","backup"].forEach(k=>$("tab-"+k).hidden=k!==t);try{localStorage.setItem("hyugaTab",t)}catch(e){}}
 
 // ---------- 입력 폼 ----------
 $("fType").innerHTML=TYPES.map(t=>`<option>${t.k}</option>`).join("");
@@ -364,6 +384,30 @@ $("empList").addEventListener("click",async e=>{const b=e.target.closest("button
   else if(b.dataset.edel){S.confirmDel=null;try{await del("employees",b.dataset.edel);toast("삭제했습니다")}catch(err){toast("삭제하지 못했습니다")}}
 });
 
+// ---------- 백업 ----------
+const fmtSize=b=>b>1048576?(b/1048576).toFixed(1)+"MB":Math.max(1,Math.round(b/1024))+"KB";
+const fmtTime=s=>{if(!s)return "";const d=new Date(s);return `${d.getFullYear()}.${d.getMonth()+1}.${d.getDate()} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`};
+async function loadBackupInfo(){
+  try{const j=await api("GET","/api/backup/info");
+    $("bkInfo").innerHTML=`직원 <span class="num">${j.employees}</span>명 · 휴가 기록 <span class="num">${j.leaves}</span>건 · 원본 파일 <span class="num">${j.files}</span>개(<span class="num">${fmtSize(j.bytes)}</span>)<br>마지막 백업 내려받기: ${j.lastBackup?fmtTime(j.lastBackup):"<b>아직 없음</b>"}${j.lastRestore?` · 마지막 복원: ${fmtTime(j.lastRestore)}`:""}`;
+    const days=j.lastBackup?(Date.now()-new Date(j.lastBackup))/864e5:Infinity;
+    $("bkWarn").hidden=!(j.leaves>0&&days>30);$("bkWarn").textContent=j.lastBackup?`마지막 백업 후 ${Math.floor(days)}일이 지났습니다. 백업을 내려받아 두세요.`:"아직 백업을 한 번도 내려받지 않았습니다.";
+    $("bkAuto").innerHTML=j.auto.length?j.auto.map(n=>`<div class="item" style="grid-template-columns:1fr auto"><div class="meta num">${esc(n)}</div><div class="acts"><a class="btn sm ghost" style="text-decoration:none" href="/api/backup/auto/${encodeURIComponent(n)}">내려받기</a></div></div>`).join(""):`<div class="empty">아직 자동 백업이 없습니다.</div>`;
+  }catch(e){$("bkInfo").textContent="백업 정보를 불러오지 못했습니다"}
+}
+$("bkDown").addEventListener("click",()=>setTimeout(loadBackupInfo,3000));
+$("rsFile").addEventListener("change",()=>{const f=$("rsFile").files[0];$("rsStatus").textContent="";
+  if(!f){$("rsConfirm").hidden=true;return}
+  $("rsMsg").textContent=`${f.name} (${fmtSize(f.size)})로 복원하면 현재 직원 ${S.emps.length}명·휴가 기록 ${S.leaves.length}건이 백업 내용으로 바뀝니다.`;$("rsConfirm").hidden=false});
+$("rsCancel").addEventListener("click",()=>{$("rsFile").value="";$("rsConfirm").hidden=true});
+$("rsGo").addEventListener("click",async()=>{const f=$("rsFile").files[0];if(!f)return;
+  $("rsGo").disabled=true;$("rsStatus").textContent="복원하는 중입니다. 창을 닫지 마세요…";
+  try{const j=await api("POST","/api/restore",f,{"Content-Type":"application/zip"});
+    $("rsStatus").textContent=`복원했습니다: 직원 ${j.employees}명 · 휴가 기록 ${j.leaves}건 · 원본 ${j.files}개. 복원 전 상태는 서버 자동 백업(${j.safety})에 있습니다.`;
+    $("rsFile").value="";$("rsConfirm").hidden=true;await load();loadBackupInfo();toast("복원했습니다")}
+  catch(e){$("rsStatus").textContent="복원하지 못했습니다: "+(e&&e.message||"")}
+  $("rsGo").disabled=false});
+
 // ---------- 공통 렌더 ----------
 function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
 function fillSelect(el,opts,first){const v=el.value;el.innerHTML=(first||"")+opts;if([...el.options].some(o=>o.value===v))el.value=v}
@@ -380,7 +424,7 @@ function renderAll(){
 
 // ---------- 시작 ----------
 let initTab="input";try{initTab=localStorage.getItem("hyugaTab")||"input"}catch(e){}
-showTab(["input","ledger","status","emps"].includes(initTab)?initTab:"input");
+showTab(["input","ledger","status","emps","backup"].includes(initTab)?initTab:"input");
 resetForm();renderAll();
 $("csvBtn").hidden=false;load();
 document.addEventListener("visibilitychange",()=>{if(!document.hidden)load()});
