@@ -677,7 +677,9 @@ function vDashboard(){const c=curSite();const list=data.inspections.filter(d=>c&
   const cnt=Object.fromEntries(STATUSES.map(s=>[s,0]));list.forEach(d=>cnt[d.status]++);
   const recent=[...list].sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt)).slice(0,8);
   let nextInfo='';if(c){const lr=lastRound(c.id)||1;const dm={siteId:c.id,site:siteSnapshot(c),round:lr};nextInfo=`다음 자동 번호 (${lr}차): <b>${esc(buildNo(dm.site,lr,nextSeq(numKeyOf(dm))))}</b>`}
-  $('#main').innerHTML=`<h2>대시보드</h2>
+  const lg=legacyLocal();const lgBanner=lg&&legacyMeaningful(lg)?`<div class="banner"><b>이 브라우저에 아직 서버로 옮기지 않은 데이터가 있습니다</b> (현장 ${lg.sites.length} · 검측 ${lg.inspections.length}). 옮겨야 다른 기기에서도 보입니다.
+    <button class="btn sm pri" data-act="legacy-force" style="margin-left:8px">서버로 옮기기</button></div>`:'';
+  $('#main').innerHTML=`<h2>대시보드</h2>${lgBanner}
   ${!c?`<div class="banner">등록된 현장이 없습니다. [현장 기본정보]에서 현장을 먼저 등록하세요.</div>`:`
   <div class="card"><div class="row"><div><b>${esc(c.name)}</b><div class="muted">${esc(c.contractor)} · 분야 ${esc(fieldName(c))} · 현장대리인 ${esc(c.siteAgent)}</div></div><span class="sp"></span>
    <button class="btn pri" data-act="new-insp">＋ 새 검측 작성</button><button class="btn" data-act="go" data-v="ledger">검측대장 보기</button></div>
