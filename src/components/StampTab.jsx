@@ -24,7 +24,7 @@ export default function StampTab({ onFinish, toast }) {
   const [center, setCenter] = useState('代表理事')
   const [color, setColor] = useState('#d1272e')
   const [centerFont, setCenterFont] = useState(CENTER_FONTS[0][0])
-  const [thin, setThin] = useState(1)
+  const [thin, setThin] = useState(0.3)
   const [innerR, setInnerR] = useState(0.55)
   const [centerScale, setCenterScale] = useState(1)
   const [ringScale, setRingScale] = useState(1)
