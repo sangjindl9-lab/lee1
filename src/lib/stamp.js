@@ -61,11 +61,13 @@ export function renderStamp(cv, o) {
     let i = 0
     for (let k = 0; k < lines; k++) {
       const cnt = baseCnt + (k < extra ? 1 : 0); if (!cnt) continue   // 남는 글자는 앞쪽 줄에
-      const step = inner / cnt                                         // 짧은 줄은 같은 크기 글자를 고르게 벌려 배치
+      // 짧은 줄도 첫 글자는 왼쪽 끝, 마지막 글자는 오른쪽 끝에 맞추고 사이 간격만 넓힘(양쪽 정렬)
+      const along = vertical ? rh : cw
+      const pos = (j) => cnt === 1 ? inner / 2 : along / 2 + j * (inner - along) / (cnt - 1)
       for (let j = 0; j < cnt; j++) {
         const ch = chars[i++], hanja = /[\u4E00-\u9FFF]/.test(ch), sc = hanja ? S.hj : S.ko
-        const px = vertical ? x0 + pad + (lines - 1 - k + 0.5) * lineSize : x0 + pad + (j + 0.5) * step
-        const py = vertical ? y0 + pad + (j + 0.5) * step : y0 + pad + (k + 0.5) * lineSize
+        const px = vertical ? x0 + pad + (lines - 1 - k + 0.5) * lineSize : x0 + pad + pos(j)
+        const py = vertical ? y0 + pad + pos(j) : y0 + pad + (k + 0.5) * lineSize
         x.font = `700 ${fs}px ${hanja ? cfont : font}`; x.textBaseline = 'alphabetic'
         const mw = x.measureText(ch).width || fs, sx = Math.min(sc.sx, (cw * 0.96) / mw)   // 칸보다 넓은 글자만 살짝 줄임
         x.save(); x.translate(px, py); x.scale(sx, sc.sy); draw(ch, 0, sc.midY); x.restore()
