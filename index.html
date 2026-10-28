@@ -117,6 +117,8 @@ details>summary{cursor:pointer;font-weight:700;font-size:15px;margin-bottom:8px}
 .ph-row .thumb img{max-width:100%;max-height:100%;display:block}
 .ph-row .pf{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 8px}
 .ph-row .ops{display:flex;flex-direction:column;gap:4px}
+.sgthumb{height:34px;min-width:34px;max-width:90px;object-fit:contain;background:repeating-conic-gradient(#eee 0 25%,#fff 0 50%) 0 0/10px 10px;border:1px solid var(--line2);border-radius:3px;vertical-align:middle}
+.sgbox{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 .ph-drop{border:2px dashed #9db6ee;background:#f3f7ff;border-radius:6px;padding:14px;text-align:center;color:#22407a;margin-top:8px}
 .ph-drop.on{background:#dfe9ff}
 #stage{position:absolute;left:-20000px;top:0;visibility:hidden;pointer-events:none}
@@ -182,6 +184,10 @@ details>summary{cursor:pointer;font-weight:700;font-size:15px;margin-bottom:8px}
 .page .ro-foot span:last-child{white-space:nowrap;margin-right:16mm}
 .page .ro-sign{display:flex;justify-content:flex-end;align-items:center;gap:8mm;margin:10mm 22mm 0 0;min-height:12mm}
 .page .ro-guide{margin-top:12mm;line-height:1.9}
+.page .in{position:relative}
+.page img.stamp{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);max-height:15mm;max-width:26mm;pointer-events:none}
+.page td img.stamp{max-height:10.5mm;max-width:20mm}
+.page img.rsign{display:block;margin:0 auto;max-height:7.2mm;max-width:100%}
 .page .t-ph{font-size:20pt;letter-spacing:.6em;text-indent:.6em;margin:3mm 0 7mm}
 .page .ph-proj{margin:0 0 2mm 1mm;white-space:pre-wrap;word-break:keep-all}
 .page .ph-grid{display:grid;gap:4mm}
@@ -224,6 +230,7 @@ details>summary{cursor:pointer;font-weight:700;font-size:15px;margin-bottom:8px}
 <div id="toast"></div>
 <div id="stage"></div>
 <div id="printArea"></div>
+<input type="file" id="signFile" accept="image/*" hidden>
 <datalist id="dlResult"><option value="합격"><option value="불합격"><option value="보완 후 재검측"><option value="조건부 합격"></datalist>
 
 <script>
@@ -262,8 +269,8 @@ function nl(s){return esc(s)}
 /* ---------------- 데이터 기본형 ---------------- */
 function defaultSettings(){return {currentSiteId:null,symbols:{ok:'O',ng:'X',na:'/'},legendText:'',showLegend:false,reMode:'same',seqDigits:2,docFont:'malgun',lastEditedId:null,photoPerPage:4,photoFit:'contain'}}
 function normSite(s){s=s||{};return Object.assign({id:uid(),name:'',contractor:'',prefix:'',field:'전기',fieldCustom:'',recipient:'',siteAgent:'',inspector:'',
-  cmTitle:'전기건설사업관리기술인',cmName:'',chiefTitle:'책임건설사업관리기술인',chiefName:'',attachDefault:'',createdAt:nowISO(),updatedAt:nowISO()},s)}
-function normWorker(w){w=w||{};return Object.assign({id:uid(),org:'',position:'',name:'',birth:'',active:true,memo:''},w)}
+  cmTitle:'전기건설사업관리기술인',cmName:'',chiefTitle:'책임건설사업관리기술인',chiefName:'',attachDefault:'',agentSignId:'',createdAt:nowISO(),updatedAt:nowISO()},s)}
+function normWorker(w){w=w||{};return Object.assign({id:uid(),org:'',position:'',name:'',birth:'',active:true,memo:'',signId:''},w)}
 function normTpl(t){t=t||{};const o=Object.assign({id:uid(),name:'',note:'',items:[],updatedAt:nowISO()},t);o.items=arr(o.items).map(i=>Object.assign({id:uid(),text:'',criterion:''},i));return o}
 function normInsp(d){d=d||{};const id=d.id||uid();
   const o=Object.assign({id,rootId:id,siteId:'',site:{},round:1,seq:null,numKey:null,docNo:'',manualNo:false,isRe:false,reOf:null,reIndex:0,reBaseNo:'',
@@ -275,7 +282,8 @@ function normInsp(d){d=d||{};const id=d.id||uid();
   o.site=Object.assign(siteSnapshot(normSite({})),d.site||{});
   o.checklist=Object.assign({templateId:null,templateName:'',items:[]},d.checklist||{});
   o.checklist.items=arr(o.checklist.items).map(i=>Object.assign({id:uid(),text:'',criterion:'',c:'',s:'',action:''},i));
-  o.participants=arr(d.participants).map(p=>Object.assign({id:uid(),workerId:null,workDate:'',locWork:'',org:'',position:'',name:'',birth:'',content:''},p));
+  o.participants=arr(d.participants).map(p=>Object.assign({id:uid(),workerId:null,workDate:'',locWork:'',org:'',position:'',name:'',birth:'',content:'',signId:''},p));
+  if(o.useSign==null)o.useSign=true;
   o.photos=arr(d.photos).filter(p=>p&&has(p.photoId)).map(p=>Object.assign({id:uid(),photoId:'',work:'',content:'',location:'',date:''},p));
   if(!STATUSES.includes(o.status))o.status='작성 중';
   return o}
@@ -344,6 +352,9 @@ function photoSrc(id){return SERVER?'/api/photos/'+encodeURIComponent(id):(photo
 async function ensurePhotos(ids){if(SERVER)return false;let n=0;
   for(const id of ids){if(photoCache.has(id))continue;try{const b=await photoBlob(id);if(b){photoCache.set(id,URL.createObjectURL(b));n++}}catch(e){}}return n>0}
 function allPhotoIds(list){return list.flatMap(d=>arr(d.photos).map(p=>p.photoId))}
+function signIdsOf(list){const o=[];for(const d of list){if(d.site&&d.site.agentSignId)o.push(d.site.agentSignId);for(const p of arr(d.participants))if(p.signId)o.push(p.signId)}return o}
+function docImageIds(list){return [...new Set([...allPhotoIds(list),...signIdsOf(list)])]}
+function refIdsOf(dd){return new Set([...docImageIds(dd.inspections),...arr(dd.sites).map(s=>s.agentSignId),...arr(dd.workers).map(w=>w.signId)].filter(Boolean))}
 async function decodeImage(src){
   try{return await createImageBitmap(src,{imageOrientation:'from-image'})}catch(e){}
   return new Promise((res,rej)=>{const im=new Image();im.onload=()=>res(im);im.onerror=()=>rej(new Error('이미지를 열 수 없는 형식입니다'));im.src=URL.createObjectURL(src)})}
@@ -353,8 +364,36 @@ async function compressImage(file,rot=0){
   const c=document.createElement('canvas');c.width=sw;c.height=sh;const g=c.getContext('2d');g.fillStyle='#fff';g.fillRect(0,0,sw,sh);
   g.translate(sw/2,sh/2);g.rotate(rot*Math.PI/180);g.drawImage(bmp,-w/2,-h/2,w,h);
   return new Promise((res,rej)=>c.toBlob(b=>b?res(b):rej(new Error('이미지 변환 실패')),'image/jpeg',PHOTO_Q))}
+/* 서명·도장 이미지: 흰 배경을 투명하게, 여백을 잘라 PNG로 저장 */
+async function processSign(file){const bmp=await decodeImage(file);const sc=Math.min(1,700/Math.max(bmp.width,bmp.height));
+  const w=Math.max(1,Math.round(bmp.width*sc)),h=Math.max(1,Math.round(bmp.height*sc));
+  const c=document.createElement('canvas');c.width=w;c.height=h;const g=c.getContext('2d');g.drawImage(bmp,0,0,w,h);
+  const im=g.getImageData(0,0,w,h),a=im.data;let x0=w,y0=h,x1=-1,y1=-1;
+  for(let i=0;i<a.length;i+=4){const l=Math.min(a[i],a[i+1],a[i+2]);if(l>195)a[i+3]=Math.round(a[i+3]*Math.max(0,1-(l-195)/40));
+    if(a[i+3]>24){const q=i>>2,x=q%w,y=(q-x)/w;if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y}}
+  if(x1<0)throw new Error('이미지에서 서명·도장을 찾지 못했습니다(너무 밝거나 빈 이미지)');
+  g.putImageData(im,0,0);x0=Math.max(0,x0-4);y0=Math.max(0,y0-4);x1=Math.min(w-1,x1+4);y1=Math.min(h-1,y1+4);
+  const o=document.createElement('canvas');o.width=x1-x0+1;o.height=y1-y0+1;o.getContext('2d').drawImage(c,x0,y0,o.width,o.height,0,0,o.width,o.height);
+  return new Promise((res,rej)=>o.toBlob(b=>b?res(b):rej(new Error('이미지 변환 실패')),'image/png'))}
+function signThumb(id){const src=id?photoSrc(id):'';return id?(src?`<img class="sgthumb" src="${src}" alt="">`:'<span class="muted">불러오는 중</span>'):'<span class="muted">없음</span>'}
+function ensureThen(ids,fn){if(SERVER)return;const m=ids.filter(id=>id&&!photoCache.has(id));if(m.length)ensurePhotos(m).then(ch=>{if(ch)fn()})}
+async function handleSignFile(file){const t=state.signTarget;if(!t)return;state.signTarget=null;
+  try{toast('서명·도장 이미지 처리 중…');const b=await processSign(file);const id=uid();await photoPut(id,b);
+    if(t.kind==='worker'){const w=data.workers.find(x=>x.id===t.id);if(!w)return;if(commit(()=>{w.signId=id})){vWorkers();askWorkerSign(w.id)}}
+    else if(t.kind==='site'){const st=data.sites.find(x=>x.id===t.id);if(!st)return;const old=clone(st);if(commit(()=>{st.agentSignId=id;st.updatedAt=nowISO()})){vSites();askPropagate(st.id,old)}}
+    else if(t.kind==='part'&&state.draft){const p=state.draft.participants[t.i];if(!p)return;p.signId=id;
+      const w=p.workerId&&data.workers.find(x=>x.id===p.workerId);if(w&&!w.signId)commit(()=>{w.signId=id});ptRefresh()}
+    toast('서명·도장 이미지를 등록했습니다.')}
+  catch(e){showErr('서명·도장 등록 실패: '+(/heic/i.test(file.name)?'HEIC 형식은 지원하지 않습니다. JPG·PNG로 바꿔 주세요.':e.message))}}
+/* 인력대장 서명을 바꾼 뒤 기존 검측서류 실명부에도 넣을지 */
+function askWorkerSign(wid){const w=data.workers.find(x=>x.id===wid);if(!w)return;
+  const hit=d=>d.participants.some(p=>p.workerId===wid&&(p.signId||'')!==(w.signId||''));
+  const all=data.inspections.filter(hit),open=all.filter(d=>PROP_OPEN.includes(d.status));if(!all.length)return;state.wsign=wid;
+  modal(`<h3>기존 검측서류에도 넣을까요?</h3><p><b>${esc(w.name)}</b>의 서명·도장을 ${w.signId?'등록':'삭제'}했습니다. 이 사람이 실명부에 들어 있는 기존 검측서류가 ${all.length}건 있습니다.</p>
+   <div class="row" style="flex-wrap:wrap"><button class="btn" data-act="wsign-apply" data-m="none">반영 안 함</button>
+   <button class="btn" data-act="wsign-apply" data-m="open" ${open.length?'':'disabled'}>제출 전 서류만 (${open.length}건)</button><button class="btn pri" data-act="wsign-apply" data-m="all">전체 (${all.length}건)</button></div>`)}
 async function sweepPhotos(){/* 어디에도 연결되지 않은 지 하루 지난 사진 정리 (저장 안 한 작성 중 사진 보호) */
-  try{const ref=new Set(allPhotoIds(data.inspections));const cut=Date.now()-86400000;
+  try{const ref=refIdsOf(data);const cut=Date.now()-86400000;
     for(const p of await photoList())if(!ref.has(p.id)&&(+p.created||0)<cut)await photoDel(p.id)}catch(e){console.warn(e)}}
 function storeLabel(){return WEB?'서버에 저장됨':SERVER?'파일에 저장됨':'브라우저에 저장됨'}
 /* 실행 중 신호: 인쇄 대화상자가 떠 있어도 멈추지 않도록 별도 작업 스레드(Worker)에서 보냄 */
@@ -397,14 +436,14 @@ async function idbPhotoBlob(id){try{const v=await idbTx('readonly',st=>st.get(id
 function checkLegacy(force){const lg=legacyLocal()||(force?(()=>{try{const r=localStorage.getItem(STORE_KEY);return r?normalizeData(JSON.parse(r)):null}catch(e){return null}})():null);
   if(!lg){if(force)alert('이 브라우저에는 옮길 예전 데이터가 없습니다.');return}
   if(!force&&!legacyMeaningful(lg)){try{localStorage.setItem(LEGACY_DONE,'seed-only '+nowISO())}catch(e){}return}
-  const ph=allPhotoIds(lg.inspections).length;state.legacy=lg;
+  const ph=refIdsOf(lg).size;state.legacy=lg;
   modal(`<h3>이 브라우저에 저장된 데이터가 있습니다</h3>
    <p>예전 웹 버전은 오류로 서버가 아니라 <b>이 기기의 브라우저 안</b>에만 저장했습니다. 그 데이터를 서버로 옮기면 다른 PC·휴대폰에서도 보입니다.</p>
    <p>이 브라우저: 현장 ${lg.sites.length} · 검측 ${lg.inspections.length} · 인력 ${lg.workers.length} · 사진 ${ph}<br>서버(현재): 현장 ${data.sites.length} · 검측 ${data.inspections.length}</p>
    <div class="muted">서버에 이미 있는 것과 합칩니다. 같은 검측(같은 현장·같은 번호)이 양쪽에 있으면 더 나중에 수정한 쪽을 남깁니다. 서버의 다른 데이터는 지우지 않습니다.</div>
    <div class="row" style="flex-wrap:wrap"><button class="btn" data-act="legacy-dl">이 브라우저 데이터를 백업 파일로 받기</button><button class="btn" data-act="modal-close">나중에</button><button class="btn pri" id="legacyGo">서버로 옮기기</button></div>`);
   $('#legacyGo').onclick=async()=>{const btn=$('#legacyGo');btn.disabled=true;const lg=state.legacy;
-    try{const ids=[...new Set(allPhotoIds(lg.inspections))];let n=0,miss=0;
+    try{const ids=[...refIdsOf(lg)];let n=0,miss=0;
       for(const id of ids){n++;btn.textContent=`사진 옮기는 중 ${n}/${ids.length}`;const b=await idbPhotoBlob(id);if(b)await photoPut(id,b);else miss++}
       const theirs=fetchTheirs();const m=mergeLegacy(theirs,lg);const before=data;data=normalizeData(m.out);
       if(!persist()){data=before;throw new Error('서버 저장 실패')}
@@ -543,7 +582,7 @@ function pageReqRes(d){
    <tr><th>검 측 사 항</th><td colspan="3">${esc(d.checkMatter)}</td></tr>
    <tr><td colspan="4" class="left">붙&ensp;임 : ${esc(v.attach)}</td></tr>
   </table>
-  <div class="signline"><span>현장 대리인</span><span>${esc(spaced(s.siteAgent))}</span><span class="in">(인)</span></div>
+  <div class="signline"><span>현장 대리인</span><span>${esc(spaced(s.siteAgent))}</span><span class="in">(인)${d.useSign!==false?signImg(s.agentSignId):''}</span></div>
   <div class="cut"></div>
   <h1 class="t-res">검측결과통보</h1>
   <div class="dline">${has(d.resultDate)?fK(d.resultDate,true):BLANK_DATE}</div>
@@ -562,6 +601,7 @@ function pageReqRes(d){
   <div class="notes">주) ① 재검측시에는 붉은 글씨로 <span class="red">"(재)"</span> 를 우측 상단에 작성함<br>&emsp;&ensp;② 2 부 작성하여 시공자, 감리원 각 1부 보관</div>`;
   const p=mkPage(html,true);reMark(d,p);return [p]}
 
+function signImg(id,cls){if(!id)return '';const src=photoSrc(id);return src?`<img class="${cls||'stamp'}" src="${src}" alt="">`:''}
 function contHead(d,title){return `<div class="conthead"><b>${title} (계속)</b><span>문서번호 : ${esc(V(d).docNo)}</span></div>`}
 
 /* 행 단위 자동 쪽나눔: 넘치면 다음 쪽으로, 다음 쪽에는 문서번호와 표 제목행 반복 */
@@ -595,7 +635,7 @@ function pagesChecklist(d){
   const blank=`<tr><td></td><td></td><td></td><td></td><td></td></tr>`;
   const foot=`<table class="doc foot">${colsInfo}
     <tr><th>시공자 점검일자</th><td>${has(d.contractorCheckDate)?fK(d.contractorCheckDate,true):BLANK_DATE}</td><th>점검직원</th>
-        <td class="sg">${esc(spaced(s.inspector))}&emsp;<span class="in">(인)</span></td></tr>
+        <td class="sg">${esc(spaced(s.inspector))}&emsp;<span class="in">(인)${d.useSign!==false&&has(s.inspector)&&s.inspector.trim()===(s.siteAgent||'').trim()?signImg(s.agentSignId):''}</span></td></tr>
     <tr><th>분야별 기술인<br>검측일자</th><td>${has(d.actualDate)?fK(d.actualDate,true):BLANK_DATE}</td><th class="small">${esc(s.cmTitle)}</th>
         <td class="sg">${d.showCmName?esc(spaced(s.cmName)):''}&emsp;<span class="in">(인)</span></td></tr>
    </table>${data.settings.showLegend?`<div class="legend">${esc(legendOf())}</div>`:''}`;
@@ -609,10 +649,10 @@ function pagesRoster(d){
   const cont=contHead(d,'공사참여기술자(기능공 포함) 실명부')+`<div class="ro-proj">공사명: ${esc(s.name)}</div>`+tableHead;
   const sm=(t,n=7)=>String(t||'').length>n?' class="sm"':'';
   const rows=d.participants.map(p=>{const wd=has(p.workDate)?p.workDate:d.defaultWorkDate;const loc=has(p.locWork)?p.locWork:v.rosterLoc;const ct=has(p.content)?p.content:d.workContent;
-    return `<tr><td>${esc(fSlash(wd))}</td><td${sm(loc,10)}>${esc(loc)}</td><td${sm(p.org)}>${esc(p.org)}</td><td${sm(p.position,4)}>${esc(p.position)}</td><td>${esc(p.name)}</td><td>${esc(p.birth)}</td><td${sm(ct)}>${esc(ct)}</td><td></td></tr>`});
+    return `<tr><td>${esc(fSlash(wd))}</td><td${sm(loc,10)}>${esc(loc)}</td><td${sm(p.org)}>${esc(p.org)}</td><td${sm(p.position,4)}>${esc(p.position)}</td><td>${esc(p.name)}</td><td>${esc(p.birth)}</td><td${sm(ct)}>${esc(ct)}</td><td>${d.useSign!==false&&p.signId?signImg(p.signId,'rsign'):''}</td></tr>`});
   const blank=`<tr><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>`;
   const foot=`<div class="ro-foot"><span>${esc(s.name)}</span><span>${has(d.writeDate)?fK(d.writeDate,false):BLANK_DATE}</span></div>
-   <div class="ro-sign"><span>현장 대리인</span><span>${esc(spaced(s.siteAgent))}</span><span class="in">(인)</span></div>
+   <div class="ro-sign"><span>현장 대리인</span><span>${esc(spaced(s.siteAgent))}</span><span class="in">(인)${d.useSign!==false?signImg(s.agentSignId):''}</span></div>
    <div class="ro-guide">* 작성 및 기재요령<br>&nbsp;- 직위란에는 책임자, 공사관리, ○○전공 등으로 표기합니다.<br>&nbsp;- 공사내용란에는 참여기술자가 직접 공사한 내용을 기재합니다.</div>`;
   return paginate({d,firstHTML:first,contHTML:cont,rows,blankRow:blank,minRows:10,footerHTML:foot,tsel:'table.ro'})}
 
@@ -642,7 +682,7 @@ function renderPagesInto(target,list,part){target.innerHTML='';let warn=[];
   for(const d of list){const ps=docPages(d,part);
     for(const p of ps){if(p.classList.contains('flow')){const mm=p.offsetHeight/3.7795;if(mm>298)warn.push(`${V(d).docNo||'(번호 미정)'} 검측요청서·결과통보 내용이 길어 A4 1쪽을 넘습니다. 문구를 줄이거나 표시값을 조정하세요.`)}target.appendChild(p)}}
   $('#stage').innerHTML='';
-  if(!SERVER){const miss=allPhotoIds(list).filter(id=>!photoCache.has(id));
+  if(!SERVER){const miss=docImageIds(list).filter(id=>!photoCache.has(id));
     if(miss.length&&!renderPagesInto._busy){renderPagesInto._busy=true;ensurePhotos(miss).then(ch=>{renderPagesInto._busy=false;if(ch&&target.isConnected)renderPagesInto(target,list,part)})}}
   return warn}
 
@@ -650,7 +690,7 @@ function renderPagesInto(target,list,part){target.innerHTML='';let warn=[];
 const PART_NAMES={all:'전체 묶음',p1:'검측요청서·결과통보',p2:'검측 체크리스트',p3:'공사참여자 실명부',p4:'사진대지'};
 async function doPrint(list,part){if(!list.length){alert('인쇄할 검측서류가 없습니다.');return}
   if(part==='p4'&&!allPhotoIds(list).length){alert('사진이 없어 사진대지를 인쇄할 수 없습니다.');return}
-  await ensurePhotos(allPhotoIds(list));
+  await ensurePhotos(docImageIds(list));
   const pa=$('#printArea');const w=renderPagesInto(pa,list,part);if(w.length)toast(w[0]);
   const ims=$$('img',pa);if(ims.length){toast('사진을 준비하는 중…');await Promise.all(ims.map(im=>im.complete?0:new Promise(r=>{im.onload=im.onerror=r})))}
   state.printPrepared=true;setTimeout(()=>window.print(),60)}
@@ -713,6 +753,9 @@ function vSites(){
     ${f('분야 직접 입력','fieldCustom',{ph:'예) 소방',hint:'공사 분야가 “직접 입력”일 때 사용'})}
     ${f('수신처 (검측요청서 수신)','recipient',{cls:'span2',ph:'예) ○○ 도로건설 전기공사 책임감리원'})}
     ${f('현장대리인','siteAgent')}
+    <div class="fld"><span>현장대리인 서명·도장 이미지</span><div class="sgbox">${state.siteSel==='__new'?'<span class="muted">현장을 먼저 저장한 뒤 등록할 수 있습니다</span>':`${signThumb(s.agentSignId)}
+      <button class="btn sm" data-act="sign-up" data-kind="site" data-id="${s.id}">${s.agentSignId?'변경':'등록'}</button>${s.agentSignId?`<button class="btn sm dan" data-act="sign-del" data-kind="site" data-id="${s.id}">삭제</button>`:''}`}</div>
+      <small>검측요청서·실명부의 (인) 자리에 들어갑니다. 흰 배경은 자동으로 투명 처리 · 점검직원이 같은 사람이면 체크리스트에도</small></div>
     ${f('시공자 점검직원','inspector',{hint:'체크리스트 하단 점검직원'})}
     ${f('분야별 건설사업관리기술인 직책','cmTitle')}
     ${f('분야별 건설사업관리기술인 성명','cmName')}
@@ -723,10 +766,11 @@ function vSites(){
    <div class="row" style="margin-top:14px"><button class="btn pri" data-act="site-save">저장</button>
     ${state.siteSel!=='__new'?`<button class="btn" data-act="site-prop">기존 검측서류에 현재 정보 반영</button><button class="btn dan" data-act="site-del">현장 삭제</button>`:''}<span class="sp"></span>
     <span class="muted">저장할 때 기존 검측서류에도 반영할지 물어봅니다.</span></div>
-  </div></div>`}
+  </div></div>`;
+  ensureThen([s.agentSignId],()=>{if(state.view==='sites')vSites()})}
 
 /* 현장 정보를 바꾼 뒤 기존 검측서류에도 반영할지 묻기 (문서번호 관련 항목은 제외) */
-const PROP_LABELS={name:'공사명',contractor:'시공사명',recipient:'수신처',siteAgent:'현장대리인',inspector:'시공자 점검직원',cmTitle:'분야별 건설사업관리기술인 직책',cmName:'분야별 건설사업관리기술인 성명',chiefTitle:'책임건설사업관리기술인 직책',chiefName:'책임건설사업관리기술인 성명'};
+const PROP_LABELS={agentSignId:'현장대리인 서명·도장',name:'공사명',contractor:'시공사명',recipient:'수신처',siteAgent:'현장대리인',inspector:'시공자 점검직원',cmTitle:'분야별 건설사업관리기술인 직책',cmName:'분야별 건설사업관리기술인 성명',chiefTitle:'책임건설사업관리기술인 직책',chiefName:'책임건설사업관리기술인 성명'};
 const PROP_OPEN=['작성 중','요청서 작성 완료','보완 필요','재검측'];
 function askPropagate(siteId,old){const s=data.sites.find(x=>x.id===siteId);if(!s)return;
   const mine=data.inspections.filter(d=>d.siteId===siteId);
@@ -735,7 +779,7 @@ function askPropagate(siteId,old){const s=data.sites.find(x=>x.id===siteId);if(!
   const all=mine.filter(d=>keys.some(k=>d.site[k]!==s[k]));if(!all.length)return;
   const open=all.filter(d=>PROP_OPEN.includes(d.status));state.prop={siteId,keys};
   modal(`<h3>기존 검측서류에도 반영할까요?</h3>
-   <p>${old?'바뀐 항목':'현재 현장 정보와 다른 항목'}: ${keys.map(k=>`<b>${PROP_LABELS[k]}</b> (${old?esc(old[k]||'빈칸')+' → ':'→ '}${esc(s[k]||'빈칸')})`).join('<br>')}</p>
+   <p>${old?'바뀐 항목':'현재 현장 정보와 다른 항목'}: ${keys.map(k=>{const f=v=>k==='agentSignId'?(v?'등록됨':'없음'):esc(v||'빈칸');return `<b>${PROP_LABELS[k]}</b> (${old?f(old[k])+' → ':'→ '}${f(s[k])})`}).join('<br>')}</p>
    <p class="muted">이미 작성한 검측서류는 작성 당시 정보를 따로 보관하고 있어 자동으로 바뀌지 않습니다. 이 현장에서 다른 정보가 남아 있는 서류는 ${all.length}건입니다.<br>
    검측번호(접두어·분야)는 바뀌지 않습니다.</p>
    <div class="row" style="flex-wrap:wrap"><button class="btn" data-act="prop-apply" data-m="none">반영 안 함</button>
@@ -791,9 +835,9 @@ function newInspection(){const c=curSite();if(!c){alert('현장을 먼저 등록
 function copyBase(src,site){const id=uid();
   return normInsp({id,rootId:id,siteId:site.id,site:siteSnapshot(site),round:src.round,
     majorWork:src.majorWork,work:src.work,subWork:src.subWork,location:src.location,part:src.part,workContent:src.workContent,checkMatter:src.checkMatter,
-    disp:clone(src.disp),attach:Object.assign(clone(src.attach)),resultAttach:src.resultAttach,showCmName:src.showCmName,
+    disp:clone(src.disp),attach:Object.assign(clone(src.attach)),useSign:src.useSign!==false,resultAttach:src.resultAttach,showCmName:src.showCmName,
     checklist:{templateId:src.checklist.templateId,templateName:src.checklist.templateName,items:src.checklist.items.map(i=>({text:i.text,criterion:i.criterion,c:'',s:'',action:''}))},
-    participants:src.participants.map(p=>({workerId:p.workerId,locWork:p.locWork,org:p.org,position:p.position,name:p.name,birth:p.birth,content:p.content,workDate:''})),
+    participants:src.participants.map(p=>({workerId:p.workerId,locWork:p.locWork,org:p.org,position:p.position,name:p.name,birth:p.birth,content:p.content,signId:p.signId||'',workDate:''})),
     status:'작성 중',needDateCheck:true})}
 function copyInspection(id){const src=data.inspections.find(x=>x.id===id);if(!src)return;
   const site=data.sites.find(s=>s.id===src.siteId);if(!site){alert('원 검측의 현장이 삭제되어 복사할 수 없습니다.');return}
@@ -956,16 +1000,20 @@ function ptSectionHTML(){const d=state.draft,v=V(d);const added=new Set(d.partic
     <b style="font-size:13px">작업일 일괄 적용</b><input type="date" id="ptBulkDate" class="in" style="width:auto" value="${esc(state.ptBulkDate||d.defaultWorkDate||'')}">
     <button class="btn sm" data-act="pt-date-sel">체크한 인원(${(state.ptSel||new Set()).size}명)에 적용</button><button class="btn sm" data-act="pt-date-all">전체 ${d.participants.length}명에 적용</button>
     <span class="sp"></span><button class="btn sm" data-act="pt-date-clear" title="개별 작업일을 지우면 기본 작업일이 출력됩니다">개별 날짜 비우기</button></div>`:''}
-   <div style="overflow-x:auto"><table class="et" style="min-width:860px"><thead><tr><th><input type="checkbox" data-act="pt-selall" ${d.participants.length&&(state.ptSel||new Set()).size===d.participants.length?'checked':''} title="전체 선택"></th><th>작업일</th><th>작업위치및공종</th><th>소속</th><th>직위</th><th>성명</th><th>생년월일</th><th>공사내용</th><th></th></tr></thead><tbody>
-   ${d.participants.map((p,i)=>`<tr>
+   <div style="overflow-x:auto"><table class="et" style="min-width:860px"><thead><tr><th><input type="checkbox" data-act="pt-selall" ${d.participants.length&&(state.ptSel||new Set()).size===d.participants.length?'checked':''} title="전체 선택"></th><th>작업일</th><th>작업위치및공종</th><th>소속</th><th>직위</th><th>성명</th><th>생년월일</th><th>공사내용</th><th>서명</th><th></th></tr></thead><tbody>
+   ${d.participants.map((p,i)=>{const w=p.workerId&&data.workers.find(x=>x.id===p.workerId);return `<tr>
      <td class="c"><input type="checkbox" data-psel="${p.id}" ${(state.ptSel||new Set()).has(p.id)?'checked':''}></td>
      <td><input type="date" data-pi="${i}" data-pf="workDate" value="${esc(p.workDate)}" title="비우면 기본 작업일"><div class="muted" data-pauto="date" style="font-size:11px;padding:0 4px">${has(p.workDate)?'':'기본: '+esc(d.defaultWorkDate||'미입력')}</div></td>
      <td><input data-pi="${i}" data-pf="locWork" value="${esc(p.locWork)}" data-pauto="loc" placeholder="자동: ${esc(v.rosterLoc)}"></td>
      <td><input data-pi="${i}" data-pf="org" value="${esc(p.org)}"></td><td><input data-pi="${i}" data-pf="position" value="${esc(p.position)}"></td>
      <td><input data-pi="${i}" data-pf="name" value="${esc(p.name)}"></td><td><input data-pi="${i}" data-pf="birth" value="${esc(p.birth)}" placeholder="yy.mm.dd"></td>
      <td><input data-pi="${i}" data-pf="content" value="${esc(p.content)}" data-pauto="content" placeholder="자동: ${esc(d.workContent)}"></td>
-     <td class="ops"><button class="btn sm" data-act="pt-up" data-i="${i}">▲</button><button class="btn sm" data-act="pt-down" data-i="${i}">▼</button><button class="btn sm dan" data-act="pt-del" data-i="${i}">✕</button></td></tr>`).join('')||'<tr><td colspan="9" class="empty">참여자가 없습니다.</td></tr>'}
-   </tbody></table></div><div class="muted" style="margin-top:6px">인력대장을 나중에 고쳐도 이 서류의 참여자 정보는 바뀌지 않습니다.</div></section>`}
+     <td class="ops"><div class="sgbox">${p.signId?`${signThumb(p.signId)}<button class="btn sm dan" data-act="sign-del" data-kind="part" data-i="${i}" title="이 서류에서 빼기">✕</button>`
+       :w&&w.signId?`<button class="btn sm" data-act="sign-pull" data-i="${i}">인력대장 서명 넣기</button>`:`<button class="btn sm" data-act="sign-up" data-kind="part" data-i="${i}">등록</button>`}</div></td>
+     <td class="ops"><button class="btn sm" data-act="pt-up" data-i="${i}">▲</button><button class="btn sm" data-act="pt-down" data-i="${i}">▼</button><button class="btn sm dan" data-act="pt-del" data-i="${i}">✕</button></td></tr>`}).join('')||'<tr><td colspan="10" class="empty">참여자가 없습니다.</td></tr>'}
+   </tbody></table></div><div class="row" style="margin-top:6px"><label class="chk"><input type="checkbox" data-f="useSign" ${d.useSign!==false?'checked':''}> 서명·도장 이미지 출력 (실명부 서명 칸 · 현장대리인 (인))</label>
+    <span class="muted">현장대리인 서명: ${d.site.agentSignId?'등록됨':'없음 — [현장 기본정보]에서 등록'}</span></div>
+   <div class="muted" style="margin-top:4px">인력대장을 나중에 고쳐도 이 서류의 참여자 정보는 바뀌지 않습니다.</div></section>`}
 
 function phSectionHTML(){const d=state.draft,ph=d.photos,st=data.settings;
   return `<section class="card"><h3>사진대지 <small>사진 ${ph.length}장 · 한 쪽에 ${+st.photoPerPage===2?2:4}장 · ${Math.ceil(ph.length/(+st.photoPerPage===2?2:4))||0}쪽</small></h3>
@@ -1043,13 +1091,16 @@ function vWorkers(){const q=state.wq.trim();
    <div style="align-self:end"><button class="btn pri" data-act="wk-add">추가</button></div></div>
    <div class="muted" style="margin-top:6px">생년월일은 원본 서식처럼 yy.mm.dd 형태로 적으면 그대로 출력됩니다. 개인정보이므로 백업 파일 관리에 유의하세요.</div></div>
   <div class="card" style="padding:0"><div class="row" style="padding:10px 12px"><input id="wkSearch" class="in" style="max-width:260px" placeholder="검색" value="${esc(state.wq)}"><span class="muted">${l.length}명 · 수정은 바로 저장 · 미사용 인원은 참여자 선택 목록에서 숨김</span></div>
-  <table class="et"><thead><tr><th>소속</th><th>직위·직종</th><th>성명</th><th>생년월일</th><th>사용</th><th>참여 이력</th><th></th></tr></thead><tbody>
+  <table class="et"><thead><tr><th>소속</th><th>직위·직종</th><th>성명</th><th>생년월일</th><th>서명·도장</th><th>사용</th><th>참여 이력</th><th></th></tr></thead><tbody>
   ${l.map(w=>{const n=data.inspections.filter(d=>d.participants.some(p=>p.workerId===w.id)).length;return `<tr>
    <td><input data-wf="org" data-id="${w.id}" value="${esc(w.org)}"></td><td><input data-wf="position" data-id="${w.id}" value="${esc(w.position)}"></td>
    <td><input data-wf="name" data-id="${w.id}" value="${esc(w.name)}"></td><td><input data-wf="birth" data-id="${w.id}" value="${esc(w.birth)}"></td>
+   <td><div class="sgbox">${signThumb(w.signId)}<button class="btn sm" data-act="sign-up" data-kind="worker" data-id="${w.id}">${w.signId?'변경':'등록'}</button>${w.signId?`<button class="btn sm dan" data-act="sign-del" data-kind="worker" data-id="${w.id}" title="서명 삭제">✕</button>`:''}</div></td>
    <td class="c"><input type="checkbox" data-wf="active" data-id="${w.id}" ${w.active?'checked':''}></td><td class="c">${n}건</td>
-   <td class="ops"><button class="btn sm dan" data-act="wk-del" data-id="${w.id}">삭제</button></td></tr>`}).join('')||'<tr><td colspan="7" class="empty">등록된 인원이 없습니다.</td></tr>'}
-  </tbody></table></div>`}
+   <td class="ops"><button class="btn sm dan" data-act="wk-del" data-id="${w.id}">삭제</button></td></tr>`}).join('')||'<tr><td colspan="8" class="empty">등록된 인원이 없습니다.</td></tr>'}
+  </tbody></table></div>
+  <div class="muted">서명·도장은 사진이나 스캔 이미지(JPG·PNG)로 등록하면 흰 배경을 투명하게 바꿔 실명부 서명 칸에 넣습니다.</div>`;
+  ensureThen(l.map(w=>w.signId),()=>{if(state.view==='workers')vWorkers()})}
 
 /* ---------- 출력 미리보기 ---------- */
 function vPreview(){
@@ -1123,7 +1174,7 @@ function validateBackup(o){const e=[];
     if(x&&(!Array.isArray(x.checklist&&x.checklist.items)||!Array.isArray(x.participants)))e.push(`검측 ${i+1}: 체크리스트 또는 참여자 형식 오류`)});
   return e.slice(0,30)}
 const blobToDataURL=b=>new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=()=>rej(r.error);r.readAsDataURL(b)});
-async function exportBackup(){const ids=[...new Set(allPhotoIds(data.inspections))];const photos={},miss=[];let n=0;
+async function exportBackup(){const ids=[...refIdsOf(data)];const photos={},miss=[];let n=0;
   for(const id of ids){n++;if(ids.length>3)toast(`사진 담는 중 ${n} / ${ids.length}`);try{const b=await photoBlob(id);if(b)photos[id]=await blobToDataURL(b);else miss.push(id)}catch(e){miss.push(id)}}
   const o={format:BACKUP_FORMAT,version:BACKUP_VERSION,app:'검측서류 작성·관리',exportedAt:nowISO(),data:clone(data),photos};
   download(new Blob([JSON.stringify(o)],{type:'application/json'}),`검측서류_백업_${today()}.json`);
@@ -1205,7 +1256,7 @@ const A={
   'cl-up':(el)=>{mv(state.draft.checklist.items,+el.dataset.i,-1);clRefresh()},
   'cl-down':(el)=>{mv(state.draft.checklist.items,+el.dataset.i,1);clRefresh()},
   'pt-add':()=>{const ids=$$('.wkpick:checked').map(x=>x.value);if(!ids.length){alert('추가할 인원을 체크하세요.');return}
-    for(const id of ids){const w=data.workers.find(x=>x.id===id);if(w)state.draft.participants.push({id:uid(),workerId:w.id,workDate:'',locWork:'',org:w.org,position:w.position,name:w.name,birth:w.birth,content:''})}ptRefresh()},
+    for(const id of ids){const w=data.workers.find(x=>x.id===id);if(w)state.draft.participants.push({id:uid(),workerId:w.id,workDate:'',locWork:'',org:w.org,position:w.position,name:w.name,birth:w.birth,content:'',signId:w.signId||''})}ptRefresh()},
   'ph-up':(el)=>{mv(state.draft.photos,+el.dataset.i,-1);phRefresh()},
   'ph-down':(el)=>{mv(state.draft.photos,+el.dataset.i,1);phRefresh()},
   'ph-del':(el)=>{if(!confirm(`${+el.dataset.i+1}번 사진을 사진대지에서 뺄까요?`))return;state.draft.photos.splice(+el.dataset.i,1);phRefresh()},
@@ -1243,6 +1294,15 @@ const A={
   'pv-print':()=>{const d=data.inspections.find(x=>x.id===state.pvId);if(d)doPrint([d],state.pvPart)},
   // 백업
   'bk-export':exportBackup,
+  'sign-up':(el)=>{state.signTarget={kind:el.dataset.kind,id:el.dataset.id,i:+el.dataset.i};const f=$('#signFile');f.value='';f.click()},
+  'sign-del':(el)=>{const k=el.dataset.kind;
+    if(k==='worker'){const w=data.workers.find(x=>x.id===el.dataset.id);if(!w||!confirm(`${w.name}의 서명·도장을 삭제할까요?`))return;if(commit(()=>{w.signId=''})){vWorkers();askWorkerSign(w.id)}}
+    else if(k==='site'){const st=data.sites.find(x=>x.id===el.dataset.id);if(!st||!confirm('현장대리인 서명·도장을 삭제할까요?'))return;const old=clone(st);if(commit(()=>{st.agentSignId='';st.updatedAt=nowISO()})){vSites();askPropagate(st.id,old)}}
+    else if(k==='part'&&state.draft){const p=state.draft.participants[+el.dataset.i];if(p){p.signId='';ptRefresh()}}},
+  'sign-pull':(el)=>{const p=state.draft&&state.draft.participants[+el.dataset.i];const w=p&&data.workers.find(x=>x.id===p.workerId);if(p&&w){p.signId=w.signId;ptRefresh()}},
+  'wsign-apply':(el)=>{const wid=state.wsign,mode=el.dataset.m;closeModal();state.wsign=null;if(mode==='none')return;const w=data.workers.find(x=>x.id===wid);if(!w)return;let n=0;
+    commit(()=>{for(const d of data.inspections){if(mode==='open'&&!PROP_OPEN.includes(d.status))continue;let ch=false;for(const p of d.participants)if(p.workerId===wid&&(p.signId||'')!==(w.signId||'')){p.signId=w.signId;ch=true}if(ch){d.updatedAt=nowISO();n++}}});
+    toast(`검측서류 ${n}건의 실명부에 반영했습니다.`)},
   'legacy-dl':()=>{const lg=state.legacy;if(!lg)return;download(new Blob([JSON.stringify({format:BACKUP_FORMAT,version:BACKUP_VERSION,app:'검측서류 작성·관리',exportedAt:nowISO(),data:lg,photos:{}})],{type:'application/json'}),`검측서류_이브라우저_${today()}.json`)},
   'legacy-force':()=>checkLegacy(true),
   'open-folder':()=>{fetch('/api/open-folder',{method:'POST',headers:{'X-GCMS':'1'}}).catch(()=>alert('폴더를 열지 못했습니다.'))},
@@ -1250,7 +1310,7 @@ const A={
 };
 function mv(a,i,dir){const j=i+dir;if(j<0||j>=a.length)return;[a[i],a[j]]=[a[j],a[i]]}
 function clRefresh(dirty=true){if(dirty)markDirty();$('#clSec').innerHTML=clSectionHTML();schedulePreview(true)}
-function ptRefresh(dirty=true){if(dirty)markDirty();$('#ptSec').innerHTML=ptSectionHTML();schedulePreview(true)}
+function ptRefresh(dirty=true){if(dirty)markDirty();$('#ptSec').innerHTML=ptSectionHTML();schedulePreview(true);ensureThen(state.draft.participants.map(p=>p.signId),()=>{const e=$('#ptSec');if(e&&state.draft)e.innerHTML=ptSectionHTML()})}
 function ptBulkDate(all){const d=state.draft,v=($('#ptBulkDate')||{}).value||'';state.ptBulkDate=v;
   if(!v){alert('적용할 작업일을 먼저 고르세요.');return}
   const sel=state.ptSel||new Set();const tgt=all?d.participants:d.participants.filter(p=>sel.has(p.id));
@@ -1292,6 +1352,7 @@ function onChange(e){const t=e.target;
     if(k==='photoPerPage')v=+v===2?2:4;
     commit(()=>{data.settings[k]=v});if(k==='docFont')applyFont();toast('설정 저장됨');if(state.view==='editor'&&state.draft){if(k.startsWith('photo'))phRefresh(false);else schedulePreview(true)}if(k==='seqDigits')vBackup();return}
   if(t.id==='bkFile'&&t.files[0]){handleRestore(t.files[0]);t.value='';return}
+  if(t.id==='signFile'&&t.files.length){const f=t.files[0];t.value='';handleSignFile(f);return}
   if(t.id==='phFile'&&t.files.length){const fs=[...t.files];t.value='';addPhotos(fs);return}
   if(t.id==='curSite'){if(!leaveDraft()){renderHeader();return}
     commit(()=>{data.settings.currentSiteId=t.value});if(state.view==='editor'){state.draft=null;state.dirty=false}state.siteSel=t.value;render();return}
