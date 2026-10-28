@@ -47,28 +47,28 @@ export function renderStamp(cv, o) {
     const side = R * 1.84, x0 = cx - side / 2, y0 = cy - side / 2
     base.lineWidth = W * 0.03; base.strokeRect(x0, y0, side, side)
     const chars = [...(text.replace(/\s/g, '') + (o.center || ''))], n = chars.length
-    const lines = o.cols || (n <= 4 ? 2 : n <= 9 ? 3 : n <= 16 ? 4 : 5)   // 줄(가로) 또는 열(세로) 수
+    const lines = o.cols || Math.max(1, Math.round(Math.sqrt(n)))   // 줄(가로) 또는 열(세로) 수
     const vertical = o.dir === 'v'                       // 'h': 가로쓰기(윗줄부터 왼→오), 'v': 세로쓰기(오른쪽 열부터 위→아래)
-    const baseCnt = Math.floor(n / lines), extra = n % lines
+    const baseCnt = Math.floor(n / lines), extra = n % lines, maxCnt = baseCnt + (extra ? 1 : 0)
     const pad = side * 0.06, inner = side - pad * 2, cs = o.centerScale ?? 1
-    const lineSize = inner / lines
+    // 모든 글자를 같은 크기 칸에: 줄 방향 = inner/lines, 글자 방향 = inner/maxCnt (가장 긴 줄 기준)
+    const lineSize = inner / lines, cellSize = inner / maxCnt
+    const cw = vertical ? lineSize : cellSize, rh = vertical ? cellSize : lineSize
+    const fs = Math.min(cw, rh) * cs
+    // 글자마다가 아니라 기준 글자('국')로 한 번만 배율을 정해 모든 글자 크기를 통일
+    const scaleFor = (f, ref) => { x.font = `700 ${fs}px ${f}`; x.textBaseline = 'alphabetic'; const m = x.measureText(ref); const h = (m.actualBoundingBoxAscent + m.actualBoundingBoxDescent) || fs; return { sx: Math.min(2.2, (cw * 0.9 * cs) / fs), sy: Math.min(2.4, (rh * 0.9 * cs) / h), midY: (m.actualBoundingBoxAscent - m.actualBoundingBoxDescent) / 2 } }
+    const S = { ko: scaleFor(font, '국'), hj: scaleFor(cfont, '國') }
     let i = 0
     for (let k = 0; k < lines; k++) {
       const cnt = baseCnt + (k < extra ? 1 : 0); if (!cnt) continue   // 남는 글자는 앞쪽 줄에
-      const step = inner / cnt
+      const step = inner / cnt                                         // 짧은 줄은 같은 크기 글자를 고르게 벌려 배치
       for (let j = 0; j < cnt; j++) {
-        const ch = chars[i++], hanja = /[\u4E00-\u9FFF]/.test(ch)
-        // 칸 크기와 중심
-        const cw = vertical ? lineSize : step, rh = vertical ? step : lineSize
+        const ch = chars[i++], hanja = /[\u4E00-\u9FFF]/.test(ch), sc = hanja ? S.hj : S.ko
         const px = vertical ? x0 + pad + (lines - 1 - k + 0.5) * lineSize : x0 + pad + (j + 0.5) * step
         const py = vertical ? y0 + pad + (j + 0.5) * step : y0 + pad + (k + 0.5) * lineSize
-        const fs = Math.min(cw, rh) * cs
         x.font = `700 ${fs}px ${hanja ? cfont : font}`; x.textBaseline = 'alphabetic'
-        const m = x.measureText(ch), mw = m.width || fs
-        const mh = (m.actualBoundingBoxAscent + m.actualBoundingBoxDescent) || fs
-        const sx = Math.min(2.2, (cw * 0.92 * cs) / mw), sy = Math.min(2.2, (rh * 0.92 * cs) / mh)
-        const midY = (m.actualBoundingBoxAscent - m.actualBoundingBoxDescent) / 2
-        x.save(); x.translate(px, py); x.scale(sx, sy); draw(ch, 0, midY); x.restore()
+        const mw = x.measureText(ch).width || fs, sx = Math.min(sc.sx, (cw * 0.96) / mw)   // 칸보다 넓은 글자만 살짝 줄임
+        x.save(); x.translate(px, py); x.scale(sx, sc.sy); draw(ch, 0, sc.midY); x.restore()
       }
     }
     x.textBaseline = 'middle'
