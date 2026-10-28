@@ -54,7 +54,6 @@ export default function App() {
       {result && <Result r={result} toast={showToast} />}
 
       <section className="feat">
-        <div><b>회원가입 없음</b>입력한 이름·서명은 브라우저 안에서만 처리되고 어디에도 저장되지 않습니다.</div>
         <div><b>투명 배경 PNG</b>한글·PDF·엑셀 서류에 겹쳐 넣어도 배경이 비치지 않습니다.</div>
         <div><b>인감·법인직인</b>원형 인감, 사각 인감, 둘레 문자형 법인 직인까지.</div>
         <div><b>현장 서류 특화</b>검측요청서·작업일보·견적서 서명란 크기에 맞춘 기본값.</div>
