@@ -4,7 +4,8 @@ import { STAMP_FONTS, CENTER_FONTS, renderStamp } from '../lib/stamp.js'
 const CENTERS = ['代表理事', '代表理事印', '代表', '理事', '대표이사', '대표이사인', '印', '']
 const COLORS = [['#d1272e', '인주 빨강'], ['#a8181b', '진홍'], ['#1f3f8f', '파랑'], ['#22287a', '남색'], ['#1d1b17', '검정']]
 const RECT_TEXTS = ['원본대조필', '원본과 상위없음', '사본', '확인필', '검측필', '접수', '대조필', '복사본']
-const DEFAULT_TEXT = { corp: '주식회사에스에스전력', corpsq: '주식회사에스에스전력', person: '홍길동', square: '홍길동', rect: '원본대조필' }
+const APPROVE_TEXTS = ['승인', '검측완료', '합격', '확인', '검사필', '반려', 'PASSED', 'APPROVED']
+const DEFAULT_TEXT = { approve: '승인', corp: '주식회사에스에스전력', corpsq: '주식회사에스에스전력', person: '홍길동', square: '홍길동', rect: '원본대조필' }
 
 function StampPreview({ opts, selected, onClick }) {
   const ref = useRef(null)
@@ -38,6 +39,7 @@ export default function StampTab({ onFinish, toast }) {
   const changeKind = (k) => {
     texts.current[kind] = text; setKind(k); setText(texts.current[k])
     if (k === 'rect') setColor('#22287a'); else if (kind === 'rect') setColor('#d1272e')
+    if (k === 'approve') setThin(0)
     if (k === 'corpsq' && center === '代表理事') setCenter('')
     setCenterScale(1)
   }
@@ -65,9 +67,10 @@ export default function StampTab({ onFinish, toast }) {
           <option value="person">개인 인감 (원형)</option>
           <option value="square">개인 인감 (사각)</option>
           <option value="rect">원본대조필 (사각 고무인)</option>
+          <option value="approve">승인 도장</option>
         </select>
         <div className="sin">
-          <input value={text} maxLength={14} onChange={e => setText(e.target.value)} placeholder={kind.startsWith('corp') ? '회사명 (법인명)' : kind === 'rect' ? '문구' : '이름'} />
+          <input value={text} maxLength={14} onChange={e => setText(e.target.value)} placeholder={kind.startsWith('corp') ? '회사명 (법인명)' : kind === 'rect' || kind === 'approve' ? '문구' : '이름'} />
           <span className="cnt"><b>{[...text].length}</b>/14</span>
         </div>
         <button type="button" className="btn" onClick={generate}>만들기</button>
@@ -114,6 +117,13 @@ export default function StampTab({ onFinish, toast }) {
             <select value={RECT_TEXTS.includes(text) ? text : ''} onChange={e => e.target.value && setText(e.target.value)}><option value="">직접 입력</option>{RECT_TEXTS.map(r => <option key={r}>{r}</option>)}</select>
           </label>
           <label><input type="checkbox" checked={box} onChange={e => setBox(e.target.checked)} /> 오른쪽 빈칸 (서명·날인란)</label>
+        </div>
+      )}
+      {kind === 'approve' && (
+        <div className="sopt">
+          <label>문구 선택
+            <select value={APPROVE_TEXTS.includes(text) ? text : ''} onChange={e => e.target.value && setText(e.target.value)}><option value="">직접 입력</option>{APPROVE_TEXTS.map(r => <option key={r}>{r}</option>)}</select>
+          </label>
         </div>
       )}
       {!kind.startsWith('corp') && (

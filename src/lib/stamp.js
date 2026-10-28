@@ -74,6 +74,26 @@ export function renderStamp(cv, o) {
       }
     }
     x.textBaseline = 'middle'
+  } else if (o.kind === 'approve') {
+    // 승인 도장: 이중 원 + 위·아래 별 5개 + 비스듬한 띠 문구
+    const Ro = W * 0.44, Ri = W * 0.355, Rc = W * 0.3
+    base.lineWidth = W * 0.032; base.beginPath(); base.arc(cx, cy, Ro, 0, Math.PI * 2); base.stroke()
+    base.lineWidth = W * 0.012; base.beginPath(); base.arc(cx, cy, Ri, 0, Math.PI * 2); base.stroke()
+    base.lineWidth = W * 0.008; base.beginPath(); base.arc(cx, cy, Rc, 0, Math.PI * 2); base.stroke()
+    const star = (px, py, r) => { base.beginPath(); for (let k = 0; k < 10; k++) { const a = -Math.PI / 2 + k * Math.PI / 5, rr = k % 2 ? r * 0.42 : r; base.lineTo(px + rr * Math.cos(a), py + rr * Math.sin(a)) } base.closePath(); base.fill() }
+    const rs = (Ro + Ri) / 2 - W * 0.002, sr = W * 0.028
+    for (const mid of [-Math.PI / 2, Math.PI / 2]) for (let k = -2; k <= 2; k++) { const a = mid + k * 0.27; star(cx + rs * Math.cos(a), cy + rs * Math.sin(a), sr) }
+    // 띠 자리 비우기 → 띠 테두리 → 문구
+    const ang = (o.tilt ?? -18) * Math.PI / 180, bw = W * 0.96, bh = W * 0.24
+    base.save(); base.translate(cx, cy); base.rotate(ang)
+    base.globalCompositeOperation = 'destination-out'; base.fillRect(-bw / 2, -bh / 2, bw, bh); base.globalCompositeOperation = 'source-over'
+    base.lineWidth = W * 0.014; base.strokeRect(-bw / 2 + W * 0.01, -bh / 2 + W * 0.02, bw - W * 0.02, bh - W * 0.04)
+    base.restore()
+    const chars = [...text], n = Math.max(1, chars.length), cs = o.centerScale ?? 1
+    const fs = Math.min(bh * 0.52, (bw * 0.86) / n * 1.25) * cs
+    x.save(); x.translate(cx, cy); x.rotate(ang); x.font = `700 ${fs}px ${font}`
+    const tw = x.measureText(text).width || fs, sx = Math.min(1, (bw * 0.86) / tw)
+    x.scale(sx, 1); draw(text, 0, fs * 0.04); x.restore()
   } else if (o.kind === 'rect') {
     // 원본대조필 같은 가로 직사각 고무인: [ 문구 | 빈칸 ]
     const w = W * 0.96, h = W * 0.24, x0 = cx - w / 2, y0 = cy - h / 2
