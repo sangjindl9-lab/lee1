@@ -1,0 +1,30 @@
+{
+  "site_name": "춘천~화천3 도로건설공사 (예시)",
+  "clock": "plc",
+  "poll_ms": 1000,
+  "http_port": 8080,
+  "simulator": { "embedded": true, "port": 5020, "speed": 60 },
+  "control": {
+    "co_steps": [28, 42, 60],
+    "co_hyst": 8,
+    "vi_limit": 0.0055,
+    "light_lum": [3200, 1400, 250],
+    "late_night": [23, 5],
+    "fire_fan_exclude": 0.09,
+    "alarm_co_warn": 50,
+    "alarm_co_crit": 100,
+    "alarm_vi_warn": 0.007,
+    "alarm_batt_low": 20
+  },
+  "tunnels": [
+    { "key": "hj", "name": "현지터널", "sta": [11200, 12800], "fans": 6, "ups_kva": 3,
+      "rtu_points": 108, "com_points": 31, "host": "127.0.0.1", "port": 5020, "unit": 1,
+      "feeders": ["LV-101","LV-102","LV-103","LV-104","LV-105","LV-106","LV-107","LV-108","LV-UPS"] },
+    { "key": "h1", "name": "화천1터널", "sta": [11200, 12800], "fans": 6, "ups_kva": 3,
+      "rtu_points": 108, "com_points": 28, "host": "127.0.0.1", "port": 5020, "unit": 2,
+      "feeders": ["LV-101","LV-102","LV-103","LV-104","LV-105","LV-106","LV-107","LV-108","LV-UPS"] },
+    { "key": "h2", "name": "화천2터널", "sta": [11200, 12800], "fans": 8, "ups_kva": 5,
+      "rtu_points": 108, "com_points": 28, "host": "127.0.0.1", "port": 5020, "unit": 3,
+      "feeders": ["LV-101","LV-102","LV-103","LV-104","LV-105","LV-106","LV-107","LV-108","LV-109","LV-UPS"] }
+  ]
+}

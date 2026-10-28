@@ -1,0 +1,577 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>터널 통합전력관리</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap">
+<style>
+/* 폐쇄망 설치 시 글꼴이 없으면 맑은 고딕/Consolas로 표시됩니다 */
+:root{
+  --bg:#d9dde1; --panel:#eef0f2; --sunk:#e3e6ea; --line:#b3bac2; --fg:#1a2026; --muted:#56606b;
+  --accent:#1c5aa6; --accent-ink:#ffffff; --brk-on:#c23a2b; --brk-off:#2a8a4f;
+  --warn:#9a6600; --warn-bg:#f6e7c2; --alarm:#c8202b; --alarm-bg:#f7d4d4;
+  --lamp:#e2a232; --lamp-off:#a9b0b8; --evac:#149a52; --fire:#e2562b; --smoke:#5b6066;
+  --road:#c3c8ce; --wall:#7f8891; --rock:#cdd2d7; --run:#24303b; --car:#56606b;
+  --sans:"IBM Plex Sans KR","Malgun Gothic","Apple SD Gothic Neo",sans-serif;
+  --mono:"IBM Plex Mono",Consolas,ui-monospace,Menlo,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#14181c; --panel:#1d2227; --sunk:#171b1f; --line:#343c45; --fg:#e1e6ea; --muted:#95a1ac;
+  --accent:#5c9ae6; --accent-ink:#0b1726; --brk-on:#e0574a; --brk-off:#3fb26c;
+  --warn:#e3a52e; --warn-bg:#3a2e14; --alarm:#f0535b; --alarm-bg:#3f1a1e;
+  --lamp:#f3b847; --lamp-off:#47505a; --evac:#2fc06f; --fire:#ff6a3d; --smoke:#aab1b8;
+  --road:#2a3037; --wall:#59626b; --rock:#20262c; --run:#d8dee3; --car:#8a96a2; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#14181c; --panel:#1d2227; --sunk:#171b1f; --line:#343c45; --fg:#e1e6ea; --muted:#95a1ac;
+  --accent:#5c9ae6; --accent-ink:#0b1726; --brk-on:#e0574a; --brk-off:#3fb26c;
+  --warn:#e3a52e; --warn-bg:#3a2e14; --alarm:#f0535b; --alarm-bg:#3f1a1e;
+  --lamp:#f3b847; --lamp-off:#47505a; --evac:#2fc06f; --fire:#ff6a3d; --smoke:#aab1b8;
+  --road:#2a3037; --wall:#59626b; --rock:#20262c; --run:#d8dee3; --car:#8a96a2; color-scheme:dark}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:14px;line-height:1.45}
+[hidden]{display:none!important}
+button,select,input{font:inherit;color:inherit}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.wrap{padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px solid var(--line)}
+.bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding-block:10px}
+.brand{display:flex;flex-direction:column;line-height:1.15;margin-right:auto;min-width:0}
+.brand b{font-size:16px;font-weight:700}
+.brand span{font-size:11px;color:var(--muted);letter-spacing:.03em}
+.seg{display:flex;border:1px solid var(--line);border-radius:6px;overflow:hidden;background:var(--sunk)}
+.seg button{border:0;background:transparent;padding:6px 10px;cursor:pointer;white-space:nowrap}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink);font-weight:600}
+.seg button:disabled{opacity:.45;cursor:not-allowed}
+.clock{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)}
+.clock .num{font-size:15px;color:var(--fg);font-weight:600}
+.chip{display:inline-flex;align-items:center;gap:6px;font-size:12px;border:1px solid var(--line);border-radius:12px;padding:2px 9px;white-space:nowrap}
+.chip i{width:8px;height:8px;border-radius:50%;background:var(--evac)}
+.chip.bad{color:var(--alarm);border-color:var(--alarm)} .chip.bad i{background:var(--alarm)}
+.alarmbtn,.userbtn{border:1px solid var(--line);background:var(--sunk);border-radius:6px;padding:6px 10px;cursor:pointer;display:flex;gap:6px;align-items:center}
+.alarmbtn .n{min-width:20px;text-align:center;border-radius:10px;padding:0 6px;background:var(--line);font-family:var(--mono);font-size:12px}
+.alarmbtn.hot .n{background:var(--alarm);color:#fff}
+nav.tabs{display:flex;gap:2px;overflow-x:auto}
+nav.tabs button{border:0;background:transparent;padding:9px 14px;border-bottom:3px solid transparent;cursor:pointer;color:var(--muted);font-weight:500;white-space:nowrap}
+nav.tabs button[aria-selected="true"]{color:var(--fg);border-bottom-color:var(--accent);font-weight:600}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.banner{display:flex;gap:10px;align-items:center;background:var(--alarm-bg);border-bottom:1px solid var(--alarm);padding-block:8px;font-weight:600;color:var(--alarm)}
+.banner .dot{width:10px;height:10px;border-radius:50%;background:var(--alarm);animation:flash 1s steps(1) infinite;flex:none}
+.banner .msg{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.notice{background:var(--warn-bg);color:var(--warn);border-bottom:1px solid var(--warn);padding-block:6px;font-size:13px;display:flex;gap:10px;align-items:center}
+@keyframes flash{50%{opacity:.15}}
+@media (prefers-reduced-motion:reduce){.banner .dot{animation:none}}
+main{padding-block:16px 40px;display:flex;flex-direction:column;gap:16px}
+.view{display:flex;flex-direction:column;gap:16px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px;min-width:0}
+.card h2{margin:0 0 10px;font-size:13px;font-weight:600;letter-spacing:.05em;color:var(--muted);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.card h2 .r{margin-left:auto;font-weight:500;letter-spacing:0}
+.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+.grid2{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:16px}
+@media (max-width:1000px){.grid3{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:720px){.grid3,.grid2{grid-template-columns:minmax(0,1fr)}}
+.strip{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));border:1px solid var(--line);border-radius:8px;background:var(--panel);overflow:hidden}
+.strip>div{padding:10px 12px;border-right:1px solid var(--line);min-width:0}
+.strip>div:last-child{border-right:0}
+.strip label{display:block;font-size:11px;color:var(--muted)}
+.strip .v{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:20px;font-weight:600}
+.strip .u{font-size:11px;color:var(--muted);margin-left:3px}
+.strip .warn .v{color:var(--warn)} .strip .crit .v{color:var(--alarm)}
+@media (max-width:820px){.strip{grid-template-columns:repeat(3,minmax(0,1fr))}.strip>div:nth-child(3){border-right:0}.strip>div:nth-child(-n+3){border-bottom:1px solid var(--line)}}
+.mimic{overflow-x:auto;border:1px solid var(--line);border-radius:8px;background:var(--rock)}
+.mimic svg{display:block;width:100%;min-width:760px;height:auto}
+.mimic.pick svg{cursor:crosshair}
+.mimic-foot{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted);padding:8px 2px 0}
+.lg{display:inline-flex;align-items:center;gap:6px}
+.lg i{width:10px;height:10px;border-radius:2px;display:inline-block}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;font-size:13px;margin:10px 0 0}
+.kv dt{color:var(--muted)} .kv dd{margin:0;text-align:right}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.btn{border:1px solid var(--line);background:var(--sunk);border-radius:6px;padding:6px 10px;cursor:pointer;white-space:nowrap;text-decoration:none;display:inline-block}
+.btn:hover:not(:disabled){border-color:var(--muted)}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn.pri{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600}
+.btn.danger{border-color:var(--alarm);color:var(--alarm);font-weight:600}
+.btn.sm{padding:3px 8px;font-size:12px}
+.pill{display:inline-block;padding:1px 8px;border-radius:10px;font-size:12px;border:1px solid var(--line);white-space:nowrap}
+.pill.run{background:var(--run);color:var(--panel);border-color:var(--run)}
+.pill.warn{background:var(--warn-bg);color:var(--warn);border-color:var(--warn)}
+.pill.crit{background:var(--alarm-bg);color:var(--alarm);border-color:var(--alarm)}
+.pill.on{color:var(--evac);border-color:var(--evac)}
+.sub{font-size:12px;color:var(--muted)}
+.fans{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+.fan{display:grid;grid-template-columns:52px minmax(0,1fr) auto;gap:8px;align-items:center;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--sunk)}
+.fan .id{font-family:var(--mono);font-weight:600}
+.fan .meta{font-size:12px;color:var(--muted);display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.fan .ctl{display:flex;gap:4px}
+.fan.f-fault{border-color:var(--alarm);background:var(--alarm-bg)}
+.iflist{display:grid;grid-template-columns:1fr auto;gap:6px 10px;font-size:13px;margin-top:10px}
+.tbl-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:6px}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{padding:6px 10px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
+th{background:var(--sunk);font-weight:600;font-size:12px;color:var(--muted);position:sticky;top:0}
+td.r,th.r{text-align:right}
+tr:last-child td{border-bottom:0}
+.tbl-scroll{max-height:520px;overflow:auto}
+.sld{overflow-x:auto}
+.sld svg{display:block;width:100%;min-width:760px;height:auto}
+.sld .brk{cursor:pointer}
+canvas{display:block;width:100%;height:180px}
+.tagsum{display:flex;gap:16px;flex-wrap:wrap;font-size:13px}
+.tagsum b{font-family:var(--mono)}
+input[type=search],input[type=text],input[type=password]{border:1px solid var(--line);background:var(--sunk);border-radius:6px;padding:7px 10px;min-width:0}
+input[type=search]{flex:1 1 180px}
+.modal{position:fixed;inset:0;background:rgba(10,14,18,.55);display:flex;align-items:center;justify-content:center;z-index:20;padding:16px}
+.modal .box{background:var(--panel);border:1px solid var(--line);border-radius:10px;max-width:420px;width:100%;padding:18px;display:flex;flex-direction:column;gap:12px}
+.modal h3{margin:0;font-size:16px}
+.modal p{margin:0;color:var(--muted)}
+.modal .cmd{font-family:var(--mono);background:var(--sunk);border:1px solid var(--line);border-radius:6px;padding:8px 10px;font-size:12px;word-break:break-all}
+.note{font-size:12px;color:var(--muted)}
+.lvl{font-weight:700;font-size:12px}
+.lvl.중{color:var(--alarm)} .lvl.경{color:var(--warn)}
+.toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:8px 14px;border-radius:6px;font-size:13px;z-index:30;max-width:90vw}
+.login{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px 16px}
+.login form{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:24px;width:100%;max-width:360px;display:flex;flex-direction:column;gap:12px}
+.login h1{margin:0;font-size:20px}
+.login label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted)}
+.login .err{color:var(--alarm);font-size:13px;min-height:1.2em}
+.field{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted)}
+</style>
+</head>
+<body>
+
+<!-- 로그인 -->
+<div class="login" id="login" hidden>
+  <form id="loginForm">
+    <div><h1>터널 통합전력관리</h1><div class="sub">조명 · 제트팬 · 유도등 · 수변전 감시제어</div></div>
+    <label>아이디<input type="text" id="lid" autocomplete="username" required></label>
+    <label>비밀번호<input type="password" id="lpw" autocomplete="current-password" required></label>
+    <div class="err" id="lerr"></div>
+    <button class="btn pri" type="submit">로그인</button>
+    <p class="note" style="margin:0">초기 계정: admin(관리자) · operator(운영) · viewer(감시). 초기 비밀번호는 설치 안내서를 보세요.</p>
+  </form>
+</div>
+
+<div id="app" hidden>
+<header>
+  <div class="wrap bar">
+    <div class="brand"><b>터널 통합전력관리</b><span id="siteName"></span></div>
+    <div class="seg" id="tunSeg" role="group" aria-label="터널 선택"></div>
+    <span class="chip" id="commChip"><i></i><span>통신</span></span>
+    <div class="clock"><span>현장시각</span><span class="num" id="clk">--:--</span></div>
+    <button class="alarmbtn" id="alarmBtn" type="button">경보 <span class="n" id="alarmN">0</span></button>
+    <button class="userbtn" id="userBtn" type="button"><span id="userName"></span></button>
+  </div>
+  <nav class="wrap tabs" role="tablist">
+    <button role="tab" data-tab="mon" aria-selected="true">터널 감시</button>
+    <button role="tab" data-tab="pwr" aria-selected="false">전력 감시</button>
+    <button role="tab" data-tab="tag" aria-selected="false">관제점</button>
+    <button role="tab" data-tab="log" aria-selected="false">경보 · 이력</button>
+  </nav>
+  <div class="wrap banner" id="banner" hidden><span class="dot"></span><span class="msg" id="bannerMsg"></span><button class="btn sm danger" id="bannerAck" type="button">확인</button></div>
+  <div class="wrap notice" id="pwNotice" hidden><span>초기 비밀번호를 쓰고 있습니다. 운영 전에 바꿔 주세요.</span><button class="btn sm" id="pwOpen2" type="button">비밀번호 변경</button></div>
+</header>
+
+<main class="wrap">
+  <section class="view" id="v-mon">
+    <div class="strip">
+      <div id="s-co"><label>CO 농도</label><span class="v" id="lv-co">–</span><span class="u">ppm</span></div>
+      <div id="s-vi"><label>VI 소광계수</label><span class="v" id="lv-vi">–</span><span class="u">×10⁻³ m⁻¹</span></div>
+      <div><label>풍속</label><span class="v" id="lv-wind">–</span><span class="u">m/s</span></div>
+      <div><label>교통량</label><span class="v" id="lv-tr">–</span><span class="u">대/h</span></div>
+      <div><label>외부휘도 L20</label><span class="v" id="lv-lum">–</span><span class="u">cd/m²</span></div>
+      <div><label>총 부하</label><span class="v" id="lv-kw">–</span><span class="u">kW</span></div>
+    </div>
+    <div>
+      <div class="mimic" id="mimic"></div>
+      <div class="mimic-foot">
+        <span class="lg"><i style="background:var(--lamp)"></i>조명 점등</span>
+        <span class="lg"><i style="background:var(--run)"></i>제트팬 운전</span>
+        <span class="lg"><i style="background:var(--evac)"></i>유도등</span>
+        <span class="lg"><i style="background:var(--alarm)"></i>고장</span>
+        <span id="pickHint"></span>
+        <span style="margin-left:auto">교통 방향 → (일방향 2차로)</span>
+      </div>
+    </div>
+    <div class="grid3" id="panels"></div>
+    <div class="card" id="simCard" hidden>
+      <h2>모의 시험 <span class="r sub">가상 PLC 연결 중 · 실제 현장에서는 표시되지 않습니다</span></h2>
+      <div class="row" id="simRow"></div>
+    </div>
+  </section>
+
+  <section class="view" id="v-pwr" hidden>
+    <div class="card">
+      <h2>수변전 단선결선도 <span class="r sub">차단기를 누르면 투입·개방 명령 · 적색 투입 / 녹색 개방</span></h2>
+      <div class="sld" id="sld"></div>
+    </div>
+    <div class="grid2">
+      <div class="card"><h2>계측값</h2><div class="tbl-wrap"><table id="meas"></table></div></div>
+      <div class="card"><h2>총 부하 추이 <span class="r sub num" id="trendInfo"></span></h2><canvas id="trend"></canvas><dl class="kv" id="pwrKv"></dl></div>
+    </div>
+  </section>
+
+  <section class="view" id="v-tag" hidden>
+    <div class="card">
+      <h2>관제점 일람 <span class="r sub" id="tagSrc"></span></h2>
+      <div class="tagsum" id="tagSum"></div>
+      <div class="row" style="margin-top:12px">
+        <input type="search" id="tagQ" placeholder="태그·설명 검색 (예: JF-03, 전류)">
+        <div class="seg" id="tagType"></div>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <a class="btn" id="tagExport" href="#">일람표 엑셀 내려받기</a>
+        <label class="btn pri" for="tagFile" id="tagImportLbl">현장 일람표 적용</label>
+        <input type="file" id="tagFile" accept=".xlsx,.csv" hidden>
+        <button class="btn" id="tagReset" type="button">기본 맵 복원</button>
+      </div>
+      <p class="note" style="margin:8px 0 0">현장마다 PLC 주소가 다르면 내려받은 엑셀의 주소 열만 고쳐 다시 적용하세요. 태그 이름은 그대로 두어야 화면·자동제어와 연결됩니다. 적용·복원은 관리자만 할 수 있습니다.</p>
+      <div class="tbl-wrap tbl-scroll" style="margin-top:12px"><table id="tagTbl"></table></div>
+    </div>
+  </section>
+
+  <section class="view" id="v-log" hidden>
+    <div class="card">
+      <h2>현재 경보 <span class="r"><button class="btn sm" id="ackAll" type="button">전체 확인</button></span></h2>
+      <div class="tbl-wrap"><table id="alTbl"></table></div>
+    </div>
+    <div class="grid2">
+      <div class="card"><h2>운전 이력</h2><div class="tbl-wrap tbl-scroll"><table id="evTbl"></table></div></div>
+      <div class="card"><h2>운전 일보 <span class="r"><button class="btn sm" id="repCopy" type="button">일보 복사</button></span></h2><div id="report"></div></div>
+    </div>
+  </section>
+</main>
+</div>
+
+<div class="modal" id="modal" hidden>
+  <div class="box" role="dialog" aria-modal="true" aria-labelledby="mTitle">
+    <h3 id="mTitle"></h3><p id="mBody"></p><div class="cmd" id="mCmd"></div>
+    <div class="row" style="justify-content:flex-end"><button class="btn" id="mNo" type="button">취소</button><button class="btn pri" id="mOk" type="button">명령 송출</button></div>
+  </div>
+</div>
+<div class="modal" id="userModal" hidden>
+  <div class="box" role="dialog" aria-modal="true" aria-labelledby="uTitle">
+    <h3 id="uTitle">계정</h3><p id="uInfo"></p>
+    <div class="field">현재 비밀번호<input type="password" id="pwOld" autocomplete="current-password"></div>
+    <div class="field">새 비밀번호 (8자 이상)<input type="password" id="pwNew" autocomplete="new-password"></div>
+    <div class="row" style="justify-content:space-between"><button class="btn danger" id="logoutBtn" type="button">로그아웃</button>
+      <span class="row"><button class="btn" id="uClose" type="button">닫기</button><button class="btn pri" id="pwSave" type="button">비밀번호 변경</button></span></div>
+  </div>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+(function(){
+const $=s=>document.querySelector(s);
+const ROLE={'감시':1,'운영':2,'관리자':3};
+const IFS=['비상방송','전광판(VMS)','비상전화','자동화재탐지','조명제어'];
+let TOKEN=null, ME=null, META=null, S={}, alarms=[], events=[], SIM=false;
+let curKey=null, tab='mon', pickFire=false, ws=null, wsOk=false;
+const CARS={};
+try{TOKEN=sessionStorage.getItem('scada_token')}catch(e){}
+
+const r1=(x,n=1)=>x==null||isNaN(x)?'–':Number(x).toFixed(n);
+const hm=t=>t?String(t).slice(11,16):'–';
+const can=r=>ME&&ROLE[ME.role]>=ROLE[r];
+function toast(m){const t=$('#toast');t.textContent=m;t.hidden=false;clearTimeout(toast.h);toast.h=setTimeout(()=>t.hidden=true,2600)}
+
+async function api(path,body,opt={}){
+  const h={}; if(TOKEN)h.Authorization='Bearer '+TOKEN;
+  let init={method:body?'POST':'GET',headers:h};
+  if(body instanceof FormData)init.body=body; else if(body){h['Content-Type']='application/json';init.body=JSON.stringify(body)}
+  const r=await fetch(path,init); let d=null; try{d=await r.json()}catch(e){}
+  if(r.status===401&&!opt.noLogout){logout();throw new Error('다시 로그인하세요')}
+  if(!r.ok)throw new Error((d&&d.detail)||('요청 실패 ('+r.status+')'));
+  return d;
+}
+
+/* ---------- 로그인 ---------- */
+$('#loginForm').addEventListener('submit',async e=>{
+  e.preventDefault(); $('#lerr').textContent='';
+  try{const d=await api('/api/login',{id:$('#lid').value.trim(),pw:$('#lpw').value},{noLogout:true});
+    TOKEN=d.token; try{sessionStorage.setItem('scada_token',TOKEN)}catch(e){} $('#lpw').value=''; start();
+  }catch(err){$('#lerr').textContent=err.message}
+});
+function logout(){try{api('/api/logout',{}, {noLogout:true}).catch(()=>{})}catch(e){} TOKEN=null;try{sessionStorage.removeItem('scada_token')}catch(e){}
+  if(ws){ws.onclose=null;ws.close();ws=null} $('#app').hidden=true;$('#login').hidden=false;$('#userModal').hidden=true}
+async function start(){
+  try{META=await api('/api/meta')}catch(e){$('#app').hidden=true;$('#login').hidden=false;return}
+  ME=META.user; SIM=META.sim; curKey=curKey||META.tunnels[0].key;
+  $('#login').hidden=true;$('#app').hidden=false;
+  $('#siteName').textContent=META.site; $('#userName').textContent=ME.name+' · '+ME.role;
+  $('#pwNotice').hidden=!ME.must_change;
+  $('#tunSeg').innerHTML=META.tunnels.map(t=>`<button data-tun="${t.key}" aria-pressed="${t.key===curKey}">${t.name}</button>`).join('');
+  $('#simCard').hidden=!SIM;
+  connect();
+}
+function connect(){
+  const proto=location.protocol==='https:'?'wss':'ws';
+  ws=new WebSocket(proto+'://'+location.host+'/ws?token='+encodeURIComponent(TOKEN));
+  ws.onopen=()=>{wsOk=true};
+  ws.onmessage=e=>{const d=JSON.parse(e.data); if(d.type!=='state')return; S=d.tunnels; alarms=d.alarms; events=d.events; refresh(false)};
+  ws.onclose=e=>{wsOk=false; refresh(false); if(e.code===4401){logout();return} setTimeout(()=>{if(TOKEN)connect()},2000)};
+}
+const metaOf=k=>META.tunnels.find(t=>t.key===k);
+const cur=()=>{const s=S[curKey]||{comm:false}; return Object.assign({c:metaOf(curKey)},s)};
+const grid=s=>s.kepco&&s.br&&s.br['HV-1'];
+const ready=s=>s.comm&&s.fans;
+
+/* ---------- 명령 ---------- */
+let pending=null;
+function ask(title,body,cmdtxt,fn,okLabel){
+  if(!can('운영')){toast('감시 계정은 제어할 수 없습니다');return}
+  $('#mTitle').textContent=title;$('#mBody').textContent=body;$('#mCmd').textContent=cmdtxt;$('#mOk').textContent=okLabel||'명령 송출';
+  pending=fn;$('#modal').hidden=false;$('#mOk').focus();
+}
+$('#mNo').onclick=()=>{$('#modal').hidden=true;pending=null};
+$('#mOk').onclick=async()=>{$('#modal').hidden=true;const f=pending;pending=null;if(f)await f()};
+async function cmd(body){try{await api('/api/cmd',Object.assign({tunnel:curKey},body));toast('명령을 보냈습니다')}catch(e){toast(e.message)}}
+async function sim(body){try{await api('/api/sim',Object.assign({tunnel:curKey},body))}catch(e){toast(e.message)}}
+const staOf=(s,p)=>{const [a,b]=s.c.sta,v=Math.round(a+(b-a)*p);return Math.floor(v/1000)+'+'+String(v%1000).padStart(3,'0')};
+
+/* ---------- 터널 감시도 ---------- */
+const X0=40,X1=960,W=X1-X0;
+const LAMPS=(()=>{const a=[];for(let x=X0+6;x<X0+W*.16;x+=8)a.push(x);for(let x=X0+W*.16+12;x<X1-4;x+=22)a.push(x);return a})();
+const zoneOf=x=>{const p=(x-X0)/W;return p<.16?'ent':p>.93?'exit':'base'};
+function drawTunnel(){
+  if(!META)return; const s=cur(), now=performance.now(), blink=Math.floor(now/500)%2===0;
+  const ok=ready(s), g=ok&&grid(s), out=ok?s.out:{ent:0,base:0,emg:false};
+  const I={ent:Math.max(out.ent,out.base*.6)/100,base:out.base/100}; I.exit=Math.max(I.base,out.ent/100*.35);
+  let o=`<svg viewBox="0 0 1000 190" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${s.c.name} 평면 감시도">`;
+  o+=`<rect width="1000" height="190" fill="var(--rock)"/><rect x="0" y="84" width="1000" height="52" fill="var(--road)"/>`;
+  o+=`<rect x="${X0}" y="30" width="${W}" height="6" fill="var(--wall)"/><rect x="${X0}" y="150" width="${W}" height="6" fill="var(--wall)"/>`;
+  o+=`<rect x="${X0}" y="36" width="${W}" height="48" fill="var(--sunk)"/><rect x="${X0}" y="136" width="${W}" height="14" fill="var(--sunk)"/>`;
+  [X0,X1].forEach(x=>o+=`<rect x="${x-4}" y="22" width="8" height="142" fill="var(--wall)"/>`);
+  [['ent',X0,X0+W*.16],['base',X0+W*.16,X1-W*.07],['exit',X1-W*.07,X1]].forEach(([z,a,b])=>o+=`<rect x="${a}" y="84" width="${b-a}" height="52" fill="var(--lamp)" opacity="${(I[z]*.16).toFixed(3)}"/>`);
+  [['경계·이행부',0,.08],['완화부',.08,.16],['기본부',.16,.93],['출구부',.93,1]].forEach(([t,a,b])=>o+=`<text x="${X0+W*(a+b)/2}" y="16" text-anchor="middle" class="tl">${t}</text>`);
+  [.08,.16,.93].forEach(p=>o+=`<line x1="${X0+W*p}" y1="8" x2="${X0+W*p}" y2="30" stroke="var(--line)" stroke-dasharray="2 2"/>`);
+  LAMPS.forEach((x,i)=>{const z=zoneOf(x);let v=I[z];const emg=z==='base'&&i%4===0;if(emg&&out.emg)v=Math.max(v,.5);
+    o+=v>0?`<circle cx="${x}" cy="42" r="3.2" fill="var(--lamp)" opacity="${(.35+.65*v).toFixed(2)}"/>`:`<circle cx="${x}" cy="42" r="3" fill="none" stroke="var(--lamp-off)"/>`;
+    if(emg)o+=`<rect x="${x-1.5}" y="37" width="3" height="1.6" fill="var(--evac)"/>`});
+  (s.fans||[]).forEach(f=>{const x=X0+W*f.pos;const col=f.fault?'var(--alarm)':f.st?'var(--run)':'none',stroke=f.fault?'var(--alarm)':'var(--run)';
+    o+=`<rect x="${x-17}" y="50" width="34" height="13" rx="2" fill="${col}" stroke="${stroke}" stroke-width="1.4" ${f.wait&&blink?'stroke-dasharray="3 2"':''}/>`;
+    if(f.st){const a=(now/60*f.st)%360;o+=`<g transform="translate(${x} 56.5) rotate(${a})"><line x1="-5" y1="0" x2="5" y2="0" stroke="var(--panel)" stroke-width="1.6"/><line x1="0" y1="-5" x2="0" y2="5" stroke="var(--panel)" stroke-width="1.6"/></g><text x="${x+(f.st>0?22:-22)}" y="60" text-anchor="middle" class="ta" fill="var(--run)">${f.st>0?'▶':'◀'}</text>`}
+    else if(f.fault)o+=`<text x="${x}" y="60" text-anchor="middle" class="ta" fill="var(--panel)">!</text>`;
+    o+=`<text x="${x}" y="76" text-anchor="middle" class="tl">${f.id}</text>`});
+  o+=`<line x1="0" y1="110" x2="1000" y2="110" stroke="var(--panel)" stroke-width="1.5" stroke-dasharray="14 10"/>`;
+  if(ok&&s.fire){const fx=X0+W*s.fire.x,run=s.fans.filter(f=>f.st).length,R=run?330:170,L=run?24:170;
+    for(let i=0;i<10;i++){const a=fx-L+(L+R)*i/10;o+=`<rect x="${a}" y="38" width="${(L+R)/10+1}" height="110" fill="var(--smoke)" opacity="${(.32*(1-Math.abs((a-fx)/(a<fx?L:R)))+.04).toFixed(3)}"/>`}
+    const fl=blink?1:.75;o+=`<circle cx="${fx}" cy="110" r="${11*fl}" fill="var(--fire)" opacity=".9"/><circle cx="${fx}" cy="110" r="${5*fl}" fill="var(--lamp)"/><text x="${fx}" y="100" text-anchor="middle" class="tb" fill="var(--fire)">화재</text>`}
+  (CARS[curKey]||[]).forEach(c=>o+=`<rect x="${c.x.toFixed(1)}" y="${c.lane?115:90}" width="16" height="10" rx="2" fill="var(--car)"/>`);
+  const evOn=ok&&(g||s.ups.on);
+  for(let x=X0+20;x<X1-10;x+=40){let vis=evOn;if(s.evac==='점멸')vis=evOn&&blink;
+    o+=`<rect x="${x-5}" y="140" width="10" height="6" rx="1" fill="${vis?'var(--evac)':'none'}" stroke="var(--evac)" stroke-width=".8"/>`;
+    if(s.evac==='피난유도'&&evOn){const dir=s.fire?(x<X0+W*s.fire.x?'◀':'▶'):'◀';o+=`<text x="${x}" y="${blink?166:167}" text-anchor="middle" class="ta" fill="var(--evac)">${dir}</text>`}}
+  [.3,.7].forEach(p=>{const x=X0+W*p;o+=`<circle cx="${x}" cy="131" r="3" fill="none" stroke="var(--accent)" stroke-width="1.4"/><text x="${x+6}" y="133" class="tl" fill="var(--accent)">CO·VI</text>`});
+  const [a,b]=s.c.sta;for(let v=a;v<=b;v+=200){const x=X0+W*(v-a)/(b-a);o+=`<text x="${x}" y="182" text-anchor="middle" class="tl">${Math.floor(v/1000)}+${String(v%1000).padStart(3,'0')}</text>`}
+  o+=`<text x="8" y="110" class="tl">시점</text><text x="992" y="110" text-anchor="end" class="tl">종점</text>`;
+  if(!ok)o+=`<rect x="380" y="88" width="240" height="44" rx="6" fill="var(--panel)" stroke="var(--alarm)"/><text x="500" y="115" text-anchor="middle" class="tb" fill="var(--alarm)">RTU 통신 두절 · 값 갱신 중지</text>`;
+  o+=`<style>.tl{font:500 10px var(--mono);fill:var(--muted)}.ta{font:600 11px var(--mono)}.tb{font:700 12px var(--sans)}</style></svg>`;
+  $('#mimic').innerHTML=o;
+}
+let carAcc=0;
+function moveCars(dt){
+  if(!META)return; const s=cur(); const L=CARS[curKey]||(CARS[curKey]=[]); const fx=s.fire?X0+W*s.fire.x-26:Infinity;
+  if(!s.fire&&s.comm){carAcc+=dt*(s.tr||0)/650; while(carAcc>1){carAcc-=1;const lane=Math.random()<.5?0:1;if(!L.some(c=>c.lane===lane&&c.x<10))L.push({x:-18,lane,v:.09+Math.random()*.04})}}
+  for(const lane of[0,1]){const q=L.filter(c=>c.lane===lane).sort((p,r)=>r.x-p.x);
+    q.forEach((c,i)=>{let lim=i?q[i-1].x-22:Infinity;if(c.x<fx)lim=Math.min(lim,fx);let nx=c.x+c.v*dt;if(nx>lim)nx=Math.max(c.x,lim);c.x=nx})}
+  CARS[curKey]=L.filter(c=>c.x<1010);
+}
+
+/* ---------- 제어 패널 ---------- */
+function fanLabel(f){if(f.fault)return['고장','crit'];if(f.wait)return['방향전환 대기','warn'];if(f.st===1)return['정회전','run'];if(f.st===-1)return['역회전','run'];if(f.cmd!==0)return['기동 대기','warn'];return['정지','']}
+function panelSig(){const s=cur();if(!ready(s))return'x'+curKey;return JSON.stringify([curKey,s.lightAuto,s.stage,s.fanAuto,s.fans.map(f=>[f.cmd,f.fault,fanLabel(f)[0],f.rem]),s.evac,!!s.fire,s.kepco,grid(s),s.ups.on,s.out.emg,s.speed,pickFire])}
+function renderPanels(){
+  const s=cur();
+  if(!ready(s)){$('#panels').innerHTML=`<div class="card" style="grid-column:1/-1"><h2>RTU 통신 두절</h2><p class="sub" style="margin:0">${s.c.name} RTU(${s.c.host}:${s.c.port} Unit ${s.c.unit})에서 응답이 없습니다. 통신 회선과 RTU 전원을 확인하세요. 복구되면 자동으로 다시 연결됩니다.</p></div>`;$('#simRow').innerHTML='';return}
+  const op=can('운영'), man=(!s.fanAuto||!!s.fire)&&op, dis=op?'':'disabled';
+  const L=`<div class="card"><h2>터널 조명 <span class="r"><span class="seg"><button data-a="lauto" aria-pressed="${s.lightAuto}" ${s.fire||!op?'disabled':''}>자동</button><button data-a="lman" aria-pressed="${!s.lightAuto}" ${s.fire||!op?'disabled':''}>수동</button></span></span></h2>
+   <div class="seg" style="flex-wrap:wrap">${META.stages.map(k=>`<button data-a="stage" data-v="${k}" aria-pressed="${s.stage===k}" ${s.lightAuto||s.fire||!op?'disabled':''}>${k}</button>`).join('')}</div>
+   <dl class="kv"><dt>운전</dt><dd>${s.fire?'<span class="pill crit">화재 시 최대 점등</span>':s.lightAuto?'휘도 연동 자동':'운영자 수동'}</dd>
+   <dt>입구부 출력</dt><dd class="num" id="lv-ent">–</dd><dt>기본부 출력</dt><dd class="num" id="lv-base">–</dd>
+   <dt>비상조명</dt><dd>${s.out.emg?'<span class="pill warn">UPS 점등</span>':'대기'}</dd><dt>조명 부하</dt><dd class="num" id="lv-lkw">–</dd></dl></div>`;
+  const F=`<div class="card"><h2>제트팬 <span class="r"><span class="seg"><button data-a="fauto" aria-pressed="${s.fanAuto}" ${s.fire||!op?'disabled':''}>자동</button><button data-a="fman" aria-pressed="${!s.fanAuto}" ${s.fire||!op?'disabled':''}>수동</button></span></span></h2>
+   <div class="sub">${s.fire?'방재 시나리오 운전 중 · 개별 조작 가능':s.fanAuto?'CO·VI 연동 자동운전':'운영자 수동 · 정↔역 전환은 PLC가 정지 후 대기시킵니다'}</div>
+   <div class="fans">${s.fans.map((f,i)=>{const [t,c]=fanLabel(f);return `<div class="fan ${f.fault?'f-fault':''}"><span class="id">${f.id}</span>
+    <span class="meta"><span class="pill ${c}">${t}</span>${f.rem?'':'<span class="pill warn">현장</span>'}<span class="num" id="fa-${i}"></span><span class="num" id="fh-${i}"></span></span>
+    <span class="ctl">${f.fault?`<button class="btn sm danger" data-a="freset" data-i="${i}" ${dis}>고장 복귀</button>`:
+    `<button class="btn sm" data-a="fcmd" data-i="${i}" data-v="-1" ${!man||f.cmd===-1?'disabled':''} aria-label="${f.id} 역회전">◀ 역</button><button class="btn sm" data-a="fcmd" data-i="${i}" data-v="0" ${!man||f.cmd===0?'disabled':''} aria-label="${f.id} 정지">■</button><button class="btn sm" data-a="fcmd" data-i="${i}" data-v="1" ${!man||f.cmd===1?'disabled':''} aria-label="${f.id} 정회전">정 ▶</button>`}</span></div>`}).join('')}</div></div>`;
+  const E=`<div class="card"><h2>유도등 · 방재 연동</h2>
+   <div class="seg">${['상시','점멸','피난유도'].map(m=>`<button data-a="evac" data-v="${m}" aria-pressed="${s.evac===m}" ${dis}>${m}</button>`).join('')}</div>
+   <dl class="kv"><dt>화재</dt><dd>${s.fire?`<span class="pill crit">STA ${staOf(s,s.fire.x)} 감지</span>`:'<span class="pill">정상</span>'}</dd>
+   <dt>유도등 전원</dt><dd>${(grid(s)||s.ups.on)?(grid(s)?'상용':'<span class="pill warn">UPS</span>'):'<span class="pill crit">상실</span>'}</dd>
+   <dt>UPS 축전지</dt><dd class="num" id="lv-batt">–</dd></dl>
+   <div class="iflist">${IFS.map(n=>`<span>${n} 연동</span><span class="pill ${s.fire?'crit':''}">${s.fire?'명령 송출':'대기'}</span>`).join('')}</div>
+   ${s.fire?`<div class="row" style="margin-top:12px"><button class="btn pri" data-a="fireoff" ${dis}>화재 수신기 복구</button></div>`:''}</div>`;
+  $('#panels').innerHTML=L+F+E;
+  if(SIM){const sm=[];
+    if(!s.fire)sm.push(`<button class="btn danger" data-a="fire" ${dis}>화재 발생 (중앙부)</button><button class="btn ${pickFire?'pri':''}" data-a="firepick" ${dis}>${pickFire?'터널을 눌러 위치 지정':'화재 위치 지정'}</button>`);
+    sm.push(`<button class="btn" data-a="ffault" ${dis}>제트팬 고장</button><button class="btn" data-a="coup" ${dis}>CO 급상승 (정체)</button>`,
+      s.kepco?`<button class="btn" data-a="outage" ${dis}>한전 정전</button>`:`<button class="btn pri" data-a="restore" ${dis}>복전</button>`,
+      `<span class="seg" style="margin-left:auto">${[1,60,300].map(v=>`<button data-a="speed" data-v="${v}" aria-pressed="${s.speed===v}" ${dis}>×${v}</button>`).join('')}</span>`);
+    $('#simRow').innerHTML=sm.join('')}
+  $('#mimic').classList.toggle('pick',pickFire);
+  $('#pickHint').textContent=pickFire?'터널 도면을 누르면 그 위치에 화재가 발생합니다':'';
+}
+document.addEventListener('click',e=>{
+  const b=e.target.closest('[data-a]');if(!b)return;const s=cur(),a=b.dataset.a,nm=s.c.name;
+  if(!ready(s))return;
+  if(a==='lauto')cmd({action:'light_auto',on:true});
+  if(a==='lman')cmd({action:'light_auto',on:false});
+  if(a==='stage'){const v=b.dataset.v;ask('조명 단계 변경',nm+' 터널 조명을 '+v+' 단계로 전환합니다.',`RTU-E1 › 조명제어기 › LT 단계=${v}`,()=>cmd({action:'stage',v}))}
+  if(a==='fauto')cmd({action:'fan_auto',on:true});
+  if(a==='fman')cmd({action:'fan_auto',on:false});
+  if(a==='fcmd'){const i=+b.dataset.i,f=s.fans[i],v=+b.dataset.v,t=v===1?'정회전 운전':v===-1?'역회전 운전':'정지';
+    ask(f.id+' '+t,nm+' '+f.id+'에 '+t+' 명령을 보냅니다.'+(f.st&&v&&v!==f.st?' 회전방향이 바뀌므로 PLC가 정지 후 잔류회전 대기를 거칩니다.':''),`RTU-E1 › MCC › ${f.id}.${v===1?'FWD_CMD':v===-1?'REV_CMD':'STOP'}`,()=>cmd({action:'fan',i,v}))}
+  if(a==='freset'){const i=+b.dataset.i,f=s.fans[i];ask(f.id+' 고장 복귀','현장에서 과부하 원인을 확인한 뒤 복귀하세요.',`RTU-E1 › MCC › ${f.id}.RESET`,()=>cmd({action:'fan_reset',i}),'복귀')}
+  if(a==='evac'){const v=b.dataset.v;ask('유도등 '+v,nm+' 유도등을 '+v+' 모드로 전환합니다.',`RTU-E1 › 유도등 › EV 모드=${v}`,()=>cmd({action:'evac',v}))}
+  if(a==='fireoff')ask('화재 수신기 복구','현장 확인 후 화재 수신기를 복구합니다. 감지기가 정상으로 돌아오면 방재 시나리오가 종료됩니다.','RTU-E1 › FD.RESET',()=>cmd({action:'fire_reset'}),'복구');
+  if(a==='fire')sim({action:'fire',x:.45+Math.random()*.1});
+  if(a==='firepick'){pickFire=!pickFire;refresh(true)}
+  if(a==='ffault')sim({action:'fault'});
+  if(a==='coup')sim({action:'co'});
+  if(a==='outage')sim({action:'outage',on:true});
+  if(a==='restore')sim({action:'outage',on:false});
+  if(a==='speed')sim({action:'speed',v:+b.dataset.v});
+});
+$('#mimic').addEventListener('pointerdown',e=>{if(!pickFire)return;const svg=$('#mimic svg'),r=svg.getBoundingClientRect();const p=((e.clientX-r.left)/r.width*1000-X0)/W;if(p<.02||p>.98)return;pickFire=false;sim({action:'fire',x:p});refresh(true)});
+
+/* ---------- 전력 ---------- */
+let lastSld='', trendData=[], trendAt=0;
+function sldSig(){const s=cur();return JSON.stringify([curKey,s.comm,s.kepco,s.br])}
+function renderSLD(){
+  const s=cur(),F=s.c.feeders,n=F.length,live=ready(s)&&s.kepco,g=ready(s)&&grid(s),br=s.br||{};
+  const xs=F.map((_,i)=>70+i*(860/(n-1)));
+  const ln=(x1,y1,x2,y2,on,w=2)=>`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${on?'var(--fg)':'var(--muted)'}" stroke-width="${w}" ${on?'':'stroke-dasharray="5 4"'}/>`;
+  const brk=(x,y,id,on)=>`<g class="brk" data-brk="${id}" tabindex="0" role="button" aria-label="${id} ${on?'투입':'개방'}"><rect x="${x-13}" y="${y}" width="26" height="20" rx="2" fill="${on?'var(--brk-on)':'var(--brk-off)'}"/><text x="${x}" y="${y+14}" text-anchor="middle" class="sw">${on?'ON':'OFF'}</text></g>`;
+  let o=`<svg viewBox="0 0 1000 350" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="수변전 단선결선도"><text x="500" y="16" text-anchor="middle" class="sb">한전 22.9 kV-Y 수전</text>`;
+  o+=ln(500,22,500,80,live)+`<text x="520" y="54" class="sl">LBS</text><circle cx="500" cy="50" r="3" fill="var(--fg)"/>`;
+  o+=brk(500,80,'HV-1',br['HV-1'])+`<text x="522" y="94" class="sl">VCB  HV-1</text><text x="522" y="108" class="sv" id="sv-hv">–</text>`+ln(500,100,500,124,g);
+  o+=`<circle cx="500" cy="138" r="14" fill="none" stroke="${g?'var(--fg)':'var(--muted)'}" stroke-width="2"/><circle cx="500" cy="156" r="14" fill="none" stroke="${g?'var(--fg)':'var(--muted)'}" stroke-width="2"/>`;
+  o+=`<text x="522" y="144" class="sl">PTR-1  22.9 kV / 380-220 V</text><text x="522" y="158" class="sv" id="sv-tr">–</text>`;
+  o+=ln(500,170,500,190,g)+`<g><rect x="487" y="190" width="26" height="20" rx="2" fill="var(--brk-on)"/><text x="500" y="204" text-anchor="middle" class="sw">ON</text></g><text x="522" y="204" class="sl">ACB 주차단기 (현장 조작)</text>`+ln(500,210,500,230,g);
+  o+=`<line x1="${xs[0]-20}" y1="230" x2="${xs[n-1]+20}" y2="230" stroke="${g?'var(--fg)':'var(--muted)'}" stroke-width="5"/><text x="${xs[0]-20}" y="222" class="sl">LV BUS 380 V</text>`;
+  F.forEach((id,i)=>{const x=xs[i],on=br[id],e=g&&on;
+    o+=ln(x,230,x,250,g)+brk(x,250,id,on)+ln(x,270,x,288,e)+`<path d="M${x-4} 284 L${x} 292 L${x+4} 284" fill="none" stroke="${e?'var(--fg)':'var(--muted)'}" stroke-width="2"/>`;
+    o+=`<text x="${x}" y="308" text-anchor="middle" class="sb">${id}</text><text x="${x}" y="322" text-anchor="middle" class="sl">${META.use[id]||''}</text><text x="${x}" y="338" text-anchor="middle" class="sv" id="sv-${id}">–</text>`});
+  if(ready(s)&&!s.kepco)o+=`<text x="500" y="70" text-anchor="middle" class="sb" style="fill:var(--alarm)">수전 정전</text>`;
+  o+=`<style>.sb{font:600 12px var(--sans);fill:var(--fg)}.sl{font:500 11px var(--sans);fill:var(--muted)}.sv{font:600 11px var(--mono);fill:var(--fg)}.sw{font:700 9px var(--mono);fill:#fff}</style></svg>`;
+  $('#sld').innerHTML=o;
+  let m=`<thead><tr><th>구분</th><th>용도</th><th class="r">전류 A</th><th class="r">전력 kW</th><th>상태</th></tr></thead><tbody><tr><td class="num">HV-1</td><td>수전 22.9 kV</td><td class="r num" id="m-a-HV">–</td><td class="r num" id="m-k-HV">–</td><td>${!ready(s)?'–':s.kepco?(br['HV-1']?'<span class="pill on">투입</span>':'<span class="pill crit">개방</span>'):'<span class="pill crit">정전</span>'}</td></tr>`;
+  F.forEach(id=>m+=`<tr><td class="num">${id}</td><td>${META.use[id]||''}</td><td class="r num" id="m-a-${id}">–</td><td class="r num" id="m-k-${id}">–</td><td>${!ready(s)?'–':br[id]?'<span class="pill on">투입</span>':'<span class="pill warn">개방</span>'}</td></tr>`);
+  $('#meas').innerHTML=m+'</tbody>';
+}
+$('#sld').addEventListener('click',e=>{const b=e.target.closest('[data-brk]');if(!b)return;const s=cur();if(!ready(s))return;const id=b.dataset.brk,on=s.br[id];
+  ask(id+' '+(on?'개방':'투입'),s.c.name+' '+id+'('+(META.use[id]||'수전')+') 차단기를 '+(on?'개방':'투입')+'합니다.'+(on&&id==='LV-103'?' 운전 중인 제트팬이 모두 정지합니다.':'')+(on&&id==='HV-1'?' 터널 전체가 UPS 운전으로 넘어갑니다.':''),
+  `전자배전반 › PROTOCOL CONV › ${id}.${on?'OPEN':'CLOSE'}`,()=>cmd({action:'breaker',id,close:!on}),on?'개방':'투입')});
+$('#sld').addEventListener('keydown',e=>{const b=e.target.closest('[data-brk]');if(e.key==='Enter'&&b)b.dispatchEvent(new MouseEvent('click',{bubbles:true}))});
+function updatePower(){
+  const s=cur(),set=(id,t)=>{const e=document.getElementById(id);if(e)e.textContent=t};
+  if(!ready(s)){$('#pwrKv').innerHTML='<dt>상태</dt><dd>통신 두절</dd>';return}
+  set('sv-hv',r1(s.hv.v,2)+' kV · '+r1(s.hv.a)+' A');set('sv-tr',r1(s.kw)+' kW · '+r1(s.hv.ptr)+' ℃');
+  set('m-a-HV',r1(s.hv.a));set('m-k-HV',r1(s.kw));
+  s.c.feeders.forEach(id=>{set('sv-'+id,r1(s.fk[id])+' kW');set('m-a-'+id,r1(s.fa[id]));set('m-k-'+id,r1(s.fk[id]))});
+  $('#pwrKv').innerHTML=`<dt>금일 전력량</dt><dd class="num">${r1(s.kwhDay)} kWh</dd><dt>적산 전력량 (HV-1)</dt><dd class="num">${Number(s.kwhTot).toLocaleString()} kWh</dd><dt>금일 최대수요</dt><dd class="num">${r1(s.peak)} kW</dd><dt>역률 · 주파수</dt><dd class="num">${r1(s.hv.pf,2)} · ${r1(s.hv.hz)} Hz</dd><dt>UPS (${s.ups.c} kVA)</dt><dd class="num">${s.ups.on?(grid(s)?'상용 운전':'축전지 '+s.ups.batt+'%'):'정지'}</dd>`;
+  if(performance.now()-trendAt>5000){trendAt=performance.now();api('/api/trend?tunnel='+curKey+'&n=180').then(d=>{trendData=d;drawTrend()}).catch(()=>{})}
+  drawTrend();
+}
+function drawTrend(){
+  const c=$('#trend'),dpr=window.devicePixelRatio||1,w=c.clientWidth,h=c.clientHeight;if(!w)return;
+  if(c.width!==Math.round(w*dpr)){c.width=Math.round(w*dpr);c.height=Math.round(h*dpr)}
+  const x=c.getContext('2d');x.setTransform(dpr,0,0,dpr,0,0);x.clearRect(0,0,w,h);
+  const cs=getComputedStyle(document.documentElement),mu=cs.getPropertyValue('--muted'),li=cs.getPropertyValue('--line'),ac=cs.getPropertyValue('--accent');
+  const d=trendData.map(p=>p.kw),max=Math.max(100,Math.ceil(Math.max(...d,0)/50)*50),pl=40,pr=8,pt=8,pb=20;
+  x.font='11px '+cs.getPropertyValue('--mono');x.fillStyle=mu;x.strokeStyle=li;x.lineWidth=1;
+  for(let i=0;i<=4;i++){const y=pt+(h-pt-pb)*(1-i/4);x.beginPath();x.moveTo(pl,y);x.lineTo(w-pr,y);x.stroke();x.fillText(Math.round(max*i/4),4,y+4)}
+  x.fillText('kW',4,h-6);
+  if(d.length<2){x.fillText('이력 수집 중',pl+8,h/2);return}
+  x.fillText(hm(trendData[0].t),pl,h-6);const lt=hm(trendData[trendData.length-1].t);x.fillText(lt,w-pr-x.measureText(lt).width,h-6);
+  const dx=(w-pl-pr)/(d.length-1);x.beginPath();d.forEach((v,i)=>{const X=pl+i*dx,Y=pt+(h-pt-pb)*(1-v/max);i?x.lineTo(X,Y):x.moveTo(X,Y)});
+  x.strokeStyle=ac;x.lineWidth=2;x.stroke();x.lineTo(w-pr,h-pb);x.lineTo(pl,h-pb);x.closePath();x.globalAlpha=.12;x.fillStyle=ac;x.fill();x.globalAlpha=1;
+  const ly=pt+(h-pt-pb)*(1-d[d.length-1]/max);x.beginPath();x.arc(w-pr,ly,3.5,0,7);x.fillStyle=ac;x.fill();
+  $('#trendInfo').textContent='현재 '+r1(cur().kw)+' kW';
+}
+
+/* ---------- 관제점 ---------- */
+let tagFilter='전체', tagRows=[], tagCustom=false, tagAt=0;
+async function loadTags(){try{const d=await api('/api/tags?tunnel='+curKey);tagRows=d.rows;tagCustom=d.custom;renderTags()}catch(e){toast(e.message)}}
+function renderTags(){
+  const s=cur(),cnt={};tagRows.forEach(t=>{if(!t.tag.startsWith('SIM.'))cnt[t.type]=(cnt[t.type]||0)+1});
+  const n=tagRows.filter(t=>!t.tag.startsWith('SIM.')).length;
+  $('#tagSum').innerHTML=`<span>전체 <b>${n}</b>점</span>${Object.entries(cnt).map(([k,v])=>`<span>${k} <b>${v}</b></span>`).join('')}<span class="sub">도면 기준 · RTU ${s.c.rtu}점, 전자배전반/통신 ${s.c.com}점</span>`;
+  $('#tagSrc').textContent=(tagCustom?'현장 일람표 적용':'기본 맵')+' · '+s.c.name+' RTU '+s.c.host+':'+s.c.port+' Unit '+s.c.unit;
+  $('#tagType').innerHTML=['전체','DI','DO','AI','AO','PI'].map(k=>`<button data-tt="${k}" aria-pressed="${tagFilter===k}">${k}</button>`).join('');
+  $('#tagExport').href='/api/tags/export?tunnel='+curKey+'&token='+encodeURIComponent(TOKEN);
+  const adm=can('관리자');$('#tagReset').disabled=!adm||!tagCustom;$('#tagImportLbl').style.opacity=adm?1:.45;$('#tagImportLbl').title=adm?'':'관리자만 적용할 수 있습니다';
+  const q=$('#tagQ').value.trim().toLowerCase();
+  const rows=tagRows.filter(t=>(tagFilter==='전체'||t.type===tagFilter)&&(!q||(t.tag+' '+t.desc).toLowerCase().includes(q)));
+  $('#tagTbl').innerHTML=`<thead><tr><th>태그</th><th>설명</th><th>구분</th><th class="r">Modbus 주소</th><th class="r">현재값</th></tr></thead><tbody>${rows.map(t=>`<tr><td class="num">${t.tag}</td><td>${t.desc}</td><td>${t.type}</td><td class="r num">${t.addr}</td><td class="r num">${t.value}</td></tr>`).join('')}</tbody>`;
+}
+$('#tagType').addEventListener('click',e=>{const b=e.target.closest('[data-tt]');if(b){tagFilter=b.dataset.tt;renderTags()}});
+$('#tagQ').addEventListener('input',renderTags);
+$('#tagFile').addEventListener('click',e=>{if(!can('관리자')){e.preventDefault();toast('관리자만 적용할 수 있습니다')}});
+$('#tagFile').addEventListener('change',async e=>{const f=e.target.files[0];e.target.value='';if(!f)return;const fd=new FormData();fd.append('file',f);
+  try{const d=await fetch('/api/tags/import?tunnel='+curKey,{method:'POST',headers:{Authorization:'Bearer '+TOKEN},body:fd});const j=await d.json();if(!d.ok)throw new Error(j.detail);toast(j.n+'개 관제점을 적용했습니다');loadTags()}catch(err){toast(err.message)}});
+$('#tagReset').onclick=async()=>{try{await api('/api/tags/reset?tunnel='+curKey,{});toast('기본 맵으로 복원했습니다');loadTags()}catch(e){toast(e.message)}};
+
+/* ---------- 경보·이력 ---------- */
+function renderLog(){
+  const op=can('운영');
+  $('#alTbl').innerHTML=`<thead><tr><th>발생</th><th>터널</th><th>등급</th><th>내용</th><th>상태</th><th></th></tr></thead><tbody>${alarms.length?alarms.map(a=>`<tr><td class="num">${hm(a.t)}</td><td>${a.tn}</td><td><span class="lvl ${a.lvl}">${a.lvl}고장</span></td><td style="white-space:normal">${a.msg}</td><td>${a.active?'<span class="pill crit">발생 중</span>':'<span class="pill">복귀</span>'}</td><td>${a.ack?'<span class="sub">확인</span>':`<button class="btn sm" data-ack="${a.id}" ${op?'':'disabled'}>확인</button>`}</td></tr>`).join(''):'<tr><td colspan="6" class="sub">현재 경보가 없습니다</td></tr>'}</tbody>`;
+  $('#evTbl').innerHTML=`<thead><tr><th>시각</th><th>터널</th><th>내용</th><th>조작자</th></tr></thead><tbody>${events.map(e=>`<tr><td class="num">${hm(e.t)}</td><td>${e.tn}</td><td style="white-space:normal;${e.kind==='alarm'?'color:var(--alarm)':e.kind==='op'?'color:var(--accent)':''}">${e.msg}</td><td class="sub">${e.user||''}</td></tr>`).join('')}</tbody>`;
+  const s=cur(); if(!ready(s)){$('#report').innerHTML='<p class="sub">통신 두절</p>';return}
+  $('#report').innerHTML=`<dl class="kv" style="margin-top:0"><dt>대상</dt><dd>${s.c.name} · ${String(s.site).slice(0,10)}</dd><dt>금일 전력량</dt><dd class="num">${r1(s.kwhDay)} kWh</dd><dt>최대수요</dt><dd class="num">${r1(s.peak)} kW</dd><dt>조명 단계 변경</dt><dd class="num">${s.stageChg}회</dd><dt>현재 경보</dt><dd class="num">${alarms.filter(a=>a.active&&a.tkey===curKey).length}건</dd></dl>
+   <div class="tbl-wrap" style="margin-top:10px"><table><thead><tr><th>제트팬</th><th>상태</th><th class="r">누적 가동시간</th></tr></thead><tbody>${s.fans.map(f=>`<tr><td class="num">${f.id}</td><td>${fanLabel(f)[0]}</td><td class="r num">${r1(f.hrs)} h</td></tr>`).join('')}</tbody></table></div>`;
+}
+document.addEventListener('click',async e=>{const b=e.target.closest('[data-ack]');if(!b)return;try{await api('/api/ack',{id:+b.dataset.ack})}catch(err){toast(err.message)}});
+$('#ackAll').onclick=async()=>{try{await api('/api/ack',{})}catch(e){toast(e.message)}};
+$('#bannerAck').onclick=async()=>{for(const a of alarms.filter(a=>!a.ack&&a.lvl==='중')){try{await api('/api/ack',{id:a.id})}catch(e){toast(e.message);break}}};
+$('#alarmBtn').onclick=()=>setTab('log');
+function copyText(t){navigator.clipboard.writeText(t).then(()=>toast('복사했습니다'),()=>toast('복사가 막혀 있습니다'))}
+$('#repCopy').onclick=()=>{const s=cur();if(!ready(s))return;copyText(`[${s.c.name} 운전 일보] ${s.site} 기준\n금일 전력량 ${r1(s.kwhDay)} kWh / 최대수요 ${r1(s.peak)} kW\n조명 현재 ${s.stage} 단계 (변경 ${s.stageChg}회)\n`+s.fans.map(f=>`${f.id} ${fanLabel(f)[0]} 누적 ${r1(f.hrs)}h`).join('\n')+`\n현재 경보 ${alarms.filter(a=>a.active&&a.tkey===curKey).length}건`)};
+
+/* ---------- 계정 ---------- */
+const openUser=()=>{$('#uInfo').textContent=ME.name+' ('+ME.id+') · 권한 '+ME.role;$('#pwOld').value='';$('#pwNew').value='';$('#userModal').hidden=false};
+$('#userBtn').onclick=openUser;$('#pwOpen2').onclick=openUser;$('#uClose').onclick=()=>$('#userModal').hidden=true;$('#logoutBtn').onclick=logout;
+$('#pwSave').onclick=async()=>{try{await api('/api/password',{old:$('#pwOld').value,new:$('#pwNew').value});ME.must_change=false;$('#pwNotice').hidden=true;$('#userModal').hidden=true;toast('비밀번호를 바꿨습니다')}catch(e){toast(e.message)}};
+
+/* ---------- 화면 전환 ---------- */
+$('#tunSeg').addEventListener('click',e=>{const b=e.target.closest('[data-tun]');if(!b)return;curKey=b.dataset.tun;pickFire=false;document.querySelectorAll('#tunSeg button').forEach(x=>x.setAttribute('aria-pressed',x.dataset.tun===curKey));lastSig='';lastSld='';trendAt=0;trendData=[];if(tab==='tag')loadTags();refresh(true)});
+function setTab(t){tab=t;document.querySelectorAll('nav.tabs button').forEach(b=>b.setAttribute('aria-selected',b.dataset.tab===t));['mon','pwr','tag','log'].forEach(k=>$('#v-'+k).hidden=k!==t);lastSld='';trendAt=0;if(t==='tag')loadTags();refresh(true)}
+document.querySelector('nav.tabs').addEventListener('click',e=>{const b=e.target.closest('[data-tab]');if(b)setTab(b.dataset.tab)});
+
+let lastSig='';
+function refresh(force){
+  if(!META)return; const s=cur();
+  $('#clk').textContent=s.site?hm(s.site):'--:--';
+  const cc=$('#commChip'),okc=wsOk&&s.comm;cc.classList.toggle('bad',!okc);cc.querySelector('span').textContent=!wsOk?'서버 연결 끊김':s.comm?'RTU 통신 정상':'RTU 통신 두절';
+  const un=alarms.filter(a=>!a.ack);$('#alarmN').textContent=un.length;$('#alarmBtn').classList.toggle('hot',un.some(a=>a.lvl==='중'));
+  const top=un.find(a=>a.lvl==='중');$('#banner').hidden=!top;if(top)$('#bannerMsg').textContent=hm(top.t)+'  '+top.tn+' · '+top.msg;
+  if(tab==='mon'){
+    const sg=panelSig();if(force||sg!==lastSig){lastSig=sg;renderPanels()}
+    const set=(id,t)=>{const e=document.getElementById(id);if(e)e.textContent=t};
+    if(ready(s)){
+      set('lv-co',r1(s.co));set('lv-vi',r1(s.vi*1000,2));set('lv-wind',r1(s.wind));set('lv-tr',Math.round(s.tr*1800).toLocaleString());set('lv-lum',Number(s.lum).toLocaleString());set('lv-kw',r1(s.kw));
+      $('#s-co').className=s.co>=100?'crit':s.co>=50?'warn':'';$('#s-vi').className=s.vi>=.007?'warn':'';
+      set('lv-ent',s.out.ent+' %');set('lv-base',s.out.base+' %');set('lv-lkw',r1((s.fk['LV-101']||0)+(s.fk['LV-102']||0))+' kW');
+      set('lv-batt',s.ups.batt+' %'+(grid(s)?' · 충전':s.ups.on?' · 방전':''));
+      s.fans.forEach((f,i)=>{set('fa-'+i,r1(f.amp,0)+' A');set('fh-'+i,r1(f.hrs,0)+' h')});
+    }else['lv-co','lv-vi','lv-wind','lv-tr','lv-lum','lv-kw'].forEach(id=>set(id,'–'));
+  }
+  if(tab==='pwr'){const sg=sldSig();if(force||sg!==lastSld){lastSld=sg;renderSLD()}updatePower()}
+  if(tab==='tag'&&performance.now()-tagAt>2000){tagAt=performance.now();loadTags()}
+  if(tab==='log')renderLog();
+}
+
+let last=performance.now(),lastDraw=0;
+function loop(now){const dt=Math.min(250,now-last);last=now;moveCars(dt);if(tab==='mon'&&META&&now-lastDraw>66){lastDraw=now;drawTunnel()}requestAnimationFrame(loop)}
+requestAnimationFrame(loop);
+if(TOKEN)start(); else $('#login').hidden=false;
+})();
+</script>
+</body>
+</html>
