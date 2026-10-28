@@ -67,8 +67,11 @@ export function renderStamp(cv, o) {
     if (chars.length === 3 || chars.length === 1) chars.push('인')
     if (o.kind === 'person') { base.lineWidth = W * 0.02; base.beginPath(); base.arc(cx, cy, R, 0, Math.PI * 2); base.stroke() }
     else { base.lineWidth = W * 0.022; base.strokeRect(cx - R * 0.92, cy - R * 0.92, R * 1.84, R * 1.84) }
-    if (chars.length === 2) { x.font = `700 ${R * 0.72}px ${font}`; draw(chars[0], cx - R * 0.4, cy + R * 0.04); draw(chars[1], cx + R * 0.4, cy + R * 0.04) }
-    else { const g = R * 0.86; x.font = `700 ${R * 0.66}px ${font}`; chars.forEach((ch, i) => draw(ch, cx + ((i % 2) - .5) * g, cy + (Math.floor(i / 2) - .5) * g + R * 0.04)) }
+    // 글자를 칸(box) 안에 맞춰 그림: 폭이 넘치면 가로로 줄임 → 원 밖으로 벗어나지 않음
+    const round = o.kind === 'person', cs = o.centerScale ?? 1
+    const fit = (ch, px, py, box) => { const mw = x.measureText(ch).width || box; const sx = Math.min(1, box / mw); x.save(); x.translate(px, py); x.scale(sx, 1); draw(ch, 0, box * 0.05); x.restore() }
+    if (chars.length === 2) { const fs = R * (round ? 0.62 : 0.74) * cs, g = R * (round ? 0.72 : 0.8) * cs; x.font = `700 ${fs}px ${font}`; fit(chars[0], cx - g / 2, cy, fs); fit(chars[1], cx + g / 2, cy, fs) }
+    else { const fs = R * (round ? 0.58 : 0.68) * cs, g = R * (round ? 0.66 : 0.86) * cs; x.font = `700 ${fs}px ${font}`; chars.forEach((ch, i) => fit(ch, cx + ((i % 2) - .5) * g, cy + (Math.floor(i / 2) - .5) * g, fs)) }
   }
   if (erode > 0) erodeAlpha(layer, erode)
   base.drawImage(layer, 0, 0)

@@ -94,6 +94,11 @@ export default function StampTab({ onFinish, toast }) {
         </div>
       )}
       {!kind.startsWith('corp') && (
+        <div className="sliders">
+          <label>글자 크기 <span>{Math.round(centerScale * 100)}%</span><input type="range" min="0.6" max="1.25" step="0.02" value={centerScale} onChange={e => setCenterScale(+e.target.value)} /></label>
+        </div>
+      )}
+      {!kind.startsWith('corp') && (
         <div className="sopt">
           <label>획 굵기
             <select value={thin} onChange={e => setThin(+e.target.value)}><option value={1}>아주 가늘게</option><option value={0.6}>가늘게</option><option value={0.3}>보통</option><option value={0}>굵게 (원본)</option></select>
