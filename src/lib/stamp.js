@@ -42,25 +42,42 @@ export function renderStamp(cv, o) {
     else if (c.length >= 3) { const g = ri * 0.52 * cs; x.font = `700 ${ri * 0.5 * cs}px ${cfont}`; c.forEach((ch, i) => draw(ch, cx, cy + (i - (c.length - 1) / 2) * g + 2)) }
     else { const g = ri * 0.8 * cs; x.font = `700 ${ri * 0.78 * cs}px ${cfont}`; c.forEach((ch, i) => draw(ch, cx, cy + (i - (c.length - 1) / 2) * g + ri * 0.03)) }
   } else if (o.kind === 'corpsq') {
-    // 법인 사각직인: 회사명 + 중앙문구(代表理事 등)를 세로쓰기, 오른쪽 열부터 왼쪽으로
+    // 법인 사각직인: 모든 글자를 한 격자에 세로쓰기(오른쪽 열부터), 열마다 세로를 꽉 채우고 글자는 칸에 맞춰 늘림
     const cfont = `${o.centerFont || "'Noto Serif KR'"},'Noto Serif KR'`
     const side = R * 1.84, x0 = cx - side / 2, y0 = cy - side / 2
-    base.lineWidth = W * 0.022; base.strokeRect(x0, y0, side, side)
-    // 회사명 열(오른쪽) + 끝 문구 열(왼쪽)을 따로 나누고, 각 열은 세로를 꽉 채움
-    const A = [...text.replace(/\s/g, '')], B = [...(o.center || '')]
-    const colsA = o.cols || Math.max(1, Math.ceil(A.length / 4)), colsB = B.length ? (B.length <= 5 ? 1 : 2) : 0
-    const split = (arr, k) => { const out = [], base = Math.floor(arr.length / k), extra = arr.length % k; let i = 0; for (let c = 0; c < k; c++) { const cnt = base + (c < extra ? 1 : 0); out.push(arr.slice(i, i + cnt)); i += cnt } return out }
-    const columns = [...split(A, colsA), ...(colsB ? split(B, colsB) : [])]   // 오른쪽부터 순서
-    const cols = columns.length, pad = side * 0.07, inner = side - pad * 2, cw = inner / cols, cs = o.centerScale ?? 1
-    columns.forEach((col, k) => {
-      const c = cols - 1 - k, cnt = col.length; if (!cnt) return
-      const rh = inner / cnt, fs = Math.min(cw, rh) * 0.92 * cs
-      col.forEach((ch, r) => {
-        const hanja = /[\u4E00-\u9FFF]/.test(ch)
-        x.font = `700 ${fs}px ${hanja ? cfont : font}`
-        const mw = x.measureText(ch).width || fs, sx = Math.max(0.6, Math.min(1.5, (cw * 0.9) / mw)), sy = Math.max(0.7, Math.min(1.6, (rh * 0.9) / fs))
-        x.save(); x.translate(x0 + pad + (c + 0.5) * cw, y0 + pad + (r + 0.5) * rh); x.scale(sx, sy); draw(ch, 0, fs * 0.05); x.restore()
-      })
+    base.lineWidth = W * 0.03; base.strokeRect(x0, y0, side, side)
+    const chars = [...(text.replace(/\s/g, '') + (o.center || ''))], n = chars.length
+    const cols = o.cols || (n <= 4 ? 2 : n <= 9 ? 3 : n <= 16 ? 4 : 5)
+    const baseCnt = Math.floor(n / cols), extra = n % cols
+    const pad = side * 0.06, inner = side - pad * 2, cw = inner / cols, cs = o.centerScale ?? 1
+    let i = 0
+    for (let k = 0; k < cols; k++) {                       // k=0 이 맨 오른쪽 열
+      const c = cols - 1 - k, cnt = baseCnt + (k >= cols - extra ? 1 : 0); if (!cnt) continue  // 남는 글자는 왼쪽 열에
+      const rh = inner / cnt, fs = Math.min(cw, rh) * cs
+      for (let r = 0; r < cnt; r++) {
+        const ch = chars[i++], hanja = /[\u4E00-\u9FFF]/.test(ch)
+        x.font = `700 ${fs}px ${hanja ? cfont : font}`; x.textBaseline = 'alphabetic'
+        const m = x.measureText(ch), mw = m.width || fs
+        const mh = (m.actualBoundingBoxAscent + m.actualBoundingBoxDescent) || fs
+        const sx = Math.min(1.8, (cw * 0.92 * cs) / mw), sy = Math.min(2.2, (rh * 0.92 * cs) / mh)
+        const midY = (m.actualBoundingBoxAscent - m.actualBoundingBoxDescent) / 2
+        x.save(); x.translate(x0 + pad + (c + 0.5) * cw, y0 + pad + (r + 0.5) * rh); x.scale(sx, sy); draw(ch, 0, midY); x.restore()
+      }
+    }
+    x.textBaseline = 'middle'
+  } else if (o.kind === 'rect') {
+    // 원본대조필 같은 가로 직사각 고무인: [ 문구 | 빈칸 ]
+    const w = W * 0.96, h = W * 0.24, x0 = cx - w / 2, y0 = cy - h / 2
+    const boxW = o.box === false ? 0 : h * 1.05
+    base.lineWidth = W * 0.012; base.strokeRect(x0, y0, w, h)
+    if (boxW) { base.beginPath(); base.moveTo(x0 + w - boxW, y0); base.lineTo(x0 + w - boxW, y0 + h); base.stroke() }
+    const chars = [...text.replace(/\s/g, '')], n = Math.max(1, chars.length)
+    const area = w - boxW, padX = h * 0.22, cw = (area - padX * 2) / n, cs = o.centerScale ?? 1
+    const fs = Math.min(h * 0.62, cw * 1.05) * cs
+    x.font = `700 ${fs}px ${font}`
+    chars.forEach((ch, i) => {
+      const mw = x.measureText(ch).width || fs, sx = Math.min(1, (cw * 0.95) / mw)
+      x.save(); x.translate(x0 + padX + (i + 0.5) * cw, cy); x.scale(sx, 1); draw(ch, 0, fs * 0.04); x.restore()
     })
   } else {
     let chars = [...text.replace(/\s/g, '')].slice(0, 4)

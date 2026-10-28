@@ -2,7 +2,9 @@ import React, { useState, useEffect, useRef } from 'react'
 import { STAMP_FONTS, CENTER_FONTS, renderStamp } from '../lib/stamp.js'
 
 const CENTERS = ['代表理事', '代表理事印', '代表', '理事', '대표이사', '대표이사인', '印', '']
-const COLORS = [['#d1272e', '인주 빨강'], ['#a8181b', '진홍'], ['#1f3f8f', '파랑'], ['#1d1b17', '검정']]
+const COLORS = [['#d1272e', '인주 빨강'], ['#a8181b', '진홍'], ['#1f3f8f', '파랑'], ['#22287a', '남색'], ['#1d1b17', '검정']]
+const RECT_TEXTS = ['원본대조필', '원본과 상위없음', '사본', '확인필', '검측필', '접수', '대조필', '복사본']
+const DEFAULT_TEXT = { corp: '주식회사에스에스전력', corpsq: '주식회사에스에스전력', person: '홍길동', square: '홍길동', rect: '원본대조필' }
 
 function StampPreview({ opts, selected, onClick }) {
   const ref = useRef(null)
@@ -30,13 +32,21 @@ export default function StampTab({ onFinish, toast }) {
   const [ringScale, setRingScale] = useState(1)
   const [mark, setMark] = useState('dot')
   const [cols, setCols] = useState(0)
+  const [box, setBox] = useState(true)
+  const texts = useRef({ ...DEFAULT_TEXT })
+  const changeKind = (k) => {
+    texts.current[kind] = text; setKind(k); setText(texts.current[k])
+    if (k === 'rect') setColor('#22287a'); else if (kind === 'rect') setColor('#d1272e')
+    if (k === 'corpsq' && center === '代表理事') setCenter('')
+    setCenterScale(1)
+  }
   const [applied, setApplied] = useState(null)   // 만들기 눌렀을 때의 옵션
   const [sel, setSel] = useState(-1)
 
-  const generate = () => { setApplied({ kind, text: text.trim(), center, color, centerFont, thin, innerR, centerScale, ringScale, mark, cols }); setSel(-1) }
+  const generate = () => { setApplied({ kind, text: text.trim(), center, color, centerFont, thin, innerR, centerScale, ringScale, mark, cols, box }); setSel(-1) }
   useEffect(() => { generate() }, []) // 첫 진입 시 예시 생성
   // 슬라이더·옵션은 만들기 없이 바로 반영
-  useEffect(() => { if (applied) setApplied(a => ({ ...a, kind, color, centerFont, thin, innerR, centerScale, ringScale, center, mark, cols })) }, [kind, color, centerFont, thin, innerR, centerScale, ringScale, center, mark, cols])
+  useEffect(() => { if (applied) setApplied(a => ({ ...a, kind, text: text.trim(), color, centerFont, thin, innerR, centerScale, ringScale, center, mark, cols, box })) }, [kind, text, color, centerFont, thin, innerR, centerScale, ringScale, center, mark, cols, box])
 
   const make = () => {
     if (sel < 0 || !applied) return toast('도장 모양을 먼저 선택하세요')
@@ -48,14 +58,15 @@ export default function StampTab({ onFinish, toast }) {
   return (
     <div className="stamp">
       <div className="sbar">
-        <select value={kind} onChange={e => setKind(e.target.value)} aria-label="도장 종류">
+        <select value={kind} onChange={e => changeKind(e.target.value)} aria-label="도장 종류">
           <option value="corp">법인 직인 (원형)</option>
           <option value="corpsq">법인 직인 (사각)</option>
           <option value="person">개인 인감 (원형)</option>
           <option value="square">개인 인감 (사각)</option>
+          <option value="rect">원본대조필 (사각 고무인)</option>
         </select>
         <div className="sin">
-          <input value={text} maxLength={14} onChange={e => setText(e.target.value)} placeholder={kind.startsWith('corp') ? '회사명 (법인명)' : '이름'} />
+          <input value={text} maxLength={14} onChange={e => setText(e.target.value)} placeholder={kind.startsWith('corp') ? '회사명 (법인명)' : kind === 'rect' ? '문구' : '이름'} />
           <span className="cnt"><b>{[...text].length}</b>/14</span>
         </div>
         <button type="button" className="btn" onClick={generate}>만들기</button>
@@ -71,7 +82,7 @@ export default function StampTab({ onFinish, toast }) {
       {kind === 'corpsq' && (
         <div className="sliders">
           <label>글자 크기 <span>{Math.round(centerScale * 100)}%</span><input type="range" min="0.5" max="1.4" step="0.02" value={centerScale} onChange={e => setCenterScale(+e.target.value)} /></label>
-          <label>회사명 열 수 <span>{cols || '자동'}</span><input type="range" min="0" max="5" step="1" value={cols} onChange={e => setCols(+e.target.value)} /></label>
+          <label>열 수 <span>{cols || '자동'}</span><input type="range" min="0" max="5" step="1" value={cols} onChange={e => setCols(+e.target.value)} /></label>
         </div>
       )}
       {kind.startsWith('corp') && (
@@ -91,6 +102,14 @@ export default function StampTab({ onFinish, toast }) {
           <label>색상
             <select value={color} onChange={e => setColor(e.target.value)}>{COLORS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
           </label>
+        </div>
+      )}
+      {kind === 'rect' && (
+        <div className="sopt">
+          <label>문구 선택
+            <select value={RECT_TEXTS.includes(text) ? text : ''} onChange={e => e.target.value && setText(e.target.value)}><option value="">직접 입력</option>{RECT_TEXTS.map(r => <option key={r}>{r}</option>)}</select>
+          </label>
+          <label><input type="checkbox" checked={box} onChange={e => setBox(e.target.checked)} /> 오른쪽 빈칸 (서명·날인란)</label>
         </div>
       )}
       {!kind.startsWith('corp') && (
