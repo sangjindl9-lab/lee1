@@ -33,6 +33,7 @@ export default function StampTab({ onFinish, toast }) {
   const [mark, setMark] = useState('dot')
   const [cols, setCols] = useState(0)
   const [box, setBox] = useState(true)
+  const [dir, setDir] = useState('h')
   const texts = useRef({ ...DEFAULT_TEXT })
   const changeKind = (k) => {
     texts.current[kind] = text; setKind(k); setText(texts.current[k])
@@ -43,10 +44,10 @@ export default function StampTab({ onFinish, toast }) {
   const [applied, setApplied] = useState(null)   // 만들기 눌렀을 때의 옵션
   const [sel, setSel] = useState(-1)
 
-  const generate = () => { setApplied({ kind, text: text.trim(), center, color, centerFont, thin, innerR, centerScale, ringScale, mark, cols, box }); setSel(-1) }
+  const generate = () => { setApplied({ kind, text: text.trim(), center, color, centerFont, thin, innerR, centerScale, ringScale, mark, cols, box, dir }); setSel(-1) }
   useEffect(() => { generate() }, []) // 첫 진입 시 예시 생성
   // 슬라이더·옵션은 만들기 없이 바로 반영
-  useEffect(() => { if (applied) setApplied(a => ({ ...a, kind, text: text.trim(), color, centerFont, thin, innerR, centerScale, ringScale, center, mark, cols, box })) }, [kind, text, color, centerFont, thin, innerR, centerScale, ringScale, center, mark, cols, box])
+  useEffect(() => { if (applied) setApplied(a => ({ ...a, kind, text: text.trim(), color, centerFont, thin, innerR, centerScale, ringScale, center, mark, cols, box, dir })) }, [kind, text, color, centerFont, thin, innerR, centerScale, ringScale, center, mark, cols, box, dir])
 
   const make = () => {
     if (sel < 0 || !applied) return toast('도장 모양을 먼저 선택하세요')
@@ -82,7 +83,7 @@ export default function StampTab({ onFinish, toast }) {
       {kind === 'corpsq' && (
         <div className="sliders">
           <label>글자 크기 <span>{Math.round(centerScale * 100)}%</span><input type="range" min="0.5" max="1.4" step="0.02" value={centerScale} onChange={e => setCenterScale(+e.target.value)} /></label>
-          <label>열 수 <span>{cols || '자동'}</span><input type="range" min="0" max="5" step="1" value={cols} onChange={e => setCols(+e.target.value)} /></label>
+          <label>{dir === 'h' ? '줄 수' : '열 수'} <span>{cols || '자동'}</span><input type="range" min="0" max="5" step="1" value={cols} onChange={e => setCols(+e.target.value)} /></label>
         </div>
       )}
       {kind.startsWith('corp') && (
@@ -90,6 +91,9 @@ export default function StampTab({ onFinish, toast }) {
           <label>{kind === 'corp' ? '중앙 문구' : '끝 문구'}
             <select value={center} onChange={e => setCenter(e.target.value)}>{CENTERS.map(c => <option key={c} value={c}>{c || '(없음)'}</option>)}</select>
           </label>
+          {kind === 'corpsq' && <label>글자 방향
+            <select value={dir} onChange={e => setDir(e.target.value)}><option value="h">가로쓰기 (윗줄부터 왼→오)</option><option value="v">세로쓰기 (오른쪽 열부터 위→아래)</option></select>
+          </label>}
           {kind === 'corp' && <label>상단 표시
             <select value={mark} onChange={e => setMark(e.target.value)}><option value="dot">● 점</option><option value="none">없음</option>{[1,2,3,4,5,6,7,8,9].map(n => <option key={n} value={String(n)}>숫자 {n}</option>)}</select>
           </label>}

@@ -47,21 +47,28 @@ export function renderStamp(cv, o) {
     const side = R * 1.84, x0 = cx - side / 2, y0 = cy - side / 2
     base.lineWidth = W * 0.03; base.strokeRect(x0, y0, side, side)
     const chars = [...(text.replace(/\s/g, '') + (o.center || ''))], n = chars.length
-    const cols = o.cols || (n <= 4 ? 2 : n <= 9 ? 3 : n <= 16 ? 4 : 5)
-    const baseCnt = Math.floor(n / cols), extra = n % cols
-    const pad = side * 0.06, inner = side - pad * 2, cw = inner / cols, cs = o.centerScale ?? 1
+    const lines = o.cols || (n <= 4 ? 2 : n <= 9 ? 3 : n <= 16 ? 4 : 5)   // 줄(가로) 또는 열(세로) 수
+    const vertical = o.dir === 'v'                       // 'h': 가로쓰기(윗줄부터 왼→오), 'v': 세로쓰기(오른쪽 열부터 위→아래)
+    const baseCnt = Math.floor(n / lines), extra = n % lines
+    const pad = side * 0.06, inner = side - pad * 2, cs = o.centerScale ?? 1
+    const lineSize = inner / lines
     let i = 0
-    for (let k = 0; k < cols; k++) {                       // k=0 이 맨 오른쪽 열
-      const c = cols - 1 - k, cnt = baseCnt + (k >= cols - extra ? 1 : 0); if (!cnt) continue  // 남는 글자는 왼쪽 열에
-      const rh = inner / cnt, fs = Math.min(cw, rh) * cs
-      for (let r = 0; r < cnt; r++) {
+    for (let k = 0; k < lines; k++) {
+      const cnt = baseCnt + (k < extra ? 1 : 0); if (!cnt) continue   // 남는 글자는 앞쪽 줄에
+      const step = inner / cnt
+      for (let j = 0; j < cnt; j++) {
         const ch = chars[i++], hanja = /[\u4E00-\u9FFF]/.test(ch)
+        // 칸 크기와 중심
+        const cw = vertical ? lineSize : step, rh = vertical ? step : lineSize
+        const px = vertical ? x0 + pad + (lines - 1 - k + 0.5) * lineSize : x0 + pad + (j + 0.5) * step
+        const py = vertical ? y0 + pad + (j + 0.5) * step : y0 + pad + (k + 0.5) * lineSize
+        const fs = Math.min(cw, rh) * cs
         x.font = `700 ${fs}px ${hanja ? cfont : font}`; x.textBaseline = 'alphabetic'
         const m = x.measureText(ch), mw = m.width || fs
         const mh = (m.actualBoundingBoxAscent + m.actualBoundingBoxDescent) || fs
-        const sx = Math.min(1.8, (cw * 0.92 * cs) / mw), sy = Math.min(2.2, (rh * 0.92 * cs) / mh)
+        const sx = Math.min(2.2, (cw * 0.92 * cs) / mw), sy = Math.min(2.2, (rh * 0.92 * cs) / mh)
         const midY = (m.actualBoundingBoxAscent - m.actualBoundingBoxDescent) / 2
-        x.save(); x.translate(x0 + pad + (c + 0.5) * cw, y0 + pad + (r + 0.5) * rh); x.scale(sx, sy); draw(ch, 0, midY); x.restore()
+        x.save(); x.translate(px, py); x.scale(sx, sy); draw(ch, 0, midY); x.restore()
       }
     }
     x.textBaseline = 'middle'
