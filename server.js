@@ -452,7 +452,7 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
         gql: R.client(conf.token, railwayEndpoint),
         workspaceId: conf.workspaceId,
         region: REGION,
-        repo: env('ERP_REPO', 'sangjindl9-lab/lee1'),
+        repo: env('ERP_REPO', 'sangjindl9-lab/sspower'),
         branch: env('ERP_BRANCH', 'ss-erp'),
         dockerfilePath: 'deploy/render/Dockerfile',
         licenseServerUrl: publicUrl,

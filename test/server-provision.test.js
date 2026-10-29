@@ -131,7 +131,7 @@ test('서버 개설: 실패하면 그 단계부터 다시 이어서, 끝나면 �
   const regions = calls.filter((x) => x.name === 'serviceInstanceUpdate').map((x) => x.variables.input.region);
   assert.deepEqual(regions, ['asia-southeast1-eqsg3a', 'asia-southeast1-eqsg3a']);
   const conn = calls.find((x) => x.name === 'serviceConnect');
-  assert.deepEqual(conn.variables.input, { repo: 'sangjindl9-lab/lee1', branch: 'ss-erp' });
+  assert.deepEqual(conn.variables.input, { repo: 'sangjindl9-lab/sspower', branch: 'ss-erp' });
   const web = calls.find((x) => x.name === 'variableCollectionUpsert').variables.input.variables;
   assert.equal(web.WEB_ORIGIN, 'https://erp-hn-0440-production.up.railway.app');
 
