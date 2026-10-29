@@ -119,6 +119,7 @@ const winners = new Map(); // `${orntCode}|${cntrwkNo}|${pblancOdr}` → 채울 
 const wq = []; const queued = new Set();
 const quota = { day: '', used: { nego: 0, cmpet: 0 } };
 let wRunning = false;
+let logged = 0;
 const wKey = (k) => `${k.orntCode}|${k.cntrwkNo}|${k.pblancOdr}`;
 const today = () => new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
 
@@ -129,8 +130,17 @@ async function getXml(op, params, serviceKey) {
 }
 async function fetchWinner(k, serviceKey) {
   if (k.nego) {
-    const [d] = await getXml('getFcltyOthbcVltrnNtatResultDetail', { orntCode: k.orntCode, cntrwkNo: k.cntrwkNo, ntatPlanDate: k.date, pblancNo: k.pblancNo, pblancOdr: k.pblancOdr }, serviceKey);
-    if (!d?.scsbidEntrpsNm) return null;
+    const keys = { orntCode: k.orntCode, cntrwkNo: k.cntrwkNo, ntatPlanDate: k.date, pblancNo: k.pblancNo, pblancOdr: k.pblancOdr };
+    const [d] = await getXml('getFcltyOthbcVltrnNtatResultDetail', keys, serviceKey);
+    if (!d?.scsbidEntrpsNm) {
+      // 아직 낙찰 확정 전(순위확정 등): 참가업체 목록의 1순위로
+      const list = await getXml('getFcltyOthbcVltrnNtatResultMnufList', keys, serviceKey);
+      if (!logged++) console.log(`[d2b] 수의 상세 ${k.pblancNo} 결과=${d?.bidResult || '-'} 낙찰업체 없음, 참가업체 ${list.length}건 ${JSON.stringify(list[0] || {}).slice(0, 300)}`);
+      const top = list.filter((x) => Number(x.bidnRank) > 0).sort((a, b) => Number(a.bidnRank) - Number(b.bidnRank))[0];
+      if (!top) return null;
+      return { bidwinnrNm: top.mfkrName, bidwinnrBizno: String(top.bznsRgnb || '').replace(/[^0-9]/g, ''), bidwinnrCeoNm: top.rptrKore || '',
+        sucsfbidAmt: String(top.tbidAmnt || '').replace(/[^0-9]/g, ''), sucsfbidRate: top.bidnRate || '', prtcptCnum: String(list.length < 50 ? list.length : ''), _first: true };
+    }
     return { bidwinnrNm: d.scsbidEntrpsNm, bidwinnrBizno: String(d.scsbidEntrpsBsnmRegistNo || '').replace(/[^0-9]/g, ''), _basic: d.bsisPreparPc || '',
       sucsfbidLwltRate: Number(d.scsbidLwltRt) ? d.scsbidLwltRt : '', _selection: d.sucbidrDecsnMth || '' };
   }
@@ -149,7 +159,7 @@ async function drainWinners(serviceKey) {
     if (i < 0) break; // 오늘 할당량 소진 → 다음 조회 때 이어서
     const [k] = wq.splice(i, 1);
     quota.used[k.nego ? 'nego' : 'cmpet']++;
-    try { winners.set(wKey(k), await fetchWinner(k, serviceKey)); } catch (e) { console.log(`[d2b] 낙찰업체 조회 실패 ${k.pblancNo}: ${e.message}`); queued.delete(wKey(k)); }
+    try { const w = await fetchWinner(k, serviceKey); winners.set(wKey(k), w); if (!w || w._first) setTimeout(() => { winners.delete(wKey(k)); queued.delete(wKey(k)); }, 3 * 3600e3); } catch (e) { console.log(`[d2b] 낙찰업체 조회 실패 ${k.pblancNo}: ${e.message}`); queued.delete(wKey(k)); }
     await new Promise((r) => setTimeout(r, 300));
   }
   wRunning = false;
@@ -164,7 +174,7 @@ export function d2bFillWinners(rows, serviceKey) {
     if (!k.nego && (!/낙찰/.test(r.awardStatus) || r._kind === 'Thng')) { out.push(r); continue; } // 물품은 시설 참가업체 API 대상 아님
     const key = wKey(k);
     const w = winners.get(key);
-    if (w) { out.push({ ...r, ...w, awardStatus: '낙찰확정' }); continue; }
+    if (w) { const { _first, ...v } = w; out.push({ ...r, ...v, awardStatus: _first ? '1순위' : '낙찰확정' }); continue; }
     if (!winners.has(key) && !queued.has(key)) { queued.add(key); fresh.push({ ...k, date: k.date || String(r.opengDt || '').replace(/[^0-9]/g, '').slice(0, 8) }); }
     out.push(r);
   }
