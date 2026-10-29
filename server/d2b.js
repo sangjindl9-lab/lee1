@@ -7,6 +7,7 @@ const OPS = {
   dmstcNotice: [PBLANC, 'getDmstcCmpetBidPblancList', 'anmtDate'],   // 국내(물품) 경쟁입찰공고
   fcltyResult: [RESULT, 'getFcltyCmpetBidResultList', 'opengDate'],  // 시설 경쟁입찰결과
   dmstcResult: [RESULT, 'getDmstcCmpetBidResultList', 'opengDate'],  // 국내 경쟁입찰결과
+  fcltyNego: [RESULT, 'getFcltyOthbcVltrnNtatResultList', 'ntatPlanDate'], // 시설 공개수의(수의계약) 결과
 };
 const WINDOW_DAYS = 60;
 const REFRESH_MS = 60 * 60 * 1000;
@@ -83,6 +84,7 @@ export function d2bNoticeRow(x, src) {
 }
 
 export function d2bResultRow(x, src) {
+  if (src === 'nego') return d2bNegoRow(x);
   const title = x.cntrwkNm || x.bidNm || x.prdlstNm || x.reprsntPrdlstNm || '';
   return {
     _org: 'd2b', _orgNm: '방위사업청', _kind: src === 'dmstc' ? 'Thng' : kindOf(x.busiDivs, title),
@@ -94,4 +96,79 @@ export function d2bResultRow(x, src) {
     cntrctCnclsMthdNm: x.cntrctMth || '', _selection: x.sucbidrDecsnMth || '', _bidMth: x.bidMth || '',
     bidNtceDtlUrl: 'https://www.d2b.go.kr/', _raw: { cntrwkNo: x.cntrwkNo, pblancNo: x.pblancNo, pblancOdr: x.pblancOdr, orntCode: x.orntCode },
   };
+}
+
+// ── 시설 공개수의 결과 + 낙찰업체 채우기 ────────────────────────────────────
+// 목록에는 낙찰업체가 없어 공고마다 상세를 1번씩 불러야 함. 오퍼레이션별 하루 100회 제한 → 하루 90회까지만,
+// 사용자가 조회한 건부터 차례로 채우고 결과는 서버에 기억(재시작 전까지)
+function d2bNegoRow(x) {
+  const title = x.othbcNtatNm || '';
+  return {
+    _org: 'd2b', _orgNm: '방위사업청', _kind: /용역|감리|설계|측량|진단/.test(title) ? 'Servc' : 'Cnstwk',
+    bidNtceNo: x.pblancNo || x.cntrwkNo || '', bidNtceOrd: String(x.pblancOdr || '1').padStart(3, '0'), bidNtceNm: title,
+    ntceInsttNm: x.ornt || '방위사업청', dminsttNm: x.ornt || '', presmptPrce: String(x.budgetAmount || '').replace(/[^0-9]/g, ''),
+    awardStatus: x.ntatResult || '개찰', bidwinnrNm: '', bidwinnrBizno: '', bidwinnrCeoNm: '',
+    sucsfbidAmt: '', sucsfbidRate: '', prtcptCnum: '',
+    opengDt: d2bDate(x.othbcNtatDt || x.ntatPlanDate), rlOpengDt: d2bDate(x.othbcNtatDt || x.ntatPlanDate),
+    cntrctCnclsMthdNm: '수의계약(공개수의)', _bidMth: x.bidMth || '',
+    bidNtceDtlUrl: 'https://www.d2b.go.kr/', _raw: { cntrwkNo: x.cntrwkNo, pblancNo: x.pblancNo, pblancOdr: x.pblancOdr, orntCode: x.orntCode, date: x.ntatPlanDate, nego: true },
+  };
+}
+
+const winners = new Map(); // `${orntCode}|${cntrwkNo}|${pblancOdr}` → 채울 값 (없으면 null)
+const wq = []; const queued = new Set();
+const quota = { day: '', used: { nego: 0, cmpet: 0 } };
+let wRunning = false;
+const wKey = (k) => `${k.orntCode}|${k.cntrwkNo}|${k.pblancOdr}`;
+const today = () => new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
+
+async function getXml(op, params, serviceKey) {
+  const qs = new URLSearchParams({ numOfRows: '50', pageNo: '1', ...params });
+  const r = await fetch(`${RESULT}/${op}?serviceKey=${encodeURIComponent(serviceKey)}&${qs}`, { signal: AbortSignal.timeout(30000) });
+  return parse(await r.text()).items;
+}
+async function fetchWinner(k, serviceKey) {
+  if (k.nego) {
+    const [d] = await getXml('getFcltyOthbcVltrnNtatResultDetail', { orntCode: k.orntCode, cntrwkNo: k.cntrwkNo, ntatPlanDate: k.date, pblancNo: k.pblancNo, pblancOdr: k.pblancOdr }, serviceKey);
+    if (!d?.scsbidEntrpsNm) return null;
+    return { bidwinnrNm: d.scsbidEntrpsNm, bidwinnrBizno: String(d.scsbidEntrpsBsnmRegistNo || '').replace(/[^0-9]/g, ''), _basic: d.bsisPreparPc || '',
+      sucsfbidLwltRate: Number(d.scsbidLwltRt) ? d.scsbidLwltRt : '', _selection: d.sucbidrDecsnMth || '' };
+  }
+  // 경쟁입찰: 참가업체 목록 1위(낙찰) → 업체·사업자번호·대표·투찰금액·투찰률
+  const list = await getXml('getFcltyCmpetBidResultMnufList', { orntCode: k.orntCode, cntrwkNo: k.cntrwkNo, ntatPlanDate: k.date }, serviceKey);
+  const top = list.find((x) => x.bidxNote === '낙찰') || list.filter((x) => Number(x.bidnRank) > 0).sort((a, b) => Number(a.bidnRank) - Number(b.bidnRank))[0];
+  if (!top) return null;
+  return { bidwinnrNm: top.mfkrName, bidwinnrBizno: String(top.bznsRgnb || '').replace(/[^0-9]/g, ''), bidwinnrCeoNm: top.rptrKore || '',
+    sucsfbidAmt: String(top.tbidAmnt || '').replace(/[^0-9]/g, ''), sucsfbidRate: top.bidnRate || '', prtcptCnum: String(list.length < 50 ? list.length : '') };
+}
+async function drainWinners(serviceKey) {
+  wRunning = true;
+  while (wq.length) {
+    if (quota.day !== today()) quota.day = today(), quota.used = { nego: 0, cmpet: 0 };
+    const i = wq.findIndex((k) => quota.used[k.nego ? 'nego' : 'cmpet'] < 90);
+    if (i < 0) break; // 오늘 할당량 소진 → 다음 조회 때 이어서
+    const [k] = wq.splice(i, 1);
+    quota.used[k.nego ? 'nego' : 'cmpet']++;
+    try { winners.set(wKey(k), await fetchWinner(k, serviceKey)); } catch (e) { console.log(`[d2b] 낙찰업체 조회 실패 ${k.pblancNo}: ${e.message}`); queued.delete(wKey(k)); }
+    await new Promise((r) => setTimeout(r, 300));
+  }
+  wRunning = false;
+}
+// 결과 행에 낙찰업체를 채움(아는 것만). 모르는 건 대기열 맨 앞(최근 조회 우선)에 넣음
+export function d2bFillWinners(rows, serviceKey) {
+  const out = [];
+  const fresh = [];
+  for (const r of rows) {
+    const k = r._raw;
+    if (r._org !== 'd2b' || !k?.cntrwkNo || r.bidwinnrNm) { out.push(r); continue; }
+    if (!k.nego && (!/낙찰/.test(r.awardStatus) || r._kind === 'Thng')) { out.push(r); continue; } // 물품은 시설 참가업체 API 대상 아님
+    const key = wKey(k);
+    const w = winners.get(key);
+    if (w) { out.push({ ...r, ...w, awardStatus: '낙찰확정' }); continue; }
+    if (!winners.has(key) && !queued.has(key)) { queued.add(key); fresh.push({ ...k, date: k.date || String(r.opengDt || '').replace(/[^0-9]/g, '').slice(0, 8) }); }
+    out.push(r);
+  }
+  if (fresh.length) wq.unshift(...fresh);
+  if (wq.length && !wRunning) drainWinners(serviceKey);
+  return out;
 }

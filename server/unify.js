@@ -2,7 +2,7 @@
 import { kwSearch } from './kwater.js';
 import { krResults } from './krbid.js';
 import { kepcoNotices } from './kepco.js';
-import { d2bRows, d2bNoticeRow, d2bResultRow } from './d2b.js';
+import { d2bRows, d2bNoticeRow, d2bResultRow, d2bFillWinners } from './d2b.js';
 import { korailNotices, korailContracts, korailOpengRows } from './korail.js';
 
 // 업종 체크박스 → 공고명 키워드 (다른 기관은 업종 정보가 없어 공고명으로 판단)
@@ -41,9 +41,10 @@ const inRange = (d, from, to) => { const x = ymd(d); return x && x >= from && x 
 const apiToIso = (s) => (s ? `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}` : '');
 
 // 참가지역 선택 시: 다른 기관 자료에는 지역 칸이 없어 기관·부서·공고명에 나오는 지명으로 판단
+// (방위사업청은 발주 부대명으로 판단 — 강원 주둔 부대)
 const RGN_WORDS = {
-  51: '강원 강릉 춘천 원주 속초 태백 삼척 동해 정선 영월 평창 횡성 홍천 화천 양구 인제 양양 철원 소양강 영동선 태백선 정선선 경강선 고성군',
-  42: '강원 강릉 춘천 원주 속초 태백 삼척 동해 정선 영월 평창 횡성 홍천 화천 양구 인제 양양 철원 소양강 영동선 태백선 정선선 경강선 고성군',
+  51: '강원 강릉 춘천 원주 속초 태백 삼척 동해 정선 영월 평창 횡성 홍천 화천 양구 인제 양양 철원 소양강 영동선 태백선 정선선 경강선 고성군 3군단 제2군단 제7보병사단 제12보병사단 제15보병사단 제21보병사단 제22보병사단 제2보병사단 제3보병사단 제6보병사단 제11기동사단 제8385부대 제1862부대 해군제1함대 제8전투비행단 제18전투비행단',
+  42: '강원 강릉 춘천 원주 속초 태백 삼척 동해 정선 영월 평창 횡성 홍천 화천 양구 인제 양양 철원 소양강 영동선 태백선 정선선 경강선 고성군 3군단 제2군단 제7보병사단 제12보병사단 제15보병사단 제21보병사단 제22보병사단 제2보병사단 제3보병사단 제6보병사단 제11기동사단 제8385부대 제1862부대 해군제1함대 제8전투비행단 제18전투비행단',
   11: '서울', 41: '경기 수원 성남 용인 고양 화성 안산 안양 평택 시흥 김포 파주 의정부 광명 하남 오산 이천 안성 여주 양평 가평 연천 포천 동두천 구리 남양주 군포 의왕 과천 부천 시화',
   28: '인천 강화 옹진', 43: '충북 충청북도 청주 충주 제천 보은 옥천 영동 증평 진천 괴산 음성 단양 충북선',
   44: '충남 충청남도 천안 공주 보령 아산 서산 논산 계룡 당진 금산 부여 서천 청양 홍성 예산 태안 장항선 대전충남',
@@ -180,11 +181,13 @@ export async function extAwards(kind, p, { key, extLoad }) {
     })).catch((e) => console.log(`[unify] 방위사업청 파일 실패: ${e.message}`)));
   }
   // 방위사업청 입찰결과 (낙찰업체는 상세 API 확인 전까지 비어 있음)
-  for (const [key, src] of [['fcltyResult', 'fclty'], ['dmstcResult', 'dmstc']]) {
+  const d2bOut = [];
+  for (const [key, src] of [['fcltyResult', 'fclty'], ['dmstcResult', 'dmstc'], ['fcltyNego', 'nego']]) {
     jobs.push(d2bRows(key, process.env.DATA_GO_KR_KEY).then((list) => list.forEach((x) => {
       const r = d2bResultRow(x, src);
       if (!want(r._kind) || !inRange(r.opengDt, from, to)) return;
-      rows.push(r);
+      if (src === 'nego' && /유찰|취소/.test(r.awardStatus)) return;
+      d2bOut.push(r);
     })).catch((e) => console.log(`[unify] 방위사업청 결과 실패: ${e.message}`)));
   }
   // 국가철도공단: 개찰결과 목록(1순위) — 처리상태가 낙찰이면 낙찰확정
@@ -215,6 +218,8 @@ export async function extAwards(kind, p, { key, extLoad }) {
     }));
   }
   await Promise.all(jobs);
+  // 방위사업청: 조건에 맞는 건만 낙찰업체 채우기(하루 호출 제한 때문에 조회된 건 우선)
+  rows.push(...d2bFillWinners(d2bOut.filter((r) => commonFilter(r, p)), process.env.DATA_GO_KR_KEY));
   return rows.filter((r) => {
     if (!commonFilter(r, p)) return false;
     if (p.bizno && r.bidwinnrBizno !== p.bizno.replaceAll('-', '')) return false;
