@@ -73,6 +73,8 @@ export default function Page() {
   const toast = useToast();
   const { can, company } = useSession();
   const keys = useQuery({ queryKey: ['api-keys', company.id], queryFn: () => api<Key[]>('/api-keys'), enabled: can('apikey:read') });
+  // API 문서는 서버 설정(SWAGGER_ENABLED)으로 켤 때만 있다
+  const docsOn = useQuery({ queryKey: ['api-docs-on'], queryFn: () => fetch('/api/docs/openapi.json', { method: 'HEAD' }).then((r) => r.ok).catch(() => false), staleTime: Infinity }).data;
   const [open, setOpen] = useState(false);
   const [shown, setShown] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -82,7 +84,7 @@ export default function Page() {
     <>
       <PageHeader title="API 키" description="외부 프로그램(그룹웨어·BI·자체 시스템)이 SS-ERP 자료를 읽고 쓰도록 키를 발급합니다. 키 원문은 발급할 때 한 번만 보입니다."
         actions={<>
-          <Link href="/api/docs" target="_blank"><Button>API 문서</Button></Link>
+          {docsOn && <a href="/api/docs" target="_blank" rel="noopener noreferrer"><Button>API 문서</Button></a>}
           {can('apikey:create') && <Button variant="primary" icon={<Plus className="size-4" />} onClick={() => setOpen(true)}>키 발급</Button>}
         </>} />
       <div className="mb-4 rounded-[6px] border border-line bg-surface px-4 py-3 text-meta text-ink-2">

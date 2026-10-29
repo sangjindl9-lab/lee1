@@ -12,6 +12,10 @@ const PG_MESSAGES: Record<string, { status: number; code: string; message: strin
   '23514': { status: 400, code: 'CHECK_FAILED', message: '데이터 규칙에 맞지 않는 값입니다' },
   '23503': { status: 409, code: 'IN_USE', message: '다른 자료와 연결되어 있어 처리할 수 없습니다' },
   '22P02': { status: 400, code: 'BAD_FORMAT', message: '입력 형식이 올바르지 않습니다' },
+  '22008': { status: 400, code: 'BAD_DATE', message: '날짜가 올바르지 않습니다' },
+  '22007': { status: 400, code: 'BAD_DATE', message: '날짜가 올바르지 않습니다' },
+  '22003': { status: 400, code: 'NUMBER_RANGE', message: '숫자가 너무 크거나 작습니다' },
+  '22001': { status: 400, code: 'TOO_LONG', message: '입력한 글자가 너무 깁니다' },
 };
 
 /** 모든 오류를 { code, message, fields? } 형태로 통일. 내부 오류 세부는 노출하지 않는다 */

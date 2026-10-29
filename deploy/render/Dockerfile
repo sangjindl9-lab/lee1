@@ -22,7 +22,13 @@ RUN npm ci --workspace apps/api --include-workspace-root=false --omit=dev && npm
 FROM node:22-bookworm-slim
 ENV NODE_ENV=production TZ=Asia/Seoul NEXT_TELEMETRY_DISABLED=1 HOSTNAME=0.0.0.0
 # DATABASE_URL 이 없을 때 쓰는 내장 PostgreSQL (시연용 — 재배포 시 데이터 초기화)
-RUN apt-get update && apt-get install -y --no-install-recommends tini postgresql-15 && rm -rf /var/lib/apt/lists/* \
+# 화면 백업(pg_dump)은 서버 DB 버전과 같거나 높은 클라이언트가 필요하다 — Railway PostgreSQL 18 에 맞춰 18 클라이언트를 함께 넣는다
+RUN apt-get update && apt-get install -y --no-install-recommends tini postgresql-15 ca-certificates curl \
+  && install -d /usr/share/postgresql-common/pgdg \
+  && curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+  && echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" > /etc/apt/sources.list.d/pgdg.list \
+  && apt-get update && apt-get install -y --no-install-recommends postgresql-client-18 \
+  && apt-get purge -y curl && apt-get autoremove -y && rm -rf /var/lib/apt/lists/* \
   && groupadd -r erp && useradd -r -g erp -d /app erp
 WORKDIR /app
 # API

@@ -88,7 +88,7 @@ function Body() {
                       <thead className="sticky top-0 z-[1]"><tr>{data.data.columns.map((c, i) => <th key={i} className="border border-line bg-surface-2 px-2 py-1.5 font-medium whitespace-nowrap text-ink-2">{c.header}</th>)}</tr></thead>
                       <tbody>
                         {data.data.rows.map((r, i) => (
-                          <tr key={i} className="even:bg-surface-2/40">{r.map((v, j) => <td key={j} className={clsx('border border-line px-2 py-1', data.data!.columns[j].money ? 'num text-right' : data.data!.columns[j].align === 'center' && 'text-center')}>{data.data!.columns[j].money ? (v === null || v === '' ? '' : won(String(v))) : v}</td>)}</tr>
+                          <tr key={i} className="even:bg-surface-2/40">{r.map((v, j) => <td key={j} className={clsx('border border-line px-2 py-1', data.data!.columns[j].money ? 'num text-right whitespace-nowrap' : data.data!.columns[j].align === 'center' ? 'text-center whitespace-nowrap' : 'min-w-[9rem]')}>{data.data!.columns[j].money ? (v === null || v === '' ? '' : won(String(v))) : v}</td>)}</tr>
                         ))}
                       </tbody>
                       {data.data.totals && <tfoot><tr className="bg-surface-2 font-semibold">{data.data.totals.map((v, j) => <td key={j} className={clsx('border border-line px-2 py-1.5', data.data!.columns[j].money && 'num text-right')}>{data.data!.columns[j].money && v !== null && v !== '' ? won(String(v)) : v}</td>)}</tr></tfoot>}
