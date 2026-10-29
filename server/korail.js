@@ -43,8 +43,8 @@ const kindOf = (way = '', title = '') => {
   if (/공사/.test(way)) return 'Cnstwk';
   if (/용역/.test(way)) return 'Servc';
   if (/물품|구매|제조/.test(way)) return 'Thng';
+  if (/용역|감리|설계|진단|점검|위탁/.test(title)) return 'Servc'; // '…개량공사 책임감리용역'은 용역
   if (/공사/.test(title)) return 'Cnstwk';
-  if (/용역|감리|설계|진단|점검|위탁/.test(title)) return 'Servc';
   return 'Thng';
 };
 const tableOf = (out) => Object.entries(out).find(([k, v]) => /^ET_/.test(k) && Array.isArray(v))?.[1] || [];
@@ -129,7 +129,7 @@ function contractsRaw(from, to) {
         bidNtceNo: x.zzbidinv || x.ebeln, bidNtceOrd: '000', bidNtceNm: x.zzctrdesc || '',
         ntceInsttNm: '한국철도공사', dminsttNm: `한국철도공사 ${x.eknam || ''}`.trim(), presmptPrce: basic,
         awardStatus: '계약완료', bidwinnrNm: x.name1 || '', bidwinnrBizno: '', bidwinnrCeoNm: x.j_1kfrepre || '', bidwinnrAdrs: x.ort01 || '',
-        sucsfbidAmt: won, sucsfbidRate: won && pln ? (Number(won) / Number(pln) * 100).toFixed(3) : '', prtcptCnum: '',
+        sucsfbidAmt: won, sucsfbidRate: won && Number(pln) ? (Number(won) / Number(pln) * 100).toFixed(3) : '', prtcptCnum: '',
         opengDt: iso(x.zzopenday) || iso(x.bedat), rlOpengDt: iso(x.zzopenday) || iso(x.bedat),
         cntrctCnclsMthdNm: [x.zzcontrway_txt, x.zzwayofbidding_txt].filter(Boolean).join(' · '),
         _plnprc: pln, _basic: basic, _cntrctDt: iso(x.bedat), _cntrctNo: x.ebeln, _korailVendor: x.lifnr,

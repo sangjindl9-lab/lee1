@@ -40,7 +40,28 @@ const ymd = (s) => String(s || '').slice(0, 10);
 const inRange = (d, from, to) => { const x = ymd(d); return x && x >= from && x <= to; };
 const apiToIso = (s) => (s ? `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}` : '');
 
+// 참가지역 선택 시: 다른 기관 자료에는 지역 칸이 없어 기관·부서·공고명에 나오는 지명으로 판단
+const RGN_WORDS = {
+  51: '강원 강릉 춘천 원주 속초 태백 삼척 동해 정선 영월 평창 횡성 홍천 화천 양구 인제 양양 철원 소양강 영동선 태백선 정선선 경강선 고성군',
+  42: '강원 강릉 춘천 원주 속초 태백 삼척 동해 정선 영월 평창 횡성 홍천 화천 양구 인제 양양 철원 소양강 영동선 태백선 정선선 경강선 고성군',
+  11: '서울', 41: '경기 수원 성남 용인 고양 화성 안산 안양 평택 시흥 김포 파주 의정부 광명 하남 오산 이천 안성 여주 양평 가평 연천 포천 동두천 구리 남양주 군포 의왕 과천 부천 시화',
+  28: '인천 강화 옹진', 43: '충북 충청북도 청주 충주 제천 보은 옥천 영동 증평 진천 괴산 음성 단양 충북선',
+  44: '충남 충청남도 천안 공주 보령 아산 서산 논산 계룡 당진 금산 부여 서천 청양 홍성 예산 태안 장항선 대전충남',
+  30: '대전', 36: '세종', 47: '경북 경상북도 포항 경주 김천 안동 구미 영주 영천 상주 문경 경산 의성 청송 영양 영덕 청도 고령 성주 칠곡 예천 봉화 울진 울릉 대구경북',
+  48: '경남 경상남도 창원 진주 통영 사천 김해 밀양 거제 양산 의령 함안 창녕 남해 하동 산청 함양 거창 합천 부산경남',
+  26: '부산', 27: '대구', 31: '울산 온산', 52: '전북 전라북도 전주 군산 익산 정읍 남원 김제 완주 진안 무주 장수 임실 순창 고창 부안 전라선',
+  45: '전북 전라북도 전주 군산 익산 정읍 남원 김제 완주 진안 무주 장수 임실 순창 고창 부안 전라선',
+  46: '전남 전라남도 목포 여수 순천 나주 광양 담양 곡성 구례 고흥 보성 화순 장흥 강진 해남 영암 무안 함평 영광 장성 완도 진도 신안 광주전남',
+  29: '광주', 12: '광주 전남 전라남도 목포 여수 순천 나주 광양', 50: '제주',
+};
+function regionMatch(r, code) {
+  if (!code || code === '00' || !RGN_WORDS[code]) return true;
+  const text = `${r.ntceInsttNm} ${r.dminsttNm} ${r.bidNtceNm}`;
+  return RGN_WORDS[code].split(' ').some((w) => text.includes(w));
+}
+
 function commonFilter(r, p) {
+  if (!regionMatch(r, p.prtcptLmtRgnCd)) return false;
   const words = String(p.bidNtceNm || '').split(/\s+/).filter(Boolean);
   if (!words.every((w) => r.bidNtceNm.includes(w))) return false;
   if (!industryMatch(r.bidNtceNm, p.indstrytyNm)) return false;
@@ -188,8 +209,9 @@ export async function extAwards(kind, p, { key, extLoad }) {
       korailOpengRows(from, to).catch((e) => { console.log(`[unify] 철도공사 개찰 실패: ${e.message}`); return []; }),
     ]).then(([cont, openg]) => {
       const done = new Set();
-      for (const r of cont) if (want(r._kind) && inRange(r.opengDt, from, to)) { rows.push(r); done.add(r.bidNtceNo); }
-      for (const r of openg) if (want(r._kind) && !done.has(r.bidNtceNo)) rows.push(r);
+      const g2bNo = (r) => /^R\d{2}/.test(r.bidNtceNo); // 나라장터로 발주한 건은 나라장터 자료에 이미 있음
+      for (const r of cont) if (!g2bNo(r) && want(r._kind) && inRange(r.opengDt, from, to)) { rows.push(r); done.add(r.bidNtceNo); }
+      for (const r of openg) if (!g2bNo(r) && want(r._kind) && !done.has(r.bidNtceNo)) rows.push(r);
     }));
   }
   await Promise.all(jobs);
