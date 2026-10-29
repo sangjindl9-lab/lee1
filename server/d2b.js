@@ -119,7 +119,6 @@ const winners = new Map(); // `${orntCode}|${cntrwkNo}|${pblancOdr}` → 채울 
 const wq = []; const queued = new Set();
 const quota = { day: '', used: { nego: 0, cmpet: 0 } };
 let wRunning = false;
-let logged = 0;
 const wKey = (k) => `${k.orntCode}|${k.cntrwkNo}|${k.pblancOdr}`;
 const today = () => new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
 
@@ -133,23 +132,27 @@ async function fetchWinner(k, serviceKey) {
     const keys = { orntCode: k.orntCode, cntrwkNo: k.cntrwkNo, ntatPlanDate: k.date, pblancNo: k.pblancNo, pblancOdr: k.pblancOdr };
     const [d] = await getXml('getFcltyOthbcVltrnNtatResultDetail', keys, serviceKey);
     if (!d?.scsbidEntrpsNm) {
-      // 아직 낙찰 확정 전(순위확정 등): 참가업체 목록의 1순위로
-      const list = await getXml('getFcltyOthbcVltrnNtatResultMnufList', keys, serviceKey);
-      if (!logged++) console.log(`[d2b] 수의 상세 ${k.pblancNo} 결과=${d?.bidResult || '-'} 낙찰업체 없음, 참가업체 ${list.length}건 ${JSON.stringify(list[0] || {}).slice(0, 300)}`);
-      const top = list.filter((x) => Number(x.bidnRank) > 0).sort((a, b) => Number(a.bidnRank) - Number(b.bidnRank))[0];
+      // 아직 낙찰 확정 전(순위확정 등): 협상 참가업체 목록에서 1순위(negnNote '1순위')
+      const list = await getXml('getFcltyOthbcVltrnNtatResultMnufList', { ...keys, numOfRows: '999' }, serviceKey);
+      const rank = (x) => Number(String(x.negnNote || x.bidxNote || '').match(/(\d+)순위/)?.[1] || x.bidnRank || 0);
+      const top = list.filter((x) => rank(x) > 0).sort((a, b) => rank(a) - rank(b))[0];
       if (!top) return null;
       return { bidwinnrNm: top.mfkrName, bidwinnrBizno: String(top.bznsRgnb || '').replace(/[^0-9]/g, ''), bidwinnrCeoNm: top.rptrKore || '',
-        sucsfbidAmt: String(top.tbidAmnt || '').replace(/[^0-9]/g, ''), sucsfbidRate: top.bidnRate || '', prtcptCnum: String(list.length < 50 ? list.length : ''), _first: true };
+        sucsfbidAmt: String(top.tnegnAmnt || top.tbidAmnt || '').replace(/[^0-9]/g, ''), sucsfbidRate: top.negnRate || top.bidnRate || '', prtcptCnum: String(list.length), _first: true };
     }
-    return { bidwinnrNm: d.scsbidEntrpsNm, bidwinnrBizno: String(d.scsbidEntrpsBsnmRegistNo || '').replace(/[^0-9]/g, ''), _basic: d.bsisPreparPc || '',
+    const bz = String(d.scsbidEntrpsBsnmRegistNo || '').replace(/[^0-9]/g, '');
+    const list = await getXml('getFcltyOthbcVltrnNtatResultMnufList', { ...keys, numOfRows: '999' }, serviceKey).catch(() => []);
+    const me = list.find((x) => String(x.bznsRgnb || '').replace(/[^0-9]/g, '') === bz) || {};
+    return { bidwinnrNm: d.scsbidEntrpsNm, bidwinnrBizno: bz, bidwinnrCeoNm: me.rptrKore || '', _basic: d.bsisPreparPc || '',
+      sucsfbidAmt: String(me.tnegnAmnt || '').replace(/[^0-9]/g, ''), sucsfbidRate: me.negnRate || '', prtcptCnum: list.length ? String(list.length) : '',
       sucsfbidLwltRate: Number(d.scsbidLwltRt) ? d.scsbidLwltRt : '', _selection: d.sucbidrDecsnMth || '' };
   }
   // 경쟁입찰: 참가업체 목록 1위(낙찰) → 업체·사업자번호·대표·투찰금액·투찰률
-  const list = await getXml('getFcltyCmpetBidResultMnufList', { orntCode: k.orntCode, cntrwkNo: k.cntrwkNo, ntatPlanDate: k.date }, serviceKey);
+  const list = await getXml('getFcltyCmpetBidResultMnufList', { orntCode: k.orntCode, cntrwkNo: k.cntrwkNo, ntatPlanDate: k.date, numOfRows: '999' }, serviceKey);
   const top = list.find((x) => x.bidxNote === '낙찰') || list.filter((x) => Number(x.bidnRank) > 0).sort((a, b) => Number(a.bidnRank) - Number(b.bidnRank))[0];
   if (!top) return null;
   return { bidwinnrNm: top.mfkrName, bidwinnrBizno: String(top.bznsRgnb || '').replace(/[^0-9]/g, ''), bidwinnrCeoNm: top.rptrKore || '',
-    sucsfbidAmt: String(top.tbidAmnt || '').replace(/[^0-9]/g, ''), sucsfbidRate: top.bidnRate || '', prtcptCnum: String(list.length < 50 ? list.length : '') };
+    sucsfbidAmt: String(top.tbidAmnt || '').replace(/[^0-9]/g, ''), sucsfbidRate: top.bidnRate || '', prtcptCnum: String(list.length) };
 }
 async function drainWinners(serviceKey) {
   wRunning = true;
@@ -159,13 +162,18 @@ async function drainWinners(serviceKey) {
     if (i < 0) break; // 오늘 할당량 소진 → 다음 조회 때 이어서
     const [k] = wq.splice(i, 1);
     quota.used[k.nego ? 'nego' : 'cmpet']++;
-    try { const w = await fetchWinner(k, serviceKey); winners.set(wKey(k), w); if (!w || w._first) setTimeout(() => { winners.delete(wKey(k)); queued.delete(wKey(k)); }, 3 * 3600e3); } catch (e) { console.log(`[d2b] 낙찰업체 조회 실패 ${k.pblancNo}: ${e.message}`); queued.delete(wKey(k)); }
+    try {
+      const w = await fetchWinner(k, serviceKey); winners.set(wKey(k), w); if (!w || w._first) setTimeout(() => { winners.delete(wKey(k)); queued.delete(wKey(k)); }, 3 * 3600e3); } catch (e) {
+      queued.delete(wKey(k));
+      if (/\[22\]|요청제한/.test(e.message)) { quota.used = { nego: 999, cmpet: 999 }; console.log('[d2b] 오늘 호출 한도 소진 → 내일 이어서 채움'); break; }
+      console.log(`[d2b] 낙찰업체 조회 실패 ${k.pblancNo}: ${e.message}`);
+    }
     await new Promise((r) => setTimeout(r, 300));
   }
   wRunning = false;
 }
 // 결과 행에 낙찰업체를 채움(아는 것만). 모르는 건 대기열 맨 앞(최근 조회 우선)에 넣음
-export function d2bFillWinners(rows, serviceKey) {
+export function d2bFillWinners(rows, serviceKey, { enqueue = true } = {}) {
   const out = [];
   const fresh = [];
   for (const r of rows) {
@@ -175,7 +183,7 @@ export function d2bFillWinners(rows, serviceKey) {
     const key = wKey(k);
     const w = winners.get(key);
     if (w) { const { _first, ...v } = w; out.push({ ...r, ...v, awardStatus: _first ? '1순위' : '낙찰확정' }); continue; }
-    if (!winners.has(key) && !queued.has(key)) { queued.add(key); fresh.push({ ...k, date: k.date || String(r.opengDt || '').replace(/[^0-9]/g, '').slice(0, 8) }); }
+    if (enqueue && !winners.has(key) && !queued.has(key)) { queued.add(key); fresh.push({ ...k, date: k.date || String(r.opengDt || '').replace(/[^0-9]/g, '').slice(0, 8) }); }
     out.push(r);
   }
   if (fresh.length) wq.unshift(...fresh);

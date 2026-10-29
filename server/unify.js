@@ -219,7 +219,9 @@ export async function extAwards(kind, p, { key, extLoad }) {
   }
   await Promise.all(jobs);
   // 방위사업청: 조건에 맞는 건만 낙찰업체 채우기(하루 호출 제한 때문에 조회된 건 우선)
-  rows.push(...d2bFillWinners(d2bOut.filter((r) => commonFilter(r, p)), process.env.DATA_GO_KR_KEY));
+  // 조건 없이 전체를 조회할 때는 새로 채우지 않음(한도 낭비 방지)
+  const narrowed = !!(p.indstrytyNm || p.bidNtceNm || p.prtcptLmtRgnCd || p.dminsttNm || p.ntceInsttNm || p.bizno);
+  rows.push(...d2bFillWinners(d2bOut.filter((r) => commonFilter(r, p)), process.env.DATA_GO_KR_KEY, { enqueue: narrowed }));
   return rows.filter((r) => {
     if (!commonFilter(r, p)) return false;
     if (p.bizno && r.bidwinnrBizno !== p.bizno.replaceAll('-', '')) return false;
