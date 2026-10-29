@@ -73,6 +73,7 @@ function getSettings() {
   return r;
 }
 getSettings();
+require('./seed')(db, nowStr);
 
 /* 최초 관리자 */
 if (db.prepare('SELECT COUNT(*) n FROM users').get().n === 0) {
