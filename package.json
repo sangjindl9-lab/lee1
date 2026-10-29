@@ -1,0 +1,17 @@
+{
+  "name": "gongsa-manager",
+  "version": "1.0.0",
+  "private": true,
+  "description": "전기통신공사 현장별 공사관리 프로그램",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": "22.x" },
+  "dependencies": {
+    "adm-zip": "0.5.16",
+    "archiver": "7.0.1",
+    "bcryptjs": "2.4.3",
+    "better-sqlite3": "11.10.0",
+    "express": "4.21.2",
+    "multer": "1.4.5-lts.1"
+  }
+}

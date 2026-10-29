@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>현장 공사관리</title>
+<meta name="theme-color" content="#1f5b4c">
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div id="login" hidden></div>
+<div id="app" hidden>
+  <aside id="nav" aria-label="메뉴"></aside>
+  <div id="wrap">
+    <header id="top"></header>
+    <main id="main"><div class="loading">불러오는 중…</div></main>
+  </div>
+</div>
+<div id="boot" class="loading">불러오는 중…</div>
+<button id="fab" class="btn primary" data-act="new-log" type="button" hidden>+ 작업일지 작성</button>
+<div id="modal" hidden></div>
+<div id="toast" hidden></div>
+<script src="/app.js"></script>
+</body>
+</html>
