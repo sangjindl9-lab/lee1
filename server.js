@@ -1,4 +1,4 @@
-// SS-ERP 소개 사이트 + 도입 문의 접수 (이메일 발송 + 파일 보관)
+// 이음ERP 소개 사이트 + 도입 문의 접수 (이메일 발송 + 파일 보관)
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -17,7 +17,7 @@ const LOG = path.join(DATA_DIR, 'inquiries.jsonl');
 
 // 페이지는 시작할 때 한 번 읽어 둔다 (문의 폼은 서버로 전송되도록 공개 페이지에서 처리)
 const page = fs.readFileSync(path.join('public', 'page.html'), 'utf8');
-const html = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="description" content="전기·정보통신 공사업체가 직접 만든 SS-ERP, 검측서류 자동 작성, 예정공정표 작성 프로그램"><link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%23fff' stroke='%23e0462f' stroke-width='3'/%3E%3Ctext x='16' y='21' font-size='12' font-weight='700' text-anchor='middle' fill='%23e0462f' font-family='sans-serif'%3ESS%3C/text%3E%3C/svg%3E"><style>:root{padding:0}img{max-width:100%}[hidden]{display:none!important}</style></head><body>${page}</body></html>`;
+const html = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="description" content="전기·정보통신 공사 현장에서 만든 이음ERP, 검측서류 자동 작성, 예정공정표 작성 프로그램"><link rel="icon" href="data:image/png;base64,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"><style>:root{padding:0}img{max-width:100%}[hidden]{display:none!important}</style></head><body>${page}</body></html>`;
 
 const recent = new Map(); // ip -> timestamps (간단한 과다 요청 방지)
 function tooMany(ip) {
@@ -41,8 +41,8 @@ async function handleInquiry(req, res) {
     if (transporter) {
       try {
         await transporter.sendMail({
-          from: `"SS-ERP 도입 문의" <${process.env.SMTP_USER}>`, to: TO, replyTo: item.email || undefined,
-          subject: `[SS-ERP 도입 문의] ${item.company} · ${item.name} · ${item.product}`,
+          from: `"이음ERP 도입 문의" <${process.env.SMTP_USER}>`, to: TO, replyTo: item.email || undefined,
+          subject: `[이음ERP 도입 문의] ${item.company} · ${item.name} · ${item.product}`,
           text: `회사명: ${item.company}\n담당자: ${item.name}\n연락처: ${item.phone}\n이메일: ${item.email || '-'}\n관심 제품: ${item.product}\n\n문의 내용:\n${item.message || '-'}\n\n접수: ${item.at} / ${ip}`,
           html: `<table style="font-family:sans-serif;font-size:14px;border-collapse:collapse">${[['회사명', item.company], ['담당자', item.name], ['연락처', item.phone], ['이메일', item.email || '-'], ['관심 제품', item.product]].map(([k, v]) => `<tr><th align="left" style="padding:4px 12px 4px 0;color:#555">${k}</th><td style="padding:4px 0">${esc(v)}</td></tr>`).join('')}</table><p style="white-space:pre-wrap;font-family:sans-serif;font-size:14px;border-top:1px solid #ddd;padding-top:10px">${esc(item.message) || '-'}</p><p style="color:#888;font-size:12px">접수 ${item.at} · ${esc(ip)}</p>`,
         });
@@ -71,10 +71,10 @@ http.createServer((req, res) => {
   }
   res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' }); res.end('없는 페이지입니다');
 }).listen(PORT, async () => {
-  console.log(`SS-ERP 소개 사이트 :${PORT} (문의 → ${TO}, SMTP ${transporter ? '설정됨' : '미설정 — 파일 보관만'})`);
+  console.log(`이음ERP 소개 사이트 :${PORT} (문의 → ${TO}, SMTP ${transporter ? '설정됨' : '미설정 — 파일 보관만'})`);
   // SEND_TEST_MAIL=1 로 띄우면 시작할 때 테스트 메일을 한 통 보낸다
   if (process.env.SEND_TEST_MAIL && transporter) {
-    try { const r = await transporter.sendMail({ from: `"SS-ERP 도입 문의" <${process.env.SMTP_USER}>`, to: TO, subject: '[SS-ERP 도입 문의] 테스트 메일', text: `문의 폼 메일 발송 테스트입니다.\n${new Date().toISOString()}` }); console.log('테스트 메일 발송됨:', r.response); }
+    try { const r = await transporter.sendMail({ from: `"이음ERP 도입 문의" <${process.env.SMTP_USER}>`, to: TO, subject: '[이음ERP 도입 문의] 테스트 메일', text: `문의 폼 메일 발송 테스트입니다.\n${new Date().toISOString()}` }); console.log('테스트 메일 발송됨:', r.response); }
     catch (e) { console.error('테스트 메일 실패:', e.message); }
   }
 });
