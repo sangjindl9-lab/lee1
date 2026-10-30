@@ -669,7 +669,7 @@ async function pageRequests() {
 // ── 설정 ───────────────────────────────────────────────────────
 async function pageSettings() {
   loading('settings');
-  const [me, rw, gh] = await Promise.all([api('/me'), api('/railway'), api('/github')]);
+  const [me, rw, gh, fs] = await Promise.all([api('/me'), api('/railway'), api('/github'), api('/files-storage')]);
   shell('settings', `
     <div class="page-head"><div><h1>설정</h1><p>관리자 비밀번호와 판매자 서명키 정보입니다.</p></div></div>
     <section class="panel"><header><h2>관리자 비밀번호 변경</h2><span class="muted small">${me.passwordChangedAt ? '마지막 변경 ' + dt(me.passwordChangedAt) : '처음 받은 비밀번호 사용 중'}</span></header>
@@ -694,6 +694,18 @@ async function pageSettings() {
         <div class="row end" style="margin-top:12px"><button class="btn primary">연결 확인 후 저장</button></div>
       </form>
     </section>
+    <section class="panel"><header><h2>고객 파일 저장소 (사진·첨부)</h2>${fs.connected ? `<span class="badge ok">연결됨 · ${esc(fs.bucket)}</span>` : '<span class="badge warn">연결 안 됨 — 고객 서버 디스크에 저장</span>'}</header>
+      <form id="fsf" class="body" autocomplete="off">
+        <p class="muted" style="margin-top:0">새로 개설하는 호스팅형 고객 서버의 사진·첨부파일을 이 저장소(S3 호환 버킷)에 고객별 폴더(<span class="mono">customers/사업자번호/</span>)로 저장합니다. Railway → <b>eum-files</b> 프로젝트 → 버킷 → <b>Credentials</b> 탭의 값을 붙여 넣으세요. 키는 암호화되어 저장되고 다시 화면에 나오지 않습니다.</p>
+        <div class="form-grid">
+          <label class="f">Endpoint<input name="endpoint" value="${esc(fs.endpoint ?? 'https://t3.storageapi.dev')}" required /></label>
+          <label class="f">Bucket Name<input name="bucket" value="${esc(fs.bucket ?? '')}" placeholder="eum-files-…" required /></label>
+          <label class="f">Access Key ID<input type="password" name="accessKeyId" autocomplete="off" required /></label>
+          <label class="f">Secret Access Key<input type="password" name="secretAccessKey" autocomplete="off" required /></label>
+        </div>
+        <div class="row end" style="margin-top:12px"><button class="btn primary">저장</button></div>
+      </form>
+    </section>
     <section class="panel"><header><h2>GitHub 연결 (수정 요청 → 이슈)</h2>${gh.connected ? `<span class="badge ok">연결됨${gh.source === 'env' ? ' · 환경변수' : ''}</span>` : '<span class="badge warn">연결 안 됨</span>'}</header>
       <form id="ghf" class="body" autocomplete="off">
         <p class="muted" style="margin-top:0">고객 수정 요청을 <span class="mono">${esc(gh.repo)}</span> 저장소 이슈로 남깁니다. GitHub → Settings → Developer settings → <b>Fine-grained tokens</b>에서 이 저장소만 선택하고 권한은 <b>Issues: Read and write</b>, <b>Contents: Read and write</b>(첨부 파일을 <span class="mono">requests</span> 브랜치에 올림) 두 가지만 준 토큰을 만들어 붙여 넣으세요.</p>
@@ -707,6 +719,10 @@ async function pageSettings() {
       <div class="note warn" style="margin-top:12px">비밀키(서명키)는 이 서버의 환경변수에만 있고 화면에는 나오지 않습니다. 따로 보관한 백업 파일을 잃어버리지 마세요. 비밀키가 유출되면 누구나 라이선스를 만들 수 있으니 즉시 키를 교체해야 합니다.</div>
     </div></section>`);
   document.getElementById('cp').onclick = () => copy(me.publicKey, '공개키를 복사했습니다');
+  document.getElementById('fsf').onsubmit = async (e) => {
+    e.preventDefault();
+    try { await api('/files-storage', { method: 'PUT', json: formData(e.target) }); toast('파일 저장소를 연결했습니다'); pageSettings(); } catch (err) { toast(err.message, 'error'); }
+  };
   document.getElementById('ghf').onsubmit = async (e) => {
     e.preventDefault();
     try { await api('/github', { method: 'PUT', json: formData(e.target) }); toast('GitHub에 연결했습니다'); pageSettings(); } catch (err) { toast(err.message, 'error'); }

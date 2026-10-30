@@ -420,6 +420,25 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
     return { token, source: envToken ? 'env' : stored ? 'db' : null, workspaceId: env('RAILWAY_WORKSPACE_ID') || (await setting('railway_workspace_id')) };
   };
 
+  // 고객 첨부파일 공용 저장소 (Railway 버킷 eum-files 등 S3 호환) — 새로 개설하는 호스팅 고객 서버에 넣어 준다
+  const filesConf = async () => {
+    const stored = await setting('files_s3');
+    return stored ? unseal(stored) : null;
+  };
+  admin.get('/files-storage', wrap(async (req, res) => {
+    const c = await filesConf();
+    res.json({ connected: !!c, endpoint: c?.endpoint ?? null, bucket: c?.bucket ?? null });
+  }));
+  admin.put('/files-storage', wrap(async (req, res) => {
+    const b = req.body ?? {};
+    const v = { endpoint: String(b.endpoint ?? '').trim(), bucket: String(b.bucket ?? '').trim(), region: String(b.region ?? 'auto').trim() || 'auto', accessKeyId: String(b.accessKeyId ?? '').trim(), secretAccessKey: String(b.secretAccessKey ?? '').trim() };
+    if (!/^https:\/\/\S+$/.test(v.endpoint)) throw bad('엔드포인트는 https:// 로 시작해야 합니다');
+    if (!v.bucket || !v.accessKeyId || !v.secretAccessKey) throw bad('버킷 이름, 접근 키, 비밀 키를 모두 넣어 주세요');
+    await putSetting('files_s3', seal(v));
+    audit(req, 'FILES_STORAGE', `파일 저장소 연결 ${v.bucket}`);
+    res.json({ ok: true });
+  }));
+
   admin.get('/railway', wrap(async (req, res) => {
     const c = await railwayConf();
     res.json({ connected: !!c.token, source: c.source, workspaceId: c.workspaceId, region: REGION });
@@ -470,6 +489,7 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
         branch: env('ERP_BRANCH', 'ss-erp'),
         dockerfilePath: 'deploy/render/Dockerfile',
         licenseServerUrl: publicUrl,
+        s3: await filesConf(),
         sleep: railwaySleep,
         waitTimeoutMs: railwayWaitMs,
         onStep: (step, data) => q('update server_job set step = $2, data = $3, updated_at = now() where customer_id = $1', [customerId, step, data]),

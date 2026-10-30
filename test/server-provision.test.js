@@ -138,6 +138,10 @@ test('Railway 연결 전에는 서버를 개설할 수 없고, 연결 확인 후
   const stored = (await pool.query(`select value from portal_setting where key = 'railway_token'`)).rows[0].value;
   assert.ok(!stored.includes('rw-secret-token'), '토큰은 평문으로 저장하지 않는다');
   assert.equal((await call('/api/admin/railway')).body.connected, true);
+  assert.equal((await call('/api/admin/files-storage', { method: 'PUT', json: { endpoint: 'http://x', bucket: 'b', accessKeyId: 'a', secretAccessKey: 's' } })).status, 400);
+  assert.equal((await call('/api/admin/files-storage', { method: 'PUT', json: { endpoint: 'https://t3.storageapi.dev', bucket: 'eum-files-test', accessKeyId: 'ak-test', secretAccessKey: 'sk-test' } })).status, 200);
+  assert.ok(!(await pool.query(`select value from portal_setting where key = 'files_s3'`)).rows[0].value.includes('sk-test'));
+  assert.deepEqual((await call('/api/admin/files-storage')).body, { connected: true, endpoint: 'https://t3.storageapi.dev', bucket: 'eum-files-test' });
 });
 
 test('잘못된 입력은 거부된다', async () => {
@@ -178,6 +182,9 @@ test('서버 개설: 실패하면 그 단계부터 다시 이어서, 끝나면 �
   assert.equal(app.DATABASE_URL, '${{Postgres.DATABASE_URL}}');
   assert.match(app.APP_ENCRYPTION_KEY, /^[0-9a-f]{64}$/);
   assert.equal(app.DEMO_DATA, undefined, '예시 데이터 없이 시작');
+  assert.equal(app.S3_BUCKET, 'eum-files-test', '파일 저장소가 연결돼 있으면 고객 서버에 넣어 준다');
+  assert.equal(app.S3_PREFIX, 'customers/2148839612/');
+  assert.equal(app.S3_SECRET_ACCESS_KEY, 'sk-test');
   const regions = calls.filter((x) => x.name === 'serviceInstanceUpdate').map((x) => x.variables.input.region);
   assert.deepEqual(regions, ['asia-southeast1-eqsg3a', 'asia-southeast1-eqsg3a']);
   const conn = calls.find((x) => x.name === 'serviceConnect');
