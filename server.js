@@ -186,6 +186,7 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
     id: r.id, name: r.name, bizRegNo: r.biz_reg_no, ceoName: r.ceo_name, contactName: r.contact_name, phone: r.phone, email: r.email,
     deployment: r.deployment, serverUrl: r.server_url, activationCode: r.activation_code, memo: r.memo,
     createdAt: r.created_at, lastSeenAt: r.last_seen_at, lastActiveUsers: r.last_active_users, lastAppVersion: r.last_app_version,
+    stage: r.stage ?? (r.license_id ? '운영중' : '리드'),
     current: r.license_id ? { licenseId: r.license_id, kind: r.lic_kind, maxUsers: r.max_users, expiresAt: ymd(r.expires_at), daysLeft: L.daysUntil(ymd(r.expires_at)), issuedAt: r.lic_issued_at } : null,
     state: stateOf(r),
   });
@@ -385,6 +386,9 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
   admin.get('/audit', wrap(async (req, res) => {
     res.json((await q('select at, action, summary, ip from audit_log order by id desc limit 300')).rows);
   }));
+
+  // ── 고객관리: 영업 단계·계약(전자서명)·과금·상담 ──
+  require('./lib/crm')(admin, { q, audit, wrap, bad, loadCustomer });
 
   // ── 고객 서버(호스팅형) 자동 개설 ─────────────────────────────────
   //  비밀값(고객 DB 비밀번호·암호화 키·관리자 임시 비밀번호·Railway 토큰)은 판매자 서명키에서 만든 키로 암호화해 저장

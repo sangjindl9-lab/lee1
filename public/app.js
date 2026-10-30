@@ -62,7 +62,8 @@ function renderLogin() {
 
 // ── 공통 틀 ────────────────────────────────────────────────────
 function shell(active, inner) {
-  const nav = [['#/', '대시보드', 'home'], ['#/customers', '고객', 'customers'], ['#/licenses', '발급 대장', 'licenses'], ['#/requests', '요청 대장', 'requests'], ['#/audit', '활동 기록', 'audit'], ['#/settings', '설정', 'settings']];
+  const nav = [['#/', '대시보드', 'home'], ['#/customers', '고객', 'customers'], ['#/contracts', '계약 · 전자계약', 'contracts'], ['#/billing', '과금 · 수납', 'billing'], ['#/support', '상담 · 지원', 'support'],
+    ['#/licenses', '발급 대장', 'licenses'], ['#/requests', '요청 대장', 'requests'], ['#/pricing', '요금제', 'pricing'], ['#/audit', '활동 기록', 'audit'], ['#/settings', '설정', 'settings']];
   $app.innerHTML = `
     <div class="shell">
       <nav class="side" aria-label="메뉴">
@@ -99,7 +100,9 @@ async function pageHome() {
         ${s.recent.length ? `<div class="table-wrap"><table><thead><tr><th>발급일</th><th>고객</th><th>종류</th><th class="r">사용자</th></tr></thead><tbody>${s.recent.map((l) => `<tr class="click" data-go="#/customers/${l.customerId}"><td class="num small">${dt(l.issuedAt)}</td><td>${esc(l.customerName)}</td><td>${badge(KIND[l.kind])}</td><td class="r num">${l.maxUsers}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">아직 발급한 라이선스가 없습니다</div>'}
       </section>
     </div>
-    <p class="muted small">사용 중 사용자 수 합계 <span class="num">${s.seats}</span>명 · 미발급 고객 ${s.none} · 사용 중지 ${s.suspended}</p>`);
+    <p class="muted small">사용 중 사용자 수 합계 <span class="num">${s.seats}</span>명 · 미발급 고객 ${s.none} · 사용 중지 ${s.suspended}</p>
+    <div id="crmhome"></div>`);
+  await crmHome();
 }
 
 // ── 고객 목록 ──────────────────────────────────────────────────
@@ -111,10 +114,10 @@ async function pageCustomers() {
     <div class="page-head"><div><h1>고객</h1><p>라이선스를 판매한 회사입니다. 고객을 눌러 라이선스를 발급·연장하세요.</p></div>
       <div class="row"><form id="sf" class="row"><input class="search" name="q" placeholder="회사명·사업자번호·담당자" value="${esc(term)}" /></form><a class="btn primary" href="#/customers/new">+ 고객 등록</a></div></div>
     <section class="panel">${rows.length ? `<div class="table-wrap"><table>
-      <thead><tr><th>회사명</th><th>사업자등록번호</th><th class="hide-sm">방식</th><th class="r">사용자</th><th>만료일</th><th>상태</th><th class="hide-sm">최근 접속</th></tr></thead>
+      <thead><tr><th>회사명</th><th>사업자등록번호</th><th>영업 단계</th><th class="hide-sm">방식</th><th class="r">사용자</th><th>만료일</th><th>상태</th><th class="hide-sm">최근 접속</th></tr></thead>
       <tbody>${rows.map((c) => `<tr class="click" data-go="#/customers/${c.id}">
         <td><b>${esc(c.name)}</b>${c.contactName ? `<div class="muted small">${esc(c.contactName)}</div>` : ''}</td>
-        <td class="num">${biz(c.bizRegNo)}</td><td class="hide-sm">${DEPLOY[c.deployment]}</td>
+        <td class="num">${biz(c.bizRegNo)}</td><td>${badge([c.stage, STAGE_TONE[c.stage] ?? ''])}</td><td class="hide-sm">${DEPLOY[c.deployment]}</td>
         <td class="r num">${c.current ? `${c.lastActiveUsers ?? '–'} / ${c.current.maxUsers}` : '–'}</td>
         <td class="num">${c.current ? esc(c.current.expiresAt) : '–'}</td><td>${badge(STATE[c.state])}</td>
         <td class="hide-sm small muted">${c.lastSeenAt ? dt(c.lastSeenAt) : '연결 전'}</td></tr>`).join('')}</tbody></table></div>`
@@ -241,6 +244,8 @@ async function pageCustomer(id) {
       </tbody></table></div>` : '<div class="empty">발급 이력이 없습니다</div>'}
     </section>
 
+    <div id="crmcust"></div>
+
     <section class="panel"><header><h2>고객 정보</h2></header>
       <form id="ef"><div class="body">${customerForm(c)}</div><div class="body row end" style="border-top:1px solid var(--line)"><button class="btn primary">저장</button></div></form>
     </section>`);
@@ -261,6 +266,7 @@ async function pageCustomer(id) {
     e.preventDefault();
     try { await api('/customers/' + id, { method: 'PUT', json: formData(e.target) }); toast('저장했습니다'); pageCustomer(id); } catch (err) { toast(err.message, 'error'); }
   };
+  await crmCustomer(c);
 }
 
 // ── 고객 서버 패널 ─────────────────────────────────────────────
@@ -703,6 +709,13 @@ async function route() {
     else if (h === '#/customers/new') await pageNewCustomer();
     else if (/^#\/customers\/[^/]+\/delivery$/.test(h)) await pageDelivery(h.split('/')[2]);
     else if (h.startsWith('#/customers/')) await pageCustomer(h.slice('#/customers/'.length));
+    else if (h === '#/contracts') await pageContracts();
+    else if (h === '#/contracts/new') await pageContractForm(null);
+    else if (/^#\/contracts\/[^/]+\/edit$/.test(h)) await pageContractForm(h.split('/')[2]);
+    else if (h.startsWith('#/contracts/')) await pageContract(h.slice('#/contracts/'.length));
+    else if (h === '#/billing') await pageBilling();
+    else if (h === '#/support') await pageSupport();
+    else if (h === '#/pricing') await pagePricing();
     else if (h === '#/licenses') await pageLicenses();
     else if (h === '#/requests') await pageRequests();
     else if (h === '#/requests/new') await pageRequestNew();
