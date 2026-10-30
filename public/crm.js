@@ -406,7 +406,10 @@ async function invoiceDialog(i, refresh) {
       if (i) await api('/invoices/' + i.id, { method: 'PUT', json }); else await api('/invoices', { method: 'POST', json });
       toast('청구를 저장했습니다');
       refresh();
-    } }).back.querySelector('[data-del]')?.addEventListener('click', async (e) => {
+    } });
+  const back = document.querySelector('.dlg-back:last-of-type');
+  back?.querySelector('[data-accept]')?.addEventListener('click', () => { back.remove(); location.hash = `#/requests/new?customer=${t.customerId}&ticket=${t.id}`; });
+  back?.querySelector('[data-del]')?.addEventListener('click', async (e) => {
     if (!confirm('이 청구를 삭제할까요?')) return;
     try { await api('/invoices/' + i.id, { method: 'DELETE' }); e.target.closest('.dlg-back').remove(); toast('삭제했습니다'); refresh(); } catch (err) { toast(err.message, 'error'); }
   });
@@ -436,9 +439,9 @@ async function payDialog(i, refresh) {
 function ticketTable(rows, withCustomer = true) {
   return `<div class="table-wrap"><table class="wide-table"><thead><tr><th>접수일</th>${withCustomer ? '<th>고객</th>' : ''}<th>유형</th><th>내용</th><th class="hide-sm">기한</th><th>상태</th><th></th></tr></thead><tbody>
     ${rows.map((t) => `<tr><td class="num small">${esc(t.openedOn)}</td>${withCustomer ? `<td><a href="#/customers/${t.customerId}">${esc(t.customerName)}</a></td>` : ''}
-      <td>${badge([t.type, t.type === '장애' ? 'seal' : t.type === '커스터마이징' ? 'warn' : ''])}</td>
-      <td><b>${esc(t.title)}</b>${t.body ? `<div class="muted small pre">${esc(t.body.slice(0, 160))}</div>` : ''}</td><td class="num small hide-sm">${esc(t.dueOn ?? '')}</td>
-      <td>${badge([t.status, t.status === '완료' ? 'ok' : t.status === '처리중' ? 'warn' : 'steel'])}</td><td class="r"><button class="btn sm" data-tk="${t.id}">수정</button></td></tr>`).join('')}
+      <td>${badge([t.type, t.type === '장애' ? 'seal' : t.type === '커스터마이징' ? 'warn' : ''])}${t.source === 'ERP' ? ' <span class="badge steel" title="고객이 ERP의 고장·수정 요청 메뉴로 보낸 건">ERP</span>' : ''}</td>
+      <td><b>${esc(t.title)}</b>${t.files?.length ? ` <span class="muted small">📎${t.files.length}</span>` : ''}${t.requester ? `<div class="small muted">${esc(t.requester)}</div>` : ''}${t.body ? `<div class="muted small pre">${esc(t.body.slice(0, 160))}</div>` : ''}</td><td class="num small hide-sm">${esc(t.dueOn ?? '')}</td>
+      <td>${badge([t.source === 'ERP' && t.status === '접수' ? '접수 대기' : t.status, t.status === '완료' ? 'ok' : t.status === '처리중' ? 'warn' : t.source === 'ERP' ? 'seal' : 'steel'])}</td><td class="r"><button class="btn sm" data-tk="${t.id}">${t.source === 'ERP' && t.status === '접수' ? '열기' : '수정'}</button></td></tr>`).join('')}
   </tbody></table></div>`;
 }
 function bindTicketButtons(rows, refresh) {
@@ -468,8 +471,13 @@ async function ticketDialog(t, customerId, refresh) {
       <label class="f">접수일<input type="date" name="openedOn" value="${esc(v.openedOn)}" /></label>
       <label class="f">처리 기한<input type="date" name="dueOn" value="${esc(v.dueOn ?? '')}" /></label>
       <label class="f">상태<select name="status">${opt(cfg.lists.TICKET_STATES, v.status)}</select></label>
-      <label class="f">담당<input name="owner" value="${esc(v.owner ?? '')}" /></label></div>`,
-  { extra: t ? '<button type="button" class="btn danger" data-del style="margin-right:auto">삭제</button>' : '',
+      <label class="f">담당<input name="owner" value="${esc(v.owner ?? '')}" /></label>
+      ${t?.source === 'ERP' ? `
+      <div class="f wide"><span>고객 ERP에서 보낸 요청</span><div class="small">${t.requester ? `요청자 ${esc(t.requester)}` : ''}${t.screen ? ` · 화면 ${esc(t.screen)}` : ''}</div>
+        ${t.files?.length ? `<div class="row" style="flex-wrap:wrap;gap:6px;margin-top:6px">${t.files.map((f) => `<a class="btn sm" href="/api/admin/tickets/${t.id}/files/${f.id}" target="_blank" rel="noopener">📎 ${esc(f.name)} <span class="muted">${Math.ceil(f.size / 1024)}KB</span></a>`).join('')}</div>` : ''}
+        ${t.requestId ? `<div style="margin-top:6px"><a href="#/requests/${t.requestId}">→ 연결된 수정 요청 보기</a></div>` : ''}</div>
+      <label class="f wide">고객에게 보이는 답변<textarea name="reply" rows="3" placeholder="고객 ERP의 요청 목록에 그대로 보입니다. 예: 확인했습니다. 다음 주 금요일 업데이트에 반영됩니다.">${esc(t.reply ?? '')}</textarea></label>` : ''}</div>`,
+  { extra: (t ? '<button type="button" class="btn danger" data-del style="margin-right:auto">삭제</button>' : '') + (t?.source === 'ERP' && !t.requestId ? '<button type="button" class="btn" data-accept>수정 요청으로 접수</button>' : ''),
     onSubmit: async (f) => {
       if (t) await api('/tickets/' + t.id, { method: 'PUT', json: f }); else await api('/tickets', { method: 'POST', json: f });
       toast('저장했습니다');

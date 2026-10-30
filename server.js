@@ -55,7 +55,7 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
   // 수정 요청·댓글은 첨부 파일(base64)을 함께 받으므로 그 두 경로만 본문 한도를 크게 둔다
   const smallJson = express.json({ limit: '64kb' });
   const bigJson = express.json({ limit: '40mb' });
-  const isUpload = (req) => req.method === 'POST' && /^\/api\/admin\/(customers\/[^/]+\/requests|requests|requests\/[^/]+\/comments)$/.test(req.path);
+  const isUpload = (req) => req.method === 'POST' && (/^\/api\/admin\/(customers\/[^/]+\/requests|requests|requests\/[^/]+\/comments)$/.test(req.path) || req.path === '/api/v1/support');
   app.use((req, res, next) => (isUpload(req) ? bigJson : smallJson)(req, res, next));
   app.use((req, res, next) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -870,6 +870,50 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
       usedMB != null ? [c.id, users, b.appVersion ? String(b.appVersion).slice(0, 30) : null, usedMB] : [c.id, users, b.appVersion ? String(b.appVersion).slice(0, 30) : null]);
     const [lic] = (await q('select license_text from license where customer_id = $1 order by issued_at desc limit 1', [c.id])).rows;
     res.json({ license: lic?.license_text ?? null, licensee: c.name });
+  }));
+
+  // ── 고객 ERP 의 '고장·수정 요청' — 설치 코드 + 사업자번호로 확인 ─────────────
+  const supportCustomer = async (b) => {
+    const code = String(b.code ?? '').trim().toUpperCase();
+    if (!/^[A-Z0-9-]{8,40}$/.test(code)) throw bad('설치 코드 형식이 올바르지 않습니다');
+    const [c] = (await q('select * from customer where activation_code = $1', [code])).rows;
+    if (!c) throw bad('설치 코드를 찾을 수 없습니다', 404);
+    const bizNos = (Array.isArray(b.bizRegNos) ? b.bizRegNos : String(b.bizRegNos ?? '').split(',')).map(L.normBiz).filter(Boolean);
+    if (!bizNos.includes(c.biz_reg_no)) throw bad('이 설치 코드는 다른 회사용입니다', 403);
+    return c;
+  };
+  const SUPPORT_TYPES = { 고장: '장애', 수정: '기능요청', 문의: '상담' };
+  const SUPPORT_FILE = /\.(png|jpe?g|gif|webp|pdf|xlsx?|hwpx?|docx?|zip)$/i;
+  const SUPPORT_MIME = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', pdf: 'application/pdf' };
+  app.post('/api/v1/support', wrap(async (req, res) => {
+    const b = req.body ?? {};
+    const c = await supportCustomer(b);
+    const s = (v, n) => String(v ?? '').trim().slice(0, n);
+    const kind = SUPPORT_TYPES[b.kind] ? b.kind : '수정';
+    const title = s(b.title, 200), body = s(b.body, 8000);
+    if (!title || body.length < 2) throw bad('제목과 내용을 적어 주세요');
+    const files = (Array.isArray(b.files) ? b.files : []).slice(0, 5).map((f) => {
+      const name = s(f?.name, 120).replace(/[\\/:*?"<>|]/g, '_');
+      const buf = Buffer.from(String(f?.data ?? ''), 'base64');
+      if (!SUPPORT_FILE.test(name)) throw bad(`올릴 수 없는 파일 형식입니다: ${name}`);
+      if (!buf.length || buf.length > 10 * 1024 * 1024) throw bad(`${name}: 파일은 10MB 이하만 올릴 수 있습니다`);
+      return { name, buf, mime: SUPPORT_MIME[name.split('.').pop().toLowerCase()] ?? 'application/octet-stream' };
+    });
+    const requester = [s(b.requester?.name, 40), s(b.requester?.phone, 40), s(b.requester?.email, 100)].filter(Boolean).join(' · ');
+    const [t] = (await q(`insert into ticket(customer_id, type, title, body, opened_on, status, source, requester, screen) values ($1,$2,$3,$4,$5,'접수','ERP',$6,$7) returning id`,
+      [c.id, SUPPORT_TYPES[kind], `[${kind}] ${title}`, body, L.kstToday(), requester || null, s(b.screen, 200) || null])).rows;
+    for (const f of files) await q('insert into ticket_file(ticket_id, name, mime, size, data) values ($1,$2,$3,$4,$5)', [t.id, f.name, f.mime, f.buf.length, f.buf]);
+    audit(req, 'SUPPORT_IN', `고객 ERP 요청 ${c.name} · [${kind}] ${title}${files.length ? ` · 첨부 ${files.length}` : ''}`);
+    res.status(201).json({ id: t.id });
+  }));
+  app.get('/api/v1/support', wrap(async (req, res) => {
+    const c = await supportCustomer(req.query ?? {});
+    const rows = (await q(`select t.id, t.title, t.body, t.screen, t.status, t.reply, t.replied_at, t.opened_on, t.created_at, t.request_id, r.status as req_status,
+        (select count(*)::int from ticket_file f where f.ticket_id = t.id) as files
+      from ticket t left join request r on r.id = t.request_id where t.customer_id = $1 and t.source = 'ERP' order by t.created_at desc limit 200`, [c.id])).rows;
+    // 고객에게 보이는 진행 상태: 접수 대기 → 접수(처리 중) → 완료 / 반영됨
+    const stage = (r) => (r.req_status === 'DEPLOYED' ? '반영됨' : r.status === '완료' ? '완료' : r.status === '처리중' ? (r.req_status === 'DONE' ? '수정 완료 · 반영 대기' : '처리 중') : '접수 대기');
+    res.json({ rows: rows.map((r) => ({ id: r.id, title: r.title, body: r.body, screen: r.screen, stage: stage(r), reply: r.reply, repliedAt: r.replied_at, createdAt: r.created_at, files: r.files })) });
   }));
 
   app.get('/healthz', (req, res) => res.json({ ok: true }));

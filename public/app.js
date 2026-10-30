@@ -545,6 +545,7 @@ function attachBox(host) {
   const onPaste = (e) => { const fl = [...(e.clipboardData?.files ?? [])]; if (fl.length) { e.preventDefault(); add(fl); } };
   document.addEventListener('paste', onPaste);
   return {
+    add,
     detach: () => document.removeEventListener('paste', onPaste),
     payload: () => Promise.all(files.map((f) => new Promise((ok, no) => {
       const r = new FileReader();
@@ -558,9 +559,12 @@ let pasteBox = null;
 
 const REQ_TYPES = ['화면·기능 수정', '출력 양식', '새 기능', '계산·업무 규칙', '데이터 이관·정리', '오류 신고', '기타'];
 async function pageRequestNew() {
-  const cid = new URLSearchParams(location.hash.split('?')[1] ?? '').get('customer');
+  const qs = new URLSearchParams(location.hash.split('?')[1] ?? '');
+  const cid = qs.get('customer');
+  const tid = qs.get('ticket');
   loading('requests');
-  const [c, gh] = await Promise.all([cid ? api('/customers/' + cid) : null, api('/github')]);
+  const [c, gh, tks] = await Promise.all([cid ? api('/customers/' + cid) : null, api('/github'), tid && cid ? api('/tickets?customerId=' + cid) : []]);
+  const tk = tks.find((x) => x.id === tid);
   shell('requests', `
     <div class="page-head"><div><h1>${c ? `수정 요청 — ${esc(c.name)}` : '전체 업데이트 요청'}</h1>
       <p>${c ? '이 고객만 달라지는 수정입니다. 다른 고객에게는 영향이 없도록 설정·양식·모듈 스위치로 반영합니다.' : '모든 고객이 받게 되는 기능 추가·수정입니다.'} 등록하면 GitHub 이슈가 되고, Claude가 이 내용과 첨부를 그대로 읽고 작업합니다.</p></div></div>
@@ -583,6 +587,19 @@ async function pageRequestNew() {
     </div></form>`);
   pasteBox?.detach();
   pasteBox = attachBox(document.getElementById('att'));
+  if (tk) {
+    // 고객 ERP 요청 내용과 첨부를 그대로 옮겨 온다
+    const f = document.getElementById('rqf');
+    f.title.value = tk.title.replace(/^\[[^\]]+\]\s*/, '').slice(0, 80);
+    f.type.value = tk.type === '장애' ? '오류 신고' : '화면·기능 수정';
+    f.screen.value = tk.screen ?? '';
+    f.want.value = `${tk.body ?? ''}\n\n(고객 ERP 요청${tk.requester ? ` — ${tk.requester}` : ''}, ${tk.openedOn})`;
+    const blobs = await Promise.all((tk.files ?? []).map(async (x) => {
+      const r = await fetch(`/api/admin/tickets/${tk.id}/files/${x.id}?download=1`, { credentials: 'same-origin' });
+      return new File([await r.blob()], x.name, { type: r.headers.get('content-type') ?? '' });
+    }));
+    pasteBox.add(blobs);
+  }
   document.getElementById('rqf').onsubmit = async (e) => {
     e.preventDefault();
     const btn = document.getElementById('rqsend');
@@ -590,6 +607,7 @@ async function pageRequestNew() {
     try {
       const json = { ...formData(e.target), files: await pasteBox.payload() };
       const r = await api(c ? `/customers/${c.id}/requests` : '/requests', { method: 'POST', json });
+      if (tk) await api(`/tickets/${tk.id}/accept`, { method: 'POST', json: { requestId: r.id } });
       pasteBox.detach(); pasteBox = null;
       toast(`이슈 #${r.issueNumber} 로 등록했습니다`);
       location.hash = `#/requests/${r.id}`;

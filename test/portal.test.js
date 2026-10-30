@@ -179,3 +179,32 @@ test('발급 사이트 백업 묶음: 모든 표를 담는다, 외부 저장소�
   assert.equal(st.configured, false);
   assert.equal((await call('/api/admin/backup-now', { method: 'POST' })).status, 502);
 });
+
+test('고객 ERP 고장·수정 요청: 설치 코드로 보내고, 판매자 답변·상태가 고객 목록에 보인다', async () => {
+  const code = cust.activationCode;
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64').toString('base64');
+  const send = (json) => call('/api/v1/support', { method: 'POST', auth: false, json });
+  assert.equal((await send({ code, bizRegNos: ['1018117536'], kind: '고장', title: 'x', body: '안됨' })).status, 403, '다른 사업자번호');
+  assert.equal((await send({ code, bizRegNos: ['2208660440'], kind: '고장', title: '', body: '' })).status, 400);
+  assert.equal((await send({ code, bizRegNos: ['2208660440'], kind: '고장', title: 'x', body: '내용', files: [{ name: 'a.exe', data: png }] })).status, 400);
+  const r = await send({ code, bizRegNos: ['2208660440'], kind: '고장', title: '발주서 출력이 안 됩니다', body: '출력 누르면 빈 화면', screen: '발주 › 발주서', requester: { name: '김담당', phone: '010-1' }, files: [{ name: '캡처.png', data: png }] });
+  assert.equal(r.status, 201);
+  let mine = (await call(`/api/v1/support?code=${code}&bizRegNos=2208660440`, { auth: false })).body.rows;
+  assert.equal(mine.length, 1);
+  assert.equal(mine[0].stage, '접수 대기');
+  assert.equal(mine[0].files, 1);
+  // 판매자 화면: ERP 표시·첨부, 답변 저장
+  const t = (await call('/api/admin/tickets?customerId=' + cust.id)).body.find((x) => x.source === 'ERP');
+  assert.equal(t.title, '[고장] 발주서 출력이 안 됩니다');
+  assert.equal(t.type, '장애');
+  assert.match(t.requester, /김담당/);
+  const dl = await fetch(`${base}/api/admin/tickets/${t.id}/files/${t.files[0].id}`, { headers: { cookie } });
+  assert.equal(dl.headers.get('content-type'), 'image/png');
+  assert.equal((await call('/api/admin/tickets/' + t.id, { method: 'PUT', json: { ...t, status: '처리중', reply: '확인했습니다. 금요일 업데이트에 반영됩니다.' } })).status, 200);
+  mine = (await call(`/api/v1/support?code=${code}&bizRegNos=2208660440`, { auth: false })).body.rows;
+  assert.equal(mine[0].stage, '처리 중');
+  assert.equal(mine[0].reply, '확인했습니다. 금요일 업데이트에 반영됩니다.');
+  assert.ok(mine[0].repliedAt);
+  // 다른 회사 코드로는 안 보인다
+  assert.equal((await call(`/api/v1/support?code=${code}&bizRegNos=1018117536`, { auth: false })).status, 403);
+});
