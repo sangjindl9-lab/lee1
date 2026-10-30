@@ -33,6 +33,8 @@ FEEDER_USE = {
 FC = {"DO": 1, "DI": 2, "AO": 3, "PI": 3, "AI": 4}
 TYPES = set(FC)
 MAX_FANS = 10
+MAX_VMS = 4        # VMS 슬롯 (설비 설정에서 사용 여부 선택)
+MAX_GATES = 4      # 진입차단시설 슬롯
 MAX_FEEDERS = 10
 
 
@@ -76,6 +78,14 @@ def default_tags(t):
     for z in range(4):
         add("FD.Z%d" % (z + 1), "화재감지 구역 %d" % (z + 1), "DI", 110 + z)
     add("EV.PWR", "유도등 전원", "DI", 115)
+    for i in range(MAX_GATES):
+        g = "GATE%d" % (i + 1)
+        add(g + ".UP", "진입차단 %d 상승(개방) 완료" % (i + 1), "DI", 120 + i * 4)
+        add(g + ".DOWN", "진입차단 %d 하강(차단) 완료" % (i + 1), "DI", 121 + i * 4)
+        add(g + ".FLT", "진입차단 %d 고장" % (i + 1), "DI", 122 + i * 4)
+        add(g + ".MOVE", "진입차단 %d 동작 중" % (i + 1), "DI", 123 + i * 4)
+    for i in range(MAX_VMS):
+        add("VMS%d.FLT" % (i + 1), "VMS %d 고장·통신이상" % (i + 1), "DI", 140 + i)
 
     # ---------- DO ----------
     add("HV-1.CLOSE", "수전 VCB 투입 명령 (펄스)", "DO", 0)
@@ -93,6 +103,12 @@ def default_tags(t):
     add("EV.BLINK", "유도등 점멸 명령", "DO", 115)
     add("EV.GUIDE", "유도등 피난유도 명령", "DO", 116)
     add("FD.RESET", "화재 수신기 복구 (펄스)", "DO", 117)
+    for i in range(MAX_GATES):
+        g = "GATE%d" % (i + 1)
+        add(g + ".UP_CMD", "진입차단 %d 상승 명령 (펄스)" % (i + 1), "DO", 120 + i * 4)
+        add(g + ".DOWN_CMD", "진입차단 %d 하강 명령 (펄스)" % (i + 1), "DO", 121 + i * 4)
+        add(g + ".LAMP", "진입차단 %d 경광등·적색신호" % (i + 1), "DO", 122 + i * 4)
+        add(g + ".RESET", "진입차단 %d 고장 복귀 (펄스)" % (i + 1), "DO", 123 + i * 4)
 
     # ---------- AI ----------
     for k, p in enumerate(["RS", "ST", "TR"]):
@@ -119,10 +135,14 @@ def default_tags(t):
     add("FD.POS", "화재 위치 (선형감지기, ‰)", "AI", 49, 1, "‰")
     for i, f in enumerate(fans):
         add(f + ".A", f + " 운전 전류", "AI", 50 + i, 0.1, "A")
+    for i in range(MAX_VMS):
+        add("VMS%d.FB" % (i + 1), "VMS %d 표출 중인 문안 번호" % (i + 1), "AI", 60 + i)
 
     # ---------- AO / PI ----------
     add("HV-1.KWH", "수전 적산전력량", "PI", 0, 1, "kWh")
     add("EV.SPLIT", "피난유도 방향 분기점 (‰)", "AO", 10, 1, "‰")
+    for i in range(MAX_VMS):
+        add("VMS%d.MSG" % (i + 1), "VMS %d 표출 문안 번호 지령" % (i + 1), "AO", 60 + i)
     for i, f in enumerate(fans):
         add(f + ".HRS", f + " 누적 가동시간", "PI", 20 + i * 2, 0.1, "h")
 

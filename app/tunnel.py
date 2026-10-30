@@ -7,11 +7,54 @@
 import datetime as dt
 import logging
 
+import copy
+
 from .modbus_io import Device
-from .tagmap import STAGES, fan_ids, load_tags
+from .tagmap import MAX_GATES, MAX_VMS, STAGES, fan_ids, load_tags
 
 log = logging.getLogger("tunnel")
 STAGE_NAMES = [s["k"] for s in STAGES]
+
+
+VMS_PRESETS = [
+    {"no": 1, "l1": "터널 안 차간거리 유지", "l2": "전조등을 켜십시오", "color": "녹"},
+    {"no": 2, "l1": "터널 내 화재 발생", "l2": "진입 금지", "color": "적"},
+    {"no": 3, "l1": "터널 내 사고 발생", "l2": "서행 하십시오", "color": "황"},
+    {"no": 4, "l1": "터널 내 정체", "l2": "안전거리 확보", "color": "황"},
+    {"no": 5, "l1": "터널 점검 작업 중", "l2": "차로 통제", "color": "황"},
+]
+
+
+def default_devices(cfg):
+    """설비 설정 기본값. 관리자가 화면에서 바꾸면 DB에 저장된 값이 우선한다."""
+    return {
+        "plc": {"host": cfg["host"], "port": cfg["port"], "unit": cfg["unit"]},
+        "cctv": [
+            {"id": "CAM-01", "name": "시점 갱구 외부", "pos": 0.0, "mode": "sim", "url": "", "user": "", "pw": ""},
+            {"id": "CAM-02", "name": "터널 내 1", "pos": 0.3, "mode": "sim", "url": "", "user": "", "pw": ""},
+            {"id": "CAM-03", "name": "터널 내 2", "pos": 0.6, "mode": "sim", "url": "", "user": "", "pw": ""},
+            {"id": "CAM-04", "name": "종점 갱구", "pos": 0.97, "mode": "sim", "url": "", "user": "", "pw": ""},
+        ],
+        "vms": {
+            "slots": [{"slot": i + 1, "use": i == 0, "name": "VMS-%d" % (i + 1),
+                       "loc": "시점 진입 전 300 m" if i == 0 else ""} for i in range(MAX_VMS)],
+            "presets": copy.deepcopy(VMS_PRESETS), "normal": 1, "fire": 2,
+        },
+        "gates": [{"slot": i + 1, "use": i == 0, "name": "진입차단-%d" % (i + 1),
+                   "side": "start", "fire_auto": True} for i in range(MAX_GATES)],
+    }
+
+
+def merge_devices(base, saved):
+    d = copy.deepcopy(base)
+    if not saved:
+        return d
+    for k in ("plc", "cctv", "gates"):
+        if k in saved:
+            d[k] = saved[k]
+    if "vms" in saved:
+        d["vms"].update(saved["vms"])
+    return d
 
 
 class Alarms:
@@ -50,8 +93,10 @@ class Tunnel:
     def __init__(self, cfg, ctl, clock, store, alarms, base):
         self.c, self.ctl, self.clock, self.store, self.alarms, self.base = cfg, ctl, clock, store, alarms, base
         self.key, self.name = cfg["key"], cfg["name"]
+        self.devcfg = merge_devices(default_devices(cfg), store.get(cfg["key"] + ".devices"))
         tags, self.custom = load_tags(base, cfg)
-        self.dev = Device(cfg["host"], cfg["port"], cfg["unit"], tags)
+        p = self.devcfg["plc"]
+        self.dev = Device(p["host"], int(p["port"]), int(p["unit"]), tags)
         self.fan_ids = fan_ids(cfg["fans"])
         n = len(self.fan_ids)
         self.fan_pos = cfg.get("fan_pos") or [round(.12 + .76 * i / max(1, n - 1), 3) for i in range(n)]
@@ -62,6 +107,22 @@ class Tunnel:
         d = store.get(self.key + ".day", {})
         self.day_id, self.kwh0, self.peak, self.stage_chg = d.get("id"), d.get("kwh0"), d.get("peak", 0), d.get("chg", 0)
         self.last_hist = None
+
+    def apply_devices(self, d):
+        """설비 설정 저장. PLC 주소가 바뀌면 새로 연결한다."""
+        old = self.devcfg["plc"]
+        self.devcfg = d
+        self.store.put(self.key + ".devices", d)
+        p = d["plc"]
+        if (old["host"], int(old["port"]), int(old["unit"])) != (p["host"], int(p["port"]), int(p["unit"])):
+            self.dev = Device(p["host"], int(p["port"]), int(p["unit"]), list(self.dev.tags.values()))
+            self.comm, self.fails = False, 0
+            return True
+        return False
+
+    def plc_desc(self):
+        p = self.devcfg["plc"]
+        return "%s:%s Unit %s" % (p["host"], p["port"], p["unit"])
 
     def reload_tags(self):
         tags, self.custom = load_tags(self.base, self.c)
@@ -89,7 +150,7 @@ class Tunnel:
         try:
             self.v = await self.dev.read_all()
             if not self.comm:
-                self.log("RTU 통신 정상 (%s:%d Unit %d)" % (self.c["host"], self.c["port"], self.c["unit"]))
+                self.log("RTU 통신 정상 (%s)" % self.plc_desc())
             self.comm, self.fails = True, 0
         except Exception as e:
             self.fails += 1
@@ -133,6 +194,24 @@ class Tunnel:
         if fire and fpos <= 0:
             z = next(z for z in range(1, 5) if g("FD.Z%d" % z, False))
             fire["x"] = (z - .5) / 4
+        gates = []
+        for gc in self.devcfg["gates"]:
+            if not gc.get("use"):
+                continue
+            n = "GATE%d" % gc["slot"]
+            up, down, mv = bool(g(n + ".UP", True)), bool(g(n + ".DOWN", False)), bool(g(n + ".MOVE", False))
+            gates.append({"slot": gc["slot"], "name": gc["name"], "side": gc.get("side", "start"),
+                          "st": "고장" if g(n + ".FLT", False) else "동작 중" if mv else "차단" if down else "개방" if up else "중간",
+                          "down": down, "fault": bool(g(n + ".FLT", False)), "lamp": bool(g(n + ".LAMP", False))})
+        vms = []
+        pre = {p["no"]: p for p in self.devcfg["vms"]["presets"]}
+        for vc in self.devcfg["vms"]["slots"]:
+            if not vc.get("use"):
+                continue
+            n = "VMS%d" % vc["slot"]
+            cmd_no, fb = int(g(n + ".MSG", 0)), int(g(n + ".FB", 0))
+            vms.append({"slot": vc["slot"], "name": vc["name"], "loc": vc.get("loc", ""), "cmd": cmd_no, "fb": fb,
+                        "msg": pre.get(fb), "fault": bool(g(n + ".FLT", False))})
         ups_on = bool(g("UPS.RUN", True))
         kw = g("HV-1.KW", 0)
         kwh = g("HV-1.KWH", 0)
@@ -161,7 +240,7 @@ class Tunnel:
             "hv": {"v": round(g("HV-1.V_RS", 0), 2), "a": round(g("HV-1.A_R", 0), 1), "pf": round(g("HV-1.PF", 0), 3),
                    "hz": round(g("HV-1.HZ", 0), 1), "ptr": round(g("PTR-1.TEMP", 0), 1)},
             "kwhTot": round(kwh), "kwhDay": round(kwh - self.kwh0, 1), "peak": round(self.peak, 1),
-            "stageChg": self.stage_chg, "speed": int(g("SIM.SPEED", 0)) if "SIM.SPEED" in self.v else None,
+            "stageChg": self.stage_chg, "gates": gates, "vms": vms, "speed": int(g("SIM.SPEED", 0)) if "SIM.SPEED" in self.v else None,
         }
 
     def save_day(self):
@@ -206,10 +285,14 @@ class Tunnel:
         elif not fire and self.fire_active:
             self.fire_active = False
             await self.write_evac("상시")
+            v = self.devcfg["vms"]
+            for vc in v["slots"]:
+                if vc.get("use"):
+                    await self.w("VMS%d.MSG" % vc["slot"], int(v["normal"]))
             if not self.fan_auto:
                 for f in s["fans"]:
                     await self.write_fan(f["id"], 0)
-            self.log("화재 복구 확인 · 방재 시나리오 종료, 정상 운전 복귀")
+            self.log("화재 복구 확인 · 방재 시나리오 종료, VMS 평상시 문안 복귀 (진입차단은 현장 확인 후 운영자가 개방)")
         if self.fire_active:
             return
         if self.light_auto:
@@ -246,7 +329,15 @@ class Tunnel:
         for i, f in enumerate(self.state["fans"]):
             await self.write_fan(f["id"], 0 if abs(self.fan_pos[i] - x) < self.ctl["fire_fan_exclude"] else 1)
         await self.write_evac("피난유도", x)
-        self.log("화재 감지 STA %s · 방재 시나리오 개시 (조명 최대, 화점 인접 제트팬 정지·상류측 정회전, 피난유도, 방송·VMS 연동)"
+        v = self.devcfg["vms"]
+        for vc in v["slots"]:
+            if vc.get("use"):
+                await self.w("VMS%d.MSG" % vc["slot"], int(v["fire"]))
+        for gc in self.devcfg["gates"]:
+            if gc.get("use") and gc.get("fire_auto"):
+                await self.w("GATE%d.LAMP" % gc["slot"], True)
+                await self.w("GATE%d.DOWN_CMD" % gc["slot"], True)
+        self.log("화재 감지 STA %s · 방재 시나리오 개시 (조명 최대, 화점 인접 제트팬 정지·상류측 정회전, 피난유도, VMS 진입금지, 진입차단 하강)"
                  % self.sta(x), "alarm")
 
     def sta(self, p):
@@ -296,6 +387,27 @@ class Tunnel:
             b, close = args["id"], bool(args["close"])
             await self.w(b + (".CLOSE" if close else ".OPEN"), True)
             self.log("%s %s 명령" % (b, "투입" if close else "개방"), "op", uname)
+        elif a == "vms":
+            slot, no = int(args["slot"]), int(args["no"])
+            if not any(p["no"] == no for p in self.devcfg["vms"]["presets"]):
+                raise ValueError("등록되지 않은 문안 번호입니다")
+            await self.w("VMS%d.MSG" % slot, no)
+            self.log("VMS-%d 문안 %d번 표출 명령" % (slot, no), "op", uname)
+        elif a == "gate":
+            slot, down = int(args["slot"]), bool(args["down"])
+            n = "GATE%d" % slot
+            if down:
+                await self.w(n + ".LAMP", True)
+                await self.w(n + ".DOWN_CMD", True)
+            else:
+                if s["fire"]:
+                    raise RuntimeError("화재 감지 중에는 진입차단을 개방할 수 없습니다. 화재 수신기 복구 후 조작하세요")
+                await self.w(n + ".UP_CMD", True)
+                await self.w(n + ".LAMP", False)
+            self.log("진입차단-%d %s 명령" % (slot, "하강(차단)" if down else "상승(개방)"), "op", uname)
+        elif a == "gate_reset":
+            await self.w("GATE%d.RESET" % int(args["slot"]), True)
+            self.log("진입차단-%d 고장 복귀 명령" % int(args["slot"]), "op", uname)
         elif a == "fire_reset":
             await self.w("FD.RESET", True)
             self.log("화재 수신기 복구 명령", "op", uname)
@@ -343,6 +455,11 @@ class Tunnel:
         A("fire", bool(s["fire"]), "중", "화재 감지 — 방재 시나리오 운전 중")
         A("ocr", bool(self.g("HV-1.OCR", False) or self.g("HV-1.OCGR", False)), "중", "수전 보호계전기 동작 (OCR/OCGR)")
         A("ptr", bool(self.g("PTR-1.TALM", False)), "경", "PTR-1 온도 경보")
+        for gt in s["gates"]:
+            A("gate%d" % gt["slot"], gt["fault"], "중", gt["name"] + " 고장")
+            A("gdown%d" % gt["slot"], gt["down"] and not s["fire"], "경", gt["name"] + " 차단 중 — 터널 진입 통제")
+        for vm in s["vms"]:
+            A("vms%d" % vm["slot"], vm["fault"], "경", vm["name"] + " 고장·통신이상")
         for f in self.c["feeders"]:
             A("trip" + f, bool(self.g(f + ".TRIP", False)), "중", f + " 트립")
 

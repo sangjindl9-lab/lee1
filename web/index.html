@@ -134,6 +134,34 @@ input[type=search]{flex:1 1 180px}
 .lvl{font-weight:700;font-size:12px}
 .lvl.중{color:var(--alarm)} .lvl.경{color:var(--warn)}
 .toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:8px 14px;border-radius:6px;font-size:13px;z-index:30;max-width:90vw}
+/* VMS: LED 전광판은 테마와 무관하게 검은 판 */
+:root{--led-bg:#0b0d0f;--led-g:#3fe07a;--led-y:#ffc83d;--led-r:#ff4a3d;--led-off:#2a2f35;--cam-bg:#050607;--cam-ink:#f2f4f6}
+.vmsb{background:var(--led-bg);border-radius:6px;padding:8px 10px;text-align:center;line-height:1.35;min-height:58px;display:flex;flex-direction:column;justify-content:center;font-weight:700;letter-spacing:.08em;font-size:15px}
+.vmsb.녹{color:var(--led-g);text-shadow:0 0 6px var(--led-g)} .vmsb.황{color:var(--led-y);text-shadow:0 0 6px var(--led-y)} .vmsb.적{color:var(--led-r);text-shadow:0 0 6px var(--led-r)}
+.vmsb.off{color:var(--led-off);text-shadow:none}
+.vmsb.sm{font-size:12px;min-height:40px;padding:4px 6px}
+.dev{display:flex;flex-direction:column;gap:8px;padding:10px;border:1px solid var(--line);border-radius:6px;background:var(--sunk)}
+.dev .hd{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.dev .hd b{font-size:13px}
+.devs{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px;margin-top:6px}
+.cam{position:relative;background:var(--cam-bg);border-radius:6px;overflow:hidden;aspect-ratio:16/9;max-width:100%}
+.cam canvas,.cam img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+.cam .cap{position:absolute;left:8px;top:6px;color:var(--cam-ink);font:600 12px var(--mono);text-shadow:0 1px 2px #000;pointer-events:none}
+.cam .cap2{position:absolute;right:8px;bottom:6px;color:var(--cam-ink);font:500 11px var(--mono);text-shadow:0 1px 2px #000;pointer-events:none}
+.cam .msg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--cam-ink);font-size:13px;text-align:center;padding:12px}
+.camgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
+.camgrid .tile{display:flex;flex-direction:column;gap:6px;cursor:pointer}
+.camgrid .tile.sel .cam{outline:3px solid var(--accent)}
+.set{display:flex;flex-direction:column;gap:12px}
+.set h3{margin:0;font-size:14px}
+.frm{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
+.frm .field{min-width:0}
+.set input[type=text],.set input[type=number],.set input[type=password],.set select{border:1px solid var(--line);background:var(--sunk);border-radius:6px;padding:6px 8px;min-width:0;width:100%}
+.set table input[type=text],.set table input[type=password],.set table select{min-width:96px}
+.set table input[type=number]{min-width:64px}
+.set td{vertical-align:middle}
+.set input:disabled,.set select:disabled{opacity:.7}
+.okmsg{font-size:13px} .okmsg.ok{color:var(--evac)} .okmsg.bad{color:var(--alarm)}
 .login{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px 16px}
 .login form{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:24px;width:100%;max-width:360px;display:flex;flex-direction:column;gap:12px}
 .login h1{margin:0;font-size:20px}
@@ -170,7 +198,9 @@ input[type=search]{flex:1 1 180px}
     <button role="tab" data-tab="mon" aria-selected="true">터널 감시</button>
     <button role="tab" data-tab="pwr" aria-selected="false">전력 감시</button>
     <button role="tab" data-tab="tag" aria-selected="false">관제점</button>
+    <button role="tab" data-tab="cctv" aria-selected="false">CCTV</button>
     <button role="tab" data-tab="log" aria-selected="false">경보 · 이력</button>
+    <button role="tab" data-tab="set" aria-selected="false">설비 설정</button>
   </nav>
   <div class="wrap banner" id="banner" hidden><span class="dot"></span><span class="msg" id="bannerMsg"></span><button class="btn sm danger" id="bannerAck" type="button">확인</button></div>
   <div class="wrap notice" id="pwNotice" hidden><span>초기 비밀번호를 쓰고 있습니다. 운영 전에 바꿔 주세요.</span><button class="btn sm" id="pwOpen2" type="button">비밀번호 변경</button></div>
@@ -198,6 +228,10 @@ input[type=search]{flex:1 1 180px}
       </div>
     </div>
     <div class="grid3" id="panels"></div>
+    <div class="grid2">
+      <div class="card" id="vmsCard"></div>
+      <div class="card"><h2>CCTV <span class="r"><select id="camSel" class="btn sm" aria-label="카메라 선택"></select></span></h2><div id="camMain"></div></div>
+    </div>
     <div class="card" id="simCard" hidden>
       <h2>모의 시험 <span class="r sub">가상 PLC 연결 중 · 실제 현장에서는 표시되지 않습니다</span></h2>
       <div class="row" id="simRow"></div>
@@ -232,6 +266,15 @@ input[type=search]{flex:1 1 180px}
       <p class="note" style="margin:8px 0 0">현장마다 PLC 주소가 다르면 내려받은 엑셀의 주소 열만 고쳐 다시 적용하세요. 태그 이름은 그대로 두어야 화면·자동제어와 연결됩니다. 적용·복원은 관리자만 할 수 있습니다.</p>
       <div class="tbl-wrap tbl-scroll" style="margin-top:12px"><table id="tagTbl"></table></div>
     </div>
+  </section>
+
+  <section class="view" id="v-cctv" hidden>
+    <div class="card"><h2>CCTV <span class="r sub" id="cctvInfo"></span></h2><div class="camgrid" id="camGrid"></div></div>
+  </section>
+
+  <section class="view" id="v-set" hidden>
+    <div class="card set" id="setDev"></div>
+    <div class="card set" id="setCtl"></div>
   </section>
 
   <section class="view" id="v-log" hidden>
@@ -271,6 +314,7 @@ const ROLE={'감시':1,'운영':2,'관리자':3};
 const IFS=['비상방송','전광판(VMS)','비상전화','자동화재탐지','조명제어'];
 let TOKEN=null, ME=null, META=null, S={}, alarms=[], events=[], SIM=false;
 let curKey=null, tab='mon', pickFire=false, ws=null, wsOk=false;
+const selCam={}, camAuto={}, fireSeen={};
 const CARS={};
 try{TOKEN=sessionStorage.getItem('scada_token')}catch(e){}
 
@@ -368,7 +412,18 @@ function drawTunnel(){
     if(s.evac==='피난유도'&&evOn){const dir=s.fire?(x<X0+W*s.fire.x?'◀':'▶'):'◀';o+=`<text x="${x}" y="${blink?166:167}" text-anchor="middle" class="ta" fill="var(--evac)">${dir}</text>`}}
   [.3,.7].forEach(p=>{const x=X0+W*p;o+=`<circle cx="${x}" cy="131" r="3" fill="none" stroke="var(--accent)" stroke-width="1.4"/><text x="${x+6}" y="133" class="tl" fill="var(--accent)">CO·VI</text>`});
   const [a,b]=s.c.sta;for(let v=a;v<=b;v+=200){const x=X0+W*(v-a)/(b-a);o+=`<text x="${x}" y="182" text-anchor="middle" class="tl">${Math.floor(v/1000)}+${String(v%1000).padStart(3,'0')}</text>`}
-  o+=`<text x="8" y="110" class="tl">시점</text><text x="992" y="110" text-anchor="end" class="tl">종점</text>`;
+  o+=`<text x="4" y="80" class="tl">시점</text><text x="996" y="80" text-anchor="end" class="tl">종점</text>`;
+  if(ok){(s.gates||[]).forEach(gt=>{const x=gt.side==='end'?984:16;
+    o+=`<rect x="${x-2}" y="132" width="5" height="8" fill="var(--wall)"/>`;
+    if(gt.down)o+=`<line x1="${x}" y1="86" x2="${x}" y2="134" stroke="var(--alarm)" stroke-width="4"/><line x1="${x}" y1="86" x2="${x}" y2="134" stroke="var(--panel)" stroke-width="4" stroke-dasharray="5 5"/>`;
+    else if(gt.st==='동작 중')o+=`<line x1="${x}" y1="${blink?100:112}" x2="${x}" y2="134" stroke="var(--alarm)" stroke-width="4" stroke-dasharray="5 5"/>`;
+    else o+=`<line x1="${x}" y1="128" x2="${x}" y2="134" stroke="var(--alarm)" stroke-width="4"/>`;
+    if(gt.lamp)o+=`<circle cx="${x}" cy="146" r="4" fill="${blink?'var(--alarm)':'none'}" stroke="var(--alarm)"/>`;
+    if(gt.fault)o+=`<text x="${x}" y="160" text-anchor="middle" class="ta" fill="var(--alarm)">고장</text>`});
+    const v=(s.vms||[])[0]; if(v){const col=!v.msg?'var(--led-off)':v.msg.color==='적'?'var(--led-r)':v.msg.color==='녹'?'var(--led-g)':'var(--led-y)';
+      o+=`<rect x="2" y="44" width="32" height="16" rx="2" fill="var(--led-bg)"/>`;for(let i=0;i<5;i++)o+=`<rect x="${5+i*6}" y="49" width="4" height="6" fill="${col}"/>`;o+=`<text x="18" y="70" text-anchor="middle" class="tl">VMS</text>`}}
+  (s.c.dev.cctv||[]).forEach(c=>{const x=Math.min(X1-6,Math.max(X0+6,X0+W*c.pos)),sel=c.id===selCam[curKey];
+    o+=`<g data-cam="${c.id}" style="cursor:pointer"><rect x="${x-10}" y="18" width="20" height="14" fill="transparent"/><rect x="${x-6}" y="21" width="9" height="6" rx="1" fill="${sel?'var(--accent)':'var(--muted)'}"/><path d="M${x+3} 22 L${x+7} 20 L${x+7} 28 L${x+3} 26 Z" fill="${sel?'var(--accent)':'var(--muted)'}"/></g>`});
   if(!ok)o+=`<rect x="380" y="88" width="240" height="44" rx="6" fill="var(--panel)" stroke="var(--alarm)"/><text x="500" y="115" text-anchor="middle" class="tb" fill="var(--alarm)">RTU 통신 두절 · 값 갱신 중지</text>`;
   o+=`<style>.tl{font:500 10px var(--mono);fill:var(--muted)}.ta{font:600 11px var(--mono)}.tb{font:700 12px var(--sans)}</style></svg>`;
   $('#mimic').innerHTML=o;
@@ -384,10 +439,10 @@ function moveCars(dt){
 
 /* ---------- 제어 패널 ---------- */
 function fanLabel(f){if(f.fault)return['고장','crit'];if(f.wait)return['방향전환 대기','warn'];if(f.st===1)return['정회전','run'];if(f.st===-1)return['역회전','run'];if(f.cmd!==0)return['기동 대기','warn'];return['정지','']}
-function panelSig(){const s=cur();if(!ready(s))return'x'+curKey;return JSON.stringify([curKey,s.lightAuto,s.stage,s.fanAuto,s.fans.map(f=>[f.cmd,f.fault,fanLabel(f)[0],f.rem]),s.evac,!!s.fire,s.kepco,grid(s),s.ups.on,s.out.emg,s.speed,pickFire])}
+function panelSig(){const s=cur();if(!ready(s))return'x'+curKey;return JSON.stringify([curKey,s.lightAuto,s.stage,s.fanAuto,s.fans.map(f=>[f.cmd,f.fault,fanLabel(f)[0],f.rem]),s.evac,!!s.fire,s.kepco,grid(s),s.ups.on,s.out.emg,s.speed,pickFire,s.gates,(s.vms||[]).map(v=>[v.cmd,v.fb,v.fault]),META.tunnels.map(t=>t.dev)])}
 function renderPanels(){
   const s=cur();
-  if(!ready(s)){$('#panels').innerHTML=`<div class="card" style="grid-column:1/-1"><h2>RTU 통신 두절</h2><p class="sub" style="margin:0">${s.c.name} RTU(${s.c.host}:${s.c.port} Unit ${s.c.unit})에서 응답이 없습니다. 통신 회선과 RTU 전원을 확인하세요. 복구되면 자동으로 다시 연결됩니다.</p></div>`;$('#simRow').innerHTML='';return}
+  if(!ready(s)){$('#panels').innerHTML=`<div class="card" style="grid-column:1/-1"><h2>RTU 통신 두절</h2><p class="sub" style="margin:0">${s.c.name} RTU(${s.c.host}:${s.c.port} Unit ${s.c.unit})에서 응답이 없습니다. 통신 회선과 RTU 전원을 확인하세요. 복구되면 자동으로 다시 연결됩니다.</p></div>`;$('#simRow').innerHTML='';$('#vmsCard').innerHTML='<h2>VMS · 진입차단</h2><p class="sub" style="margin:0">통신 두절</p>';return}
   const op=can('운영'), man=(!s.fanAuto||!!s.fire)&&op, dis=op?'':'disabled';
   const L=`<div class="card"><h2>터널 조명 <span class="r"><span class="seg"><button data-a="lauto" aria-pressed="${s.lightAuto}" ${s.fire||!op?'disabled':''}>자동</button><button data-a="lman" aria-pressed="${!s.lightAuto}" ${s.fire||!op?'disabled':''}>수동</button></span></span></h2>
    <div class="seg" style="flex-wrap:wrap">${META.stages.map(k=>`<button data-a="stage" data-v="${k}" aria-pressed="${s.stage===k}" ${s.lightAuto||s.fire||!op?'disabled':''}>${k}</button>`).join('')}</div>
@@ -414,6 +469,7 @@ function renderPanels(){
       s.kepco?`<button class="btn" data-a="outage" ${dis}>한전 정전</button>`:`<button class="btn pri" data-a="restore" ${dis}>복전</button>`,
       `<span class="seg" style="margin-left:auto">${[1,60,300].map(v=>`<button data-a="speed" data-v="${v}" aria-pressed="${s.speed===v}" ${dis}>×${v}</button>`).join('')}</span>`);
     $('#simRow').innerHTML=sm.join('')}
+  renderVmsCard(s);
   $('#mimic').classList.toggle('pick',pickFire);
   $('#pickHint').textContent=pickFire?'터널 도면을 누르면 그 위치에 화재가 발생합니다':'';
 }
@@ -438,7 +494,7 @@ document.addEventListener('click',e=>{
   if(a==='restore')sim({action:'outage',on:false});
   if(a==='speed')sim({action:'speed',v:+b.dataset.v});
 });
-$('#mimic').addEventListener('pointerdown',e=>{if(!pickFire)return;const svg=$('#mimic svg'),r=svg.getBoundingClientRect();const p=((e.clientX-r.left)/r.width*1000-X0)/W;if(p<.02||p>.98)return;pickFire=false;sim({action:'fire',x:p});refresh(true)});
+$('#mimic').addEventListener('pointerdown',e=>{const cm=e.target.closest('[data-cam]');if(cm&&!pickFire){selCam[curKey]=cm.dataset.cam;camAuto[curKey]=false;refresh(true);return}if(!pickFire)return;const svg=$('#mimic svg'),r=svg.getBoundingClientRect();const p=((e.clientX-r.left)/r.width*1000-X0)/W;if(p<.02||p>.98)return;pickFire=false;sim({action:'fire',x:p});refresh(true)});
 
 /* ---------- 전력 ---------- */
 let lastSld='', trendData=[], trendAt=0;
@@ -539,9 +595,187 @@ const openUser=()=>{$('#uInfo').textContent=ME.name+' ('+ME.id+') · 권한 '+ME
 $('#userBtn').onclick=openUser;$('#pwOpen2').onclick=openUser;$('#uClose').onclick=()=>$('#userModal').hidden=true;$('#logoutBtn').onclick=logout;
 $('#pwSave').onclick=async()=>{try{await api('/api/password',{old:$('#pwOld').value,new:$('#pwNew').value});ME.must_change=false;$('#pwNotice').hidden=true;$('#userModal').hidden=true;toast('비밀번호를 바꿨습니다')}catch(e){toast(e.message)}};
 
+/* ---------- VMS · 진입차단 ---------- */
+const COLOR_CLS=c=>c==='녹'||c==='황'||c==='적'?c:'황';
+function vmsBoard(msg,sm){return msg?`<div class="vmsb ${COLOR_CLS(msg.color)} ${sm?'sm':''}"><span>${esc(msg.l1)}</span><span>${esc(msg.l2)}</span></div>`:`<div class="vmsb off ${sm?'sm':''}"><span>표출 없음</span></div>`}
+function esc(t){return String(t??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+function renderVmsCard(s){
+  const op=can('운영'),dis=op?'':'disabled',pre=s.c.dev.vms.presets;
+  const V=(s.vms||[]).map(v=>`<div class="dev"><div class="hd"><b>${esc(v.name)}</b><span class="sub">${esc(v.loc)}</span>${v.fault?'<span class="pill crit">고장</span>':v.cmd!==v.fb?'<span class="pill warn">변경 중</span>':''}</div>
+    ${vmsBoard(v.msg)}
+    <div class="row"><select class="btn sm" id="vsel-${v.slot}" aria-label="${esc(v.name)} 문안" ${dis}>${pre.map(p=>`<option value="${p.no}" ${p.no===v.fb?'selected':''}>${p.no}. ${esc(p.l1)} / ${esc(p.l2)}</option>`).join('')}</select><button class="btn sm pri" data-a="vms" data-slot="${v.slot}" ${dis}>표출</button></div></div>`).join('');
+  const G=(s.gates||[]).map(g=>{const c=g.fault?'crit':g.down?'crit':g.st==='동작 중'?'warn':'on';return `<div class="dev"><div class="hd"><b>${esc(g.name)}</b><span class="sub">${g.side==='end'?'종점 입구':'시점 입구'}</span><span class="pill ${c}">${g.st}</span>${g.lamp?'<span class="pill warn">경광등</span>':''}</div>
+    <div class="row">${g.fault?`<button class="btn sm danger" data-a="gate_reset" data-slot="${g.slot}" ${dis}>고장 복귀</button>`:`<button class="btn sm danger" data-a="gate" data-slot="${g.slot}" data-down="1" ${g.down||!op?'disabled':''}>하강 (차단)</button><button class="btn sm" data-a="gate" data-slot="${g.slot}" data-down="0" ${!g.down&&!g.lamp||!op||s.fire?'disabled':''} title="${s.fire?'화재 중에는 개방할 수 없습니다':''}">상승 (개방)</button>`}</div></div>`}).join('');
+  $('#vmsCard').innerHTML=`<h2>VMS · 진입차단시설 <span class="r sub">화재 시 자동: VMS ${s.c.dev.vms.fire}번 문안, 자동 하강 설정된 차단기</span></h2>
+    ${V||'<p class="sub" style="margin:0">사용하는 VMS가 없습니다. 설비 설정에서 등록하세요.</p>'}
+    <div class="devs">${G||'<p class="sub" style="margin:0">사용하는 진입차단시설이 없습니다.</p>'}</div>`;
+}
+document.addEventListener('click',e=>{const b=e.target.closest('[data-a="vms"],[data-a="gate"],[data-a="gate_reset"]');if(!b)return;const s=cur();if(!ready(s))return;const slot=+b.dataset.slot;
+  if(b.dataset.a==='vms'){const no=+$('#vsel-'+slot).value,p=s.c.dev.vms.presets.find(x=>x.no===no),v=s.vms.find(x=>x.slot===slot);
+    ask(v.name+' 문안 변경',`'${p.l1} / ${p.l2}' 문안을 표출합니다.`,`RTU-E1 › VMS${slot}.MSG = ${no}`,()=>cmd({action:'vms',slot,no}))}
+  if(b.dataset.a==='gate'){const g=s.gates.find(x=>x.slot===slot),down=b.dataset.down==='1';
+    ask(g.name+(down?' 하강 (진입 차단)':' 상승 (차단 해제)'),down?'차단봉을 내려 터널 진입을 막습니다. 경광등·적색신호가 함께 켜집니다. CCTV로 차단봉 아래 차량이 없는지 확인하세요.':'현장과 CCTV로 터널 안 안전을 확인했을 때만 개방하세요. 경광등도 함께 꺼집니다.',`RTU-E1 › GATE${slot}.${down?'DOWN_CMD':'UP_CMD'}`,()=>cmd({action:'gate',slot,down}),down?'하강':'상승')}
+  if(b.dataset.a==='gate_reset'){const g=s.gates.find(x=>x.slot===slot);ask(g.name+' 고장 복귀','현장에서 원인을 확인한 뒤 복귀하세요.',`RTU-E1 › GATE${slot}.RESET`,()=>cmd({action:'gate_reset',slot}),'복귀')}
+});
+
+/* ---------- CCTV ---------- */
+const camViews=new Set();
+function nearestCam(s,x){const all=s.c.dev.cctv||[],up=all.filter(c=>c.pos<=x+.01).sort((a,b)=>b.pos-a.pos);return up[0]||all.slice().sort((a,b)=>Math.abs(a.pos-x)-Math.abs(b.pos-x))[0]}
+function camById(s,id){const L=s.c.dev.cctv||[];return L.find(c=>c.id===id)||L[0]}
+function mountCam(box,cam,tkey){
+  const s0=S[tkey]||{}; const meta=metaOf(tkey);
+  box.innerHTML=`<div class="cam"></div>`;const el=box.firstChild;
+  const cap=`<div class="cap">${esc(cam.id)} · ${esc(cam.name)}</div>`;
+  if(cam.mode==='sim'){const cv=document.createElement('canvas');el.appendChild(cv);el.insertAdjacentHTML('beforeend',cap+`<div class="cap2"></div>`);camViews.add({cv,cam,tkey,cap2:el.querySelector('.cap2')});return}
+  const img=document.createElement('img');img.alt=cam.name+' 영상';el.appendChild(img);el.insertAdjacentHTML('beforeend',cap+`<div class="msg" hidden></div>`);const msg=el.querySelector('.msg');
+  if(cam.mode==='mjpeg'){img.src=cam.url;img.onerror=()=>{msg.hidden=false;msg.textContent='영상 수신 실패 · 주소와 망 연결을 확인하세요'};return}
+  const load=()=>{if(!img.isConnected)return;img.src='/api/cctv/snap?tunnel='+tkey+'&id='+encodeURIComponent(cam.id)+'&token='+encodeURIComponent(TOKEN)+'&_='+Date.now()};
+  img.onload=()=>{msg.hidden=true;setTimeout(load,1000)};
+  img.onerror=()=>{msg.hidden=false;msg.textContent='영상 수신 실패 · 5초 뒤 다시 시도';setTimeout(load,5000)};
+  load();
+}
+function drawSimCam(v){
+  const {cv,cam,tkey}=v,s=Object.assign({c:metaOf(tkey)},S[tkey]||{}),w=cv.clientWidth,h=cv.clientHeight;if(!w)return;
+  const dpr=Math.min(2,window.devicePixelRatio||1);if(cv.width!==Math.round(w*dpr)){cv.width=Math.round(w*dpr);cv.height=Math.round(h*dpr)}
+  const x=cv.getContext('2d');x.setTransform(dpr,0,0,dpr,0,0);
+  v.cap2.textContent=(s.site?hm(s.site):'--:--')+' · STA '+staOf(s,cam.pos)+' · 모의 영상';
+  if(!ready(s)){x.fillStyle='#111';x.fillRect(0,0,w,h);for(let i=0;i<500;i++){x.fillStyle=Math.random()<.5?'#333':'#777';x.fillRect(Math.random()*w,Math.random()*h,2,2)}x.fillStyle='#ddd';x.font='600 14px sans-serif';x.textAlign='center';x.fillText('신호 없음',w/2,h/2);x.textAlign='left';return}
+  const vx=w/2,vy=h*.42,ext=cam.pos<=.02;
+  const lumF=Math.min(1,s.lum/4000);
+  if(ext){const g=x.createLinearGradient(0,0,0,vy);g.addColorStop(0,`rgb(${40+120*lumF},${60+130*lumF},${90+140*lumF})`);g.addColorStop(1,`rgb(${60+120*lumF},${70+120*lumF},${80+120*lumF})`);x.fillStyle=g;x.fillRect(0,0,w,h);
+    x.fillStyle=`rgb(${40+50*lumF},${60+60*lumF},${40+40*lumF})`;x.beginPath();x.moveTo(0,vy);x.lineTo(w*.2,vy-h*.22);x.lineTo(w*.5,vy-h*.3);x.lineTo(w*.85,vy-h*.2);x.lineTo(w,vy);x.lineTo(w,h);x.lineTo(0,h);x.fill();
+    x.fillStyle='#16181b';x.beginPath();x.ellipse(vx,vy+h*.06,w*.16,h*.2,0,Math.PI,0);x.lineTo(vx+w*.16,vy+h*.06);x.fill();
+    const L=Math.max(s.out.ent,s.out.base)/100;for(let i=0;i<5;i++){x.fillStyle=`rgba(255,190,90,${.25+.7*L})`;x.fillRect(vx-w*.1+i*w*.05,vy-h*.08+i*1.5,4,2)}
+  }else{x.fillStyle='#1a1c1f';x.fillRect(0,0,w,h);
+    const zoneI=(cam.pos<.16?Math.max(s.out.ent,s.out.base*.6):s.out.base)/100||(s.out.emg?.4:0);
+    const g=x.createRadialGradient(vx,vy,4,vx,vy,w*.7);g.addColorStop(0,`rgba(255,200,120,${.15+.35*zoneI})`);g.addColorStop(1,'rgba(0,0,0,0)');x.fillStyle=g;x.fillRect(0,0,w,h);
+    x.strokeStyle='#3a3d42';x.lineWidth=2;x.beginPath();x.moveTo(0,h*.05);x.lineTo(vx-6,vy-4);x.moveTo(w,h*.05);x.lineTo(vx+6,vy-4);x.stroke();
+    for(let k=1;k<14;k++){const t=1/(1+k*.55),lx=vx+(0-vx)*t*.9,rx=vx+(w-vx)*t*.9,ly=vy+(h*.04-vy)*t;x.fillStyle=`rgba(255,195,100,${(.2+.8*zoneI)*Math.min(1,t*2.5)})`;x.fillRect(lx,ly,Math.max(1.5,10*t),Math.max(1,3*t));x.fillRect(rx-10*t,ly,Math.max(1.5,10*t),Math.max(1,3*t))}
+    for(let k=1;k<10;k++){const t=1/(1+k*.7),lx=vx+(0-vx)*t*.95,ly=vy+(h*.88-vy)*t;const on=s.evac!=='상시'||true;x.fillStyle=`rgba(40,210,110,${on?.9*Math.min(1,t*3):0})`;x.fillRect(lx,ly,Math.max(1.5,7*t),Math.max(1,3*t))}
+  }
+  x.fillStyle=ext?'#4a4e54':'#2c2f33';x.beginPath();x.moveTo(w*.04,h);x.lineTo(vx-w*.015,vy+h*.02);x.lineTo(vx+w*.015,vy+h*.02);x.lineTo(w*.96,h);x.fill();
+  x.strokeStyle='#cfd3d8';x.setLineDash([10,14]);x.lineWidth=2;x.beginPath();x.moveTo(vx,h);x.lineTo(vx,vy+h*.03);x.stroke();x.setLineDash([]);
+  const cars=(CARS[tkey]||[]).map(c=>({q:(c.x-X0)/W,lane:c.lane})).filter(c=>c.q>cam.pos-.005&&c.q<cam.pos+.25).sort((a,b)=>b.q-a.q);
+  cars.forEach(c=>{const d=Math.max(0,(c.q-cam.pos)/.25),t=1/(1+d*7),cy=vy+h*.02+(h-vy)*t,cx=vx+(c.lane?1:-1)*w*.22*t,cw=w*.16*t,ch=cw*.6;
+    x.fillStyle='#8b939c';x.fillRect(cx-cw/2,cy-ch,cw,ch);x.fillStyle='#e43c30';x.fillRect(cx-cw/2+cw*.06,cy-ch*.45,cw*.18,ch*.15);x.fillRect(cx+cw/2-cw*.24,cy-ch*.45,cw*.18,ch*.15)});
+  if(ext&&s.gates)s.gates.filter(g=>g.side!=='end').forEach(g=>{const p=g.down?1:g.st==='동작 중'?(Date.now()/600%1):0,by=h*.8,bx=w*.06;
+    x.save();x.translate(bx,by);x.rotate(-(1-p)*Math.PI/2.2);for(let i=0;i<8;i++){x.fillStyle=i%2?'#f2f2f2':'#d8261c';x.fillRect(i*w*.11,-5,w*.11,10)}x.restore();x.fillStyle='#555';x.fillRect(bx-6,by-4,12,h-by+4);
+    if(g.lamp&&Math.floor(Date.now()/500)%2){x.fillStyle='#ff3b2f';x.beginPath();x.arc(bx,by-14,7,0,7);x.fill()}});
+  if(ext&&s.vms&&s.vms[0]){const v=s.vms[0],bw=w*.36,bh=h*.13,bx=vx-bw/2,by=h*.06;x.fillStyle='#0b0d0f';x.fillRect(bx,by,bw,bh);x.fillStyle='#555';x.fillRect(bx+bw*.1,by+bh,4,vy-by-bh);x.fillRect(bx+bw*.9-4,by+bh,4,vy-by-bh);
+    if(v.msg){x.fillStyle=v.msg.color==='적'?'#ff4a3d':v.msg.color==='녹'?'#3fe07a':'#ffc83d';x.font=`700 ${Math.max(8,bh*.32)}px sans-serif`;x.textAlign='center';x.fillText(v.msg.l1,vx,by+bh*.45);x.fillText(v.msg.l2,vx,by+bh*.85);x.textAlign='left'}}
+  if(s.fire){const dist=s.fire.x-cam.pos;if(dist>-.05&&dist<.3){const t=1/(1+Math.max(0,dist)/.25*7),fy=vy+h*.02+(h-vy)*t;
+      const fl=.8+.2*Math.sin(Date.now()/90);x.fillStyle=`rgba(255,120,40,${.7*fl})`;x.beginPath();x.ellipse(vx,fy-10*t,w*.08*t+6,h*.12*t+6,0,0,7);x.fill();x.fillStyle=`rgba(255,220,120,${.8*fl})`;x.beginPath();x.ellipse(vx,fy-6*t,w*.03*t+3,h*.05*t+3,0,0,7);x.fill()}
+    const sm=Math.max(0,1-Math.abs(dist)/.25)*.75;if(sm>0){x.fillStyle=`rgba(120,124,130,${sm})`;x.fillRect(0,0,w,h)}}
+}
+let lastCam='';
+function renderCamMain(){
+  const s=cur(),L=s.c.dev.cctv||[];
+  if(!selCam[curKey]||!L.some(c=>c.id===selCam[curKey]))selCam[curKey]=L[0]&&L[0].id;
+  const sig=curKey+'|'+selCam[curKey]+'|'+JSON.stringify(L);if(sig===lastCam)return;lastCam=sig;
+  $('#camSel').innerHTML=L.map(c=>`<option value="${esc(c.id)}" ${c.id===selCam[curKey]?'selected':''}>${esc(c.id)} · ${esc(c.name)}</option>`).join('');
+  const c=camById(s,selCam[curKey]);if(!c){$('#camMain').innerHTML='<p class="sub" style="margin:0">등록된 카메라가 없습니다. 설비 설정에서 등록하세요.</p>';return}
+  mountCam($('#camMain'),c,curKey);
+}
+$('#camSel').addEventListener('change',e=>{selCam[curKey]=e.target.value;camAuto[curKey]=false;refresh(true)});
+let lastGrid='';
+function renderCamGrid(){
+  const s=cur(),L=s.c.dev.cctv||[],sig=curKey+'|'+JSON.stringify(L);
+  $('#cctvInfo').textContent=s.c.name+' · '+L.length+'대 · 타일을 누르면 터널 감시 화면에 크게 표시';
+  if(sig===lastGrid){document.querySelectorAll('#camGrid .tile').forEach(t=>t.classList.toggle('sel',t.dataset.id===selCam[curKey]));return}lastGrid=sig;
+  const g=$('#camGrid');g.innerHTML='';
+  if(!L.length){g.innerHTML='<p class="sub">등록된 카메라가 없습니다.</p>';return}
+  L.forEach(c=>{const t=document.createElement('div');t.className='tile'+(c.id===selCam[curKey]?' sel':'');t.dataset.id=c.id;const b=document.createElement('div');t.appendChild(b);
+    t.insertAdjacentHTML('beforeend',`<div class="row sub"><span class="num">STA ${staOf(s,c.pos)}</span><span>${{sim:'모의',snapshot:'스냅샷',mjpeg:'MJPEG'}[c.mode]}</span></div>`);g.appendChild(t);mountCam(b,c,curKey)});
+}
+$('#camGrid').addEventListener('click',e=>{const t=e.target.closest('.tile');if(!t)return;selCam[curKey]=t.dataset.id;camAuto[curKey]=false;setTab('mon')});
+let camDrawAt=0;
+function drawCams(now){if(now-camDrawAt<100)return;camDrawAt=now;for(const v of camViews){if(!v.cv.isConnected){camViews.delete(v);continue}drawSimCam(v)}}
+
+/* ---------- 설비 설정 ---------- */
+const parseSta=(t,txt)=>{txt=String(txt).trim();let v;const m=txt.match(/^(\d+)\s*\+\s*(\d+(?:\.\d+)?)$/);if(m)v=+m[1]*1000+ +m[2];else if(/^\d+(\.\d+)?$/.test(txt))v=+txt;else return null;const [a,b]=t.sta;return Math.min(1,Math.max(0,(v-a)/(b-a)))};
+let draft=null;
+function renderSettings(){
+  if(!META)return;const t=metaOf(curKey);if(!draft||draft.key!==curKey)draft={key:curKey,d:JSON.parse(JSON.stringify(t.dev))};
+  const d=draft.d,adm=can('관리자'),dis=adm?'':'disabled';
+  const camRows=d.cctv.map((c,i)=>`<tr><td><input type="text" id="c-id-${i}" value="${esc(c.id)}" ${dis}></td><td><input type="text" id="c-name-${i}" value="${esc(c.name)}" ${dis}></td>
+    <td><input type="text" id="c-pos-${i}" value="${staOf({c:t},c.pos)}" ${dis} style="width:90px"></td>
+    <td><select id="c-mode-${i}" ${dis}><option value="sim" ${c.mode==='sim'?'selected':''}>모의</option><option value="snapshot" ${c.mode==='snapshot'?'selected':''}>스냅샷 (JPEG)</option><option value="mjpeg" ${c.mode==='mjpeg'?'selected':''}>MJPEG 스트림</option></select></td>
+    <td><input type="text" id="c-url-${i}" value="${esc(c.url)}" placeholder="http://192.168.10.21/cgi-bin/snapshot.cgi" ${dis} style="min-width:240px"></td>
+    <td><input type="text" id="c-user-${i}" value="${esc(c.user)}" ${dis} autocomplete="off"></td><td><input type="password" id="c-pw-${i}" placeholder="${c.has_pw?'저장됨 · 바꿀 때만 입력':'비밀번호'}" ${dis} autocomplete="new-password"></td>
+    <td><button class="btn sm" data-del="cctv" data-i="${i}" ${dis}>삭제</button></td></tr>`).join('');
+  const vRows=d.vms.slots.map((v,i)=>`<tr><td>VMS-${v.slot}</td><td><input type="checkbox" id="v-use-${i}" ${v.use?'checked':''} ${dis} aria-label="VMS-${v.slot} 사용"></td><td><input type="text" id="v-name-${i}" value="${esc(v.name)}" ${dis}></td><td><input type="text" id="v-loc-${i}" value="${esc(v.loc)}" placeholder="예: 시점 진입 전 300 m" ${dis}></td></tr>`).join('');
+  const pRows=d.vms.presets.map((p,i)=>`<tr><td><input type="number" id="p-no-${i}" value="${p.no}" min="1" max="99" ${dis} style="width:64px"></td><td><input type="text" id="p-l1-${i}" value="${esc(p.l1)}" maxlength="20" ${dis}></td><td><input type="text" id="p-l2-${i}" value="${esc(p.l2)}" maxlength="20" ${dis}></td>
+    <td><select id="p-color-${i}" ${dis}>${['녹','황','적'].map(c=>`<option ${p.color===c?'selected':''}>${c}</option>`).join('')}</select></td><td style="min-width:170px">${vmsBoard(p,true)}</td><td><button class="btn sm" data-del="preset" data-i="${i}" ${dis}>삭제</button></td></tr>`).join('');
+  const gRows=d.gates.map((g,i)=>`<tr><td>GATE${g.slot}</td><td><input type="checkbox" id="g-use-${i}" ${g.use?'checked':''} ${dis} aria-label="차단기 ${g.slot} 사용"></td><td><input type="text" id="g-name-${i}" value="${esc(g.name)}" ${dis}></td>
+    <td><select id="g-side-${i}" ${dis}><option value="start" ${g.side!=='end'?'selected':''}>시점 입구</option><option value="end" ${g.side==='end'?'selected':''}>종점 입구</option></select></td><td><input type="checkbox" id="g-fire-${i}" ${g.fire_auto?'checked':''} ${dis} aria-label="화재 시 자동 하강"></td></tr>`).join('');
+  const opt=sel=>d.vms.presets.map(p=>`<option value="${p.no}" ${p.no===sel?'selected':''}>${p.no}. ${esc(p.l1)} / ${esc(p.l2)}</option>`).join('');
+  $('#setDev').innerHTML=`<h2>${esc(t.name)} 설비 설정 <span class="r sub">${adm?'바꾼 뒤 아래 "설비 설정 저장"을 누르세요':'관리자만 바꿀 수 있습니다'}</span></h2>
+  <h3>1. PLC · RTU 연결 (Modbus TCP)</h3>
+  <div class="frm"><label class="field">IP 주소<input type="text" id="plc-host" value="${esc(d.plc.host)}" ${dis}></label><label class="field" style="width:110px">포트<input type="number" id="plc-port" value="${d.plc.port}" ${dis}></label><label class="field" style="width:110px">Unit ID<input type="number" id="plc-unit" value="${d.plc.unit}" ${dis}></label>
+   <button class="btn" id="plcTest" type="button" ${dis}>연결 시험</button><span class="okmsg" id="plcMsg"></span></div>
+  <p class="note" style="margin:0">PLC 이더넷 모듈(또는 통신변환장치)의 IP와 포트(보통 502)를 넣습니다. 터널마다 RTU가 따로면 IP가 다르고, 변환장치 하나에 여러 터널이 붙으면 IP는 같고 Unit ID만 다릅니다. 레지스터 주소는 관제점 탭에서 맞춥니다.</p>
+  <h3>2. CCTV</h3>
+  <div class="tbl-wrap"><table><thead><tr><th>번호</th><th>이름</th><th>위치 (STA)</th><th>영상 방식</th><th>영상 주소</th><th>계정</th><th>비밀번호</th><th></th></tr></thead><tbody>${camRows}</tbody></table></div>
+  <div class="row"><button class="btn sm" id="camAdd" type="button" ${dis}>카메라 추가</button></div>
+  <p class="note" style="margin:0">스냅샷: 카메라·NVR의 JPEG 정지영상 주소를 서버가 1초마다 받아 보여 줍니다 (계정 필요 시 입력, Digest 인증 지원). MJPEG: 카메라나 영상 중계서버(go2rtc 등)의 MJPEG 주소를 브라우저가 직접 엽니다. RTSP는 브라우저가 바로 열 수 없으니 NVR이나 go2rtc로 변환하세요.</p>
+  <h3>3. VMS (도로전광표지)</h3>
+  <div class="tbl-wrap"><table><thead><tr><th>슬롯</th><th>사용</th><th>이름</th><th>설치 위치</th></tr></thead><tbody>${vRows}</tbody></table></div>
+  <div class="tbl-wrap"><table><thead><tr><th>문안 번호</th><th>1행</th><th>2행</th><th>색</th><th>미리보기</th><th></th></tr></thead><tbody>${pRows}</tbody></table></div>
+  <div class="frm"><button class="btn sm" id="preAdd" type="button" ${dis}>문안 추가</button>
+   <label class="field" style="min-width:220px">평상시 문안<select id="vms-normal" ${dis}>${opt(d.vms.normal)}</select></label><label class="field" style="min-width:220px">화재 시 자동 문안<select id="vms-fire" ${dis}>${opt(d.vms.fire)}</select></label></div>
+  <p class="note" style="margin:0">VMS 제어기는 PLC를 거쳐 문안 번호(VMS*.MSG)를 받아 미리 저장된 문안을 표출하는 방식입니다. VMS 제어기에도 같은 번호로 문안을 등록해 두세요. 문안은 한 행 20자까지입니다.</p>
+  <h3>4. 진입차단시설</h3>
+  <div class="tbl-wrap"><table><thead><tr><th>슬롯</th><th>사용</th><th>이름</th><th>위치</th><th>화재 시 자동 하강</th></tr></thead><tbody>${gRows}</tbody></table></div>
+  <p class="note" style="margin:0">하강·상승은 PLC로 펄스 명령을 보내고, 상승·하강 완료와 고장은 리밋스위치 신호로 받습니다. 차단봉 아래 차량 감지(루프·센서) 인터락은 차단기 제어반이나 PLC에서 처리해야 합니다. 화재 중에는 프로그램에서 개방할 수 없습니다.</p>
+  <div class="row"><button class="btn pri" id="devSave" type="button" ${dis}>설비 설정 저장</button><button class="btn" id="devUndo" type="button" ${dis}>되돌리기</button><span class="okmsg" id="devMsg"></span></div>`;
+  const C=META.control;
+  $('#setCtl').innerHTML=`<h2>제어 기준값 <span class="r sub">모든 터널 공통 · 설계 방재계획서 값으로 맞추세요</span></h2>
+  <div class="frm">
+   <label class="field" style="width:220px">제트팬 CO 단계 (ppm, 1·2·3단계)<input type="text" id="k-co" value="${C.co_steps.join(', ')}" ${dis}></label>
+   <label class="field" style="width:130px">CO 복귀 여유 (ppm)<input type="number" id="k-hyst" value="${C.co_hyst}" ${dis}></label>
+   <label class="field" style="width:170px">VI 2단계 기준 (×10⁻³ m⁻¹)<input type="number" step="0.1" id="k-vi" value="${+(C.vi_limit*1000).toFixed(2)}" ${dis}></label>
+   <label class="field" style="width:260px">조명 휘도 기준 L20 (맑음·흐림·우천, cd/m²)<input type="text" id="k-lum" value="${C.light_lum.join(', ')}" ${dis}></label>
+   <label class="field" style="width:170px">심야 시간 (시작, 끝 시)<input type="text" id="k-night" value="${C.late_night.join(', ')}" ${dis}></label>
+   <label class="field" style="width:200px">화재 시 화점 인접 제트팬 정지 범위 (터널 길이 대비 %)<input type="number" step="0.5" id="k-ex" value="${+(C.fire_fan_exclude*100).toFixed(1)}" ${dis}></label>
+   <label class="field" style="width:150px">CO 경고 경보 (ppm)<input type="number" id="k-cow" value="${C.alarm_co_warn}" ${dis}></label>
+   <label class="field" style="width:150px">CO 위험 경보 (ppm)<input type="number" id="k-coc" value="${C.alarm_co_crit}" ${dis}></label>
+   <label class="field" style="width:170px">VI 경보 (×10⁻³ m⁻¹)<input type="number" step="0.1" id="k-viw" value="${+(C.alarm_vi_warn*1000).toFixed(2)}" ${dis}></label>
+   <label class="field" style="width:170px">UPS 잔량 경보 (%)<input type="number" id="k-batt" value="${C.alarm_batt_low}" ${dis}></label>
+  </div>
+  <div class="row"><button class="btn pri" id="ctlSave" type="button" ${dis}>기준값 저장</button><span class="okmsg" id="ctlMsg"></span></div>`;
+}
+function readDraft(){
+  const t=metaOf(curKey),d=draft.d,v=id=>{const e=document.getElementById(id);return e?e.value:''},ck=id=>{const e=document.getElementById(id);return !!(e&&e.checked)};
+  d.plc={host:v('plc-host').trim(),port:+v('plc-port'),unit:+v('plc-unit')};
+  d.cctv=d.cctv.map((c,i)=>{const pos=parseSta(t,v('c-pos-'+i));if(pos===null)throw new Error((v('c-id-'+i)||'카메라')+' 위치를 11+560 같은 측점으로 입력하세요');
+    return Object.assign({},c,{id:v('c-id-'+i).trim(),name:v('c-name-'+i).trim(),pos,mode:v('c-mode-'+i),url:v('c-url-'+i).trim(),user:v('c-user-'+i).trim(),pw:v('c-pw-'+i)||c.pw||''})});
+  d.vms.slots=d.vms.slots.map((s,i)=>({slot:s.slot,use:ck('v-use-'+i),name:v('v-name-'+i).trim(),loc:v('v-loc-'+i).trim()}));
+  d.vms.presets=d.vms.presets.map((p,i)=>({no:+v('p-no-'+i),l1:v('p-l1-'+i),l2:v('p-l2-'+i),color:v('p-color-'+i)}));
+  d.vms.normal=+v('vms-normal')||d.vms.normal;d.vms.fire=+v('vms-fire')||d.vms.fire;
+  d.gates=d.gates.map((g,i)=>({slot:g.slot,use:ck('g-use-'+i),name:v('g-name-'+i).trim(),side:v('g-side-'+i),fire_auto:ck('g-fire-'+i)}));
+  return d;
+}
+$('#v-set').addEventListener('click',async e=>{
+  const b=e.target.closest('button');if(!b||b.disabled)return;
+  const msg=(id,t,ok)=>{const m=$(id);m.textContent=t;m.className='okmsg '+(ok?'ok':'bad')};
+  try{
+    if(b.id==='camAdd'){readDraft();const n=draft.d.cctv.length+1;draft.d.cctv.push({id:'CAM-'+String(n).padStart(2,'0'),name:'',pos:.5,mode:'sim',url:'',user:'',pw:'',has_pw:false});renderSettings()}
+    if(b.dataset.del==='cctv'){readDraft();draft.d.cctv.splice(+b.dataset.i,1);renderSettings()}
+    if(b.id==='preAdd'){readDraft();const no=Math.max(0,...draft.d.vms.presets.map(p=>p.no))+1;draft.d.vms.presets.push({no,l1:'',l2:'',color:'황'});renderSettings()}
+    if(b.dataset.del==='preset'){readDraft();draft.d.vms.presets.splice(+b.dataset.i,1);renderSettings()}
+    if(b.id==='devUndo'){draft=null;renderSettings()}
+    if(b.id==='plcTest'){const p={host:$('#plc-host').value.trim(),port:+$('#plc-port').value,unit:+$('#plc-unit').value};msg('#plcMsg','시험 중…',true);const r=await api('/api/devices/test',p);msg('#plcMsg',r.msg,r.ok)}
+    if(b.id==='devSave'){const d=readDraft();const body=JSON.parse(JSON.stringify(d));body.cctv.forEach(c=>{if(!c.pw||c.pw===undefined)c.pw='';delete c.has_pw});
+      const r=await api('/api/devices?tunnel='+curKey,body);META=await api('/api/meta');draft=null;lastSig='';lastCam='';lastGrid='';renderSettings();msg('#devMsg',r.reconnected?'저장했습니다 · PLC에 새 주소로 다시 연결합니다':'저장했습니다',true)}
+    if(b.id==='ctlSave'){const L=id=>$(id).value.split(/[,\s]+/).filter(Boolean).map(Number);
+      await api('/api/control',{co_steps:L('#k-co'),co_hyst:+$('#k-hyst').value,vi_limit:+$('#k-vi').value/1000,light_lum:L('#k-lum'),late_night:L('#k-night'),fire_fan_exclude:+$('#k-ex').value/100,alarm_co_warn:+$('#k-cow').value,alarm_co_crit:+$('#k-coc').value,alarm_vi_warn:+$('#k-viw').value/1000,alarm_batt_low:+$('#k-batt').value});
+      META=await api('/api/meta');msg('#ctlMsg','저장했습니다 · 다음 제어 주기부터 적용',true)}
+  }catch(err){const id=b.id==='ctlSave'?'#ctlMsg':b.id==='plcTest'?'#plcMsg':'#devMsg';msg(id,err.message,false)}
+});
+
 /* ---------- 화면 전환 ---------- */
-$('#tunSeg').addEventListener('click',e=>{const b=e.target.closest('[data-tun]');if(!b)return;curKey=b.dataset.tun;pickFire=false;document.querySelectorAll('#tunSeg button').forEach(x=>x.setAttribute('aria-pressed',x.dataset.tun===curKey));lastSig='';lastSld='';trendAt=0;trendData=[];if(tab==='tag')loadTags();refresh(true)});
-function setTab(t){tab=t;document.querySelectorAll('nav.tabs button').forEach(b=>b.setAttribute('aria-selected',b.dataset.tab===t));['mon','pwr','tag','log'].forEach(k=>$('#v-'+k).hidden=k!==t);lastSld='';trendAt=0;if(t==='tag')loadTags();refresh(true)}
+$('#tunSeg').addEventListener('click',e=>{const b=e.target.closest('[data-tun]');if(!b)return;curKey=b.dataset.tun;pickFire=false;document.querySelectorAll('#tunSeg button').forEach(x=>x.setAttribute('aria-pressed',x.dataset.tun===curKey));lastSig='';lastSld='';lastCam='';lastGrid='';trendAt=0;trendData=[];if(tab==='tag')loadTags();if(tab==='set')renderSettings();refresh(true)});
+function setTab(t){tab=t;document.querySelectorAll('nav.tabs button').forEach(b=>b.setAttribute('aria-selected',b.dataset.tab===t));['mon','pwr','tag','cctv','log','set'].forEach(k=>$('#v-'+k).hidden=k!==t);lastSld='';lastCam='';lastGrid='';trendAt=0;if(t==='tag')loadTags();if(t==='set')renderSettings();refresh(true)}
 document.querySelector('nav.tabs').addEventListener('click',e=>{const b=e.target.closest('[data-tab]');if(b)setTab(b.dataset.tab)});
 
 let lastSig='';
@@ -565,10 +799,14 @@ function refresh(force){
   if(tab==='pwr'){const sg=sldSig();if(force||sg!==lastSld){lastSld=sg;renderSLD()}updatePower()}
   if(tab==='tag'&&performance.now()-tagAt>2000){tagAt=performance.now();loadTags()}
   if(tab==='log')renderLog();
+  if(ready(s)&&s.fire&&!fireSeen[curKey]){fireSeen[curKey]=true;const c=nearestCam(s,s.fire.x);if(c){selCam[curKey]=c.id;camAuto[curKey]=true;toast('화재 구간 CCTV('+c.id+')로 전환했습니다')}}
+  if(ready(s)&&!s.fire)fireSeen[curKey]=false;
+  if(tab==='mon')renderCamMain();
+  if(tab==='cctv')renderCamGrid();
 }
 
 let last=performance.now(),lastDraw=0;
-function loop(now){const dt=Math.min(250,now-last);last=now;moveCars(dt);if(tab==='mon'&&META&&now-lastDraw>66){lastDraw=now;drawTunnel()}requestAnimationFrame(loop)}
+function loop(now){const dt=Math.min(250,now-last);last=now;moveCars(dt);if(tab==='mon'&&META&&now-lastDraw>66){lastDraw=now;drawTunnel()}if(META)drawCams(now);requestAnimationFrame(loop)}
 requestAnimationFrame(loop);
 if(TOKEN)start(); else $('#login').hidden=false;
 })();

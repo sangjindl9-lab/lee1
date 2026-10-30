@@ -23,8 +23,10 @@ from pymodbus.server import StartAsyncTcpServer
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE)
-from app.tagmap import FC, STAGES, default_tags, fan_ids  # noqa: E402
+from app.tagmap import FC, MAX_GATES, MAX_VMS, STAGES, default_tags, fan_ids  # noqa: E402
 
+GATE_TRAVEL_S = 6.0       # 차단봉 상승·하강 소요 (실시간 초)
+VMS_DELAY_S = 1.0         # VMS 문안 변경 응답 지연
 REVERSE_WAIT_S = 6.0      # 정↔역 전환 시 잔류회전 대기 (실시간 초)
 INRUSH_S = 2.5            # 기동 돌입전류 지속
 
@@ -45,6 +47,12 @@ class Plc:
         self.cloud, self.co, self.vi, self.wind, self.boost = .9, 14.0, .0021, 1.3, 0.0
         self.stage, self.batt, self.ups_on, self.pump = 0, 100.0, True, False
         self.kwh = 182340 + random.random() * 900
+        self.gate = [0.0] * MAX_GATES          # 0 = 상승(개방), 1 = 하강(차단)
+        self.gate_tgt = [0.0] * MAX_GATES
+        self.vms = [1] * MAX_VMS
+        self.vms_t = [0.0] * MAX_VMS
+        for i in range(MAX_VMS):
+            self.set("VMS%d.MSG" % (i + 1), 1)
         self.set("SIM.KEPCO", 1)
         self.set("SIM.SPEED", speed)
         self.set("LT.ST1_CMD", 1)
@@ -133,7 +141,28 @@ class Plc:
         ent = st["ent"] if grid and self.br["LV-102"] else 0
         base = st["base"] if grid and self.br["LV-101"] else 0
 
-        tr = 0.0 if fire else .15 + .85 * max(math.exp(-((h - 8.4) ** 2) / 1.6), math.exp(-((h - 18.4) ** 2) / 2.4), .45 * sun)
+        # 진입차단시설
+        for i in range(MAX_GATES):
+            g = "GATE%d" % (i + 1)
+            if self.pulse(g + ".DOWN_CMD"):
+                self.gate_tgt[i] = 1.0
+            if self.pulse(g + ".UP_CMD"):
+                self.gate_tgt[i] = 0.0
+            self.pulse(g + ".RESET")
+            step = dt / GATE_TRAVEL_S
+            d = self.gate_tgt[i] - self.gate[i]
+            self.gate[i] = self.gate_tgt[i] if abs(d) <= step else self.gate[i] + step * (1 if d > 0 else -1)
+        closed = any(p > .5 for p in self.gate)
+        # VMS
+        for i in range(MAX_VMS):
+            m = int(self.get("VMS%d.MSG" % (i + 1)))
+            if m != self.vms[i]:
+                if not self.vms_t[i]:
+                    self.vms_t[i] = now + VMS_DELAY_S
+                elif now >= self.vms_t[i]:
+                    self.vms[i], self.vms_t[i] = m, 0.0
+
+        tr = 0.0 if (fire or closed) else .15 + .85 * max(math.exp(-((h - 8.4) ** 2) / 1.6), math.exp(-((h - 18.4) ** 2) / 2.4), .45 * sun)
 
         # 제트팬
         fp = grid and self.br["LV-103"]
@@ -226,6 +255,11 @@ class Plc:
             S("FD.Z%d" % (z + 1), z == zone)
         S("FD.POS", round(fire * 1000) if fire else 0)
         S("EV.PWR", grid or self.ups_on)
+        for i in range(MAX_GATES):
+            g, p = "GATE%d" % (i + 1), self.gate[i]
+            S(g + ".UP", p <= 0); S(g + ".DOWN", p >= 1); S(g + ".MOVE", 0 < p < 1); S(g + ".FLT", 0)
+        for i in range(MAX_VMS):
+            S("VMS%d.FB" % (i + 1), self.vms[i]); S("VMS%d.FLT" % (i + 1), 0)
         S("SIM.MINUTE", int(self.minute)); S("SIM.DAY", self.day)
 
 
