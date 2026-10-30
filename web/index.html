@@ -161,6 +161,14 @@ input[type=search]{flex:1 1 180px}
 .set table input[type=number]{min-width:64px}
 .set td{vertical-align:middle}
 .set input:disabled,.set select:disabled{opacity:.7}
+.modal .box.wide{max-width:780px;max-height:calc(100vh - 32px);overflow:auto}
+.fgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px}
+.fgrid .full{grid-column:1/-1}
+.fgrid .field{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted)}
+.fgrid .tpl input{font-family:var(--mono)}
+.frames td{font-family:var(--mono);white-space:normal;word-break:break-all}
+.snapimg{max-width:100%;border-radius:6px;display:block}
+.vnote{font-size:12px;color:var(--muted);background:var(--sunk);border:1px solid var(--line);border-radius:6px;padding:8px 10px;margin:0}
 .okmsg{font-size:13px} .okmsg.ok{color:var(--evac)} .okmsg.bad{color:var(--alarm)}
 .login{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px 16px}
 .login form{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:24px;width:100%;max-width:360px;display:flex;flex-direction:column;gap:12px}
@@ -305,6 +313,12 @@ input[type=search]{flex:1 1 180px}
       <span class="row"><button class="btn" id="uClose" type="button">닫기</button><button class="btn pri" id="pwSave" type="button">비밀번호 변경</button></span></div>
   </div>
 </div>
+<div class="modal" id="devModal" hidden>
+  <div class="box wide" role="dialog" aria-modal="true" aria-labelledby="dmTitle">
+    <h3 id="dmTitle"></h3><div class="set" id="dmBody"></div>
+    <div class="row" style="justify-content:flex-end"><button class="btn" id="dmNo" type="button">취소</button><button class="btn pri" id="dmOk" type="button">적용</button></div>
+  </div>
+</div>
 <div class="toast" id="toast" hidden></div>
 
 <script>
@@ -350,6 +364,7 @@ async function start(){
   $('#pwNotice').hidden=!ME.must_change;
   $('#tunSeg').innerHTML=META.tunnels.map(t=>`<button data-tun="${t.key}" aria-pressed="${t.key===curKey}">${t.name}</button>`).join('');
   $('#simCard').hidden=!SIM;
+  loadVendors();
   connect();
 }
 function connect(){
@@ -628,7 +643,7 @@ function mountCam(box,cam,tkey){
   const cap=`<div class="cap">${esc(cam.id)} · ${esc(cam.name)}</div>`;
   if(cam.mode==='sim'){const cv=document.createElement('canvas');el.appendChild(cv);el.insertAdjacentHTML('beforeend',cap+`<div class="cap2"></div>`);camViews.add({cv,cam,tkey,cap2:el.querySelector('.cap2')});return}
   const img=document.createElement('img');img.alt=cam.name+' 영상';el.appendChild(img);el.insertAdjacentHTML('beforeend',cap+`<div class="msg" hidden></div>`);const msg=el.querySelector('.msg');
-  if(cam.mode==='mjpeg'){img.src=cam.url;img.onerror=()=>{msg.hidden=false;msg.textContent='영상 수신 실패 · 주소와 망 연결을 확인하세요'};return}
+  if(cam.mode==='mjpeg'){img.src=cam.mjpeg_url||cam.url;img.onerror=()=>{msg.hidden=false;msg.textContent='영상 수신 실패 · 주소와 망 연결을 확인하세요'};return}
   const load=()=>{if(!img.isConnected)return;img.src='/api/cctv/snap?tunnel='+tkey+'&id='+encodeURIComponent(cam.id)+'&token='+encodeURIComponent(TOKEN)+'&_='+Date.now()};
   img.onload=()=>{msg.hidden=true;setTimeout(load,1000)};
   img.onerror=()=>{msg.hidden=false;msg.textContent='영상 수신 실패 · 5초 뒤 다시 시도';setTimeout(load,5000)};
@@ -693,40 +708,56 @@ function drawCams(now){if(now-camDrawAt<100)return;camDrawAt=now;for(const v of 
 
 /* ---------- 설비 설정 ---------- */
 const parseSta=(t,txt)=>{txt=String(txt).trim();let v;const m=txt.match(/^(\d+)\s*\+\s*(\d+(?:\.\d+)?)$/);if(m)v=+m[1]*1000+ +m[2];else if(/^\d+(\.\d+)?$/.test(txt))v=+txt;else return null;const [a,b]=t.sta;return Math.min(1,Math.max(0,(v-a)/(b-a)))};
-let draft=null;
+let draft=null, VENDORS={plc:[],cctv:[],vms:[],gate:[]};
+async function loadVendors(){try{VENDORS=await api('/api/vendors')}catch(e){}}
+const vName=(kind,key)=>{const v=(VENDORS[kind]||[]).find(p=>p.key===key);return v?v.name:(key||'')};
+const DRV={plc:'PLC 경유',modbus:'Modbus TCP 직접',tcp:'TCP 문자열 명령'};
+function directSum(x){const d=x.driver||'plc';if(d==='plc')return 'PLC 경유';return `${DRV[d]} · ${x.host||'IP 미입력'}:${x.port||''}${d==='modbus'?' Unit '+(x.unit??''):''}`}
+function camSum(c){if(c.mode==='sim')return '모의 영상';return `${vName('cctv',c.vendor)||'직접 입력'} · ${c.ip||'주소 직접'}${c.ch?' · 채널 '+esc(c.ch):''}`}
 function renderSettings(){
   if(!META)return;const t=metaOf(curKey);if(!draft||draft.key!==curKey)draft={key:curKey,d:JSON.parse(JSON.stringify(t.dev))};
-  const d=draft.d,adm=can('관리자'),dis=adm?'':'disabled';
+  const d=draft.d,adm=can('관리자'),dis=adm?'':'disabled',P=d.plc;
+  const sel=(id,opts,v)=>`<select id="${id}" ${dis}>${opts.map(([k,l])=>`<option value="${k}" ${String(v)===String(k)?'selected':''}>${l}</option>`).join('')}</select>`;
   const camRows=d.cctv.map((c,i)=>`<tr><td><input type="text" id="c-id-${i}" value="${esc(c.id)}" ${dis}></td><td><input type="text" id="c-name-${i}" value="${esc(c.name)}" ${dis}></td>
     <td><input type="text" id="c-pos-${i}" value="${staOf({c:t},c.pos)}" ${dis} style="width:90px"></td>
-    <td><select id="c-mode-${i}" ${dis}><option value="sim" ${c.mode==='sim'?'selected':''}>모의</option><option value="snapshot" ${c.mode==='snapshot'?'selected':''}>스냅샷 (JPEG)</option><option value="mjpeg" ${c.mode==='mjpeg'?'selected':''}>MJPEG 스트림</option></select></td>
-    <td><input type="text" id="c-url-${i}" value="${esc(c.url)}" placeholder="http://192.168.10.21/cgi-bin/snapshot.cgi" ${dis} style="min-width:240px"></td>
-    <td><input type="text" id="c-user-${i}" value="${esc(c.user)}" ${dis} autocomplete="off"></td><td><input type="password" id="c-pw-${i}" placeholder="${c.has_pw?'저장됨 · 바꿀 때만 입력':'비밀번호'}" ${dis} autocomplete="new-password"></td>
-    <td><button class="btn sm" data-del="cctv" data-i="${i}" ${dis}>삭제</button></td></tr>`).join('');
-  const vRows=d.vms.slots.map((v,i)=>`<tr><td>VMS-${v.slot}</td><td><input type="checkbox" id="v-use-${i}" ${v.use?'checked':''} ${dis} aria-label="VMS-${v.slot} 사용"></td><td><input type="text" id="v-name-${i}" value="${esc(v.name)}" ${dis}></td><td><input type="text" id="v-loc-${i}" value="${esc(v.loc)}" placeholder="예: 시점 진입 전 300 m" ${dis}></td></tr>`).join('');
+    <td>${sel('c-mode-'+i,[['sim','모의'],['snapshot','스냅샷 (JPEG)'],['mjpeg','MJPEG 스트림']],c.mode)}</td>
+    <td class="sub" style="white-space:normal">${camSum(c)}</td>
+    <td><button class="btn sm" data-dm="cctv" data-i="${i}">통신·제조사 설정</button></td><td><button class="btn sm" data-del="cctv" data-i="${i}" ${dis}>삭제</button></td></tr>`).join('');
+  const vRows=d.vms.slots.map((v,i)=>`<tr><td>VMS-${v.slot}</td><td><input type="checkbox" id="v-use-${i}" ${v.use?'checked':''} ${dis} aria-label="VMS-${v.slot} 사용"></td><td><input type="text" id="v-name-${i}" value="${esc(v.name)}" ${dis}></td><td><input type="text" id="v-loc-${i}" value="${esc(v.loc)}" placeholder="예: 시점 진입 전 300 m" ${dis}></td>
+    <td class="sub" style="white-space:normal">${esc(directSum(v))}</td><td><button class="btn sm" data-dm="vms" data-i="${i}">통신·제조사 설정</button></td></tr>`).join('');
   const pRows=d.vms.presets.map((p,i)=>`<tr><td><input type="number" id="p-no-${i}" value="${p.no}" min="1" max="99" ${dis} style="width:64px"></td><td><input type="text" id="p-l1-${i}" value="${esc(p.l1)}" maxlength="20" ${dis}></td><td><input type="text" id="p-l2-${i}" value="${esc(p.l2)}" maxlength="20" ${dis}></td>
-    <td><select id="p-color-${i}" ${dis}>${['녹','황','적'].map(c=>`<option ${p.color===c?'selected':''}>${c}</option>`).join('')}</select></td><td style="min-width:170px">${vmsBoard(p,true)}</td><td><button class="btn sm" data-del="preset" data-i="${i}" ${dis}>삭제</button></td></tr>`).join('');
+    <td>${sel('p-color-'+i,[['녹','녹'],['황','황'],['적','적']],p.color)}</td><td style="min-width:170px">${vmsBoard(p,true)}</td><td><button class="btn sm" data-del="preset" data-i="${i}" ${dis}>삭제</button></td></tr>`).join('');
   const gRows=d.gates.map((g,i)=>`<tr><td>GATE${g.slot}</td><td><input type="checkbox" id="g-use-${i}" ${g.use?'checked':''} ${dis} aria-label="차단기 ${g.slot} 사용"></td><td><input type="text" id="g-name-${i}" value="${esc(g.name)}" ${dis}></td>
-    <td><select id="g-side-${i}" ${dis}><option value="start" ${g.side!=='end'?'selected':''}>시점 입구</option><option value="end" ${g.side==='end'?'selected':''}>종점 입구</option></select></td><td><input type="checkbox" id="g-fire-${i}" ${g.fire_auto?'checked':''} ${dis} aria-label="화재 시 자동 하강"></td></tr>`).join('');
-  const opt=sel=>d.vms.presets.map(p=>`<option value="${p.no}" ${p.no===sel?'selected':''}>${p.no}. ${esc(p.l1)} / ${esc(p.l2)}</option>`).join('');
+    <td>${sel('g-side-'+i,[['start','시점 입구'],['end','종점 입구']],g.side==='end'?'end':'start')}</td><td><input type="checkbox" id="g-fire-${i}" ${g.fire_auto?'checked':''} ${dis} aria-label="화재 시 자동 하강"></td>
+    <td class="sub" style="white-space:normal">${esc(directSum(g))}</td><td><button class="btn sm" data-dm="gate" data-i="${i}">통신·제조사 설정</button></td></tr>`).join('');
+  const opt=v=>d.vms.presets.map(p=>`<option value="${p.no}" ${p.no===v?'selected':''}>${p.no}. ${esc(p.l1)} / ${esc(p.l2)}</option>`).join('');
+  const pv=(VENDORS.plc||[]).find(x=>x.key===P.vendor);
   $('#setDev').innerHTML=`<h2>${esc(t.name)} 설비 설정 <span class="r sub">${adm?'바꾼 뒤 아래 "설비 설정 저장"을 누르세요':'관리자만 바꿀 수 있습니다'}</span></h2>
   <h3>1. PLC · RTU 연결 (Modbus TCP)</h3>
-  <div class="frm"><label class="field">IP 주소<input type="text" id="plc-host" value="${esc(d.plc.host)}" ${dis}></label><label class="field" style="width:110px">포트<input type="number" id="plc-port" value="${d.plc.port}" ${dis}></label><label class="field" style="width:110px">Unit ID<input type="number" id="plc-unit" value="${d.plc.unit}" ${dis}></label>
-   <button class="btn" id="plcTest" type="button" ${dis}>연결 시험</button><span class="okmsg" id="plcMsg"></span></div>
-  <p class="note" style="margin:0">PLC 이더넷 모듈(또는 통신변환장치)의 IP와 포트(보통 502)를 넣습니다. 터널마다 RTU가 따로면 IP가 다르고, 변환장치 하나에 여러 터널이 붙으면 IP는 같고 Unit ID만 다릅니다. 레지스터 주소는 관제점 탭에서 맞춥니다.</p>
+  <div class="fgrid">
+   <label class="field full">제조사 프로필 ${sel('plc-vendor',(VENDORS.plc||[]).map(v=>[v.key,v.name+(v.builtin?'':' (내 프로필)')]),P.vendor||'generic')}</label>
+   <label class="field">IP 주소<input type="text" id="plc-host" value="${esc(P.host)}" ${dis}></label>
+   <label class="field">포트<input type="number" id="plc-port" value="${P.port}" ${dis}></label>
+   <label class="field">Unit ID (국번)<input type="number" id="plc-unit" value="${P.unit}" ${dis}></label>
+   <label class="field">32비트 워드 순서 ${sel('plc-word',[['high','상위 워드 먼저'],['low','하위 워드 먼저']],P.word_order||'high')}</label>
+   <label class="field">주소 보정 (모든 주소에 더함)<input type="number" id="plc-off" value="${P.addr_offset||0}" ${dis}></label>
+   <label class="field">응답 대기 (초)<input type="number" step="0.5" id="plc-tmo" value="${P.timeout||2}" ${dis}></label>
+   <label class="field">한 번에 읽을 최대 레지스터<input type="number" id="plc-blk" value="${P.block||100}" ${dis}></label>
+  </div>
+  ${pv&&pv.note?`<p class="vnote" id="plc-note">${esc(pv.note)}</p>`:'<p class="vnote" id="plc-note" hidden></p>'}
+  <div class="row"><button class="btn" id="plcTest" type="button" ${dis}>연결 시험</button><input type="text" id="plc-pname" placeholder="프로필 이름 (예: 우리 현장 LS XGI)" ${dis} style="max-width:260px"><button class="btn" id="plcProf" type="button" ${dis}>내 프로필로 저장</button><span class="okmsg" id="plcMsg"></span></div>
+  <p class="note" style="margin:0">신호별 레지스터 주소는 관제점 탭의 일람표로 맞춥니다. 제조사 주소표가 1부터 시작하면 주소 보정에 -1을 넣으세요.</p>
   <h3>2. CCTV</h3>
-  <div class="tbl-wrap"><table><thead><tr><th>번호</th><th>이름</th><th>위치 (STA)</th><th>영상 방식</th><th>영상 주소</th><th>계정</th><th>비밀번호</th><th></th></tr></thead><tbody>${camRows}</tbody></table></div>
+  <div class="tbl-wrap"><table><thead><tr><th>번호</th><th>이름</th><th>위치 (STA)</th><th>영상 방식</th><th>제조사 · 주소</th><th></th><th></th></tr></thead><tbody>${camRows}</tbody></table></div>
   <div class="row"><button class="btn sm" id="camAdd" type="button" ${dis}>카메라 추가</button></div>
-  <p class="note" style="margin:0">스냅샷: 카메라·NVR의 JPEG 정지영상 주소를 서버가 1초마다 받아 보여 줍니다 (계정 필요 시 입력, Digest 인증 지원). MJPEG: 카메라나 영상 중계서버(go2rtc 등)의 MJPEG 주소를 브라우저가 직접 엽니다. RTSP는 브라우저가 바로 열 수 없으니 NVR이나 go2rtc로 변환하세요.</p>
   <h3>3. VMS (도로전광표지)</h3>
-  <div class="tbl-wrap"><table><thead><tr><th>슬롯</th><th>사용</th><th>이름</th><th>설치 위치</th></tr></thead><tbody>${vRows}</tbody></table></div>
+  <div class="tbl-wrap"><table><thead><tr><th>슬롯</th><th>사용</th><th>이름</th><th>설치 위치</th><th>연결 방식</th><th></th></tr></thead><tbody>${vRows}</tbody></table></div>
   <div class="tbl-wrap"><table><thead><tr><th>문안 번호</th><th>1행</th><th>2행</th><th>색</th><th>미리보기</th><th></th></tr></thead><tbody>${pRows}</tbody></table></div>
   <div class="frm"><button class="btn sm" id="preAdd" type="button" ${dis}>문안 추가</button>
    <label class="field" style="min-width:220px">평상시 문안<select id="vms-normal" ${dis}>${opt(d.vms.normal)}</select></label><label class="field" style="min-width:220px">화재 시 자동 문안<select id="vms-fire" ${dis}>${opt(d.vms.fire)}</select></label></div>
-  <p class="note" style="margin:0">VMS 제어기는 PLC를 거쳐 문안 번호(VMS*.MSG)를 받아 미리 저장된 문안을 표출하는 방식입니다. VMS 제어기에도 같은 번호로 문안을 등록해 두세요. 문안은 한 행 20자까지입니다.</p>
   <h3>4. 진입차단시설</h3>
-  <div class="tbl-wrap"><table><thead><tr><th>슬롯</th><th>사용</th><th>이름</th><th>위치</th><th>화재 시 자동 하강</th></tr></thead><tbody>${gRows}</tbody></table></div>
-  <p class="note" style="margin:0">하강·상승은 PLC로 펄스 명령을 보내고, 상승·하강 완료와 고장은 리밋스위치 신호로 받습니다. 차단봉 아래 차량 감지(루프·센서) 인터락은 차단기 제어반이나 PLC에서 처리해야 합니다. 화재 중에는 프로그램에서 개방할 수 없습니다.</p>
+  <div class="tbl-wrap"><table><thead><tr><th>슬롯</th><th>사용</th><th>이름</th><th>위치</th><th>화재 시 자동 하강</th><th>연결 방식</th><th></th></tr></thead><tbody>${gRows}</tbody></table></div>
+  <p class="note" style="margin:0">차단봉 아래 차량 감지 인터락은 차단기 제어반이나 PLC에서 처리해야 합니다. 화재 중에는 프로그램에서 개방할 수 없습니다.</p>
   <div class="row"><button class="btn pri" id="devSave" type="button" ${dis}>설비 설정 저장</button><button class="btn" id="devUndo" type="button" ${dis}>되돌리기</button><span class="okmsg" id="devMsg"></span></div>`;
   const C=META.control;
   $('#setCtl').innerHTML=`<h2>제어 기준값 <span class="r sub">모든 터널 공통 · 설계 방재계획서 값으로 맞추세요</span></h2>
@@ -743,30 +774,113 @@ function renderSettings(){
    <label class="field" style="width:170px">UPS 잔량 경보 (%)<input type="number" id="k-batt" value="${C.alarm_batt_low}" ${dis}></label>
   </div>
   <div class="row"><button class="btn pri" id="ctlSave" type="button" ${dis}>기준값 저장</button><span class="okmsg" id="ctlMsg"></span></div>`;
+  const pvs=$('#plc-vendor'); if(pvs)pvs.onchange=()=>{const v=(VENDORS.plc||[]).find(x=>x.key===pvs.value);if(!v)return;const V=v.values;
+    if(V.port&&!$('#plc-port').value)$('#plc-port').value=V.port;$('#plc-word').value=V.word_order||'high';$('#plc-off').value=V.addr_offset||0;$('#plc-tmo').value=V.timeout||2;$('#plc-blk').value=V.block||100;
+    const n=$('#plc-note');n.hidden=!v.note;n.textContent=v.note||''};
 }
+function readPlc(){const v=id=>{const e=document.getElementById(id);return e?e.value:''};
+  return {host:v('plc-host').trim(),port:+v('plc-port'),unit:+v('plc-unit'),vendor:v('plc-vendor'),word_order:v('plc-word'),addr_offset:+v('plc-off'),timeout:+v('plc-tmo'),block:+v('plc-blk')}}
 function readDraft(){
   const t=metaOf(curKey),d=draft.d,v=id=>{const e=document.getElementById(id);return e?e.value:''},ck=id=>{const e=document.getElementById(id);return !!(e&&e.checked)};
-  d.plc={host:v('plc-host').trim(),port:+v('plc-port'),unit:+v('plc-unit')};
+  if(!document.getElementById('plc-host'))return d;
+  d.plc=Object.assign({},d.plc,readPlc());
   d.cctv=d.cctv.map((c,i)=>{const pos=parseSta(t,v('c-pos-'+i));if(pos===null)throw new Error((v('c-id-'+i)||'카메라')+' 위치를 11+560 같은 측점으로 입력하세요');
-    return Object.assign({},c,{id:v('c-id-'+i).trim(),name:v('c-name-'+i).trim(),pos,mode:v('c-mode-'+i),url:v('c-url-'+i).trim(),user:v('c-user-'+i).trim(),pw:v('c-pw-'+i)||c.pw||''})});
-  d.vms.slots=d.vms.slots.map((s,i)=>({slot:s.slot,use:ck('v-use-'+i),name:v('v-name-'+i).trim(),loc:v('v-loc-'+i).trim()}));
+    return Object.assign({},c,{id:v('c-id-'+i).trim(),name:v('c-name-'+i).trim(),pos,mode:v('c-mode-'+i)})});
+  d.vms.slots=d.vms.slots.map((s,i)=>Object.assign({},s,{use:ck('v-use-'+i),name:v('v-name-'+i).trim(),loc:v('v-loc-'+i).trim()}));
   d.vms.presets=d.vms.presets.map((p,i)=>({no:+v('p-no-'+i),l1:v('p-l1-'+i),l2:v('p-l2-'+i),color:v('p-color-'+i)}));
   d.vms.normal=+v('vms-normal')||d.vms.normal;d.vms.fire=+v('vms-fire')||d.vms.fire;
-  d.gates=d.gates.map((g,i)=>({slot:g.slot,use:ck('g-use-'+i),name:v('g-name-'+i).trim(),side:v('g-side-'+i),fire_auto:ck('g-fire-'+i)}));
+  d.gates=d.gates.map((g,i)=>Object.assign({},g,{use:ck('g-use-'+i),name:v('g-name-'+i).trim(),side:v('g-side-'+i),fire_auto:ck('g-fire-'+i)}));
   return d;
 }
+
+/* ---------- 통신·제조사 설정 창 ---------- */
+const ENC=[['euc-kr','EUC-KR (완성형 한글)'],['cp949','CP949'],['utf-8','UTF-8'],['utf-16be','UTF-16BE'],['ascii','ASCII']];
+const CSUM=[['none','없음'],['xor','XOR'],['sum8','합계 하위 1바이트'],['sum16','합계 2바이트'],['lrc','LRC (2의 보수)']];
+const TPLHELP='제어문자 <STX> <ETX> <ACK> <NAK> <CR> <LF> <EOT> <ENQ> <SOH> <ESC> · 임의 바이트 \\x1F · 값 {no} {no:03d} {l1} {l2} {slot} · 체크섬 자리 {CS}';
+const FIELDS={
+  cctv:()=>[['ip','IP 주소'],['port','포트','number'],['ch','채널 (또는 스트림 이름)'],['auth','인증 방식','select',[['auto','자동'],['digest','Digest'],['basic','Basic'],['none','없음']]],
+    ['user','계정'],['pw','비밀번호','password'],['snap_tpl','스냅샷 주소 틀','tpl'],['mjpeg_tpl','MJPEG 주소 틀','tpl'],['rtsp_tpl','RTSP 주소 틀 (NVR·go2rtc 등록용 참고)','tpl'],['url','주소 직접 입력 (틀이 비었을 때 사용)','tpl']],
+  vms:{plc:()=>[],
+    modbus:()=>[['host','IP 주소'],['port','포트','number'],['unit','Unit ID','number'],['msg_reg','문안 번호 쓰기 레지스터 (홀딩)'],['fb_fc','표출 확인 읽기 영역','select',[['3','홀딩 (FC3)'],['4','입력 (FC4)']]],['fb_reg','표출 확인 레지스터 (없으면 비움)'],
+      ['text_reg','자유 문안 시작 레지스터 (없으면 비움)'],['text_len','한 행 레지스터 수','number'],['encoding','문자 코드','select',ENC],['timeout','응답 대기 (초)','number']],
+    tcp:()=>[['host','IP 주소'],['port','포트','number'],['tpl','문안 표출 명령 틀','tpl'],['ack','정상 응답 (확인 문자)'],['checksum','체크섬','select',CSUM],['cs_from','체크섬 범위','select',[['after_stx','STX 다음부터'],['all','처음부터']]],
+      ['cs_fmt','체크섬 표기','select',[['byte','바이트 그대로'],['hex2','16진 문자 (예: 7C → "7C")']]],['encoding','문자 코드','select',ENC],['timeout','응답 대기 (초)','number']]},
+  gate:{plc:()=>[],
+    modbus:()=>[['host','IP 주소'],['port','포트','number'],['unit','Unit ID','number'],['down_coil','하강 명령 코일'],['up_coil','상승 명령 코일'],['lamp_coil','경광등 코일 (없으면 비움)'],['pulse_ms','펄스 시간 ms (0 = 유지형)','number'],
+      ['up_di','상승 완료 입력 (없으면 비움)'],['down_di','하강 완료 입력'],['flt_di','고장 입력'],['timeout','응답 대기 (초)','number']],
+    tcp:()=>[['host','IP 주소'],['port','포트','number'],['down_tpl','하강 명령 틀','tpl'],['up_tpl','상승 명령 틀','tpl'],['status_tpl','상태 조회 명령 틀 (없으면 비움)','tpl'],['resp_down','하강 상태 응답 문자열'],['resp_up','상승 상태 응답 문자열'],
+      ['ack','정상 응답 (확인 문자)'],['checksum','체크섬','select',CSUM],['cs_from','체크섬 범위','select',[['after_stx','STX 다음부터'],['all','처음부터']]],['cs_fmt','체크섬 표기','select',[['byte','바이트 그대로'],['hex2','16진 문자']]],
+      ['encoding','문자 코드','select',ENC],['timeout','응답 대기 (초)','number']]}};
+let DM=null;
+function dmFields(){const k=DM.kind,o=DM.obj;return k==='cctv'?FIELDS.cctv():FIELDS[k][o.driver||'plc']()}
+function dmRender(){
+  const k=DM.kind,o=DM.obj,adm=can('관리자'),dis=adm?'':'disabled',vs=VENDORS[k]||[],cur=vs.find(v=>v.key===o.vendor);
+  const f=dmFields().map(([key,label,type,opts])=>{const val=o[key]??'';
+    if(type==='select')return `<label class="field">${label}<select data-f="${key}" ${dis}>${opts.map(([a,b])=>`<option value="${a}" ${String(val)===String(a)?'selected':''}>${b}</option>`).join('')}</select></label>`;
+    if(type==='password')return `<label class="field">${label}<input type="password" data-f="${key}" autocomplete="new-password" placeholder="${o.has_pw?'저장됨 · 바꿀 때만 입력':''}" ${dis}></label>`;
+    return `<label class="field ${type==='tpl'?'full tpl':''}">${label}<input type="${type==='number'?'number':'text'}" ${type==='number'?'step="any"':''} data-f="${key}" value="${esc(val)}" ${dis}></label>`}).join('');
+  const drv=k==='cctv'?'':`<label class="field">연결 방식<select data-f="driver" ${dis}>${Object.entries(DRV).map(([a,b])=>`<option value="${a}" ${(o.driver||'plc')===a?'selected':''}>${b}</option>`).join('')}</select></label>`;
+  const isTpl=k!=='cctv'&&o.driver==='tcp';
+  $('#dmBody').innerHTML=`<div class="fgrid">
+    <label class="field ${k==='cctv'?'full':''}">제조사 프로필<select id="dm-vendor" ${dis}><option value="">선택…</option>${vs.map(v=>`<option value="${esc(v.key)}" ${v.key===o.vendor?'selected':''}>${esc(v.name)}${v.builtin?'':' (내 프로필)'}</option>`).join('')}</select></label>${drv}</div>
+   ${cur&&cur.note?`<p class="vnote">${esc(cur.note)}</p>`:''}
+   ${(k!=='cctv'&&(o.driver||'plc')==='plc')?`<p class="vnote">PLC가 이 장치를 대신 제어합니다. 관제점 탭의 ${k==='vms'?'VMS'+DM.slot+'.MSG / VMS'+DM.slot+'.FB':'GATE'+DM.slot+'.DOWN_CMD / UP_CMD / UP / DOWN / FLT'} 주소를 PLC 프로그램과 맞추세요.</p>`:''}
+   <div class="fgrid">${f}</div>
+   ${isTpl||k==='cctv'&&false?'':''}${isTpl?`<p class="note" style="margin:0">${esc(TPLHELP)}</p>`:''}
+   ${k==='cctv'?`<p class="note" style="margin:0">주소 틀에는 {ip} {port} {ch} {ch0}(채널-1)를 쓸 수 있습니다. 실제 주소: <span class="num" id="dm-url"></span></p>`:''}
+   ${k!=='cctv'&&o.driver!=='plc'?'<p class="note" style="margin:0">주소는 0부터 시작하는 번호나 40001 같은 표기 모두 됩니다.</p>':''}
+   <div class="row"><button class="btn" id="dm-test" type="button" ${dis}>${k==='cctv'?'정지영상 받아 보기':'연결 시험'}</button>${isTpl?`<button class="btn" id="dm-prev" type="button" ${dis}>보낼 명령 미리보기</button>`:''}
+    <input type="text" id="dm-pname" placeholder="프로필 이름 (예: OO전광 VMS)" value="${cur&&!cur.builtin?esc(cur.name):''}" ${dis} style="max-width:240px"><button class="btn" id="dm-psave" type="button" ${dis}>내 프로필로 저장</button>
+    ${cur&&!cur.builtin?`<button class="btn sm danger" id="dm-pdel" type="button" ${dis}>이 프로필 삭제</button>`:''}</div>
+   <div id="dm-out"></div>`;
+  dmUrl();
+}
+function dmRead(){document.querySelectorAll('#dmBody [data-f]').forEach(e=>{const k=e.dataset.f;if(e.type==='password'){if(e.value)DM.obj.pw=e.value;return}DM.obj[k]=e.type==='number'?(e.value===''?'':+e.value):e.value});return DM.obj}
+function dmUrl(){const e=$('#dm-url');if(!e)return;const o=dmRead(),tp=(o.mode==='mjpeg'?o.mjpeg_tpl:o.snap_tpl)||'';
+  const ch=String(o.ch||'1'),ch0=isNaN(+ch)?ch:String(+ch-1);e.textContent=tp?tp.replace(/\{ip\}/g,o.ip||'').replace(/\{port\}/g,o.port||'').replace(/\{ch0\}/g,ch0).replace(/\{ch\}/g,ch):(o.url||'(없음)')}
+function openDM(kind,i){
+  try{readDraft()}catch(e){}
+  const d=draft.d,src=kind==='cctv'?d.cctv[i]:kind==='vms'?d.vms.slots[i]:d.gates[i];
+  DM={kind,i,slot:src.slot,obj:JSON.parse(JSON.stringify(src))};if(kind!=='cctv'&&!DM.obj.driver)DM.obj.driver='plc';
+  $('#dmTitle').textContent=(kind==='cctv'?src.id+' · '+src.name:src.name)+' 통신·제조사 설정';
+  $('#dmOk').disabled=!can('관리자');dmRender();$('#devModal').hidden=false;
+}
+$('#dmNo').onclick=()=>{$('#devModal').hidden=true;DM=null};
+$('#dmOk').onclick=()=>{const o=dmRead(),d=draft.d;if(DM.kind==='cctv')d.cctv[DM.i]=o;else if(DM.kind==='vms')d.vms.slots[DM.i]=o;else d.gates[DM.i]=o;$('#devModal').hidden=true;DM=null;renderSettings();
+  const m=$('#devMsg');m.textContent='적용했습니다 · "설비 설정 저장"을 눌러야 반영됩니다';m.className='okmsg ok'};
+$('#dmBody').addEventListener('input',e=>{if(e.target.dataset.f)dmUrl()});
+$('#dmBody').addEventListener('change',async e=>{
+  if(e.target.id==='dm-vendor'){const v=(VENDORS[DM.kind]||[]).find(x=>x.key===e.target.value);if(!v)return;dmRead();const keep=DM.obj.port;Object.assign(DM.obj,JSON.parse(JSON.stringify(v.values)),{vendor:v.key});if(keep&&DM.obj.host)DM.obj.port=keep;dmRender()}
+  if(e.target.dataset.f==='driver'){dmRead();dmRender()}
+});
+$('#dmBody').addEventListener('click',async e=>{
+  const b=e.target.closest('button');if(!b)return;const out=$('#dm-out'),o=dmRead();
+  const say=(t,ok)=>out.innerHTML=`<p class="okmsg ${ok?'ok':'bad'}">${esc(t)}</p>`;
+  try{
+    if(b.id==='dm-test'){say('확인 중…',true);const r=await api('/api/devices/probe',{tunnel:curKey,kind:DM.kind,action:'test',cfg:Object.assign({},o,{slot:DM.slot})});
+      out.innerHTML=`<p class="okmsg ${r.ok?'ok':'bad'}">${esc(r.msg)}</p>${r.url?`<p class="note num" style="margin:0;word-break:break-all">${esc(r.url)}</p>`:''}${r.img?`<img class="snapimg" src="${r.img}" alt="수신한 정지영상">`:''}`}
+    if(b.id==='dm-prev'){const r=await api('/api/devices/probe',{tunnel:curKey,kind:DM.kind,action:'preview',cfg:o,no:draft.d.vms.fire});
+      out.innerHTML=`<div class="tbl-wrap"><table class="frames"><thead><tr><th>명령</th><th>보낼 바이트 (16진)</th><th>문자 표기</th></tr></thead><tbody>${r.frames.map(f=>`<tr><td>${esc(f.label)}</td><td>${f.hex}</td><td>${esc(f.text)}</td></tr>`).join('')}</tbody></table></div><p class="note" style="margin:4px 0 0">제조사 통신 사양서의 예시 프레임과 바이트가 같은지 비교하세요.</p>`}
+    if(b.id==='dm-psave'){const name=$('#dm-pname').value.trim();if(!name){say('프로필 이름을 입력하세요',false);return}
+      const r=await api('/api/vendors',{kind:DM.kind,name,values:o});await loadVendors();DM.obj.vendor=r.key;dmRender();$('#dm-out').innerHTML=`<p class="okmsg ok">'${esc(name)}' 프로필을 저장했습니다. 다른 터널·현장에서도 고를 수 있습니다.</p>`}
+    if(b.id==='dm-pdel'){await api('/api/vendors/delete',{kind:DM.kind,key:DM.obj.vendor});await loadVendors();DM.obj.vendor='';dmRender()}
+  }catch(err){say(err.message,false)}
+});
+
 $('#v-set').addEventListener('click',async e=>{
   const b=e.target.closest('button');if(!b||b.disabled)return;
   const msg=(id,t,ok)=>{const m=$(id);m.textContent=t;m.className='okmsg '+(ok?'ok':'bad')};
   try{
-    if(b.id==='camAdd'){readDraft();const n=draft.d.cctv.length+1;draft.d.cctv.push({id:'CAM-'+String(n).padStart(2,'0'),name:'',pos:.5,mode:'sim',url:'',user:'',pw:'',has_pw:false});renderSettings()}
+    if(b.id==='camAdd'){readDraft();const n=draft.d.cctv.length+1;draft.d.cctv.push({id:'CAM-'+String(n).padStart(2,'0'),name:'',pos:.5,mode:'sim',vendor:'generic',ip:'',port:80,ch:'1',auth:'auto',snap_tpl:'',mjpeg_tpl:'',rtsp_tpl:'',url:'',user:'',pw:'',has_pw:false});renderSettings()}
     if(b.dataset.del==='cctv'){readDraft();draft.d.cctv.splice(+b.dataset.i,1);renderSettings()}
     if(b.id==='preAdd'){readDraft();const no=Math.max(0,...draft.d.vms.presets.map(p=>p.no))+1;draft.d.vms.presets.push({no,l1:'',l2:'',color:'황'});renderSettings()}
     if(b.dataset.del==='preset'){readDraft();draft.d.vms.presets.splice(+b.dataset.i,1);renderSettings()}
     if(b.id==='devUndo'){draft=null;renderSettings()}
-    if(b.id==='plcTest'){const p={host:$('#plc-host').value.trim(),port:+$('#plc-port').value,unit:+$('#plc-unit').value};msg('#plcMsg','시험 중…',true);const r=await api('/api/devices/test',p);msg('#plcMsg',r.msg,r.ok)}
+    if(b.dataset.dm){openDM(b.dataset.dm,+b.dataset.i);return}
+    if(b.id==='plcTest'){msg('#plcMsg','시험 중…',true);const r=await api('/api/devices/test',readPlc());msg('#plcMsg',r.msg,r.ok)}
+    if(b.id==='plcProf'){const name=$('#plc-pname').value.trim();if(!name){msg('#plcMsg','프로필 이름을 입력하세요',false);return}const p=readPlc();const r=await api('/api/vendors',{kind:'plc',name,values:p});await loadVendors();readDraft();draft.d.plc.vendor=r.key;renderSettings();msg('#plcMsg',"'"+name+"' 프로필을 저장했습니다",true)}
     if(b.id==='devSave'){const d=readDraft();const body=JSON.parse(JSON.stringify(d));body.cctv.forEach(c=>{if(!c.pw||c.pw===undefined)c.pw='';delete c.has_pw});
-      const r=await api('/api/devices?tunnel='+curKey,body);META=await api('/api/meta');draft=null;lastSig='';lastCam='';lastGrid='';renderSettings();msg('#devMsg',r.reconnected?'저장했습니다 · PLC에 새 주소로 다시 연결합니다':'저장했습니다',true)}
+      const r=await api('/api/devices?tunnel='+curKey,body);META=await api('/api/meta');draft=null;$('#devModal').hidden=true;lastSig='';lastCam='';lastGrid='';renderSettings();msg('#devMsg',r.reconnected?'저장했습니다 · PLC에 새 주소로 다시 연결합니다':'저장했습니다',true)}
     if(b.id==='ctlSave'){const L=id=>$(id).value.split(/[,\s]+/).filter(Boolean).map(Number);
       await api('/api/control',{co_steps:L('#k-co'),co_hyst:+$('#k-hyst').value,vi_limit:+$('#k-vi').value/1000,light_lum:L('#k-lum'),late_night:L('#k-night'),fire_fan_exclude:+$('#k-ex').value/100,alarm_co_warn:+$('#k-cow').value,alarm_co_crit:+$('#k-coc').value,alarm_vi_warn:+$('#k-viw').value/1000,alarm_batt_low:+$('#k-batt').value});
       META=await api('/api/meta');msg('#ctlMsg','저장했습니다 · 다음 제어 주기부터 적용',true)}

@@ -263,6 +263,55 @@ class Plc:
         S("SIM.MINUTE", int(self.minute)); S("SIM.DAY", self.day)
 
 
+class DirectDev:
+    """시험용 '직접 연결' 장치 (Modbus Unit 9).
+    홀딩 0 = 문안 번호 지령, 홀딩 1 = 표출 응답 / 코일 0 하강, 1 상승, 2 경광등 / 입력 0 상승완료, 1 하강완료, 2 고장"""
+
+    def __init__(self, sl):
+        self.sl, self.pos, self.tgt = sl, 0.0, 0.0
+
+    def scan(self, dt):
+        co = self.sl.getValues(1, 0, 3)
+        if co[0]:
+            self.tgt = 1.0
+        if co[1]:
+            self.tgt = 0.0
+        step = dt / GATE_TRAVEL_S
+        d = self.tgt - self.pos
+        self.pos = self.tgt if abs(d) <= step else self.pos + step * (1 if d > 0 else -1)
+        self.sl.setValues(2, 0, [int(self.pos <= 0), int(self.pos >= 1), 0])
+        self.sl.setValues(3, 1, [self.sl.getValues(3, 0, 1)[0]])
+
+
+class TcpDev:
+    """시험용 TCP 문자열 명령 장치 (포트 5021).
+    STX ... ETX [체크섬] 프레임을 받아 ACK. 'DN' 하강, 'UP' 상승, 'ST' 상태 조회 → STX ST,DOWN|UP ETX"""
+
+    def __init__(self):
+        self.down, self.last = False, b""
+
+    async def handle(self, r, w):
+        try:
+            data = await asyncio.wait_for(r.read(1024), 5)
+            if not data:
+                return
+            self.last = data
+            body = data[1:data.index(3)] if 2 in data[:1] and 3 in data else data
+            if body.startswith(b"ST"):
+                w.write(b"\x02ST," + (b"DOWN" if self.down else b"UP") + b"\x03")
+            else:
+                if body.startswith(b"DN"):
+                    self.down = True
+                elif body.startswith(b"UP"):
+                    self.down = False
+                w.write(b"\x06")
+            await w.drain()
+        except Exception:
+            pass
+        finally:
+            w.close()
+
+
 def build(cfg_path=None):
     cfg_path = cfg_path or os.path.join(BASE, "config.json")
     with open(cfg_path, encoding="utf-8") as f:
@@ -276,7 +325,10 @@ def build(cfg_path=None):
             zero_mode=True)
         slaves[t["unit"]] = sl
         plcs.append(Plc(t, sl, speed))
-    return cfg, ModbusServerContext(slaves=slaves, single=False), plcs
+    dsl = ModbusSlaveContext(di=ModbusSequentialDataBlock(0, [0] * 20), co=ModbusSequentialDataBlock(0, [0] * 20),
+                             hr=ModbusSequentialDataBlock(0, [0] * 20), ir=ModbusSequentialDataBlock(0, [0] * 20), zero_mode=True)
+    slaves[9] = dsl
+    return cfg, ModbusServerContext(slaves=slaves, single=False), plcs + [DirectDev(dsl)]
 
 
 async def run(cfg_path=None, host="0.0.0.0"):
@@ -293,12 +345,15 @@ async def run(cfg_path=None, host="0.0.0.0"):
                 try:
                     p.scan(dt)
                 except Exception as e:  # 시뮬레이터가 멈추지 않도록
-                    print("[SIM] scan error", p.cfg["key"], e)
+                    print("[SIM] scan error", getattr(p, "cfg", {}).get("key"), e)
 
     for p in plcs:
         p.scan(0.01)
     asyncio.create_task(scanner())
-    print("[SIM] 가상 RTU-E1 Modbus TCP %s:%d  Unit %s" % (host, port, ",".join(str(t["unit"]) for t in cfg["tunnels"])))
+    tcpdev = TcpDev()
+    await asyncio.start_server(tcpdev.handle, host, 5021)
+    print("[SIM] 가상 RTU-E1 Modbus TCP %s:%d  Unit %s · 시험용 직접장치 Unit 9 · TCP 명령장치 :5021"
+          % (host, port, ",".join(str(t["unit"]) for t in cfg["tunnels"])))
     await StartAsyncTcpServer(context=ctx, address=(host, port))
 
 

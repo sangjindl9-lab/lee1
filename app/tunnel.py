@@ -7,8 +7,11 @@
 import datetime as dt
 import logging
 
+import asyncio
 import copy
+import time
 
+from . import drivers as D
 from .modbus_io import Device
 from .tagmap import MAX_GATES, MAX_VMS, STAGES, fan_ids, load_tags
 
@@ -28,7 +31,8 @@ VMS_PRESETS = [
 def default_devices(cfg):
     """설비 설정 기본값. 관리자가 화면에서 바꾸면 DB에 저장된 값이 우선한다."""
     return {
-        "plc": {"host": cfg["host"], "port": cfg["port"], "unit": cfg["unit"]},
+        "plc": {"host": cfg["host"], "port": cfg["port"], "unit": cfg["unit"], "vendor": "generic",
+                "word_order": "high", "addr_offset": 0, "timeout": 2, "block": 100},
         "cctv": [
             {"id": "CAM-01", "name": "시점 갱구 외부", "pos": 0.0, "mode": "sim", "url": "", "user": "", "pw": ""},
             {"id": "CAM-02", "name": "터널 내 1", "pos": 0.3, "mode": "sim", "url": "", "user": "", "pw": ""},
@@ -43,6 +47,26 @@ def default_devices(cfg):
         "gates": [{"slot": i + 1, "use": i == 0, "name": "진입차단-%d" % (i + 1),
                    "side": "start", "fire_auto": True} for i in range(MAX_GATES)],
     }
+
+
+PLC_OPT_KEYS = ("word_order", "addr_offset", "timeout", "block")
+
+
+def plc_opt(p):
+    return {k: p[k] for k in PLC_OPT_KEYS if k in p}
+
+
+def cam_url(c, kind="snap"):
+    """카메라 설정 → 실제 주소. 제조사 주소 틀({ip} {port} {ch} {ch0})을 채운다."""
+    tpl = c.get(kind + "_tpl") or ""
+    if not tpl:
+        return c.get("url", "") if kind == "snap" or c.get("mode") == "mjpeg" else ""
+    ch = str(c.get("ch", "1") or "1")
+    try:
+        ch0 = str(int(ch) - 1)
+    except ValueError:
+        ch0 = ch
+    return tpl.format(ip=c.get("ip", ""), port=c.get("port", 80), ch=ch, ch0=ch0)
 
 
 def merge_devices(base, saved):
@@ -96,7 +120,8 @@ class Tunnel:
         self.devcfg = merge_devices(default_devices(cfg), store.get(cfg["key"] + ".devices"))
         tags, self.custom = load_tags(base, cfg)
         p = self.devcfg["plc"]
-        self.dev = Device(p["host"], int(p["port"]), int(p["unit"]), tags)
+        self.dev = Device(p["host"], int(p["port"]), int(p["unit"]), tags, plc_opt(p))
+        self.ext, self.ext_t = {}, {}        # PLC를 거치지 않는 장치(VMS·차단기 직접 연결) 상태
         self.fan_ids = fan_ids(cfg["fans"])
         n = len(self.fan_ids)
         self.fan_pos = cfg.get("fan_pos") or [round(.12 + .76 * i / max(1, n - 1), 3) for i in range(n)]
@@ -114,8 +139,9 @@ class Tunnel:
         self.devcfg = d
         self.store.put(self.key + ".devices", d)
         p = d["plc"]
-        if (old["host"], int(old["port"]), int(old["unit"])) != (p["host"], int(p["port"]), int(p["unit"])):
-            self.dev = Device(p["host"], int(p["port"]), int(p["unit"]), list(self.dev.tags.values()))
+        self.ext, self.ext_t = {}, {}
+        if (old["host"], int(old["port"]), int(old["unit"]), plc_opt(old)) != (p["host"], int(p["port"]), int(p["unit"]), plc_opt(p)):
+            self.dev = Device(p["host"], int(p["port"]), int(p["unit"]), list(self.dev.tags.values()), plc_opt(p))
             self.comm, self.fails = False, 0
             return True
         return False
@@ -163,6 +189,7 @@ class Tunnel:
                     self.state["comm"] = False
             return
         self.alarms.set(self.c, "comm", False, "중", "RTU 통신 두절", self.site_str(), self.log)
+        await self.poll_ext()
         self.derive()
         try:
             await self.control()
@@ -199,19 +226,31 @@ class Tunnel:
             if not gc.get("use"):
                 continue
             n = "GATE%d" % gc["slot"]
-            up, down, mv = bool(g(n + ".UP", True)), bool(g(n + ".DOWN", False)), bool(g(n + ".MOVE", False))
-            gates.append({"slot": gc["slot"], "name": gc["name"], "side": gc.get("side", "start"),
-                          "st": "고장" if g(n + ".FLT", False) else "동작 중" if mv else "차단" if down else "개방" if up else "중간",
-                          "down": down, "fault": bool(g(n + ".FLT", False)), "lamp": bool(g(n + ".LAMP", False))})
+            if gc.get("driver", "plc") == "plc":
+                up, down, mv = bool(g(n + ".UP", True)), bool(g(n + ".DOWN", False)), bool(g(n + ".MOVE", False))
+                flt, lamp, err = bool(g(n + ".FLT", False)), bool(g(n + ".LAMP", False)), ""
+            else:
+                e = self.ext.get(("gate", gc["slot"]), {})
+                up, down, mv, lamp = e.get("up", True), e.get("down", False), False, e.get("lamp", False)
+                err = e.get("err", "")
+                flt = bool(e.get("flt")) or bool(err)
+            gates.append({"slot": gc["slot"], "name": gc["name"], "side": gc.get("side", "start"), "driver": gc.get("driver", "plc"),
+                          "st": "고장" if flt else "동작 중" if mv else "차단" if down else "개방" if up else "중간",
+                          "down": down, "fault": flt, "lamp": lamp, "err": err})
         vms = []
         pre = {p["no"]: p for p in self.devcfg["vms"]["presets"]}
         for vc in self.devcfg["vms"]["slots"]:
             if not vc.get("use"):
                 continue
             n = "VMS%d" % vc["slot"]
-            cmd_no, fb = int(g(n + ".MSG", 0)), int(g(n + ".FB", 0))
+            if vc.get("driver", "plc") == "plc":
+                cmd_no, fb, flt, err = int(g(n + ".MSG", 0)), int(g(n + ".FB", 0)), bool(g(n + ".FLT", False)), ""
+            else:
+                e = self.ext.get(("vms", vc["slot"]), {})
+                cmd_no, fb, err = e.get("cmd", 0), e.get("fb", 0), e.get("err", "")
+                flt = bool(err)
             vms.append({"slot": vc["slot"], "name": vc["name"], "loc": vc.get("loc", ""), "cmd": cmd_no, "fb": fb,
-                        "msg": pre.get(fb), "fault": bool(g(n + ".FLT", False))})
+                        "msg": pre.get(fb), "fault": flt, "driver": vc.get("driver", "plc"), "err": err})
         ups_on = bool(g("UPS.RUN", True))
         kw = g("HV-1.KW", 0)
         kwh = g("HV-1.KWH", 0)
@@ -265,6 +304,150 @@ class Tunnel:
         if "EV.SPLIT" in self.dev.tags:
             await self.w("EV.SPLIT", int(split * 1000))
 
+    # ----- 직접 연결 장치 (제조사 설정) -----
+    def _vmsc(self, slot):
+        return next(v for v in self.devcfg["vms"]["slots"] if v["slot"] == slot)
+
+    def _gatec(self, slot):
+        return next(x for x in self.devcfg["gates"] if x["slot"] == slot)
+
+    @staticmethod
+    def _tm(c):
+        return float(c.get("timeout") or 2)
+
+    def _frame(self, c, tpl, values):
+        return D.render(tpl, values, c.get("encoding", "euc-kr"), c.get("checksum", "none"),
+                        c.get("cs_from", "after_stx"), c.get("cs_fmt", "byte"))
+
+    async def _tcp_cmd(self, c, data):
+        resp = await D.tcp_exchange(c["host"], c["port"], data, self._tm(c), want_reply=bool(c.get("ack")))
+        ack = D.pattern(c.get("ack", ""), c.get("encoding", "ascii"))
+        if ack and ack not in resp:
+            raise IOError("응답이 확인 문자와 다릅니다 (받음: %s)" % (D.hexdump(resp) or "없음"))
+        return resp
+
+    async def vms_show(self, slot, no):
+        vc = self._vmsc(slot)
+        drv = vc.get("driver", "plc")
+        if drv == "plc":
+            await self.w("VMS%d.MSG" % slot, no)
+            return
+        pre = next((p for p in self.devcfg["vms"]["presets"] if p["no"] == no), {"l1": "", "l2": ""})
+        e = self.ext.setdefault(("vms", slot), {})
+        e["cmd"] = no
+        try:
+            if drv == "modbus":
+                h, pt, u, tm = vc["host"], vc["port"], vc["unit"], self._tm(vc)
+                tr = D.mb_addr(vc.get("text_reg", ""))
+                if tr is not None:
+                    n = int(vc.get("text_len") or 20)
+                    await D.mb_write_regs(h, pt, u, tr, D.text_regs(pre["l1"], n, vc.get("encoding")) +
+                                          D.text_regs(pre["l2"], n, vc.get("encoding")), tm)
+                await D.mb_write_reg(h, pt, u, D.mb_addr(vc["msg_reg"]), no, tm)
+                if D.mb_addr(vc.get("fb_reg", "")) is None:
+                    e["fb"] = no
+            else:
+                await self._tcp_cmd(vc, self._frame(vc, vc["tpl"], {"no": no, "l1": pre["l1"], "l2": pre["l2"], "slot": slot}))
+                e["fb"] = no
+            e["err"] = ""
+        except Exception as ex:
+            e["err"] = str(ex) or type(ex).__name__
+            raise RuntimeError("%s 명령 실패: %s" % (vc["name"], e["err"]))
+
+    async def gate_cmd(self, slot, down):
+        gc = self._gatec(slot)
+        drv = gc.get("driver", "plc")
+        n = "GATE%d" % slot
+        if drv == "plc":
+            if down:
+                await self.w(n + ".LAMP", True)
+                await self.w(n + ".DOWN_CMD", True)
+            else:
+                await self.w(n + ".UP_CMD", True)
+                await self.w(n + ".LAMP", False)
+            return
+        e = self.ext.setdefault(("gate", slot), {})
+        try:
+            if drv == "modbus":
+                h, pt, u, tm = gc["host"], gc["port"], gc["unit"], self._tm(gc)
+                lamp = D.mb_addr(gc.get("lamp_coil", ""))
+                if lamp is not None and down:
+                    await D.mb_write_coil(h, pt, u, lamp, True, tm)
+                coil, other = D.mb_addr(gc["down_coil" if down else "up_coil"]), D.mb_addr(gc["up_coil" if down else "down_coil"])
+                pulse = int(gc.get("pulse_ms") or 0)
+                if not pulse and other is not None:
+                    await D.mb_write_coil(h, pt, u, other, False, tm)
+                await D.mb_write_coil(h, pt, u, coil, True, tm)
+                if pulse:
+                    await asyncio.sleep(pulse / 1000)
+                    await D.mb_write_coil(h, pt, u, coil, False, tm)
+                if lamp is not None and not down:
+                    await D.mb_write_coil(h, pt, u, lamp, False, tm)
+                if D.mb_addr(gc.get("down_di", "")) is None:
+                    e.update(down=down, up=not down)
+            else:
+                await self._tcp_cmd(gc, self._frame(gc, gc["down_tpl" if down else "up_tpl"], {"slot": slot}))
+                if not gc.get("status_tpl"):
+                    e.update(down=down, up=not down)
+            e["lamp"], e["err"] = down, ""
+        except Exception as ex:
+            e["err"] = str(ex) or type(ex).__name__
+            raise RuntimeError("%s 명령 실패: %s" % (gc["name"], e["err"]))
+
+    async def poll_ext(self):
+        """직접 연결 장치 상태 읽기. Modbus는 매 주기, TCP 상태조회는 5초마다."""
+        jobs = []
+        now = time.monotonic()
+        for vc in self.devcfg["vms"]["slots"]:
+            if vc.get("use") and vc.get("driver") == "modbus" and D.mb_addr(vc.get("fb_reg", "")) is not None:
+                jobs.append(self._poll_vms_mb(vc))
+        for gc in self.devcfg["gates"]:
+            if not gc.get("use"):
+                continue
+            if gc.get("driver") == "modbus" and D.mb_addr(gc.get("down_di", "")) is not None:
+                jobs.append(self._poll_gate_mb(gc))
+            elif gc.get("driver") == "tcp" and gc.get("status_tpl") and now - self.ext_t.get(gc["slot"], 0) > 5:
+                self.ext_t[gc["slot"]] = now
+                jobs.append(self._poll_gate_tcp(gc))
+        if jobs:
+            await asyncio.gather(*[asyncio.wait_for(j, 4) for j in jobs], return_exceptions=True)
+
+    async def _poll_vms_mb(self, vc):
+        e = self.ext.setdefault(("vms", vc["slot"]), {})
+        try:
+            r = await D.mb_read(vc["host"], vc["port"], vc["unit"], vc.get("fb_fc", 3), D.mb_addr(vc["fb_reg"]), 1, self._tm(vc))
+            e["fb"], e["err"] = int(r[0]), ""
+            e.setdefault("cmd", e["fb"])
+        except Exception as ex:
+            e["err"] = "상태 읽기 실패: %s" % (str(ex) or type(ex).__name__)
+
+    async def _poll_gate_mb(self, gc):
+        e = self.ext.setdefault(("gate", gc["slot"]), {})
+        try:
+            addrs = [D.mb_addr(gc.get(k, "")) for k in ("up_di", "down_di", "flt_di")]
+            lo = min(a for a in addrs if a is not None)
+            hi = max(a for a in addrs if a is not None)
+            bits = await D.mb_read(gc["host"], gc["port"], gc["unit"], 2, lo, hi - lo + 1, self._tm(gc))
+            get = lambda a: bool(bits[a - lo]) if a is not None else False  # noqa: E731
+            e.update(up=get(addrs[0]), down=get(addrs[1]), flt=get(addrs[2]), err="")
+        except Exception as ex:
+            e["err"] = "상태 읽기 실패: %s" % (str(ex) or type(ex).__name__)
+
+    async def _poll_gate_tcp(self, gc):
+        e = self.ext.setdefault(("gate", gc["slot"]), {})
+        try:
+            resp = await D.tcp_exchange(gc["host"], gc["port"], self._frame(gc, gc["status_tpl"], {"slot": gc["slot"]}), self._tm(gc))
+            enc = gc.get("encoding", "ascii")
+            dn, upp = D.pattern(gc.get("resp_down", ""), enc), D.pattern(gc.get("resp_up", ""), enc)
+            if dn and dn in resp:
+                e.update(down=True, up=False, err="")
+            elif upp and upp in resp:
+                e.update(down=False, up=True, err="")
+            else:
+                e["err"] = "상태 응답을 알 수 없음: %s" % (D.hexdump(resp) or "없음")
+        except Exception as ex:
+            e["err"] = "상태 조회 실패: %s" % (str(ex) or type(ex).__name__)
+
     # ----- 자동제어 -----
     def auto_stage(self, lum, hour):
         a, b, c = self.ctl["light_lum"]
@@ -288,7 +471,10 @@ class Tunnel:
             v = self.devcfg["vms"]
             for vc in v["slots"]:
                 if vc.get("use"):
-                    await self.w("VMS%d.MSG" % vc["slot"], int(v["normal"]))
+                    try:
+                        await self.vms_show(vc["slot"], int(v["normal"]))
+                    except Exception as e:
+                        self.log("VMS 평상시 문안 복귀 실패 · %s" % e, "alarm")
             if not self.fan_auto:
                 for f in s["fans"]:
                     await self.write_fan(f["id"], 0)
@@ -332,11 +518,16 @@ class Tunnel:
         v = self.devcfg["vms"]
         for vc in v["slots"]:
             if vc.get("use"):
-                await self.w("VMS%d.MSG" % vc["slot"], int(v["fire"]))
+                try:
+                    await self.vms_show(vc["slot"], int(v["fire"]))
+                except Exception as e:
+                    self.log("화재 VMS 표출 실패 · %s" % e, "alarm")
         for gc in self.devcfg["gates"]:
             if gc.get("use") and gc.get("fire_auto"):
-                await self.w("GATE%d.LAMP" % gc["slot"], True)
-                await self.w("GATE%d.DOWN_CMD" % gc["slot"], True)
+                try:
+                    await self.gate_cmd(gc["slot"], True)
+                except Exception as e:
+                    self.log("화재 진입차단 하강 실패 · %s" % e, "alarm")
         self.log("화재 감지 STA %s · 방재 시나리오 개시 (조명 최대, 화점 인접 제트팬 정지·상류측 정회전, 피난유도, VMS 진입금지, 진입차단 하강)"
                  % self.sta(x), "alarm")
 
@@ -348,8 +539,11 @@ class Tunnel:
     # ----- 운영자 명령 -----
     async def command(self, a, args, user):
         s, uname = self.state, user["name"]
-        if not self.comm or not s:
+        direct = (a == "vms" and self._vmsc(int(args["slot"])).get("driver", "plc") != "plc") or \
+                 (a in ("gate", "gate_reset") and self._gatec(int(args["slot"])).get("driver", "plc") != "plc")
+        if not direct and (not self.comm or not s):
             raise RuntimeError("RTU와 통신이 끊겨 명령을 보낼 수 없습니다")
+        s = s or {"fire": None}
         fi = lambda: s["fans"][int(args["i"])]  # noqa: E731
         if a == "light_auto":
             self.light_auto = bool(args["on"])
@@ -391,22 +585,20 @@ class Tunnel:
             slot, no = int(args["slot"]), int(args["no"])
             if not any(p["no"] == no for p in self.devcfg["vms"]["presets"]):
                 raise ValueError("등록되지 않은 문안 번호입니다")
-            await self.w("VMS%d.MSG" % slot, no)
-            self.log("VMS-%d 문안 %d번 표출 명령" % (slot, no), "op", uname)
+            await self.vms_show(slot, no)
+            self.log("%s 문안 %d번 표출 명령" % (self._vmsc(slot)["name"], no), "op", uname)
         elif a == "gate":
             slot, down = int(args["slot"]), bool(args["down"])
-            n = "GATE%d" % slot
-            if down:
-                await self.w(n + ".LAMP", True)
-                await self.w(n + ".DOWN_CMD", True)
-            else:
-                if s["fire"]:
-                    raise RuntimeError("화재 감지 중에는 진입차단을 개방할 수 없습니다. 화재 수신기 복구 후 조작하세요")
-                await self.w(n + ".UP_CMD", True)
-                await self.w(n + ".LAMP", False)
-            self.log("진입차단-%d %s 명령" % (slot, "하강(차단)" if down else "상승(개방)"), "op", uname)
+            if not down and s["fire"]:
+                raise RuntimeError("화재 감지 중에는 진입차단을 개방할 수 없습니다. 화재 수신기 복구 후 조작하세요")
+            await self.gate_cmd(slot, down)
+            self.log("%s %s 명령" % (self._gatec(slot)["name"], "하강(차단)" if down else "상승(개방)"), "op", uname)
         elif a == "gate_reset":
-            await self.w("GATE%d.RESET" % int(args["slot"]), True)
+            gc = self._gatec(int(args["slot"]))
+            if gc.get("driver", "plc") == "plc":
+                await self.w("GATE%d.RESET" % gc["slot"], True)
+            else:
+                self.ext.get(("gate", gc["slot"]), {}).update(flt=False, err="")
             self.log("진입차단-%d 고장 복귀 명령" % int(args["slot"]), "op", uname)
         elif a == "fire_reset":
             await self.w("FD.RESET", True)
@@ -456,7 +648,7 @@ class Tunnel:
         A("ocr", bool(self.g("HV-1.OCR", False) or self.g("HV-1.OCGR", False)), "중", "수전 보호계전기 동작 (OCR/OCGR)")
         A("ptr", bool(self.g("PTR-1.TALM", False)), "경", "PTR-1 온도 경보")
         for gt in s["gates"]:
-            A("gate%d" % gt["slot"], gt["fault"], "중", gt["name"] + " 고장")
+            A("gate%d" % gt["slot"], gt["fault"], "중", gt["name"] + (" 통신 이상" if gt["err"] else " 고장"))
             A("gdown%d" % gt["slot"], gt["down"] and not s["fire"], "경", gt["name"] + " 차단 중 — 터널 진입 통제")
         for vm in s["vms"]:
             A("vms%d" % vm["slot"], vm["fault"], "경", vm["name"] + " 고장·통신이상")

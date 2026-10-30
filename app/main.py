@@ -19,7 +19,9 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from .store import ROLES, Store
 from .modbus_io import Device, Link
 from .tagmap import FEEDER_USE, MAX_GATES, MAX_VMS, STAGES, display_addr, parse_rows, read_table_file, reset_tags, save_tags, to_xlsx
-from .tunnel import Alarms, Tunnel
+from . import drivers as D
+from .tunnel import Alarms, Tunnel, cam_url, plc_opt
+from .vendors import BUILTIN
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CFG_PATH = os.environ.get("SCADA_CONFIG", os.path.join(BASE, "config.json"))
@@ -172,6 +174,10 @@ def public_devices(d):
     out = json.loads(json.dumps(d))
     for c in out["cctv"]:
         c["has_pw"] = bool(c.pop("pw", ""))
+        try:
+            c["mjpeg_url"] = cam_url(c, "mjpeg") if c["mode"] == "mjpeg" else ""
+        except (KeyError, IndexError, ValueError):
+            c["mjpeg_url"] = ""
     return out
 
 
@@ -298,42 +304,133 @@ def _num(v, name):
         raise HTTPException(400, "%s 값이 숫자가 아닙니다" % name)
 
 
+def _s(v, n=300):
+    return str(v if v is not None else "").strip()[:n]
+
+
+def _int(v, name, lo, hi):
+    x = int(_num(v, name))
+    if not lo <= x <= hi:
+        raise HTTPException(400, "%s 값은 %d~%d 사이여야 합니다" % (name, lo, hi))
+    return x
+
+
+def _addr(v, name):
+    if _s(v) == "":
+        return ""
+    try:
+        D.mb_addr(v)
+    except ValueError:
+        raise HTTPException(400, "%s 주소가 숫자가 아닙니다" % name)
+    return _s(v, 10)
+
+
+def clean_plc(p):
+    host = _s(p.get("host"), 100)
+    if not host:
+        raise HTTPException(400, "PLC IP 주소를 입력하세요")
+    return {"host": host, "port": _int(p.get("port"), "PLC 포트", 1, 65535), "unit": _int(p.get("unit"), "Unit ID", 0, 255),
+            "vendor": _s(p.get("vendor"), 60) or "generic", "word_order": "low" if p.get("word_order") == "low" else "high",
+            "addr_offset": _int(p.get("addr_offset", 0), "주소 보정", -100000, 100000),
+            "timeout": max(.3, min(30.0, _num(p.get("timeout", 2), "응답 대기"))), "block": _int(p.get("block", 100), "한 번에 읽기", 1, 125)}
+
+
+def clean_cam(c, oldpw):
+    cid = _s(c.get("id"), 30)
+    mode = c.get("mode", "sim")
+    if mode not in ("sim", "snapshot", "mjpeg"):
+        raise HTTPException(400, "영상 방식은 모의·스냅샷·MJPEG 중 하나입니다")
+    pw = c.get("pw")
+    out = {"id": cid, "name": _s(c.get("name"), 60) or cid, "pos": min(1, max(0, _num(c.get("pos", 0), cid + " 위치"))),
+           "mode": mode, "vendor": _s(c.get("vendor"), 60) or "generic", "ip": _s(c.get("ip"), 100),
+           "port": _int(c.get("port") or 80, cid + " 포트", 1, 65535), "ch": _s(c.get("ch"), 40) or "1",
+           "auth": c.get("auth") if c.get("auth") in ("auto", "digest", "basic", "none") else "auto",
+           "snap_tpl": _s(c.get("snap_tpl"), 500), "mjpeg_tpl": _s(c.get("mjpeg_tpl"), 500), "rtsp_tpl": _s(c.get("rtsp_tpl"), 500),
+           "url": _s(c.get("url"), 500), "user": _s(c.get("user"), 60),
+           "pw": oldpw.get(cid, "") if pw in (None, "") else ("" if pw == "__clear__" else str(pw))}
+    if mode != "sim":
+        try:
+            u = cam_url(out, "snap" if mode == "snapshot" else "mjpeg")
+        except (KeyError, IndexError, ValueError) as e:
+            raise HTTPException(400, "%s 주소 틀에 알 수 없는 항목이 있습니다: %s (쓸 수 있는 것: {ip} {port} {ch} {ch0})" % (cid, e))
+        if not u.startswith(("http://", "https://")):
+            raise HTTPException(400, "%s: %s 주소가 없거나 http:// 로 시작하지 않습니다" % (cid, "스냅샷" if mode == "snapshot" else "MJPEG"))
+    return out
+
+
+COMMON_DIRECT = ("host", "port", "unit", "timeout", "encoding", "checksum", "cs_from", "cs_fmt", "ack")
+
+
+def clean_direct(x, kind, name):
+    drv = x.get("driver") if x.get("driver") in ("plc", "modbus", "tcp") else "plc"
+    o = {"driver": drv, "vendor": _s(x.get("vendor"), 60) or drv}
+    if drv == "plc":
+        return o
+    host = _s(x.get("host"), 100)
+    if not host and x.get("use"):
+        raise HTTPException(400, "%s: 장치 IP 주소를 입력하세요" % name)
+    o.update(host=host, port=_int(x.get("port") or (502 if drv == "modbus" else 5000), name + " 포트", 1, 65535),
+             timeout=max(.3, min(30.0, _num(x.get("timeout") or 2, name + " 응답 대기"))),
+             encoding=x.get("encoding") if x.get("encoding") in D.ENCODINGS else ("euc-kr" if kind == "vms" else "ascii"))
+    if drv == "modbus":
+        o["unit"] = _int(x.get("unit") if x.get("unit") not in (None, "") else 1, name + " Unit ID", 0, 255)
+        keys = ("msg_reg", "fb_reg", "text_reg") if kind == "vms" else ("down_coil", "up_coil", "lamp_coil", "up_di", "down_di", "flt_di")
+        for k in keys:
+            o[k] = _addr(x.get(k), name + " " + k)
+        if kind == "vms":
+            if o["msg_reg"] == "" and x.get("use"):
+                raise HTTPException(400, "%s: 문안 번호 레지스터를 입력하세요" % name)
+            o["fb_fc"] = 4 if str(x.get("fb_fc")) == "4" else 3
+            o["text_len"] = _int(x.get("text_len") or 20, name + " 문안 길이", 1, 60)
+        else:
+            if (o["down_coil"] == "" or o["up_coil"] == "") and x.get("use"):
+                raise HTTPException(400, "%s: 하강·상승 코일 주소를 입력하세요" % name)
+            o["pulse_ms"] = _int(x.get("pulse_ms") or 0, name + " 펄스 시간", 0, 10000)
+    else:
+        o.update(checksum=x.get("checksum") if x.get("checksum") in ("none", "xor", "sum8", "sum16", "lrc") else "none",
+                 cs_from="all" if x.get("cs_from") == "all" else "after_stx", cs_fmt="hex2" if x.get("cs_fmt") == "hex2" else "byte",
+                 ack=_s(x.get("ack"), 60))
+        tkeys = ("tpl",) if kind == "vms" else ("down_tpl", "up_tpl", "status_tpl")
+        for k in tkeys:
+            o[k] = _s(x.get(k), 300)
+        if kind == "gate":
+            o["resp_down"], o["resp_up"] = _s(x.get("resp_down"), 60), _s(x.get("resp_up"), 60)
+        must = ("tpl",) if kind == "vms" else ("down_tpl", "up_tpl")
+        for k in must:
+            if x.get("use") and not o[k]:
+                raise HTTPException(400, "%s: 명령 틀을 입력하세요" % name)
+        try:
+            for k in tkeys:
+                if o[k]:
+                    D.render(o[k], {"no": 1, "l1": "시험", "l2": "시험", "slot": 1}, o["encoding"], o["checksum"], o["cs_from"], o["cs_fmt"])
+            for k in ("ack", "resp_down", "resp_up"):
+                if o.get(k):
+                    D.pattern(o[k], o["encoding"])
+        except (ValueError, UnicodeEncodeError) as e:
+            raise HTTPException(400, "%s: %s" % (name, e))
+    return o
+
+
 @app.post("/api/devices")
 async def devices_save(tunnel: str, body: dict, u=Depends(need("관리자"))):
     t = T(tunnel)
     old = t.devcfg
-    p = body.get("plc", {})
-    host = str(p.get("host", "")).strip()
-    if not host:
-        raise HTTPException(400, "PLC IP 주소를 입력하세요")
-    port, unit = int(_num(p.get("port"), "포트")), int(_num(p.get("unit"), "Unit ID"))
-    if not (1 <= port <= 65535 and 0 <= unit <= 247):
-        raise HTTPException(400, "포트(1~65535)나 Unit ID(0~247) 범위를 확인하세요")
+    plc = clean_plc(body.get("plc", {}))
     oldpw = {c["id"]: c.get("pw", "") for c in old["cctv"]}
     cams, ids = [], set()
     for c in body.get("cctv", []):
-        cid = str(c.get("id", "")).strip()
+        cid = _s(c.get("id"), 30)
         if not cid or cid in ids:
             raise HTTPException(400, "카메라 번호가 비었거나 겹칩니다: '%s'" % cid)
         ids.add(cid)
-        mode = c.get("mode", "sim")
-        if mode not in ("sim", "snapshot", "mjpeg"):
-            raise HTTPException(400, "영상 방식은 모의·스냅샷·MJPEG 중 하나입니다")
-        url = str(c.get("url", "")).strip()
-        if mode != "sim" and not url.startswith(("http://", "https://")):
-            raise HTTPException(400, "%s: 영상 주소는 http:// 로 시작해야 합니다" % cid)
-        pos = _num(c.get("pos", 0), cid + " 위치")
-        pw = c.get("pw")
-        cams.append({"id": cid, "name": str(c.get("name", "")).strip() or cid, "pos": min(1, max(0, pos)),
-                     "mode": mode, "url": url, "user": str(c.get("user", "")).strip(),
-                     "pw": oldpw.get(cid, "") if pw in (None, "") else ("" if pw == "__clear__" else str(pw))})
+        cams.append(clean_cam(c, oldpw))
     v = body.get("vms", {})
     presets = []
     for pr in v.get("presets", []):
         no = int(_num(pr.get("no"), "문안 번호"))
         if any(x["no"] == no for x in presets):
             raise HTTPException(400, "문안 번호 %d가 겹칩니다" % no)
-        presets.append({"no": no, "l1": str(pr.get("l1", ""))[:20], "l2": str(pr.get("l2", ""))[:20],
+        presets.append({"no": no, "l1": _s(pr.get("l1"), 20), "l2": _s(pr.get("l2"), 20),
                         "color": pr.get("color") if pr.get("color") in ("녹", "황", "적") else "황"})
     if not presets:
         raise HTTPException(400, "VMS 문안을 하나 이상 등록하세요")
@@ -341,34 +438,134 @@ async def devices_save(tunnel: str, body: dict, u=Depends(need("관리자"))):
     normal, fire = int(_num(v.get("normal"), "평상시 문안")), int(_num(v.get("fire"), "화재 문안"))
     if normal not in nos or fire not in nos:
         raise HTTPException(400, "평상시·화재 문안 번호는 등록된 문안 중에서 고르세요")
-    slots = [{"slot": i + 1, "use": bool(x.get("use")), "name": str(x.get("name", "")).strip() or "VMS-%d" % (i + 1),
-              "loc": str(x.get("loc", "")).strip()} for i, x in enumerate(v.get("slots", [])[:MAX_VMS])]
-    gates = [{"slot": i + 1, "use": bool(x.get("use")), "name": str(x.get("name", "")).strip() or "진입차단-%d" % (i + 1),
-              "side": "end" if x.get("side") == "end" else "start", "fire_auto": bool(x.get("fire_auto"))}
-             for i, x in enumerate(body.get("gates", [])[:MAX_GATES])]
-    d = {"plc": {"host": host, "port": port, "unit": unit}, "cctv": cams,
-         "vms": {"slots": slots, "presets": presets, "normal": normal, "fire": fire}, "gates": gates}
+    slots = []
+    for i, x in enumerate(v.get("slots", [])[:MAX_VMS]):
+        name = _s(x.get("name"), 40) or "VMS-%d" % (i + 1)
+        slots.append(dict({"slot": i + 1, "use": bool(x.get("use")), "name": name, "loc": _s(x.get("loc"), 60)},
+                          **clean_direct(x, "vms", name)))
+    gates = []
+    for i, x in enumerate(body.get("gates", [])[:MAX_GATES]):
+        name = _s(x.get("name"), 40) or "진입차단-%d" % (i + 1)
+        gates.append(dict({"slot": i + 1, "use": bool(x.get("use")), "name": name,
+                           "side": "end" if x.get("side") == "end" else "start", "fire_auto": bool(x.get("fire_auto"))},
+                          **clean_direct(x, "gate", name)))
+    d = {"plc": plc, "cctv": cams, "vms": {"slots": slots, "presets": presets, "normal": normal, "fire": fire}, "gates": gates}
     reconnected = t.apply_devices(d)
     t.log("설비 설정 변경" + (" · PLC 재연결 %s" % t.plc_desc() if reconnected else ""), "op", u["name"])
     return {"ok": True, "reconnected": reconnected}
 
 
+# ---------- 제조사 프로필 ----------
+@app.get("/api/vendors")
+def vendors_list(u=Depends(need("감시"))):
+    mine = store.get("vendor_profiles", {}) or {}
+    return {k: [dict(p, builtin=True) for p in BUILTIN[k]] + [dict(p, builtin=False) for p in mine.get(k, [])] for k in BUILTIN}
+
+
+@app.post("/api/vendors")
+def vendors_save(body: dict, u=Depends(need("관리자"))):
+    kind, name = body.get("kind"), _s(body.get("name"), 60)
+    if kind not in BUILTIN or not name:
+        raise HTTPException(400, "프로필 이름을 입력하세요")
+    vals = body.get("values") or {}
+    vals = {k: v for k, v in vals.items() if k not in ("pw", "id", "name", "slot", "use", "pos", "loc", "side", "fire_auto", "host", "ip")}
+    mine = store.get("vendor_profiles", {}) or {}
+    lst = [p for p in mine.get(kind, []) if p["name"] != name]
+    lst.append({"key": "u:" + name, "name": name, "values": vals, "note": _s(body.get("note"), 300) or "내가 저장한 프로필"})
+    mine[kind] = lst
+    store.put("vendor_profiles", mine)
+    store.event("", "시스템", "op", "제조사 프로필 저장 · %s" % name, u["name"])
+    return {"ok": True, "key": "u:" + name}
+
+
+@app.post("/api/vendors/delete")
+def vendors_delete(body: dict, u=Depends(need("관리자"))):
+    kind, key = body.get("kind"), body.get("key", "")
+    mine = store.get("vendor_profiles", {}) or {}
+    mine[kind] = [p for p in mine.get(kind, []) if p["key"] != key]
+    store.put("vendor_profiles", mine)
+    return {"ok": True}
+
+
+# ---------- 연결 시험 · 명령 미리보기 ----------
 @app.post("/api/devices/test")
 async def devices_test(body: dict, u=Depends(need("관리자"))):
-    """저장 전에 PLC 응답을 확인한다 (DI 0~4 읽기)."""
-    host = str(body.get("host", "")).strip()
-    port, unit = int(_num(body.get("port"), "포트")), int(_num(body.get("unit"), "Unit ID"))
-    dev = Device(host, port, unit, [{"tag": "T", "type": "DI", "addr": 0, "scale": 1, "unit": "", "dtype": "bool"}])
-    dev.link = Link(host, port)   # 운영 연결과 분리
+    """PLC 응답 확인 (DI 0 읽기). 제조사 설정(워드 순서·주소 보정·대기)을 그대로 적용한다."""
+    p = clean_plc(body)
+    dev = Device(p["host"], p["port"], p["unit"], [{"tag": "T", "type": "DI", "addr": 0, "scale": 1, "unit": "", "dtype": "bool"}], plc_opt(p))
+    dev.link = Link(p["host"], p["port"], p["timeout"])   # 운영 연결과 분리
     t0 = time.monotonic()
     try:
-        await asyncio.wait_for(dev.read_all(), 5)
+        await asyncio.wait_for(dev.read_all(), p["timeout"] + 3)
         return {"ok": True, "msg": "응답 정상 (%d ms)" % ((time.monotonic() - t0) * 1000)}
     except Exception as e:
         return {"ok": False, "msg": "응답 없음: %s" % (str(e) or type(e).__name__)}
     finally:
-        if dev.link.client:
-            dev.link.client.close()
+        dev.link.close()
+
+
+@app.post("/api/devices/probe")
+async def devices_probe(body: dict, u=Depends(need("관리자"))):
+    """장치별 연결 시험 / 명령 미리보기. 실제 제어 명령은 보내지 않는다(상태 조회만)."""
+    t = T(body.get("tunnel"))
+    kind, action, x = body.get("kind"), body.get("action"), body.get("cfg") or {}
+    if kind == "cctv":
+        oldpw = {c["id"]: c.get("pw", "") for c in t.devcfg["cctv"]}
+        c = clean_cam(dict(x, mode="snapshot"), oldpw)
+        url = cam_url(c, "snap")
+        try:
+            data, ct = await asyncio.to_thread(_fetch, url, c["user"], c["pw"], c["auth"])
+        except Exception as e:
+            return {"ok": False, "msg": "영상 수신 실패: %s" % (str(e) or type(e).__name__), "url": url}
+        if not ct.startswith("image/"):
+            return {"ok": False, "msg": "응답이 이미지가 아닙니다 (%s). 주소를 확인하세요" % ct, "url": url}
+        import base64
+        return {"ok": True, "msg": "정지영상 수신 정상 (%d KB)" % (len(data) // 1024), "url": url,
+                "img": "data:%s;base64,%s" % (ct.split(";")[0], base64.b64encode(data).decode())}
+    name = _s(x.get("name"), 40) or kind
+    c = clean_direct(dict(x, use=True), kind, name)
+    if action == "preview":
+        if c["driver"] != "tcp":
+            return {"ok": True, "frames": []}
+        out = []
+        keys = [("tpl", "문안 표출 (문안 %s번)")] if kind == "vms" else [("down_tpl", "하강"), ("up_tpl", "상승"), ("status_tpl", "상태 조회")]
+        pre = t.devcfg["vms"]["presets"]
+        no = int(body.get("no") or (pre[0]["no"] if pre else 1))
+        pr = next((p for p in pre if p["no"] == no), {"l1": "", "l2": ""})
+        for k, label in keys:
+            if c.get(k):
+                b = D.render(c[k], {"no": no, "l1": pr["l1"], "l2": pr["l2"], "slot": x.get("slot", 1)},
+                             c["encoding"], c["checksum"], c["cs_from"], c["cs_fmt"])
+                out.append({"label": label % no if "%s" in label else label, "hex": D.hexdump(b),
+                            "text": b.decode("latin-1").encode("unicode_escape").decode()})
+        if c.get("ack"):
+            out.append({"label": "기대 응답(확인)", "hex": D.hexdump(D.pattern(c["ack"], c["encoding"])), "text": c["ack"]})
+        return {"ok": True, "frames": out}
+    # test
+    t0 = time.monotonic()
+    try:
+        if c["driver"] == "plc":
+            return {"ok": t.comm, "msg": "PLC 경유 · " + ("RTU 통신 정상" if t.comm else "RTU 통신 두절")}
+        if c["driver"] == "modbus":
+            if kind == "vms":
+                a = D.mb_addr(c["fb_reg"]) if c["fb_reg"] != "" else D.mb_addr(c["msg_reg"])
+                r = await D.mb_read(c["host"], c["port"], c["unit"], c["fb_fc"] if c["fb_reg"] != "" else 3, a, 1, c["timeout"])
+                msg = "응답 정상 · 레지스터 %d = %d" % (a, r[0])
+            else:
+                a = D.mb_addr(c["up_di"] or c["down_di"] or "0")
+                r = await D.mb_read(c["host"], c["port"], c["unit"], 2, a, 3, c["timeout"])
+                msg = "응답 정상 · 입력 %d~%d = %s" % (a, a + 2, " ".join("1" if b else "0" for b in r))
+        else:
+            if kind == "gate" and c.get("status_tpl"):
+                f = D.render(c["status_tpl"], {"slot": x.get("slot", 1)}, c["encoding"], c["checksum"], c["cs_from"], c["cs_fmt"])
+                resp = await D.tcp_exchange(c["host"], c["port"], f, c["timeout"])
+                msg = "상태 조회 응답: %s" % (D.hexdump(resp) or "없음")
+            else:
+                await D.tcp_exchange(c["host"], c["port"], b"", c["timeout"], want_reply=False)
+                msg = "TCP 연결 정상 (명령은 보내지 않았습니다)"
+        return {"ok": True, "msg": msg + " · %d ms" % ((time.monotonic() - t0) * 1000)}
+    except Exception as e:
+        return {"ok": False, "msg": "실패: %s" % (str(e) or type(e).__name__)}
 
 
 @app.post("/api/control")
@@ -391,13 +588,16 @@ def control_save(body: dict, u=Depends(need("관리자"))):
     return {"ok": True}
 
 
-def _fetch(url, user, pw):
+def _fetch(url, user, pw, auth="auto"):
     import urllib.request
     handlers = []
-    if user:
+    if user and auth != "none":
         mgr = urllib.request.HTTPPasswordMgrWithDefaultRealm()
         mgr.add_password(None, url, user, pw)
-        handlers += [urllib.request.HTTPDigestAuthHandler(mgr), urllib.request.HTTPBasicAuthHandler(mgr)]
+        if auth in ("auto", "digest"):
+            handlers.append(urllib.request.HTTPDigestAuthHandler(mgr))
+        if auth in ("auto", "basic"):
+            handlers.append(urllib.request.HTTPBasicAuthHandler(mgr))
     op = urllib.request.build_opener(urllib.request.ProxyHandler({}), *handlers)
     with op.open(url, timeout=4) as r:
         return r.read(5_000_000), r.headers.get("Content-Type", "image/jpeg")
@@ -412,7 +612,7 @@ async def cctv_snap(tunnel: str, id: str, u=Depends(need("감시"))):
     if cam["mode"] != "snapshot":
         raise HTTPException(400, "스냅샷 방식 카메라가 아닙니다")
     try:
-        data, ct = await asyncio.to_thread(_fetch, cam["url"], cam["user"], cam["pw"])
+        data, ct = await asyncio.to_thread(_fetch, cam_url(cam, "snap"), cam.get("user", ""), cam.get("pw", ""), cam.get("auth", "auto"))
     except Exception as e:
         raise HTTPException(502, "영상 수신 실패: %s" % (str(e) or type(e).__name__))
     return Response(data, media_type=ct if ct.startswith("image/") else "image/jpeg", headers={"Cache-Control": "no-store"})
