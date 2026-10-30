@@ -146,7 +146,7 @@ async function pageNewCustomer() {
   const rw = await api('/railway').catch(() => ({ connected: false }));
   const start = today();
   shell('customers', `
-    <div class="page-head"><div><h1>고객 등록 · 납품</h1><p>고객 등록, 라이선스 발급, 고객 전용 서버 개설을 한 번에 진행합니다. 끝나면 고객에게 줄 납품서가 만들어집니다.</p></div></div>
+    <div class="page-head"><div><h1>고객 등록 · 납품</h1><p>등록하면 라이선스 발급과 고객 전용 ERP 서버 개설이 한 번에 진행됩니다. 접속 주소는 30초 안에 나오고, 설치는 5~10분 뒤 끝납니다. 주소가 나오면 바로 납품서를 보낼 수 있습니다.</p></div></div>
     <form id="cf">
       <section class="panel"><header><h2>1. 고객 정보</h2></header><div class="body">${customerForm()}</div></section>
       <section class="panel"><header><h2>2. 라이선스 (연간 구독)</h2></header><div class="body"><div class="form-grid">
@@ -164,7 +164,7 @@ async function pageNewCustomer() {
         </div>
         <p class="small muted" style="margin:10px 0 0">임시 비밀번호는 자동으로 만들어지고, 고객이 첫 로그인 때 바꾸게 됩니다. 서버는 다른 고객과 완전히 분리된 새 서버(데이터베이스 포함)로 만들어지며, 예시 데이터 없이 비어 있는 상태로 시작합니다.</p>
       </div></section>
-      <div class="row end"><a class="btn" href="#/customers">취소</a><button class="btn primary" id="go">등록하고 납품 준비</button></div>
+      <div class="row end"><a class="btn" href="#/customers">취소</a><button class="btn primary" id="go">${rw.connected ? '등록하고 ERP 만들기' : '등록하고 납품 준비'}</button></div>
     </form>`);
   const form = document.getElementById('cf');
   const srv = document.getElementById('srvsec');
@@ -186,8 +186,11 @@ async function pageNewCustomer() {
     try {
       ({ id } = await api('/customers', { method: 'POST', json: f }));
       await api(`/customers/${id}/licenses`, { method: 'POST', json: { kind: 'NEW', maxUsers: Number(f.maxUsers), amount: Number(f.amount || 0), startsOn: f.startsOn, expiresAt: f.expiresAt, memo: f.licMemo || undefined } });
-      if (f.deployment === 'HOSTED' && rw.connected) await api(`/customers/${id}/server`, { method: 'POST', json: { adminId: f.adminId, companyCode: f.companyCode } });
-      toast(f.deployment === 'HOSTED' && rw.connected ? '등록했습니다. 고객 서버를 만드는 중입니다' : '고객 등록과 라이선스 발급을 마쳤습니다');
+      if (f.deployment === 'HOSTED' && rw.connected) {
+        btn.textContent = '서버 주소 만드는 중…';
+        const j = await api(`/customers/${id}/server`, { method: 'POST', json: { adminId: f.adminId, companyCode: f.companyCode } });
+        toast(j.url ? `등록했습니다 — 접속 주소 ${j.url} (설치 5~10분)` : '등록했습니다. 고객 서버를 만드는 중입니다');
+      } else toast('고객 등록과 라이선스 발급을 마쳤습니다');
       location.hash = '#/customers/' + id;
     } catch (err) {
       toast(err.message, 'error');
@@ -299,7 +302,8 @@ function serverPanel(c) {
         <div><dt>관리자 아이디</dt><dd class="mono">${esc(j.adminId)}</dd></div>
         <div><dt>개설 완료</dt><dd class="small">${dt(j.finishedAt)}</dd></div></dl>
       <div class="row"><a class="btn primary" href="#/customers/${c.id}/delivery">납품서 보기 · 인쇄</a><button class="btn" id="srvredeploy" title="sspower ss-erp 브랜치의 최신 코드로 이 고객 서버를 다시 배포합니다 (2~5분, 데이터는 그대로)">최신 코드로 재배포</button><button class="btn" id="srvaccess" title="고객 비밀번호 없이 공급사 지원 계정(ss-vendor)으로 들어갑니다. 고객 ERP 감사 로그에 남습니다">고객 ERP 접속</button></div>`
-    : `<ul style="list-style:none;padding:0;margin:0 0 10px;display:grid;gap:4px">${list}</ul>
+    : `${j.url && j.status === 'RUNNING' ? `<div class="addr"><span class="muted small">접속 주소 (설치 중 — 보통 5~10분 뒤 접속됨)</span><div class="row"><a class="mono" href="${esc(j.url)}" target="_blank" rel="noopener">${esc(j.url)}</a><button type="button" class="btn sm" id="cpurl">복사</button><a class="btn sm primary" href="#/customers/${c.id}/delivery">납품서</a></div><span class="small muted">관리자 아이디 <b class="mono">${esc(j.adminId)}</b></span></div>` : ''}
+      <ul style="list-style:none;padding:0;margin:0 0 10px;display:grid;gap:4px">${list}</ul>
       ${j.status === 'RUNNING' ? '<p class="small muted" style="margin:0">처음 설치는 보통 5~10분 걸립니다. 이 화면을 닫아도 계속 진행됩니다.</p>' : ''}
       ${j.status === 'FAILED' ? `<div class="note seal" style="margin-bottom:10px">${esc(j.error)}</div><button class="btn" id="srvretry">실패한 단계부터 다시 시도</button>` : ''}`}
   </div></section>`;
@@ -327,8 +331,10 @@ function bindServerPanel(c) {
   if (r) r.onclick = async () => {
     try { await api(`/customers/${c.id}/server/retry`, { method: 'POST' }); pageCustomer(c.id); } catch (err) { toast(err.message, 'error'); }
   };
+  const cu = document.getElementById('cpurl');
+  if (cu) cu.onclick = () => copy(c.server.url, '접속 주소를 복사했습니다');
   if (c.server?.status === 'RUNNING') {
-    pollTimer = setTimeout(() => { if (location.hash === '#/customers/' + c.id) pageCustomer(c.id); }, 10_000);
+    pollTimer = setTimeout(() => { if (location.hash === '#/customers/' + c.id) pageCustomer(c.id); }, c.server.url ? 10_000 : 3_000);
   }
 }
 
@@ -339,6 +345,7 @@ async function pageDelivery(id) {
   shell('customers', `
     <div class="page-head noprint"><div><h1>납품서</h1><p>고객에게 전달할 접속 정보입니다. 임시 비밀번호가 들어 있으니 담당자에게만 전달하세요.</p></div>
       <div class="row"><a class="btn" href="#/customers/${id}">돌아가기</a><button class="btn" id="cpall">문자로 복사</button><button class="btn primary" onclick="window.print()">인쇄 / PDF 저장</button></div></div>
+    ${d.installing ? '<div class="note warn noprint" style="margin-bottom:12px">아직 설치 중입니다 (보통 5~10분). 주소와 계정은 그대로이니 미리 전달해도 되고, 설치가 끝나면 바로 접속됩니다.</div>' : ''}
     <article class="panel sheet"><div class="body">
       <h2 style="font-size:20px;margin-bottom:4px">SS-ERP 사용 안내</h2>
       <p class="muted" style="margin:0 0 18px">${esc(d.name)} 귀중 · ${esc(d.issuedOn)}</p>

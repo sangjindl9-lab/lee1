@@ -506,7 +506,13 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
     await q(`insert into server_job(customer_id, status, step, input, secrets) values ($1,'RUNNING','project',$2,$3)`, [c.id, input, seal(secrets)]);
     audit(req, 'SERVER_START', `고객 서버 개설 시작 ${c.name} (관리자 ${adminId})`);
     void runJob(c.id);
-    res.status(202).json(shapeJob(await loadJob(c.id)));
+    // 접속 주소는 처음 몇 단계(수십 초) 안에 정해지므로, 주소가 나올 때까지 기다렸다가 응답한다 (설치 자체는 계속 진행)
+    let j = await loadJob(c.id);
+    for (let i = 0; i < 120 && !j.data?.domain && j.status === 'RUNNING'; i++) {
+      await new Promise((r) => setTimeout(r, 500));
+      j = await loadJob(c.id);
+    }
+    res.status(202).json(shapeJob(j));
   }));
 
   admin.post('/customers/:id/server/retry', wrap(async (req, res) => {
@@ -539,13 +545,13 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
   admin.get('/customers/:id/delivery', wrap(async (req, res) => {
     const c = await loadCustomer(req.params.id);
     const j = await loadJob(c.id);
-    if (!j || j.status !== 'DONE') throw bad('서버 개설이 끝난 뒤에 볼 수 있습니다');
+    if (!j || !j.data?.domain || j.status === 'FAILED') throw bad('접속 주소가 정해진 뒤에 볼 수 있습니다');
     const sec = unseal(j.secrets);
     audit(req, 'DELIVERY_VIEW', `납품서 열람 ${c.name}`);
     const cur = shapeCustomer(c).current;
     res.json({
       name: c.name, bizRegNo: c.biz_reg_no, url: `https://${j.data.domain}`, adminId: j.input.adminId, tempPassword: sec.adminPassword,
-      companyCode: j.input.companyCode, license: cur, contact: { name: c.contact_name, phone: c.phone, email: c.email }, issuedOn: L.kstToday(),
+      companyCode: j.input.companyCode, license: cur, contact: { name: c.contact_name, phone: c.phone, email: c.email }, issuedOn: L.kstToday(), installing: j.status !== 'DONE',
     });
   }));
 

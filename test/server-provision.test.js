@@ -149,6 +149,7 @@ test('서버 개설: 실패하면 그 단계부터 다시 이어서, 끝나면 �
   failOnce = 'volumeCreate';
   const r = await call(`/api/admin/customers/${id}/server`, { method: 'POST', json: { adminId: 'Admin', companyCode: 'hn' } });
   assert.equal(r.status, 202);
+  assert.equal(r.body.url, 'https://erp-hn-0440-production.up.railway.app', '저장공간 단계 전에 접속 주소가 먼저 정해져 응답에 나온다');
   await server.app.locals.idle();
   let c = (await call('/api/admin/customers/' + id)).body;
   assert.equal(c.server.status, 'FAILED');
