@@ -139,3 +139,16 @@ test('관리자 비밀번호를 화면에서 바꾸면 새 비밀번호로만 �
   assert.equal((await call('/api/admin/login', { method: 'POST', json: { password: PW } })).status, 401);
   assert.equal((await call('/api/admin/login', { method: 'POST', json: { password: 'NewPass!2026xyz' } })).status, 200);
 });
+
+test('고객 ERP 접속: 접속 주소가 있어야 하고, 2분짜리 판매자 서명 티켓을 돌려준다', async () => {
+  assert.equal((await call(`/api/admin/customers/${cust.id}/access`, { method: 'POST' })).status, 400);
+  await call('/api/admin/customers/' + cust.id, { method: 'PUT', json: { ...cust, serverUrl: 'https://erp.example.com/' } });
+  const r = await call(`/api/admin/customers/${cust.id}/access`, { method: 'POST' });
+  assert.equal(r.status, 200);
+  const u = new URL(r.body.url);
+  assert.equal(u.origin + u.pathname, 'https://erp.example.com/api/v1/auth/vendor-login');
+  const t = L.verify(u.searchParams.get('ticket'), publicKey);
+  assert.equal(t.kind, 'vendor-access');
+  assert.equal(t.bizRegNo, '2208660440');
+  assert.ok(t.exp - t.iat <= 2 * 60_000 && t.exp > Date.now());
+});

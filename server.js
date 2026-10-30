@@ -511,6 +511,21 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
     res.status(202).json(shapeJob(await loadJob(c.id)));
   }));
 
+  /**
+   * 고객 ERP 접속 — 판매자 키로 2분짜리 접속 티켓에 서명해 고객 서버의 공급사 지원 계정(ss-vendor)으로 들어간다.
+   * 고객 비밀번호는 필요 없고, 고객 ERP 의 '공급사 원격 지원' 이 허용 상태여야 한다. 고객 서버 감사 로그에 남는다.
+   */
+  admin.post('/customers/:id/access', wrap(async (req, res) => {
+    const c = await loadCustomer(req.params.id);
+    const j = await loadJob(c.id);
+    const base = j?.status === 'DONE' ? `https://${j.data.domain}` : String(c.server_url ?? '').trim();
+    if (!/^https?:\/\//.test(base)) throw bad('고객 ERP 접속 주소가 없습니다. 서버를 개설하거나 고객 정보에 접속 주소를 적어 주세요');
+    const now = Date.now();
+    const ticket = L.sign({ kind: 'vendor-access', bizRegNo: c.biz_reg_no, vendor: '에스에스전력', iat: now, exp: now + 2 * 60_000, nonce: crypto.randomBytes(12).toString('hex') }, privateKey);
+    audit(req, 'VENDOR_ACCESS', `고객 ERP 접속 ${c.name} (${base})`);
+    res.json({ url: `${base.replace(/\/$/, '')}/api/v1/auth/vendor-login?ticket=${encodeURIComponent(ticket)}` });
+  }));
+
   /** 납품서 — 고객에게 전달할 접속 정보 (임시 비밀번호 포함, 열람 기록 남김) */
   admin.get('/customers/:id/delivery', wrap(async (req, res) => {
     const c = await loadCustomer(req.params.id);

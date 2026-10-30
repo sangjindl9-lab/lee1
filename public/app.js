@@ -266,7 +266,7 @@ function serverPanel(c) {
   const j = c.server;
   if (!j) {
     return `<section class="panel"><header><h2>고객 전용 서버</h2><span class="badge">미개설</span></header><div class="body">
-      ${c.serverUrl ? `<p style="margin-top:0">등록된 접속 주소: <a href="${esc(c.serverUrl)}" target="_blank" rel="noopener">${esc(c.serverUrl)}</a> (직접 만든 서버)</p>` : ''}
+      ${c.serverUrl ? `<p style="margin-top:0">등록된 접속 주소: <a href="${esc(c.serverUrl)}" target="_blank" rel="noopener">${esc(c.serverUrl)}</a> (직접 만든 서버)</p><div class="row" style="margin-bottom:12px"><button class="btn" id="srvaccess" title="고객 비밀번호 없이 공급사 지원 계정(ss-vendor)으로 들어갑니다. 고객 ERP 감사 로그에 남습니다">고객 ERP 접속</button></div>` : ''}
       ${c.current && c.state !== 'SUSPENDED' ? `<form id="srvf"><div class="form-grid">
         <label class="f">고객 관리자 아이디<input name="adminId" value="admin" required /></label>
         <label class="f">회사 코드<input name="companyCode" placeholder="예: HN" required /></label></div>
@@ -288,7 +288,7 @@ function serverPanel(c) {
         <div><dt>접속 주소</dt><dd><a href="${esc(j.url)}" target="_blank" rel="noopener">${esc(j.url)}</a></dd></div>
         <div><dt>관리자 아이디</dt><dd class="mono">${esc(j.adminId)}</dd></div>
         <div><dt>개설 완료</dt><dd class="small">${dt(j.finishedAt)}</dd></div></dl>
-      <div class="row"><a class="btn primary" href="#/customers/${c.id}/delivery">납품서 보기 · 인쇄</a></div>`
+      <div class="row"><a class="btn primary" href="#/customers/${c.id}/delivery">납품서 보기 · 인쇄</a><button class="btn" id="srvaccess" title="고객 비밀번호 없이 공급사 지원 계정(ss-vendor)으로 들어갑니다. 고객 ERP 감사 로그에 남습니다">고객 ERP 접속</button></div>`
     : `<ul style="list-style:none;padding:0;margin:0 0 10px;display:grid;gap:4px">${list}</ul>
       ${j.status === 'RUNNING' ? '<p class="small muted" style="margin:0">처음 설치는 보통 5~10분 걸립니다. 이 화면을 닫아도 계속 진행됩니다.</p>' : ''}
       ${j.status === 'FAILED' ? `<div class="note seal" style="margin-bottom:10px">${esc(j.error)}</div><button class="btn" id="srvretry">실패한 단계부터 다시 시도</button>` : ''}`}
@@ -300,6 +300,13 @@ function bindServerPanel(c) {
   if (f) f.onsubmit = async (e) => {
     e.preventDefault();
     try { await api(`/customers/${c.id}/server`, { method: 'POST', json: formData(f) }); toast('고객 서버를 만드는 중입니다'); pageCustomer(c.id); } catch (err) { toast(err.message, 'error'); }
+  };
+  const a = document.getElementById('srvaccess');
+  if (a) a.onclick = async () => {
+    // 팝업 차단을 피하려고 클릭 즉시 창을 열고, 티켓을 받은 뒤 주소를 넣는다 (티켓은 2분, 1회용)
+    const win = window.open('', '_blank');
+    try { const r = await api(`/customers/${c.id}/access`, { method: 'POST' }); if (win) win.location = r.url; else location.assign(r.url); }
+    catch (err) { if (win) win.close(); toast(err.message, 'error'); }
   };
   const r = document.getElementById('srvretry');
   if (r) r.onclick = async () => {
