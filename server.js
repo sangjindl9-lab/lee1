@@ -71,4 +71,11 @@ http.createServer((req, res) => {
     return res.end(html);
   }
   res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' }); res.end('없는 페이지입니다');
-}).listen(PORT, () => console.log(`SS-ERP 소개 사이트 :${PORT} (문의 → ${TO}, SMTP ${transporter ? '설정됨' : '미설정 — 파일 보관만'})`));
+}).listen(PORT, async () => {
+  console.log(`SS-ERP 소개 사이트 :${PORT} (문의 → ${TO}, SMTP ${transporter ? '설정됨' : '미설정 — 파일 보관만'})`);
+  // SEND_TEST_MAIL=1 로 띄우면 시작할 때 테스트 메일을 한 통 보낸다
+  if (process.env.SEND_TEST_MAIL && transporter) {
+    try { const r = await transporter.sendMail({ from: `"SS-ERP 도입 문의" <${process.env.SMTP_USER}>`, to: TO, subject: '[SS-ERP 도입 문의] 테스트 메일', text: `문의 폼 메일 발송 테스트입니다.\n${new Date().toISOString()}` }); console.log('테스트 메일 발송됨:', r.response); }
+    catch (e) { console.error('테스트 메일 실패:', e.message); }
+  }
+});
