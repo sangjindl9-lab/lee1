@@ -168,3 +168,14 @@ test('고객 ERP 접속: 접속 주소가 있어야 하고, 2분짜리 판매자
   assert.equal(t.bizRegNo, '2208660440');
   assert.ok(t.exp - t.iat <= 2 * 60_000 && t.exp > Date.now());
 });
+
+test('발급 사이트 백업 묶음: 모든 표를 담는다, 외부 저장소가 없으면 백업하지 않음을 알려 준다', async () => {
+  const B = require('../lib/backup');
+  const d = await B.dump(pool);
+  assert.ok(d.tables.customer.length >= 1);
+  assert.ok(d.tables.license.length >= 1);
+  assert.ok('portal_setting' in d.tables);
+  const st = (await call('/api/admin/backup-status')).body;
+  assert.equal(st.configured, false);
+  assert.equal((await call('/api/admin/backup-now', { method: 'POST' })).status, 502);
+});

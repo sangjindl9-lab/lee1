@@ -141,7 +141,7 @@ test('Railway 연결 전에는 서버를 개설할 수 없고, 연결 확인 후
   assert.equal((await call('/api/admin/files-storage', { method: 'PUT', json: { endpoint: 'http://x', bucket: 'b', accessKeyId: 'a', secretAccessKey: 's' } })).status, 400);
   assert.equal((await call('/api/admin/files-storage', { method: 'PUT', json: { endpoint: 'https://t3.storageapi.dev', bucket: 'eum-files-test', accessKeyId: 'ak-test', secretAccessKey: 'sk-test' } })).status, 200);
   assert.ok(!(await pool.query(`select value from portal_setting where key = 'files_s3'`)).rows[0].value.includes('sk-test'));
-  assert.deepEqual((await call('/api/admin/files-storage')).body, { connected: true, endpoint: 'https://t3.storageapi.dev', bucket: 'eum-files-test' });
+  assert.deepEqual((await call('/api/admin/files-storage')).body, { connected: true, endpoint: 'https://t3.storageapi.dev', bucket: 'eum-files-test', source: 'db' });
 });
 
 test('잘못된 입력은 거부된다', async () => {

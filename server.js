@@ -16,6 +16,7 @@ const { createPool, migrate } = require('./lib/db');
 const L = require('./lib/license');
 const R = require('./lib/railway');
 const G = require('./lib/github');
+const B = require('./lib/backup');
 
 const env = (k, d) => (process.env[k] ?? d);
 const PORT = Number(env('PORT', 8080));
@@ -423,11 +424,31 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
   // 고객 첨부파일 공용 저장소 (Railway 버킷 eum-files 등 S3 호환) — 새로 개설하는 호스팅 고객 서버에 넣어 준다
   const filesConf = async () => {
     const stored = await setting('files_s3');
-    return stored ? unseal(stored) : null;
+    if (stored) return unseal(stored);
+    // 발급 사이트와 같은 Railway 프로젝트의 버킷을 참조 변수로 연결해 둔 경우
+    const e = process.env;
+    return e.FILES_S3_BUCKET && e.FILES_S3_ACCESS_KEY_ID ? { endpoint: e.FILES_S3_ENDPOINT, bucket: e.FILES_S3_BUCKET, region: e.FILES_S3_REGION || 'auto', accessKeyId: e.FILES_S3_ACCESS_KEY_ID, secretAccessKey: e.FILES_S3_SECRET_ACCESS_KEY } : null;
   };
+  /** 고객 서버 외부 백업 — 발급 사이트의 백업 저장소를 고객별 폴더로 나눠 쓴다 */
+  const backupConf = () => {
+    const e = process.env;
+    return e.BACKUP_S3_BUCKET && e.BACKUP_S3_ACCESS_KEY_ID ? { endpoint: e.BACKUP_S3_ENDPOINT, bucket: e.BACKUP_S3_BUCKET, region: e.BACKUP_S3_REGION || 'auto', accessKeyId: e.BACKUP_S3_ACCESS_KEY_ID, secretAccessKey: e.BACKUP_S3_SECRET_ACCESS_KEY } : null;
+  };
+  admin.get('/backup-status', wrap(async (req, res) => {
+    const last = await setting('portal_backup_last');
+    res.json({ configured: B.configured(), last: last ? JSON.parse(last) : null });
+  }));
+  admin.post('/backup-now', wrap(async (req, res) => {
+    let r;
+    try { r = await B.runBackup(pool); } catch (e) { r = { ok: false, message: `발급 사이트 백업 실패: ${e.message}` }; }
+    await putSetting('portal_backup_last', JSON.stringify({ ...r, at: new Date().toISOString() }));
+    audit(req, 'BACKUP', r.message);
+    if (!r.ok) throw bad(r.message, 502);
+    res.json(r);
+  }));
   admin.get('/files-storage', wrap(async (req, res) => {
     const c = await filesConf();
-    res.json({ connected: !!c, endpoint: c?.endpoint ?? null, bucket: c?.bucket ?? null });
+    res.json({ connected: !!c, endpoint: c?.endpoint ?? null, bucket: c?.bucket ?? null, source: (await setting('files_s3')) ? 'db' : c ? 'env' : null });
   }));
   admin.put('/files-storage', wrap(async (req, res) => {
     const b = req.body ?? {};
@@ -490,6 +511,7 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
         dockerfilePath: 'deploy/render/Dockerfile',
         licenseServerUrl: publicUrl,
         s3: await filesConf(),
+        backup: backupConf(),
         sleep: railwaySleep,
         waitTimeoutMs: railwayWaitMs,
         onStep: (step, data) => q('update server_job set step = $2, data = $3, updated_at = now() where customer_id = $1', [customerId, step, data]),
@@ -880,6 +902,7 @@ async function main() {
   }
   const app = buildApp({ pool, privateKey, adminPassword: process.env.ADMIN_PASSWORD, sessionSecret: process.env.SESSION_SECRET });
   await app.locals.resumeJobs();
+  B.schedule(pool, (r) => pool.query(`insert into portal_setting(key, value) values ('portal_backup_last', $1) on conflict (key) do update set value = excluded.value, updated_at = now()`, [JSON.stringify(r)]));
   app.listen(PORT, '0.0.0.0', () => console.log(`이음ERP 라이선스 발급 관리 시작 :${PORT}\n판매자 공개키:\n${L.publicKeyPem(privateKey)}`));
 }
 

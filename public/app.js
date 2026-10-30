@@ -669,7 +669,7 @@ async function pageRequests() {
 // ── 설정 ───────────────────────────────────────────────────────
 async function pageSettings() {
   loading('settings');
-  const [me, rw, gh, fs] = await Promise.all([api('/me'), api('/railway'), api('/github'), api('/files-storage')]);
+  const [me, rw, gh, fs, bk] = await Promise.all([api('/me'), api('/railway'), api('/github'), api('/files-storage'), api('/backup-status')]);
   shell('settings', `
     <div class="page-head"><div><h1>설정</h1><p>관리자 비밀번호와 판매자 서명키 정보입니다.</p></div></div>
     <section class="panel"><header><h2>관리자 비밀번호 변경</h2><span class="muted small">${me.passwordChangedAt ? '마지막 변경 ' + dt(me.passwordChangedAt) : '처음 받은 비밀번호 사용 중'}</span></header>
@@ -694,9 +694,14 @@ async function pageSettings() {
         <div class="row end" style="margin-top:12px"><button class="btn primary">연결 확인 후 저장</button></div>
       </form>
     </section>
-    <section class="panel"><header><h2>고객 파일 저장소 (사진·첨부)</h2>${fs.connected ? `<span class="badge ok">연결됨 · ${esc(fs.bucket)}</span>` : '<span class="badge warn">연결 안 됨 — 고객 서버 디스크에 저장</span>'}</header>
+    <section class="panel"><header><h2>백업</h2>${bk.configured ? (bk.last?.ok ? '<span class="badge ok">정상</span>' : bk.last ? '<span class="badge seal">실패</span>' : '<span class="badge">첫 백업 대기</span>') : '<span class="badge warn">외부 백업 저장소 없음</span>'}</header><div class="body">
+      <p class="muted" style="margin-top:0">이 사이트(고객·라이선스·계약·청구·요청 대장)는 매일 새벽 4시에 다른 지역(암스테르담) 저장소로 백업되고 60일 보관됩니다. 새로 개설하는 호스팅 고객 서버도 매일 DB와 첨부파일 사본이 같은 저장소의 고객별 폴더로 복사됩니다.</p>
+      ${bk.last ? `<p style="margin:0 0 10px" class="${bk.last.ok ? '' : 'tone-seal'}">${dt(bk.last.at)} — ${esc(bk.last.message)}</p>` : ''}
+      <div class="row end"><button class="btn" id="bknow" ${bk.configured ? '' : 'disabled'}>지금 백업</button></div>
+    </div></section>
+    <section class="panel"><header><h2>고객 파일 저장소 (사진·첨부)</h2>${fs.connected ? `<span class="badge ok">연결됨 · ${esc(fs.bucket)}${fs.source === 'env' ? ' · 자동' : ''}</span>` : '<span class="badge warn">연결 안 됨 — 고객 서버 디스크에 저장</span>'}</header>
       <form id="fsf" class="body" autocomplete="off">
-        <p class="muted" style="margin-top:0">새로 개설하는 호스팅형 고객 서버의 사진·첨부파일을 이 저장소(S3 호환 버킷)에 고객별 폴더(<span class="mono">customers/사업자번호/</span>)로 저장합니다. Railway → <b>eum-files</b> 프로젝트 → 버킷 → <b>Credentials</b> 탭의 값을 붙여 넣으세요. 키는 암호화되어 저장되고 다시 화면에 나오지 않습니다.</p>
+        <p class="muted" style="margin-top:0">새로 개설하는 호스팅형 고객 서버의 사진·첨부파일을 이 저장소(S3 호환 버킷)에 고객별 폴더(<span class="mono">customers/사업자번호/</span>)로 저장합니다. 기본은 발급 사이트 프로젝트의 버킷이 자동으로 연결되어 있고, 다른 저장소(Cloudflare R2 등)로 바꿀 때만 아래에 입력하세요. 키는 암호화되어 저장되고 다시 화면에 나오지 않습니다.</p>
         <div class="form-grid">
           <label class="f">Endpoint<input name="endpoint" value="${esc(fs.endpoint ?? 'https://t3.storageapi.dev')}" required /></label>
           <label class="f">Bucket Name<input name="bucket" value="${esc(fs.bucket ?? '')}" placeholder="eum-files-…" required /></label>
@@ -719,6 +724,10 @@ async function pageSettings() {
       <div class="note warn" style="margin-top:12px">비밀키(서명키)는 이 서버의 환경변수에만 있고 화면에는 나오지 않습니다. 따로 보관한 백업 파일을 잃어버리지 마세요. 비밀키가 유출되면 누구나 라이선스를 만들 수 있으니 즉시 키를 교체해야 합니다.</div>
     </div></section>`);
   document.getElementById('cp').onclick = () => copy(me.publicKey, '공개키를 복사했습니다');
+  document.getElementById('bknow').onclick = async (e) => {
+    e.target.disabled = true; e.target.textContent = '백업 중…';
+    try { const r = await api('/backup-now', { method: 'POST' }); toast(r.message); pageSettings(); } catch (err) { toast(err.message, 'error'); e.target.disabled = false; e.target.textContent = '지금 백업'; }
+  };
   document.getElementById('fsf').onsubmit = async (e) => {
     e.preventDefault();
     try { await api('/files-storage', { method: 'PUT', json: formData(e.target) }); toast('파일 저장소를 연결했습니다'); pageSettings(); } catch (err) { toast(err.message, 'error'); }
