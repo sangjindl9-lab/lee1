@@ -149,6 +149,10 @@ function customerForm(c = {}) {
   </div>`;
 }
 const formData = (form) => Object.fromEntries(new FormData(form).entries());
+/** 따로 파는 옵션 기능 — 라이선스 modules 에 이름이 들어가면 고객 ERP 공무지원 메뉴에 나타난다 */
+const OPTIONS = [['geomcheuk', '검측서류'], ['gongjung', '예정공정표']];
+const optionBoxes = (mods = []) => `<div class="f wide"><span>옵션 (공무지원)</span><div class="row" style="gap:16px;margin-top:6px">${OPTIONS.map(([v, l]) => `<label style="display:flex;gap:6px;align-items:center;font-weight:400"><input type="checkbox" name="opt" value="${v}" ${mods.includes(v) ? 'checked' : ''} /> ${l}</label>`).join('')}</div><span class="hint">체크한 옵션만 고객 ERP의 공무지원 메뉴에 보입니다. 꺼도 작성한 자료는 지워지지 않습니다.</span></div>`;
+const pickedModules = (form, extra = '') => [...form.querySelectorAll('input[name=opt]:checked')].map((x) => x.value).concat(String(extra).split(/[,\s]+/).filter(Boolean)).join(',');
 
 async function pageNewCustomer() {
   loading('customers');
@@ -161,6 +165,7 @@ async function pageNewCustomer() {
       <section class="panel"><header><h2>2. 라이선스 (연간 구독)</h2></header><div class="body"><div class="form-grid">
         <label class="f">사용자 수 *<input name="maxUsers" type="number" min="1" max="10000" value="10" required /></label>
         <label class="f">저장 용량 (GB) *<input name="storageGB" type="number" min="0.25" max="1024" step="0.25" value="1" required /><span class="hint">데이터베이스 + 첨부파일 합계 · 기본 1GB</span></label>
+        ${optionBoxes()}
         <label class="f">금액 (원)<input name="amount" type="number" min="0" step="1000" placeholder="0" /><span class="hint">매출 집계용 · 공급가액 기준 권장</span></label>
         <label class="f">시작일<input name="startsOn" type="date" value="${start}" /></label>
         <label class="f">만료일<input name="expiresAt" type="date" value="${oneYear(start)}" /><span class="hint">기본 1년</span></label>
@@ -203,7 +208,7 @@ async function pageNewCustomer() {
     let id;
     try {
       ({ id } = await api('/customers', { method: 'POST', json: f }));
-      await api(`/customers/${id}/licenses`, { method: 'POST', json: { kind: 'NEW', maxUsers: Number(f.maxUsers), storageGB: Number(f.storageGB || 1), amount: Number(f.amount || 0), startsOn: f.startsOn, expiresAt: f.expiresAt, memo: f.licMemo || undefined } });
+      await api(`/customers/${id}/licenses`, { method: 'POST', json: { kind: 'NEW', maxUsers: Number(f.maxUsers), storageGB: Number(f.storageGB || 1), modules: pickedModules(form), amount: Number(f.amount || 0), startsOn: f.startsOn, expiresAt: f.expiresAt, memo: f.licMemo || undefined } });
       if (f.deployment === 'HOSTED' && rw.connected && f.install === 'now') {
         btn.textContent = '서버 주소 만드는 중…';
         const j = await api(`/customers/${id}/server`, { method: 'POST', json: { adminId: f.adminId, companyCode: f.companyCode } });
@@ -409,7 +414,8 @@ function issueDialog(c, kind) {
     body = `<div class="form-grid">
       <label class="f">사용자 수 *<input name="maxUsers" type="number" min="1" max="10000" required value="${cur?.maxUsers ?? 10}" /></label>
       <label class="f">저장 용량 (GB) *<input name="storageGB" type="number" min="0.25" max="1024" step="0.25" required value="${+((cur?.storageMB ?? 1024) / 1024).toFixed(2)}" /><span class="hint">현재 사용 ${c.usedMB != null ? gb(c.usedMB) : '확인 전'}</span></label>
-      <label class="f wide">맞춤 모듈<input name="modules" value="${esc((cur?.modules ?? []).join(', '))}" placeholder="예: samwoo-cable" spellcheck="false" /><span class="hint">이 고객만 쓰는 기능의 모듈 이름 (Claude가 알려 준 이름). 여러 개는 쉼표로. 비우면 맞춤 기능 없음</span></label>
+      ${optionBoxes(cur?.modules ?? [])}
+      <label class="f wide">맞춤 모듈<input name="modules" value="${esc((cur?.modules ?? []).filter((m) => !OPTIONS.some(([v]) => v === m)).join(', '))}" placeholder="예: samwoo-cable" spellcheck="false" /><span class="hint">이 고객만 쓰는 기능의 모듈 이름 (Claude가 알려 준 이름). 여러 개는 쉼표로. 비우면 맞춤 기능 없음</span></label>
       <label class="f">금액 (원)<input name="amount" type="number" min="0" step="1000" value="${kind === 'CHANGE' ? 0 : ''}" placeholder="0" /><span class="hint">매출 집계용 · 공급가액 기준 권장</span></label>
       ${kind === 'CHANGE' ? '' : `<label class="f">시작일<input name="startsOn" type="date" value="${start}" /></label>`}
       <label class="f">만료일<input name="expiresAt" type="date" value="${end}" /><span class="hint">${kind === 'CHANGE' ? '보통 기존 만료일 그대로' : '연간 구독: 시작일부터 1년'}</span></label>
@@ -433,7 +439,7 @@ function issueDialog(c, kind) {
     const json = { kind, memo: f.memo || undefined };
     if (f.maxUsers) json.maxUsers = Number(f.maxUsers);
     if (f.storageGB) json.storageGB = Number(f.storageGB);
-    if (f.modules != null) json.modules = f.modules;
+    if (f.modules != null) json.modules = pickedModules(e.target, f.modules);
     if (f.amount) json.amount = Number(f.amount);
     if (f.startsOn) json.startsOn = f.startsOn;
     if (f.expiresAt) json.expiresAt = f.expiresAt;
