@@ -97,6 +97,22 @@ test('고객 서버 확인: 설치 코드 + 사업자번호가 맞아야 최신 
   assert.ok(c.lastSeenAt);
 });
 
+test('저장 용량: 기본 1GB, 변경 발급으로 늘리고 연장 때는 유지, 고객 서버가 알려 준 사용량 기록', async () => {
+  const cur = (await call('/api/admin/customers/' + cust.id)).body;
+  assert.equal(cur.current.storageMB, 1024, '입력 없으면 1GB');
+  assert.equal(L.verify((await call('/api/admin/licenses/' + cur.licenses[0].id)).body.licenseText, publicKey).storageMB, 1024);
+  assert.equal((await call(`/api/admin/customers/${cust.id}/licenses`, { method: 'POST', json: { kind: 'CHANGE', storageGB: 0.1 } })).status, 400);
+  const ch = await call(`/api/admin/customers/${cust.id}/licenses`, { method: 'POST', json: { kind: 'CHANGE', storageGB: 5 } });
+  assert.equal(ch.status, 201);
+  assert.equal(L.verify(ch.body.licenseText, publicKey).storageMB, 5120);
+  const rn = await call(`/api/admin/customers/${cust.id}/licenses`, { method: 'POST', json: { kind: 'RENEW' } });
+  assert.equal(L.verify(rn.body.licenseText, publicKey).storageMB, 5120, '연장은 용량 유지');
+  await call('/api/v1/check', { method: 'POST', auth: false, json: { code: cust.activationCode, bizRegNos: ['2208660440'], activeUsers: 7, usedMB: 4300 } });
+  const c = (await call('/api/admin/customers/' + cust.id)).body;
+  assert.equal(c.usedMB, 4300);
+  assert.equal(c.current.storageMB, 5120);
+});
+
 test('사용 중지는 어제 만료로 재발급, 해제하면 원래 만료일로 돌아온다', async () => {
   const keep = (await call('/api/admin/customers/' + cust.id)).body.current.expiresAt;
   const s = await call(`/api/admin/customers/${cust.id}/licenses`, { method: 'POST', json: { kind: 'SUSPEND', memo: '연체' } });
@@ -113,7 +129,7 @@ test('대시보드·발급 대장·CSV·활동 기록', async () => {
   assert.equal(s.customers, 1);
   assert.equal(s.revenueYear.total, 2400000);
   const list = (await call('/api/admin/licenses')).body;
-  assert.equal(list.length, 5);
+  assert.equal(list.length, 7);
   assert.equal(list[0].licenseText, undefined, '목록에는 라이선스 원문을 싣지 않는다');
   const csv = await call('/api/admin/licenses?format=csv');
   assert.match(csv.body, /발급일시/);

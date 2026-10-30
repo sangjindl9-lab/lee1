@@ -235,3 +235,5 @@ div.f { display: grid; gap: 5px; align-content: start; font-size: 12.5px; color:
 .choice .small { grid-column: 2; }
 @media (max-width: 640px) { .choice { grid-template-columns: 1fr; } }
 .brand .mark-img { height: 22px; width: auto; flex: none; }
+.tone-warn { color: var(--warn); font-weight: 600; }
+.tone-seal { color: var(--seal); font-weight: 600; }

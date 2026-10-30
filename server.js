@@ -170,7 +170,7 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
 
   /** 고객별 최신 라이선스와 상태 */
   const CUSTOMER_STATE_SQL = `
-    select c.*, l.id as lic_row_id, l.license_id, l.kind as lic_kind, l.max_users, l.expires_at, l.issued_at as lic_issued_at
+    select c.*, l.id as lic_row_id, l.license_id, l.kind as lic_kind, l.max_users, l.storage_mb, l.expires_at, l.issued_at as lic_issued_at
     from customer c
     left join lateral (select * from license where customer_id = c.id order by issued_at desc limit 1) l on true`;
   const ymd = (d) => (d ? (d instanceof Date ? new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10) : String(d).slice(0, 10)) : null);
@@ -187,11 +187,12 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
     deployment: r.deployment, serverUrl: r.server_url, activationCode: r.activation_code, memo: r.memo,
     createdAt: r.created_at, lastSeenAt: r.last_seen_at, lastActiveUsers: r.last_active_users, lastAppVersion: r.last_app_version,
     stage: r.stage ?? (r.license_id ? '운영중' : '리드'),
-    current: r.license_id ? { licenseId: r.license_id, kind: r.lic_kind, maxUsers: r.max_users, expiresAt: ymd(r.expires_at), daysLeft: L.daysUntil(ymd(r.expires_at)), issuedAt: r.lic_issued_at } : null,
+    usedMB: r.last_used_mb, storageCheckedAt: r.last_storage_at,
+    current: r.license_id ? { licenseId: r.license_id, kind: r.lic_kind, maxUsers: r.max_users, storageMB: r.storage_mb, expiresAt: ymd(r.expires_at), daysLeft: L.daysUntil(ymd(r.expires_at)), issuedAt: r.lic_issued_at } : null,
     state: stateOf(r),
   });
   const shapeLicense = (r) => ({
-    id: r.id, customerId: r.customer_id, customerName: r.customer_name, bizRegNo: r.biz_reg_no, licenseId: r.license_id, kind: r.kind, maxUsers: r.max_users,
+    id: r.id, customerId: r.customer_id, customerName: r.customer_name, bizRegNo: r.biz_reg_no, licenseId: r.license_id, kind: r.kind, maxUsers: r.max_users, storageMB: r.storage_mb,
     startsOn: ymd(r.starts_on), expiresAt: ymd(r.expires_at), edition: r.edition, amount: Number(r.amount), memo: r.memo, issuedAt: r.issued_at, licenseText: r.license_text,
   });
 
@@ -293,11 +294,14 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
     const kind = String(b.kind ?? 'NEW');
     if (!['NEW', 'RENEW', 'CHANGE', 'SUSPEND', 'RESUME'].includes(kind)) throw bad('발급 종류가 올바르지 않습니다');
     const today = L.kstToday();
-    const last = c.license_id ? { maxUsers: c.max_users, expiresAt: ymd(c.expires_at), kind: c.lic_kind } : null;
+    const last = c.license_id ? { maxUsers: c.max_users, storageMB: c.storage_mb, expiresAt: ymd(c.expires_at), kind: c.lic_kind } : null;
     if (kind !== 'NEW' && !last) throw bad('먼저 신규 라이선스를 발급해 주세요');
     const isDate = (v) => /^\d{4}-\d{2}-\d{2}$/.test(String(v ?? ''));
 
     let maxUsers = Number(b.maxUsers ?? last?.maxUsers ?? 10);
+    // 저장 용량 — 화면은 GB 로 받는다. 기본 1GB, 연장·변경 때 입력이 없으면 기존 용량 유지
+    const storageMB = b.storageGB != null && b.storageGB !== '' ? Math.round(Number(b.storageGB) * 1024) : (last?.storageMB ?? 1024);
+    if (!Number.isInteger(storageMB) || storageMB < 256 || storageMB > 1024 * 1024) throw bad('저장 용량은 0.25GB~1024GB 사이로 입력해 주세요');
     let startsOn;
     let expiresAt;
     if (kind === 'NEW') {
@@ -335,6 +339,7 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
       licensee: c.name,
       bizRegNo: c.biz_reg_no,
       maxUsers,
+      storageMB,
       issuedAt: new Date().toISOString(),
       expiresAt,
       modules: ['all'],
@@ -344,12 +349,12 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
     const text = L.sign(payload, privateKey);
     if (!L.verify(text, publicKey)) throw bad('서명 확인에 실패했습니다', 500);
     const { rows: [row] } = await q(
-      `insert into license(customer_id, license_id, kind, max_users, starts_on, expires_at, edition, amount, memo, license_text, issued_at)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) returning *`,
-      [c.id, payload.licenseId, kind, maxUsers, startsOn, expiresAt, edition, amount, b.memo ? String(b.memo).slice(0, 500) : null, text, payload.issuedAt],
+      `insert into license(customer_id, license_id, kind, max_users, starts_on, expires_at, edition, amount, memo, license_text, issued_at, storage_mb)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) returning *`,
+      [c.id, payload.licenseId, kind, maxUsers, startsOn, expiresAt, edition, amount, b.memo ? String(b.memo).slice(0, 500) : null, text, payload.issuedAt, storageMB],
     );
     const KIND = { NEW: '신규', RENEW: '연장', CHANGE: '변경', SUSPEND: '사용 중지', RESUME: '중지 해제' };
-    audit(req, 'LICENSE_ISSUE', `${KIND[kind]} 발급 ${c.name} ${maxUsers}명 ~${expiresAt}${amount ? ` ${amount.toLocaleString('ko-KR')}원` : ''}`);
+    audit(req, 'LICENSE_ISSUE', `${KIND[kind]} 발급 ${c.name} ${maxUsers}명 ${+(storageMB / 1024).toFixed(2)}GB ~${expiresAt}${amount ? ` ${amount.toLocaleString('ko-KR')}원` : ''}`);
     res.status(201).json(shapeLicense({ ...row, customer_name: c.name, biz_reg_no: c.biz_reg_no }));
   }));
 
@@ -818,7 +823,9 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
       throw bad('이 설치 코드는 다른 회사용입니다. 회사 정보의 사업자등록번호를 확인해 주세요', 403);
     }
     const users = Number.isFinite(Number(b.activeUsers)) ? Math.trunc(Number(b.activeUsers)) : null;
-    await q('update customer set last_seen_at = now(), last_active_users = $2, last_app_version = $3 where id = $1', [c.id, users, b.appVersion ? String(b.appVersion).slice(0, 30) : null]);
+    const usedMB = Number.isFinite(Number(b.usedMB)) ? Math.max(0, Math.round(Number(b.usedMB))) : null;
+    await q(`update customer set last_seen_at = now(), last_active_users = $2, last_app_version = $3${usedMB != null ? ', last_used_mb = $4, last_storage_at = now()' : ''} where id = $1`,
+      usedMB != null ? [c.id, users, b.appVersion ? String(b.appVersion).slice(0, 30) : null, usedMB] : [c.id, users, b.appVersion ? String(b.appVersion).slice(0, 30) : null]);
     const [lic] = (await q('select license_text from license where customer_id = $1 order by issued_at desc limit 1', [c.id])).rows;
     res.json({ license: lic?.license_text ?? null, licensee: c.name });
   }));

@@ -11,6 +11,14 @@ const today = () => new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 1
 const KIND = { NEW: ['신규', 'steel'], RENEW: ['연장', 'ok'], CHANGE: ['변경', ''], SUSPEND: ['사용 중지', 'seal'], RESUME: ['중지 해제', 'ok'] };
 const STATE = { ACTIVE: ['사용 중', 'ok'], EXPIRING: ['만료 임박', 'warn'], EXPIRED: ['만료', 'seal'], SUSPENDED: ['사용 중지', 'seal'], NONE: ['미발급', ''] };
 const DEPLOY = { HOSTED: '호스팅형', ONPREM: '설치형' };
+const gb = (mb) => (mb >= 1024 ? `${+(mb / 1024).toFixed(mb % 1024 ? 1 : 0)}GB` : `${mb}MB`);
+/** 데이터 사용량 표시 — 80% 이상 주의, 100% 이상 초과 */
+const usage = (used, quota) => {
+  if (used == null || !quota) return '<span class="muted">–</span>';
+  const pct = Math.round((used / quota) * 100);
+  const tone = pct >= 100 ? 'seal' : pct >= 80 ? 'warn' : '';
+  return `<span class="num ${tone ? 'tone-' + tone : ''}">${gb(used)} / ${gb(quota)} (${pct}%)</span>`;
+};
 const badge = ([label, tone]) => `<span class="badge ${tone}">${esc(label)}</span>`;
 
 function toast(msg, kind = 'ok') {
@@ -114,11 +122,12 @@ async function pageCustomers() {
     <div class="page-head"><div><h1>고객</h1><p>라이선스를 판매한 회사입니다. 고객을 눌러 라이선스를 발급·연장하세요.</p></div>
       <div class="row"><form id="sf" class="row"><input class="search" name="q" placeholder="회사명·사업자번호·담당자" value="${esc(term)}" /></form><a class="btn primary" href="#/customers/new">+ 고객 등록</a></div></div>
     <section class="panel">${rows.length ? `<div class="table-wrap"><table>
-      <thead><tr><th>회사명</th><th>사업자등록번호</th><th>영업 단계</th><th class="hide-sm">방식</th><th class="r">사용자</th><th>만료일</th><th>상태</th><th class="hide-sm">최근 접속</th></tr></thead>
+      <thead><tr><th>회사명</th><th>사업자등록번호</th><th>영업 단계</th><th class="hide-sm">방식</th><th class="r">사용자</th><th class="hide-sm r">데이터</th><th>만료일</th><th>상태</th><th class="hide-sm">최근 접속</th></tr></thead>
       <tbody>${rows.map((c) => `<tr class="click" data-go="#/customers/${c.id}">
         <td><b>${esc(c.name)}</b>${c.contactName ? `<div class="muted small">${esc(c.contactName)}</div>` : ''}</td>
         <td class="num">${biz(c.bizRegNo)}</td><td>${badge([c.stage, STAGE_TONE[c.stage] ?? ''])}</td><td class="hide-sm">${DEPLOY[c.deployment]}</td>
         <td class="r num">${c.current ? `${c.lastActiveUsers ?? '–'} / ${c.current.maxUsers}` : '–'}</td>
+        <td class="hide-sm r small">${c.current ? usage(c.usedMB, c.current.storageMB) : '–'}</td>
         <td class="num">${c.current ? esc(c.current.expiresAt) : '–'}</td><td>${badge(STATE[c.state])}</td>
         <td class="hide-sm small muted">${c.lastSeenAt ? dt(c.lastSeenAt) : '연결 전'}</td></tr>`).join('')}</tbody></table></div>`
       : `<div class="empty">${term ? '검색 결과가 없습니다' : '등록된 고객이 없습니다. 첫 고객을 등록하세요.'}</div>`}</section>`);
@@ -151,6 +160,7 @@ async function pageNewCustomer() {
       <section class="panel"><header><h2>1. 고객 정보</h2></header><div class="body">${customerForm()}</div></section>
       <section class="panel"><header><h2>2. 라이선스 (연간 구독)</h2></header><div class="body"><div class="form-grid">
         <label class="f">사용자 수 *<input name="maxUsers" type="number" min="1" max="10000" value="10" required /></label>
+        <label class="f">저장 용량 (GB) *<input name="storageGB" type="number" min="0.25" max="1024" step="0.25" value="1" required /><span class="hint">데이터베이스 + 첨부파일 합계 · 기본 1GB</span></label>
         <label class="f">금액 (원)<input name="amount" type="number" min="0" step="1000" placeholder="0" /><span class="hint">매출 집계용 · 공급가액 기준 권장</span></label>
         <label class="f">시작일<input name="startsOn" type="date" value="${start}" /></label>
         <label class="f">만료일<input name="expiresAt" type="date" value="${oneYear(start)}" /><span class="hint">기본 1년</span></label>
@@ -193,7 +203,7 @@ async function pageNewCustomer() {
     let id;
     try {
       ({ id } = await api('/customers', { method: 'POST', json: f }));
-      await api(`/customers/${id}/licenses`, { method: 'POST', json: { kind: 'NEW', maxUsers: Number(f.maxUsers), amount: Number(f.amount || 0), startsOn: f.startsOn, expiresAt: f.expiresAt, memo: f.licMemo || undefined } });
+      await api(`/customers/${id}/licenses`, { method: 'POST', json: { kind: 'NEW', maxUsers: Number(f.maxUsers), storageGB: Number(f.storageGB || 1), amount: Number(f.amount || 0), startsOn: f.startsOn, expiresAt: f.expiresAt, memo: f.licMemo || undefined } });
       if (f.deployment === 'HOSTED' && rw.connected && f.install === 'now') {
         btn.textContent = '서버 주소 만드는 중…';
         const j = await api(`/customers/${id}/server`, { method: 'POST', json: { adminId: f.adminId, companyCode: f.companyCode } });
@@ -219,7 +229,7 @@ async function pageCustomer(id) {
       <div class="row">
         ${!cur ? `<button class="btn primary" data-issue="NEW">신규 라이선스 발급</button>` : suspended ? `<button class="btn primary" data-issue="RESUME">중지 해제</button>` : `
           <button class="btn primary" data-issue="RENEW">1년 연장</button>
-          <button class="btn" data-issue="CHANGE">사용자 수 변경</button>
+          <button class="btn" data-issue="CHANGE">사용자 수·용량 변경</button>
           <button class="btn danger" data-issue="SUSPEND">사용 중지</button>`}
         <button class="btn" id="reqbtn">수정 요청</button>
       </div></div>
@@ -229,6 +239,7 @@ async function pageCustomer(id) {
         ${cur ? `<dl class="dl">
           <div><dt>만료일</dt><dd class="num">${esc(cur.expiresAt)} <span class="muted">(${cur.daysLeft < 0 ? '만료' : cur.daysLeft + '일 남음'})</span></dd></div>
           <div><dt>사용자 수</dt><dd class="num">${cur.maxUsers}명</dd></div>
+          <div><dt>데이터 사용량</dt><dd>${usage(c.usedMB, cur.storageMB)}${c.storageCheckedAt ? ` <span class="small muted">${dt(c.storageCheckedAt)} 기준</span>` : ''}</dd></div>
           <div><dt>마지막 발급</dt><dd>${badge(KIND[cur.kind])}</dd></div>
           <div><dt>ERP 사용 중 인원</dt><dd class="num">${c.lastActiveUsers ?? '–'}명</dd></div>
           <div><dt>ERP 최근 접속</dt><dd class="small">${c.lastSeenAt ? dt(c.lastSeenAt) : '연결 전'}</dd></div>
@@ -249,7 +260,7 @@ async function pageCustomer(id) {
 
     <section class="panel"><header><h2>발급 이력</h2><span class="muted small">${c.licenses.length}건</span></header>
       ${c.licenses.length ? `<div class="table-wrap"><table><thead><tr><th>발급일시</th><th>종류</th><th class="r">사용자</th><th>기간</th><th class="r">금액</th><th class="hide-sm">메모</th><th></th></tr></thead><tbody>
-        ${c.licenses.map((l, i) => `<tr><td class="num small">${dt(l.issuedAt)}${i === 0 ? ' <span class="badge steel">현재</span>' : ''}</td><td>${badge(KIND[l.kind])}</td><td class="r num">${l.maxUsers}</td>
+        ${c.licenses.map((l, i) => `<tr><td class="num small">${dt(l.issuedAt)}${i === 0 ? ' <span class="badge steel">현재</span>' : ''}</td><td>${badge(KIND[l.kind])}</td><td class="r num">${l.maxUsers}<div class="small muted">${gb(l.storageMB ?? 1024)}</div></td>
           <td class="num small">${esc(l.startsOn)} ~ ${esc(l.expiresAt)}</td><td class="r num">${l.amount ? won(l.amount) : '–'}</td><td class="hide-sm small">${esc(l.memo ?? '')}</td>
           <td class="r"><div class="row end"><button class="btn sm" data-copy="${l.id}">복사</button><a class="btn sm" href="/api/admin/licenses/${l.id}?download=1">파일</a></div></td></tr>`).join('')}
       </tbody></table></div>` : '<div class="empty">발급 이력이 없습니다</div>'}
@@ -362,7 +373,7 @@ async function pageDelivery(id) {
         <tr><th>관리자 아이디</th><td class="mono">${esc(d.adminId)}</td></tr>
         <tr><th>임시 비밀번호</th><td class="mono">${esc(d.tempPassword)}</td></tr>
         <tr><th>사용 회사</th><td>${esc(d.name)} (${biz(d.bizRegNo)})</td></tr>
-        <tr><th>라이선스</th><td>사용자 ${d.license.maxUsers}명 · ${esc(d.license.expiresAt)}까지</td></tr>
+        <tr><th>라이선스</th><td>사용자 ${d.license.maxUsers}명 · 저장 용량 ${gb(d.license.storageMB ?? 1024)} · ${esc(d.license.expiresAt)}까지</td></tr>
       </tbody></table>
       <h3 style="font-size:15px;margin:20px 0 6px">처음 사용하실 때</h3>
       <ol style="margin:0;padding-left:20px;line-height:1.9">
@@ -382,7 +393,7 @@ function oneYear(ymd) { const d = new Date(ymd + 'T00:00:00Z'); d.setUTCFullYear
 
 function issueDialog(c, kind) {
   const cur = c.current;
-  const T = { NEW: '신규 라이선스 발급', RENEW: '1년 연장', CHANGE: '사용자 수 변경', SUSPEND: '사용 중지', RESUME: '중지 해제' }[kind];
+  const T = { NEW: '신규 라이선스 발급', RENEW: '1년 연장', CHANGE: '사용자 수·용량 변경', SUSPEND: '사용 중지', RESUME: '중지 해제' }[kind];
   let start = today();
   if (kind === 'RENEW' && cur && cur.daysLeft >= 0) start = addDays(cur.expiresAt, 1);
   const end = kind === 'CHANGE' ? cur.expiresAt : oneYear(start);
@@ -395,6 +406,7 @@ function issueDialog(c, kind) {
   } else {
     body = `<div class="form-grid">
       <label class="f">사용자 수 *<input name="maxUsers" type="number" min="1" max="10000" required value="${cur?.maxUsers ?? 10}" /></label>
+      <label class="f">저장 용량 (GB) *<input name="storageGB" type="number" min="0.25" max="1024" step="0.25" required value="${+((cur?.storageMB ?? 1024) / 1024).toFixed(2)}" /><span class="hint">현재 사용 ${c.usedMB != null ? gb(c.usedMB) : '확인 전'}</span></label>
       <label class="f">금액 (원)<input name="amount" type="number" min="0" step="1000" value="${kind === 'CHANGE' ? 0 : ''}" placeholder="0" /><span class="hint">매출 집계용 · 공급가액 기준 권장</span></label>
       ${kind === 'CHANGE' ? '' : `<label class="f">시작일<input name="startsOn" type="date" value="${start}" /></label>`}
       <label class="f">만료일<input name="expiresAt" type="date" value="${end}" /><span class="hint">${kind === 'CHANGE' ? '보통 기존 만료일 그대로' : '연간 구독: 시작일부터 1년'}</span></label>
@@ -417,6 +429,7 @@ function issueDialog(c, kind) {
     const f = formData(e.target);
     const json = { kind, memo: f.memo || undefined };
     if (f.maxUsers) json.maxUsers = Number(f.maxUsers);
+    if (f.storageGB) json.storageGB = Number(f.storageGB);
     if (f.amount) json.amount = Number(f.amount);
     if (f.startsOn) json.startsOn = f.startsOn;
     if (f.expiresAt) json.expiresAt = f.expiresAt;
