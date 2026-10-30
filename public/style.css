@@ -228,3 +228,9 @@ div.f { display: grid; gap: 5px; align-content: start; font-size: 12.5px; color:
 @media (max-width: 860px) { table.wide-table { min-width: 820px; } }
 .addr { display: grid; gap: 6px; padding: 12px; margin-bottom: 12px; border: 1px solid var(--steel); border-radius: var(--radius); background: var(--steel-soft); }
 .addr a.mono { font-size: 15px; font-weight: 600; color: var(--steel); overflow-wrap: anywhere; }
+.choice { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+.choice label { display: grid; grid-template-columns: auto 1fr; column-gap: 8px; row-gap: 2px; align-items: center; border: 1px solid var(--line-strong); border-radius: var(--radius); padding: 10px 12px; cursor: pointer; background: var(--surface); }
+.choice label:has(input:checked) { border-color: var(--steel); background: var(--steel-soft); }
+.choice input { width: auto; min-height: 0; margin: 0; }
+.choice .small { grid-column: 2; }
+@media (max-width: 640px) { .choice { grid-template-columns: 1fr; } }

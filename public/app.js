@@ -158,7 +158,11 @@ async function pageNewCustomer() {
       </div></div></section>
       <section class="panel" id="srvsec"><header><h2>3. 고객 전용 서버 (호스팅형)</h2>${rw.connected ? '' : '<span class="badge warn">Railway 연결 필요</span>'}</header><div class="body">
         ${rw.connected ? '' : '<div class="note warn" style="margin-bottom:12px">서버를 자동으로 만들려면 먼저 <a href="#/settings">설정 &gt; Railway 연결</a>을 마쳐 주세요. 지금은 고객 등록과 라이선스만 진행됩니다.</div>'}
-        <div class="form-grid">
+        ${rw.connected ? `<div class="choice" role="radiogroup" aria-label="ERP 설치">
+          <label><input type="radio" name="install" value="now" checked /> <b>지금 ERP 설치</b><span class="small muted">등록과 함께 고객 전용 서버를 만듭니다. 주소는 30초 안에, 설치는 5~10분</span></label>
+          <label><input type="radio" name="install" value="later" /> <b>나중에 설치</b><span class="small muted">고객 등록과 라이선스만. 서버는 고객 화면에서 원할 때 개설</span></label>
+        </div>` : ''}
+        <div class="form-grid" id="srvfields">
           <label class="f">고객 관리자 아이디 *<input name="adminId" value="admin" pattern="[a-z0-9._\\-]{4,32}" required /><span class="hint">고객이 처음 로그인할 아이디 (영문 소문자·숫자 4~32자)</span></label>
           <label class="f">회사 코드 *<input name="companyCode" placeholder="예: HN" pattern="[A-Za-z0-9]{2,10}" required /><span class="hint">ERP 문서번호 앞에 붙는 영문 약어 2~10자</span></label>
         </div>
@@ -171,10 +175,14 @@ async function pageNewCustomer() {
   const sync = () => {
     const hosted = form.deployment.value === 'HOSTED';
     srv.style.display = hosted ? '' : 'none';
-    form.adminId.required = hosted && rw.connected;
-    form.companyCode.required = hosted && rw.connected;
+    const now = hosted && rw.connected && form.install?.value === 'now';
+    document.getElementById('srvfields').style.display = now || !rw.connected ? '' : 'none';
+    form.adminId.required = now;
+    form.companyCode.required = now;
+    document.getElementById('go').textContent = now ? '등록하고 ERP 만들기' : '등록하고 라이선스 발급';
   };
   form.deployment.onchange = sync;
+  form.querySelectorAll('input[name=install]').forEach((r) => (r.onchange = sync));
   sync();
   form.startsOn.onchange = () => { if (form.startsOn.value) form.expiresAt.value = oneYear(form.startsOn.value); };
   form.onsubmit = async (e) => {
@@ -186,7 +194,7 @@ async function pageNewCustomer() {
     try {
       ({ id } = await api('/customers', { method: 'POST', json: f }));
       await api(`/customers/${id}/licenses`, { method: 'POST', json: { kind: 'NEW', maxUsers: Number(f.maxUsers), amount: Number(f.amount || 0), startsOn: f.startsOn, expiresAt: f.expiresAt, memo: f.licMemo || undefined } });
-      if (f.deployment === 'HOSTED' && rw.connected) {
+      if (f.deployment === 'HOSTED' && rw.connected && f.install === 'now') {
         btn.textContent = '서버 주소 만드는 중…';
         const j = await api(`/customers/${id}/server`, { method: 'POST', json: { adminId: f.adminId, companyCode: f.companyCode } });
         toast(j.url ? `등록했습니다 — 접속 주소 ${j.url} (설치 5~10분)` : '등록했습니다. 고객 서버를 만드는 중입니다');
