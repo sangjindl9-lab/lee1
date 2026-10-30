@@ -22,7 +22,7 @@ router = APIRouter(prefix="/api", tags=["system"])
 
 @router.get("/system/status")
 def system_status(p: Principal = Depends(active_principal), db: Session = Depends(get_db)):
-    cams = [c for c in db.scalars(select(Camera).where(Camera.deleted_at.is_(None))) if p.can_site(c.site_id)]
+    cams = [c for c in db.scalars(select(Camera).where(Camera.deleted_at.is_(None))) if p.can_cam(c)]
     sts = {s.camera_id: s for s in db.scalars(select(CameraStatus))}
     counts = {"total": len(cams), "enabled": 0, "recording": 0, "problem": 0, "record_off": 0, "test_sources": 0}
     for c in cams:
@@ -69,7 +69,7 @@ def storage(p: Principal = Depends(require("settings")), db: Session = Depends(g
     per_cam = []
     for cid, n, size, first, last in rows:
         c = cams.get(cid)
-        if c and not p.can_site(c.site_id):
+        if c and not p.can_cam(c):
             continue
         per_cam.append({"camera_id": cid, "name": c.name if c else f"#{cid}", "deleted": bool(c and c.deleted_at),
                         "segments": n, "bytes": int(size or 0), "first": first.isoformat() if first else None,
@@ -162,7 +162,7 @@ def list_events(camera_id: int | None = None, open_only: bool = False, limit: in
     out = []
     for e in db.scalars(q):
         c = cams.get(e.camera_id) if e.camera_id else None
-        if c and not p.can_site(c.site_id):
+        if c and not p.can_cam(c):
             continue
         out.append({"id": e.id, "camera_id": e.camera_id, "camera_name": c.name if c else None, "type": e.type,
                     "type_label": EVENT_TEXT.get(e.type, e.type), "severity": e.severity, "source": e.source,
@@ -184,7 +184,7 @@ def ack_event(event_id: int, body: AckIn, request: Request, p: Principal = Depen
         raise HTTPException(404, "이벤트를 찾을 수 없습니다.")
     if e.camera_id:
         c = db.get(Camera, e.camera_id)
-        if c and not p.can_site(c.site_id):
+        if c and not p.can_cam(c):
             raise HTTPException(404, "이벤트를 찾을 수 없습니다.")
     e.acknowledged_at = utcnow()
     e.acknowledged_by = p.user.id
@@ -227,8 +227,8 @@ def get_layouts(p: Principal = Depends(require("live_view")), db: Session = Depe
 
 @router.put("/layouts")
 def put_layout(body: LayoutIn, p: Principal = Depends(require("live_view")), db: Session = Depends(get_db)):
-    if body.grid not in (1, 4, 9, 16):
-        raise HTTPException(400, "분할은 1·4·9·16 중 하나입니다(25·36분할은 2단계).")
+    if body.grid not in (1, 4, 9, 16, 25, 36):
+        raise HTTPException(400, "분할은 1·4·9·16·25·36 중 하나입니다.")
     cells = (body.cells + [None] * body.grid)[: body.grid]
     row = db.scalar(select(Layout).where(Layout.user_id == p.user.id, Layout.name == body.name))
     if body.is_default:

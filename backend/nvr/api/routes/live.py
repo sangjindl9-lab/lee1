@@ -11,7 +11,9 @@ from sqlalchemy.orm import Session
 from ...audit import audit
 from ...camera_util import mediamtx_path
 from ...config import get_keys, get_settings
-from ...models import AuthSession, Camera, User, utcnow
+from sqlalchemy import select
+
+from ...models import AuthSession, Camera, User, UserCamera, utcnow
 from ...security.crypto import sign_media_token, verify_media_token
 from ...security.permissions import effective_permissions
 from ..deps import Principal, client_ip, get_camera_for, get_db, require
@@ -55,6 +57,8 @@ def live_session(body: LiveIn, request: Request, p: Principal = Depends(require(
         "expires_at": exp,
         "whep_url": f"/rtc/{path}/whep",
         "prefer_hls": s.live_mode == "hls",
+        "allow_audio": p.can("audio"),
+        "has_audio": bool((info.get("audio") or {}) or ((cam.stream_info or {}).get("main") or {}).get("audio")),
         "hls_url": f"/hls/{path}/index.m3u8",
         "codec": codec or None,
         "is_test_source": cam.is_test_source,
@@ -99,6 +103,10 @@ async def mediamtx_auth(request: Request, key: str = "", db: Session = Depends(g
         return Response(status_code=403)
     if "live_view" not in effective_permissions(user.role, user.permissions_override):
         return Response(status_code=403)
-    if user.role != "superadmin" and cam.site_id not in {s.id for s in user.sites}:
-        return Response(status_code=403)
+    if user.role != "superadmin":
+        if cam.site_id not in {s.id for s in user.sites}:
+            return Response(status_code=403)
+        restricted = set(db.scalars(select(UserCamera.camera_id).where(UserCamera.user_id == user.id)))
+        if restricted and cam.id not in restricted:
+            return Response(status_code=403)
     return Response(status_code=200)

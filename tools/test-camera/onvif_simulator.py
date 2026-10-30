@@ -18,15 +18,55 @@ import base64
 import datetime as dt
 import hashlib
 import os
+import socket
+import struct
 import subprocess
 import sys
+import threading
+import time
+import uuid
 import xml.etree.ElementTree as ET
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 SOAP = "http://www.w3.org/2003/05/soap-envelope"
+NS_PTZ = "http://www.onvif.org/ver20/ptz/wsdl"
+NS_EV = "http://www.onvif.org/ver10/events/wsdl"
+NS_SE = "http://www.onvif.org/ver10/search/wsdl"
+NS_RP = "http://www.onvif.org/ver10/replay/wsdl"
 NS = {"tds": "http://www.onvif.org/ver10/device/wsdl", "trt": "http://www.onvif.org/ver10/media/wsdl",
       "tr2": "http://www.onvif.org/ver20/media/wsdl", "tt": "http://www.onvif.org/ver10/schema"}
 CFG = {}
+# PTZ 상태·프리셋, 모션 이벤트 상태(시뮬레이션)
+STATE = {"pan": 0.0, "tilt": 0.0, "zoom": 0.0, "vel": (0.0, 0.0, 0.0), "until": 0.0,
+         "presets": {"1": ("정문", 0.0, 0.0, 0.0), "2": ("주차장", 0.6, -0.2, 0.3)}, "motion": False, "changes": [], "subs": {}}
+LOCK = threading.Lock()
+
+
+def ptz_tick():
+    with LOCK:
+        now = time.time()
+        if now < STATE["until"]:
+            vx, vy, vz = STATE["vel"]
+            STATE["pan"] = max(-1, min(1, STATE["pan"] + vx * 0.1))
+            STATE["tilt"] = max(-1, min(1, STATE["tilt"] + vy * 0.1))
+            STATE["zoom"] = max(0, min(1, STATE["zoom"] + vz * 0.1))
+
+
+def motion_loop(period, length):
+    """period 초마다 length 초 동안 모션 이벤트 발생(시험용)."""
+    while period > 0:
+        time.sleep(period - length)
+        push_motion(True)
+        time.sleep(length)
+        push_motion(False)
+
+
+def push_motion(active):
+    with LOCK:
+        STATE["motion"] = active
+        t = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        for q in STATE["subs"].values():
+            q.append((t, active, "Changed"))
 
 
 def envelope(body):
@@ -150,6 +190,9 @@ class H(BaseHTTPRequestHandler):
             svcs = [(NS["tds"], "/onvif/device_service"), (NS["trt"], "/onvif/media_service")]
             if CFG["media2"]:
                 svcs.append((NS["tr2"], "/onvif/media2_service"))
+            svcs += [(NS_PTZ, "/onvif/ptz_service"), (NS_EV, "/onvif/event_service"),
+                     (NS_SE, "/onvif/search_service"), (NS_RP, "/onvif/replay_service"),
+                     ("http://www.onvif.org/ver10/recording/wsdl", "/onvif/recording_service")]
             items = "".join(f"<tds:Service><tds:Namespace>{n_}</tds:Namespace><tds:XAddr>http://{x}:{p}{path}</tds:XAddr>"
                             f"<tds:Version><tt:Major>2</tt:Major><tt:Minor>0</tt:Minor></tds:Version></tds:Service>"
                             for n_, path in svcs)
@@ -178,7 +221,125 @@ class H(BaseHTTPRequestHandler):
             if ns == NS["tr2"]:
                 return self.send(200, envelope(f"<tr2:GetSnapshotUriResponse><tr2:Uri>{uri}</tr2:Uri></tr2:GetSnapshotUriResponse>"))
             return self.send(200, envelope(f"<trt:GetSnapshotUriResponse><trt:MediaUri><tt:Uri>{uri}</tt:Uri></trt:MediaUri></trt:GetSnapshotUriResponse>"))
+        r = self.extra(name, ns, op, root, token)
+        if r is not None:
+            return self.send(*r) if isinstance(r, tuple) else self.send(200, r)
         return self.send(400, fault("ActionNotSupported", f"{name} not supported"))
+
+    def extra(self, name, ns, op, root, token):
+        x, p = CFG["xaddr_host"], CFG["port"]
+        if ns == NS_PTZ:
+            ptz_tick()
+            if name == "ContinuousMove":
+                pt = op.find(".//{*}PanTilt")
+                zm = op.find(".//{*}Zoom")
+                vx = float(pt.get("x", 0)) if pt is not None else 0.0
+                vy = float(pt.get("y", 0)) if pt is not None else 0.0
+                vz = float(zm.get("x", 0)) if zm is not None else 0.0
+                with LOCK:
+                    STATE["vel"], STATE["until"] = (vx, vy, vz), time.time() + 1.0
+                    # 시뮬레이션: 요청 1회 = 즉시 한 걸음 이동
+                    STATE["pan"] = max(-1, min(1, STATE["pan"] + vx * 0.1))
+                    STATE["tilt"] = max(-1, min(1, STATE["tilt"] + vy * 0.1))
+                    STATE["zoom"] = max(0, min(1, STATE["zoom"] + vz * 0.1))
+                return envelope(f'<tptz:ContinuousMoveResponse xmlns:tptz="{NS_PTZ}"/>')
+            if name == "Stop":
+                with LOCK:
+                    STATE["until"] = 0
+                return envelope(f'<tptz:StopResponse xmlns:tptz="{NS_PTZ}"/>')
+            if name == "GetPresets":
+                items = "".join(f'<tptz:Preset token="{k}"><tt:Name>{v[0]}</tt:Name></tptz:Preset>' for k, v in STATE["presets"].items())
+                return envelope(f'<tptz:GetPresetsResponse xmlns:tptz="{NS_PTZ}">{items}</tptz:GetPresetsResponse>')
+            if name == "GotoPreset":
+                t = (op.findtext(".//{*}PresetToken") or "").strip()
+                if t not in STATE["presets"]:
+                    return (400, fault("NoToken", "no such preset"))
+                with LOCK:
+                    _, STATE["pan"], STATE["tilt"], STATE["zoom"] = STATE["presets"][t]
+                return envelope(f'<tptz:GotoPresetResponse xmlns:tptz="{NS_PTZ}"/>')
+            if name == "SetPreset":
+                nm = (op.findtext(".//{*}PresetName") or "프리셋").strip()[:40]
+                with LOCK:
+                    tok = str(len(STATE["presets"]) + 1)
+                    STATE["presets"][tok] = (nm, STATE["pan"], STATE["tilt"], STATE["zoom"])
+                return envelope(f'<tptz:SetPresetResponse xmlns:tptz="{NS_PTZ}"><tptz:PresetToken>{tok}</tptz:PresetToken></tptz:SetPresetResponse>')
+            if name == "GetStatus":
+                return envelope(f'<tptz:GetStatusResponse xmlns:tptz="{NS_PTZ}"><tptz:PTZStatus><tt:Position>'
+                                f'<tt:PanTilt x="{STATE["pan"]:.3f}" y="{STATE["tilt"]:.3f}"/><tt:Zoom x="{STATE["zoom"]:.3f}"/>'
+                                f'</tt:Position></tptz:PTZStatus></tptz:GetStatusResponse>')
+        if ns == NS_EV and name == "CreatePullPointSubscription":
+            sid = uuid.uuid4().hex[:12]
+            with LOCK:
+                t = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                STATE["subs"][sid] = [(t, STATE["motion"], "Initialized")]
+            addr = f"http://{x}:{p}/onvif/subscription/{sid}"
+            return envelope(f'<tev:CreatePullPointSubscriptionResponse xmlns:tev="{NS_EV}" xmlns:wsa="http://www.w3.org/2005/08/addressing">'
+                            f'<tev:SubscriptionReference><wsa:Address>{addr}</wsa:Address></tev:SubscriptionReference>'
+                            f'<wsnt:CurrentTime xmlns:wsnt="http://docs.oasis-open.org/wsn/b-2">{t}</wsnt:CurrentTime></tev:CreatePullPointSubscriptionResponse>')
+        if self.path.startswith("/onvif/subscription/"):
+            sid = self.path.rsplit("/", 1)[-1]
+            if sid not in STATE["subs"]:
+                return (400, fault("ResourceUnknown", "unknown subscription"))
+            if name == "PullMessages":
+                deadline = time.time() + 2
+                while time.time() < deadline and not STATE["subs"][sid]:
+                    time.sleep(0.2)
+                with LOCK:
+                    msgs, STATE["subs"][sid] = STATE["subs"][sid], []
+                body = "".join(
+                    f'<wsnt:NotificationMessage><wsnt:Topic Dialect="http://www.onvif.org/ver10/tev/topicExpression/ConcreteSet">'
+                    f'tns1:VideoSource/MotionAlarm</wsnt:Topic><wsnt:Message><tt:Message UtcTime="{t}" PropertyOperation="{op_}">'
+                    f'<tt:Source><tt:SimpleItem Name="Source" Value="vs0"/></tt:Source>'
+                    f'<tt:Data><tt:SimpleItem Name="State" Value="{"true" if a else "false"}"/></tt:Data></tt:Message></wsnt:Message>'
+                    f'</wsnt:NotificationMessage>' for t, a, op_ in msgs)
+                return envelope(f'<tev:PullMessagesResponse xmlns:tev="{NS_EV}" xmlns:wsnt="http://docs.oasis-open.org/wsn/b-2">{body}</tev:PullMessagesResponse>')
+            if name == "Renew":
+                return envelope('<wsnt:RenewResponse xmlns:wsnt="http://docs.oasis-open.org/wsn/b-2"/>')
+            if name == "Unsubscribe":
+                with LOCK:
+                    STATE["subs"].pop(sid, None)
+                return envelope('<wsnt:UnsubscribeResponse xmlns:wsnt="http://docs.oasis-open.org/wsn/b-2"/>')
+        if ns == NS_SE:
+            if name == "FindRecordings":
+                return envelope(f'<tse:FindRecordingsResponse xmlns:tse="{NS_SE}"><tse:SearchToken>s1</tse:SearchToken></tse:FindRecordingsResponse>')
+            if name == "GetRecordingSearchResults":
+                now = dt.datetime.now(dt.timezone.utc)
+                e = (now - dt.timedelta(days=2)).strftime("%Y-%m-%dT%H:%M:%SZ")
+                ln = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+                return envelope(f'<tse:GetRecordingSearchResultsResponse xmlns:tse="{NS_SE}"><tse:ResultList><tt:SearchState>Completed</tt:SearchState>'
+                                f'<tt:RecordingInformation><tt:RecordingToken>SD_REC_1</tt:RecordingToken><tt:Source><tt:Name>SIM SD card</tt:Name></tt:Source>'
+                                f'<tt:EarliestRecording>{e}</tt:EarliestRecording><tt:LatestRecording>{ln}</tt:LatestRecording>'
+                                f'<tt:Content>continuous</tt:Content><tt:RecordingStatus>Recording</tt:RecordingStatus></tt:RecordingInformation>'
+                                f'</tse:ResultList></tse:GetRecordingSearchResultsResponse>')
+        if ns == NS_RP and name == "GetReplayUri":
+            return envelope(f'<trp:GetReplayUriResponse xmlns:trp="{NS_RP}"><trp:Uri>rtsp://{x}:{CFG["rtsp_port"]}/main</trp:Uri></trp:GetReplayUriResponse>')
+        return None
+
+
+def discovery_responder(bind_ip):
+    """WS-Discovery Probe 에 ProbeMatch 로 응답(시험용)."""
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    sock.bind(("", 3702))
+    mreq = struct.pack("4s4s", socket.inet_aton("239.255.255.250"), socket.inet_aton(bind_ip))
+    sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
+    while True:
+        data, addr = sock.recvfrom(65535)
+        if b"Probe" not in data or b"ProbeMatch" in data:
+            continue
+        rel = ""
+        try:
+            rel = ET.fromstring(data).findtext(".//{*}MessageID") or ""
+        except ET.ParseError:
+            continue
+        resp = (f'<?xml version="1.0" encoding="UTF-8"?><s:Envelope xmlns:s="{SOAP}" xmlns:a="http://schemas.xmlsoap.org/ws/2004/08/addressing" '
+                f'xmlns:d="http://schemas.xmlsoap.org/ws/2005/04/discovery"><s:Header><a:Action>http://schemas.xmlsoap.org/ws/2005/04/discovery/ProbeMatches</a:Action>'
+                f'<a:RelatesTo>{rel}</a:RelatesTo></s:Header><s:Body><d:ProbeMatches><d:ProbeMatch><a:EndpointReference><a:Address>urn:uuid:sim-0001</a:Address></a:EndpointReference>'
+                f'<d:Types>dn:NetworkVideoTransmitter</d:Types><d:Scopes>onvif://www.onvif.org/name/ONVIF_SIM_1 onvif://www.onvif.org/hardware/TEST-SIMULATOR '
+                f'onvif://www.onvif.org/Profile/Streaming onvif://www.onvif.org/Profile/T onvif://www.onvif.org/Profile/G</d:Scopes>'
+                f'<d:XAddrs>http://{CFG["xaddr_host"]}:{CFG["port"]}/onvif/device_service</d:XAddrs><d:MetadataVersion>1</d:MetadataVersion>'
+                f'</d:ProbeMatch></d:ProbeMatches></s:Body></s:Envelope>')
+        sock.sendto(resp.encode(), addr)
 
 
 def make_jpeg():
@@ -199,6 +360,9 @@ def main():
     ap.add_argument("--clock-offset", type=int, default=0, help="장치 시계 오차(초)")
     ap.add_argument("--no-media2", action="store_true")
     ap.add_argument("--xaddr-host", default="", help="응답 주소에 넣을 호스트(NAT/잘못된 주소 재현)")
+    ap.add_argument("--motion-period", type=int, default=0, help="N초마다 모션 이벤트(0=끔)")
+    ap.add_argument("--motion-length", type=int, default=8)
+    ap.add_argument("--discovery", action="store_true", help="WS-Discovery 응답(UDP 3702)")
     a = ap.parse_args()
     pw = os.environ.get("TEST_CAM_PASSWORD", "")
     if a.password_file:
@@ -207,6 +371,10 @@ def main():
                media2=not a.no_media2, xaddr_host=a.xaddr_host or a.bind, jpeg=make_jpeg(),
                profiles=[("main", "MainStream", 1280, 720, 15, 1500, "main"), ("sub", "SubStream", 640, 360, 10, 500, "sub")])
     srv = ThreadingHTTPServer((a.bind, a.port), H)
+    if a.motion_period:
+        threading.Thread(target=motion_loop, args=(a.motion_period, a.motion_length), daemon=True).start()
+    if a.discovery:
+        threading.Thread(target=discovery_responder, args=(a.bind,), daemon=True).start()
     print(f"[TEST ONVIF SIMULATOR] http://{a.bind}:{a.port}/onvif/device_service media2={CFG['media2']} offset={a.clock_offset}s", flush=True)
     try:
         srv.serve_forever()

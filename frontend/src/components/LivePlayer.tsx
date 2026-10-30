@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type Hls from "hls.js";
 import { post } from "../api";
 
-type Session = { prefer_hls?: boolean; token: string; expires_at: number; whep_url: string; hls_url: string; stream: string; warnings: string[]; is_test_source: boolean };
+type Session = { allow_audio?: boolean; has_audio?: boolean; prefer_hls?: boolean; token: string; expires_at: number; whep_url: string; hls_url: string; stream: string; warnings: string[]; is_test_source: boolean };
 type Mode = "connecting" | "webrtc" | "hls" | "error" | "paused";
 
 /**
@@ -10,8 +10,9 @@ type Mode = "connecting" | "webrtc" | "hls" | "error" | "paused";
  * - 토큰은 API 가 발급(10분), 만료 전에 갱신한다. mediamtx 가 API 로 매 요청을 검증한다.
  * - 화면에 보이지 않으면(탭 숨김·스크롤 밖) 시청 세션을 닫는다. 녹화와는 무관하다.
  */
-export default function LivePlayer({ cameraId, stream, zoom = 1, onVideo }: {
+export default function LivePlayer({ cameraId, stream, zoom = 1, onVideo, muted = true, onInfo }: {
   cameraId: number; stream: "sub" | "main"; zoom?: number; onVideo?: (v: HTMLVideoElement | null) => void;
+  muted?: boolean; onInfo?: (i: { allowAudio: boolean; hasAudio: boolean; mode: string }) => void;
 }) {
   const wrap = useRef<HTMLDivElement>(null);
   const video = useRef<HTMLVideoElement>(null);
@@ -19,6 +20,12 @@ export default function LivePlayer({ cameraId, stream, zoom = 1, onVideo }: {
   const [error, setError] = useState("");
   const [warn, setWarn] = useState<string[]>([]);
   const [visible, setVisible] = useState(true);
+  const onInfoRef = useRef(onInfo);
+  onInfoRef.current = onInfo;
+
+  useEffect(() => {
+    if (video.current) video.current.muted = muted;
+  }, [muted]);
 
   useEffect(() => {
     onVideo?.(video.current);
@@ -102,6 +109,8 @@ export default function LivePlayer({ cameraId, stream, zoom = 1, onVideo }: {
     const startRtc = async (s: Session) => {
       pc = new RTCPeerConnection({ bundlePolicy: "max-bundle" });
       pc.addTransceiver("video", { direction: "recvonly" });
+      // 음성 권한이 있을 때만 음성 트랙을 요청(WebRTC 는 Opus·G.711 만 재생, AAC 는 HLS 에서 재생)
+      if (s.allow_audio) pc.addTransceiver("audio", { direction: "recvonly" });
       pc.ontrack = (ev) => {
         v.srcObject = ev.streams[0] ?? new MediaStream([ev.track]);
         v.play().catch(() => {});
@@ -145,6 +154,7 @@ export default function LivePlayer({ cameraId, stream, zoom = 1, onVideo }: {
         const s = await getSession(false);
         if (closed) return;
         setWarn(s.warnings);
+        onInfoRef.current?.({ allowAudio: !!s.allow_audio, hasAudio: !!s.has_audio, mode: s.prefer_hls ? "hls" : "webrtc" });
         if (s.prefer_hls) {
           await startHls(s, "");
           return;
@@ -184,7 +194,7 @@ export default function LivePlayer({ cameraId, stream, zoom = 1, onVideo }: {
 
   return (
     <div ref={wrap} style={{ position: "absolute", inset: 0 }}>
-      <video ref={video} muted playsInline autoPlay style={{ transform: `scale(${zoom})` }} />
+      <video ref={video} muted={muted} playsInline autoPlay style={{ transform: `scale(${zoom})` }} />
       {mode !== "webrtc" && mode !== "hls" && (
         <div className="msg">
           {mode === "connecting" && "연결 중…"}

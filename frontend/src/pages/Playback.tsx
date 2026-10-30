@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { get, post, qs } from "../api";
 import { useAuth } from "../auth";
 import Timeline, { type Seg } from "../components/Timeline";
@@ -32,9 +32,30 @@ export default function Playback() {
   const video = useRef<HTMLVideoElement>(null);
   const pendingOffset = useRef(0);
   const audited = useRef(false);
+  const [params] = useSearchParams();
+  const pendingAt = useRef<Date | null>(null);
+
+  // 이벤트 센터·북마크에서 넘어온 경우: ?camera=ID&at=ISO 시각으로 이동해 재생
+  useEffect(() => {
+    const c = Number(params.get("camera"));
+    const at = params.get("at");
+    if (c) setCamId(c);
+    if (at) {
+      const t = new Date(at);
+      if (!isNaN(t.getTime())) {
+        const ds = new Intl.DateTimeFormat("sv-SE", { timeZone: tz }).format(t);
+        setDate(ds);
+        setMonth(ds.slice(0, 7));
+        setSpanIdx(3);
+        setCenter(t);
+        pendingAt.current = new Date(t.getTime() - 5000);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params]);
 
   useEffect(() => {
-    if (!camId && cams.data?.items?.length) setCamId(cams.data.items.find((c: any) => !c.deleted)?.id ?? cams.data.items[0].id);
+    if (!camId && !params.get("camera") && cams.data?.items?.length) setCamId(cams.data.items.find((c: any) => !c.deleted)?.id ?? cams.data.items[0].id);
   }, [cams.data, camId]);
 
   const days = useData(() => (camId ? get(`/api/recordings/days?${qs({ camera_id: camId, month })}`) : Promise.resolve({ days: [] })), [camId, month]);
@@ -56,6 +77,29 @@ export default function Playback() {
     [camId, date],
   );
   const allSegs: Seg[] = useMemo(() => dayTl.data?.segments ?? [], [dayTl.data]);
+
+  useEffect(() => {
+    if (pendingAt.current && allSegs.length) {
+      const t = pendingAt.current;
+      pendingAt.current = null;
+      playAt(t);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allSegs]);
+
+  const addBookmark = async () => {
+    if (!cursor || !camId) return;
+    const title = window.prompt("북마크 제목", "");
+    if (!title) return;
+    const note = window.prompt("메모(선택)", "") ?? "";
+    try {
+      await post("/api/bookmarks", { camera_id: camId, at: cursor.toISOString(), title, note });
+      setNotice("북마크를 저장했습니다.");
+      tl.reload();
+    } catch (e) {
+      setNotice(errMsg(e));
+    }
+  };
 
   // 재생 위치가 없으면 그날 마지막 녹화 시각(오늘이면 지금) 주변을 보여준다
   const defaultCenter = (ms: number) => {
@@ -151,6 +195,7 @@ export default function Playback() {
             <span className="spacer" style={{ flex: 1 }} />
             <button onClick={() => cursor && playAt(new Date(cursor.getTime() - 30e3))} disabled={!cursor}>30초 뒤로</button>
             <button onClick={() => cursor && playAt(new Date(cursor.getTime() + 30e3))} disabled={!cursor}>30초 앞으로</button>
+            <button onClick={addBookmark} disabled={!cursor}>북마크</button>
           </div>
           {notice && <Alert kind="info">{notice}</Alert>}
           <div className="panel">
@@ -162,7 +207,7 @@ export default function Playback() {
               <button onClick={() => shiftView(1)} aria-label="다음 구간">다음</button>
             </div>
             {tl.error ? <Alert kind="err">{tl.error}</Alert> : (
-              <Timeline from={viewFrom} to={viewTo} segments={segments} gaps={tl.data?.gaps ?? []} events={tl.data?.events ?? []}
+              <Timeline from={viewFrom} to={viewTo} segments={segments} gaps={tl.data?.gaps ?? []} events={tl.data?.events ?? []} bookmarks={tl.data?.bookmarks ?? []} gapsExpected={!!tl.data?.gaps_expected}
                 cursor={cursor} selection={selection} tz={tz} onSeek={playAt} onSelect={setSelection} />
             )}
           </div>
@@ -175,7 +220,8 @@ export default function Playback() {
           <Calendar month={month} setMonth={setMonth} days={days.data?.days ?? []} date={date}
             onPick={(d) => { setDate(d); setSpanIdx(0); setSelection(null); }} />
           <p className="muted small" style={{ marginTop: 10 }}>굵게 표시된 날짜에 녹화가 있습니다.</p>
-          <p className="muted small">다중 카메라 동기 재생은 3단계, 북마크·메모 검색은 2단계에서 제공합니다.</p>
+          <p className="muted small"><Link to="/sync">여러 카메라 동기 재생</Link> / <Link to="/bookmarks">북마크·메모 검색</Link>
+            {cam && !cam.deleted && cam.capabilities?.recording_profile_g && <> / <Link to={`/device-recordings?camera=${cam.id}`}>카메라 저장영상(SD) 검색</Link></>}</p>
         </aside>
       </div>
       <style>{`@media (max-width: 860px){ .pb-grid{ grid-template-columns: 1fr !important; } }`}</style>

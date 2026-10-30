@@ -17,6 +17,8 @@ export NVR_MEDIAMTX_CONFIG_PATH=/mediamtx-config/mediamtx.yml
 export NVR_MEDIAMTX_BASE_CONFIG_PATH=/app/deploy/mediamtx/mediamtx.base.yml
 export NVR_MEDIAMTX_AUTH_URL=http://127.0.0.1:8000/internal/mediamtx/auth
 export NVR_LIVE_MODE=hls NVR_TRUSTED_PROXIES=127.0.0.1/32
+# 여러 현장 통합 시연: 자기 자신에게 현장 상태를 보고
+export NVR_CENTRAL_URL=http://127.0.0.1:8000 NVR_CENTRAL_TOKEN_FILE="$DATA/secrets/central.token"
 export PYTHONPATH=/app/backend
 cd /app/backend
 
@@ -26,13 +28,16 @@ if [ -z "$IP" ] || [ "${IP#127.}" != "$IP" ]; then IP=$(hostname -I | tr ' ' '\n
 echo "[demo] container ip: $IP"
 
 for i in $(seq 1 30); do alembic upgrade head && break; echo "[demo] DB 대기 ($i)"; sleep 2; done
-python -m nvr.demo_seed "$IP" 18554 "$DATA/secrets/cam.pass"
+[ -s "$NVR_CENTRAL_TOKEN_FILE" ] || rm -f "$NVR_CENTRAL_TOKEN_FILE"
+python -m nvr.demo_seed "$IP" 18554 "$DATA/secrets/cam.pass" 18080
 python -c "from nvr.worker import mediamtx_config as m; m.sync()"
 
 PIDS=()
 run() { "$@" & PIDS+=($!); }
 run /usr/bin/python3.12 /app/tools/test-camera/rtsp_test_camera.py --bind "$IP" --port 18554 --user cam \
     --password-file "$DATA/secrets/cam.pass" --main-kbps "${NVR_DEMO_CAM_KBPS:-450}" --audio aac
+run /usr/bin/python3.12 /app/tools/test-camera/onvif_simulator.py --bind "$IP" --port 18080 --user cam \
+    --password-file "$DATA/secrets/cam.pass" --rtsp-port 18554 --motion-period 60 --motion-length 8 --discovery
 run /usr/local/bin/mediamtx /mediamtx-config/mediamtx.yml
 run /opt/venv/bin/uvicorn nvr.api.main:app --host 127.0.0.1 --port 8000 --no-server-header
 run /opt/venv/bin/python -m nvr.recorder.main

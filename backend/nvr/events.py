@@ -18,17 +18,31 @@ EVENT_TEXT = {
     "disk_write_error": "디스크 쓰기 실패",
     "service_started": "서비스 시작",
     "retention_deleted": "보관 정책 삭제",
+    "motion": "모션 감지",
+    "tamper": "카메라 가림·훼손",
+    "input": "알람 입력",
+    "manual": "수동 이벤트",
+    "analytics": "분석 이벤트",
+    "event_subscription": "이벤트 구독 실패",
+    "edge_offline": "현장 서버 연결 끊김",
+    "edge_online": "현장 서버 연결 복구",
+    "notify_failed": "알림 전송 실패",
 }
+
+SEVERITY_ORDER = {"info": 0, "warning": 1, "critical": 2}
 
 
 def open_event(db: Session, *, type: str, dedup_key: str, message: str, severity: str = "warning",
                camera_id: int | None = None, site_id: int | None = None, details: dict[str, Any] | None = None,
-               source: str = "system") -> Event | None:
+               source: str = "system", triggers_recording: bool = False,
+               started_at=None) -> Event | None:
     existing = db.scalar(select(Event).where(Event.dedup_key == dedup_key, Event.ended_at.is_(None)))
     if existing:
         return None
     ev = Event(type=type, dedup_key=dedup_key, message=message, severity=severity, camera_id=camera_id,
-               site_id=site_id, details=details or {}, source=source)
+               site_id=site_id, details=details or {}, source=source, triggers_recording=triggers_recording)
+    if started_at is not None:
+        ev.started_at = started_at
     db.add(ev)
     return ev
 

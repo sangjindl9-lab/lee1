@@ -11,7 +11,8 @@ import time
 from ..config import get_settings
 from ..db import session_scope
 from ..models import ServiceHeartbeat, utcnow
-from . import exports, mediamtx_config, retention
+from . import edge, event_rec, exports, mediamtx_config, notify, retention
+from .onvif_events import EventManager
 
 log = logging.getLogger("nvr.worker")
 
@@ -21,7 +22,9 @@ class Worker:
         self.running = True
         self.instance = f"{socket.gethostname()}:{os.getpid()}"
         self.started_at = utcnow()
-        self.last = {"retention": 0.0, "mediamtx": 0.0, "expire": 0.0, "house": 0.0, "hb": 0.0}
+        self.last = {"retention": 0.0, "mediamtx": 0.0, "expire": 0.0, "house": 0.0, "hb": 0.0, "evrec": 0.0,
+                     "events": 0.0, "notify": 0.0, "edge_report": 0.0, "edge_check": 0.0}
+        self.events = EventManager()
         self.export_thread: threading.Thread | None = None
         self.stats = {"exports_done": 0, "retention_runs": 0, "mediamtx_updates": 0}
 
@@ -39,7 +42,9 @@ class Worker:
                 db.add(hb)
             if hb.instance != self.instance:
                 hb.started_at = self.started_at
-            hb.instance, hb.last_seen_at, hb.info = self.instance, utcnow(), dict(self.stats)
+            info = dict(self.stats)
+            info["event_subscriptions"] = {str(k): v for k, v in self.events.status.items()}
+            hb.instance, hb.last_seen_at, hb.info = self.instance, utcnow(), info
 
     def export_loop(self) -> None:
         while self.running:
@@ -78,11 +83,24 @@ class Worker:
                     exports.expire_exports()
                 if self.due("house", 3600):
                     retention.housekeeping()
+                if self.due("evrec", 5):
+                    event_rec.process()
+                if self.due("events", 10):
+                    self.events.sync()
+                if self.due("notify", 10):
+                    notify.run_once()
+                if self.due("edge_report", 30):
+                    r = edge.report_to_central()
+                    if r is not None:
+                        self.stats["central_report_ok"] = r
+                if self.due("edge_check", 30):
+                    edge.check_offline()
                 if self.due("hb", 10):
                     self.heartbeat()
             except Exception:  # noqa: BLE001
                 log.exception("작업 루프 오류(계속 진행)")
             time.sleep(1)
+        self.events.stop()
 
 
 def main() -> None:

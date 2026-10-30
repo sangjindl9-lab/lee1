@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, post } from "../api";
 import { Alert, Field, errMsg } from "../ui";
+import RecordPolicy, { type Policy } from "../components/RecordPolicy";
 
 type Site = { id: number; name: string; allowed_networks: string[] };
 type Profile = { token: string; name: string; encoding: string; width: number; height: number; fps: number; bitrate_kbps: number; stream_uri: string; snapshot_uri: string; uri_error: string };
@@ -32,7 +33,11 @@ export default function CameraWizard({ sites, onDone }: { sites: Site[]; onDone:
   const [zone, setZone] = useState("");
   const [tags, setTags] = useState("");
   const [note, setNote] = useState("");
-  const [record, setRecord] = useState("continuous");
+  const [pol, setPol] = useState<Policy>({ record_mode: "continuous", schedule: [], event_pre_seconds: 10, event_post_seconds: 20, event_triggers: [], events_enabled: false });
+  const record = pol.record_mode;
+  const [found, setFound] = useState<any[] | null>(null);
+  const [ifaces, setIfaces] = useState<any[]>([]);
+  const [iface, setIface] = useState("");
   const [retention, setRetention] = useState("");
   const [isTest, setIsTest] = useState(false);
   const [allowDup, setAllowDup] = useState(false);
@@ -84,7 +89,7 @@ export default function CameraWizard({ sites, onDone }: { sites: Site[]; onDone:
       main_stream_url: main, sub_stream_url: sub, main_profile_token: mainTok, sub_profile_token: subTok, snapshot_url: snapUrl,
       username: user, password: pw, vendor: probe?.device?.Manufacturer ?? "", model: probe?.device?.Model ?? "",
       firmware: probe?.device?.FirmwareVersion ?? "", serial: probe?.device?.SerialNumber ?? "",
-      tags: tags.split(",").map((t) => t.trim()).filter(Boolean), location_note: note, record_mode: record,
+      tags: tags.split(",").map((t) => t.trim()).filter(Boolean), location_note: note, ...pol,
       retention_days: retention ? Number(retention) : null, is_test_source: isTest, capabilities: probe?.capabilities ?? {},
       stream_info: info, allow_duplicate: allowDup,
     });
@@ -124,7 +129,31 @@ export default function CameraWizard({ sites, onDone }: { sites: Site[]; onDone:
         <div className="choice">
           <button className={type === "onvif" ? "sel" : ""} onClick={() => setType("onvif")}><b>ONVIF로 등록 (권장)</b><span className="muted small">장치 정보와 스트림 주소를 카메라에서 직접 조회합니다.</span></button>
           <button className={type === "rtsp" ? "sel" : ""} onClick={() => setType("rtsp")}><b>RTSP 주소로 등록</b><span className="muted small">ONVIF를 지원하지 않거나 주소를 이미 알고 있을 때 사용합니다.</span></button>
-          <p className="muted small full">ONVIF 자동 탐색은 2단계에서 제공합니다. 지금은 IP를 직접 입력합니다.</p>
+          <p className="muted small full">ONVIF 는 다음 단계에서 같은 네트워크 자동 탐색 또는 IP 직접 입력을 할 수 있습니다.</p>
+        </div>
+      )}
+
+      {step === 2 && type === "onvif" && (
+        <div className="panel" style={{ marginBottom: 12, background: "var(--panel-2)" }}>
+          <div className="row">
+            <b style={{ flex: 1 }}>같은 네트워크에서 ONVIF 카메라 찾기</b>
+            <select value={iface} onFocus={async () => { if (!ifaces.length) { try { setIfaces((await api("GET", "/api/onvif/interfaces")).items); } catch (e) { setErr(errMsg(e)); } } }}
+              onChange={(e) => setIface(e.target.value)} aria-label="네트워크 인터페이스">
+              <option value="">기본 인터페이스</option>
+              {ifaces.map((i) => <option key={i.ip} value={i.ip}>{i.name} {i.ip}</option>)}
+            </select>
+            <button onClick={() => run(async () => setFound((await post("/api/onvif/discover", { site_id: siteId, interface_ip: iface, timeout: 3 })).items))} disabled={busy}>
+              {busy ? "찾는 중…" : "자동 탐색"}</button>
+          </div>
+          {found && (found.length === 0 ? <p className="muted small" style={{ marginTop: 8 }}>찾은 장치가 없습니다. 라우터·VPN 너머 카메라는 IP를 직접 입력하세요.</p> : (
+            <table style={{ marginTop: 8 }}><tbody>{found.map((d) => (
+              <tr key={`${d.host}:${d.port}`}>
+                <td><b>{d.name || d.hardware || "이름 없음"}</b><div className="muted small">{d.hardware} / Profile {d.profiles.join(", ") || "-"}</div></td>
+                <td className="num small">{d.host}:{d.port}</td>
+                <td className="small">{d.registered ? <span className="muted">이미 등록됨</span> : !d.allowed ? <span style={{ color: "var(--warn)" }}>{d.reason}</span> : ""}</td>
+                <td><button disabled={!d.allowed} onClick={() => { setHost(d.host); setPort(d.port); setPath(d.device_path); }}>선택</button></td>
+              </tr>))}</tbody></table>
+          ))}
         </div>
       )}
 
@@ -152,7 +181,7 @@ export default function CameraWizard({ sites, onDone }: { sites: Site[]; onDone:
               <tr><th>펌웨어 / 시리얼</th><td>{probe.device.FirmwareVersion} / {probe.device.SerialNumber}</td></tr>
               <tr><th>시계 오차</th><td>{probe.time_offset_seconds === null ? "확인 불가" : `${probe.time_offset_seconds}초`}</td></tr>
               <tr><th>미디어 서비스</th><td>{probe.media2 ? "Media2 (Profile T 방식)" : "Media ver10 (Profile S 방식)"}</td></tr>
-              <tr><th>기타 기능</th><td className="small">PTZ {probe.capabilities.ptz ? "지원(2단계에서 제어)" : "없음"} / 이벤트 {probe.capabilities.events ? "지원(2단계에서 연동)" : "없음"} / 장치 녹화(Profile G) {probe.capabilities.recording_profile_g ? "지원(3단계)" : "없음"}</td></tr>
+              <tr><th>기타 기능</th><td className="small">PTZ {probe.capabilities.ptz ? "지원" : "없음"} / 이벤트 {probe.capabilities.events ? "지원" : "없음"} / 장치 녹화(Profile G) {probe.capabilities.recording_profile_g ? "검색 지원" : "없음"}</td></tr>
             </tbody></table>
             <p className="muted small">{probe.note}</p>
             {probe.warnings.map((w: string) => <Alert key={w}>{w}</Alert>)}
@@ -209,12 +238,7 @@ export default function CameraWizard({ sites, onDone }: { sites: Site[]; onDone:
           <Field label="건물"><input value={building} onChange={(e) => setBuilding(e.target.value)} /></Field>
           <Field label="구역"><input value={zone} onChange={(e) => setZone(e.target.value)} /></Field>
           <Field label="태그" hint="쉼표로 구분"><input value={tags} onChange={(e) => setTags(e.target.value)} /></Field>
-          <Field label="녹화">
-            <select value={record} onChange={(e) => setRecord(e.target.value)}>
-              <option value="continuous">24시간 연속 녹화</option>
-              <option value="off">녹화 안 함(시청만)</option>
-            </select>
-          </Field>
+          <div className="full"><RecordPolicy value={pol} onChange={setPol} isOnvif={type === "onvif"} hasEvents={probe?.capabilities?.events} /></div>
           <Field label="보관 기간(일)" hint="비우면 시스템 기본값"><input type="number" min={1} value={retention} onChange={(e) => setRetention(e.target.value)} /></Field>
           <Field label="설치 위치 메모" full><textarea value={note} onChange={(e) => setNote(e.target.value)} /></Field>
           <label className="check full"><input type="checkbox" checked={isTest} onChange={(e) => setIsTest(e.target.checked)} />시험용 스트림(실제 카메라 아님)으로 표시</label>

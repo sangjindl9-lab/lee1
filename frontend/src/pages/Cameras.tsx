@@ -4,6 +4,7 @@ import { useAuth } from "../auth";
 import { ago, fmtBytes } from "../format";
 import { Alert, Field, Modal, StatusBadge, errMsg, useData } from "../ui";
 import CameraWizard from "./CameraWizard";
+import RecordPolicy, { type Policy } from "../components/RecordPolicy";
 
 export default function Cameras() {
   const { can } = useAuth();
@@ -50,7 +51,7 @@ export default function Cameras() {
                   <td className="small">{c.connection_type.toUpperCase()} / {c.rtsp_transport.toUpperCase()}<div className="muted">{c.host}</div></td>
                   <td className="small num">{info ? `${(info.video?.codec ?? "").toUpperCase()} ${info.video?.width}×${info.video?.height} ${info.measured_fps ?? info.video?.fps ?? "-"}fps ${info.bitrate_kbps ? Math.round(info.bitrate_kbps) + "kbps" : ""}` : <span className="muted">연결 시험 전</span>}
                     {info?.audio && <div className="muted">음성 {info.audio.codec}</div>}</td>
-                  <td><StatusBadge status={c.status} />{c.record_mode === "off" && c.enabled && <div className="muted small">녹화 꺼짐</div>}
+                  <td><StatusBadge status={c.status} />{c.enabled && <div className="muted small">{({ off: "녹화 꺼짐", continuous: "연속", schedule: "일정", event: "이벤트 녹화" } as any)[c.record_mode]}{c.events_enabled ? " · 이벤트 수신" : ""}</div>}
                     {c.status.error_message && <div className="small" style={{ color: "var(--warn)", maxWidth: 280 }}>{c.status.error_message}</div>}
                     {c.status.next_retry_at && c.status.state === "retry_wait" && <div className="muted small">재시도 {c.status.retry_count}회째</div>}</td>
                   <td className="small">{ago(c.status.last_segment_at)}</td>
@@ -59,8 +60,8 @@ export default function Cameras() {
                     <div className="row" style={{ justifyContent: "flex-end" }}>
                       <button onClick={async () => { try { setTestRes((t) => ({ ...t, [c.id]: { busy: true } })); const r = await post(`/api/cameras/${c.id}/test`); setTestRes((t) => ({ ...t, [c.id]: r })); cams.reload(); } catch (e) { setTestRes((t) => ({ ...t, [c.id]: { ok: false, error_message: errMsg(e) } })); } }}>연결 시험</button>
                       <button onClick={() => setEditing(c)}>수정</button>
-                      {c.record_mode === "continuous"
-                        ? <button onClick={() => act(() => post(`/api/cameras/${c.id}/recording`, { action: "stop" }), "연속 녹화를 껐습니다.")}>녹화 중지</button>
+                      {c.record_mode !== "off"
+                        ? <button onClick={() => act(() => post(`/api/cameras/${c.id}/recording`, { action: "stop" }), "녹화를 껐습니다.")}>녹화 중지</button>
                         : <button onClick={() => act(() => post(`/api/cameras/${c.id}/recording`, { action: "start" }), "연속 녹화를 켰습니다.")}>녹화 시작</button>}
                       {c.record_mode === "off" && (c.manual_record_until
                         ? <button onClick={() => act(() => post(`/api/cameras/${c.id}/recording`, { action: "manual_stop" }), "수동 녹화를 끝냈습니다.")}>수동 녹화 종료</button>
@@ -100,11 +101,15 @@ function EditCamera({ cam, onClose }: { cam: any; onClose: () => void }) {
     retention_days: cam.retention_days ?? "", location_note: cam.location_note, tags: (cam.tags ?? []).join(", "),
     is_test_source: cam.is_test_source, tls_insecure: cam.tls_insecure,
   });
+  const [pol, setPol] = useState<Policy>({
+    record_mode: cam.record_mode, schedule: cam.schedule ?? [], event_pre_seconds: cam.event_pre_seconds ?? 10,
+    event_post_seconds: cam.event_post_seconds ?? 20, event_triggers: cam.event_triggers ?? [], events_enabled: !!cam.events_enabled,
+  });
   const [err, setErr] = useState("");
   const set = (k: string, v: unknown) => setF((x) => ({ ...x, [k]: v }));
   const save = async () => {
     try {
-      const body: Record<string, unknown> = { ...f, tags: f.tags.split(",").map((t: string) => t.trim()).filter(Boolean), retention_days: f.retention_days === "" ? 0 : Number(f.retention_days) };
+      const body: Record<string, unknown> = { ...f, ...pol, tags: f.tags.split(",").map((t: string) => t.trim()).filter(Boolean), retention_days: f.retention_days === "" ? 0 : Number(f.retention_days) };
       if (!f.password) delete body.password;
       if (!isSuper) delete body.tls_insecure;
       await patch(`/api/cameras/${cam.id}`, body);
@@ -128,6 +133,7 @@ function EditCamera({ cam, onClose }: { cam: any; onClose: () => void }) {
         <Field label="RTSP 전송"><select value={f.rtsp_transport} onChange={(e) => set("rtsp_transport", e.target.value)}><option value="tcp">TCP</option><option value="udp">UDP</option></select></Field>
         <Field label="보관 기간(일)" hint="비우면 기본값"><input type="number" value={f.retention_days} onChange={(e) => set("retention_days", e.target.value)} /></Field>
         <Field label="설치 위치 메모" full><textarea value={f.location_note} onChange={(e) => set("location_note", e.target.value)} /></Field>
+        <div className="full"><RecordPolicy value={pol} onChange={setPol} isOnvif={cam.connection_type === "onvif"} hasEvents={cam.capabilities?.events} /></div>
         <label className="check full"><input type="checkbox" checked={f.is_test_source} onChange={(e) => set("is_test_source", e.target.checked)} />시험용 스트림으로 표시</label>
         {isSuper && f.main_stream_url.startsWith("rtsps") && (
           <label className="check full"><input type="checkbox" checked={f.tls_insecure} onChange={(e) => set("tls_insecure", e.target.checked)} />

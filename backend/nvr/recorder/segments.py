@@ -67,7 +67,7 @@ class FinalizeError(Exception):
 
 
 def finalize_segment(camera_id: int, src: Path, start: dt.datetime, duration_s: float, kind: str,
-                     codecs: dict | None = None) -> RecordingSegment | None:
+                     codecs: dict | None = None, status: str = "ready") -> RecordingSegment | None:
     """조각화 MP4 → faststart MP4 재다중화(복사) → 임시 파일 fsync → rename(원자적) → DB 인덱스.
 
     파일을 먼저 확정하고 DB에 넣는다. DB 삽입 전에 죽어도 다음 시작 때 파일명으로 재색인된다.
@@ -114,7 +114,8 @@ def finalize_segment(camera_id: int, src: Path, start: dt.datetime, duration_s: 
     a = next((x for x in info.get("streams", []) if x.get("codec_type") == "audio"), {})
     seg = RecordingSegment(camera_id=camera_id, start_at=start, end_at=start + dt.timedelta(milliseconds=duration_ms),
                            duration_ms=duration_ms, rel_path=rel, size_bytes=size, video_codec=v.get("codec_name", ""),
-                           audio_codec=a.get("codec_name", ""), width=v.get("width"), height=v.get("height"), kind=kind)
+                           audio_codec=a.get("codec_name", ""), width=v.get("width"), height=v.get("height"), kind=kind,
+                           status=status)
     try:
         with session_scope() as db:
             db.add(seg)

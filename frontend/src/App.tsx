@@ -14,6 +14,11 @@ import Users from "./pages/Users";
 import Audit from "./pages/Audit";
 import Storage from "./pages/Storage";
 import Drivers from "./pages/Drivers";
+import Bookmarks from "./pages/Bookmarks";
+import Notify from "./pages/Notify";
+import Edges from "./pages/Edges";
+import SyncPlayback from "./pages/SyncPlayback";
+import DeviceRecordings from "./pages/DeviceRecordings";
 
 function Logo() {
   return (
@@ -34,9 +39,6 @@ export default function App() {
   if (!me) return <Login />;
   if (me.must_change_password) return <ChangePassword forced />;
   const close = () => setOpen(false);
-  const later = (label: string) => (
-    <span className="disabled" title="2단계 이후 제공 예정 — 아직 사용할 수 없습니다">{label}<em>2단계</em></span>
-  );
   return (
     <div className="app">
       <nav className={`nav${open ? " open" : ""}`} onClick={(e) => (e.target as HTMLElement).tagName === "A" && close()}>
@@ -44,15 +46,19 @@ export default function App() {
         <NavLink to="/" end>운영 대시보드</NavLink>
         {can("live_view") && <NavLink to="/live">실시간 관제</NavLink>}
         {can("playback") && <NavLink to="/playback">녹화 검색·재생</NavLink>}
+        {can("playback") && <NavLink to="/sync">동기 재생</NavLink>}
+        {can("playback") && <NavLink to="/bookmarks">북마크·메모</NavLink>}
         {can("live_view") && <NavLink to="/events">이벤트 센터</NavLink>}
         {can("download") && <NavLink to="/exports">내보내기 작업</NavLink>}
         <div className="group">관리</div>
         <NavLink to="/cameras">카메라 관리</NavLink>
         <NavLink to="/sites">현장 관리</NavLink>
-        {later("녹화 일정")}
         {can("settings") && <NavLink to="/storage">저장장치·보관</NavLink>}
         <NavLink to="/drivers">지원 장비·드라이버</NavLink>
         {isSuper && <NavLink to="/users">사용자·권한</NavLink>}
+        {isSuper && <NavLink to="/notify">알림·외부 연동</NavLink>}
+        {isSuper && <NavLink to="/edges">현장 서버 통합</NavLink>}
+        {can("playback") && <NavLink to="/device-recordings">카메라 저장영상</NavLink>}
         {isSuper && <NavLink to="/audit">감사로그</NavLink>}
         <NavLink to="/account">내 계정</NavLink>
         <div className="foot">
@@ -73,6 +79,11 @@ export default function App() {
           <Route path="/drivers" element={<Drivers />} />
           <Route path="/users" element={<Users />} />
           <Route path="/audit" element={<Audit />} />
+          <Route path="/bookmarks" element={<Bookmarks />} />
+          <Route path="/notify" element={<Notify />} />
+          <Route path="/edges" element={<Edges />} />
+          <Route path="/sync" element={<SyncPlayback />} />
+          <Route path="/device-recordings" element={<DeviceRecordings />} />
           <Route path="/account" element={<ChangePassword />} />
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>

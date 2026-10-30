@@ -5,6 +5,7 @@ import { Alert, Field, Modal, errMsg, useData } from "../ui";
 
 export default function Users() {
   const users = useData(() => get("/api/users"), []);
+  const cams = useData(() => get("/api/cameras"), []);
   const sites = useData(() => get("/api/sites"), []);
   const [edit, setEdit] = useState<any>(null);
   const [msg, setMsg] = useState<{ k: "ok" | "err"; t: string } | null>(null);
@@ -26,7 +27,7 @@ export default function Users() {
             <tr key={u.id}>
               <td><b>{u.username}</b> {!u.is_active && <span className="tag">비활성</span>}<div className="muted small">{u.display_name}</div></td>
               <td>{u.role_label}</td>
-              <td className="small">{u.role === "superadmin" ? "전체" : (sites.data?.items ?? []).filter((s: any) => u.site_ids.includes(s.id)).map((s: any) => s.name).join(", ") || <span style={{ color: "var(--warn)" }}>지정 없음</span>}</td>
+              <td className="small">{u.camera_ids?.length ? <div className="muted">카메라 {u.camera_ids.length}대로 제한</div> : null}{u.role === "superadmin" ? "전체" : (sites.data?.items ?? []).filter((s: any) => u.site_ids.includes(s.id)).map((s: any) => s.name).join(", ") || <span style={{ color: "var(--warn)" }}>지정 없음</span>}</td>
               <td className="small">{u.effective_permissions.map((p: string) => perms[p]).join(", ")}</td>
               <td className="small">{fmtDateTime(u.last_login_at)}</td>
               <td><div className="row" style={{ justifyContent: "flex-end" }}>
@@ -37,12 +38,13 @@ export default function Users() {
           </tbody>
         </table>
       </div>
-      {edit && <UserForm user={edit} roles={roles} perms={perms} sites={sites.data?.items ?? []} onClose={() => { setEdit(null); users.reload(); }} />}
+      {edit && <UserForm user={edit} roles={roles} perms={perms} sites={sites.data?.items ?? []} cameras={cams.data?.items ?? []} onClose={() => { setEdit(null); users.reload(); }} />}
     </div>
   );
 }
 
-function UserForm({ user, roles, perms, sites, onClose }: { user: any; roles: Record<string, string>; perms: Record<string, string>; sites: any[]; onClose: () => void }) {
+function UserForm({ user, roles, perms, sites, cameras, onClose }: { user: any; roles: Record<string, string>; perms: Record<string, string>; sites: any[]; cameras: any[]; onClose: () => void }) {
+  const [camIds, setCamIds] = useState<number[]>(user.camera_ids ?? []);
   const [f, setF] = useState({ username: user.username ?? "", display_name: user.display_name ?? "", role: user.role, password: "", site_ids: user.site_ids ?? [], override: user.permissions_override ?? {}, is_active: user.is_active ?? true });
   const [err, setErr] = useState("");
   const toggleSite = (id: number) => setF({ ...f, site_ids: f.site_ids.includes(id) ? f.site_ids.filter((x: number) => x !== id) : [...f.site_ids, id] });
@@ -54,8 +56,8 @@ function UserForm({ user, roles, perms, sites, onClose }: { user: any; roles: Re
   };
   const save = async () => {
     try {
-      if (user.id) await patch(`/api/users/${user.id}`, { display_name: f.display_name, role: f.role, site_ids: f.site_ids, permissions_override: f.override, is_active: f.is_active, ...(f.password ? { new_password: f.password } : {}) });
-      else await post("/api/users", { username: f.username, display_name: f.display_name, role: f.role, password: f.password, site_ids: f.site_ids, permissions_override: f.override });
+      if (user.id) await patch(`/api/users/${user.id}`, { display_name: f.display_name, role: f.role, site_ids: f.site_ids, camera_ids: camIds, permissions_override: f.override, is_active: f.is_active, ...(f.password ? { new_password: f.password } : {}) });
+      else await post("/api/users", { username: f.username, display_name: f.display_name, role: f.role, password: f.password, site_ids: f.site_ids, camera_ids: camIds, permissions_override: f.override });
       onClose();
     } catch (e) {
       setErr(errMsg(e));
@@ -73,12 +75,18 @@ function UserForm({ user, roles, perms, sites, onClose }: { user: any; roles: Re
       {f.role !== "superadmin" && <>
         <h3 style={{ marginTop: 16 }}>접근 현장</h3>
         <div className="row">{sites.map((s) => <label key={s.id} className="check"><input type="checkbox" checked={f.site_ids.includes(s.id)} onChange={() => toggleSite(s.id)} />{s.name}</label>)}</div>
+        <h3 style={{ marginTop: 16 }}>볼 수 있는 카메라</h3>
+        <p className="muted small">아무것도 고르지 않으면 접근 현장의 모든 카메라를 볼 수 있습니다. 고르면 그 카메라만 볼 수 있습니다(실시간·녹화·다운로드·PTZ 모두 적용).</p>
+        <div className="row">{cameras.filter((c) => f.site_ids.includes(c.site_id)).map((c) => (
+          <label key={c.id} className="check"><input type="checkbox" checked={camIds.includes(c.id)}
+            onChange={(e) => setCamIds(e.target.checked ? [...camIds, c.id] : camIds.filter((x) => x !== c.id))} />{c.name}</label>))}
+        </div>
         <h3 style={{ marginTop: 16 }}>권한 조정</h3>
         <div className="form">{Object.entries(perms).map(([k, v]) => (
           <Field key={k} label={v}><select value={k in f.override ? (f.override[k] ? "1" : "0") : ""} onChange={(e) => setOv(k, e.target.value)}>
             <option value="">역할 기본값</option><option value="1">허용</option><option value="0">금지</option></select></Field>))}
         </div>
-        <p className="muted small">PTZ·음성 권한은 2단계 기능에 적용됩니다.</p>
+        <p className="muted small">음성 권한이 없으면 실시간 화면에 소리 듣기 버튼이 나타나지 않고 WebRTC 음성 트랙을 요청하지 않습니다.</p>
       </>}
       {err && <Alert kind="err">{err}</Alert>}
       <div className="row" style={{ marginTop: 12 }}><span style={{ flex: 1 }} /><button onClick={onClose}>취소</button><button className="primary" onClick={save}>저장</button></div>

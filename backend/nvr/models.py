@@ -136,7 +136,14 @@ class Camera(Base):
     tags: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=False, default=list)
     location_note: Mapped[str] = mapped_column(Text, nullable=False, default="")
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    record_mode: Mapped[str] = mapped_column(String(20), nullable=False, default="continuous")  # off/continuous
+    record_mode: Mapped[str] = mapped_column(String(20), nullable=False, default="continuous")  # off/continuous/schedule/event
+    # 주간 일정: 7(월~일) × 24시간 문자열. '0'=녹화 안 함, 'C'=연속, 'E'=이벤트 시에만
+    schedule: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    event_pre_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=10)
+    event_post_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=20)
+    # 녹화를 일으키는 이벤트 종류(motion, tamper, input, manual, analytics). 비면 전체
+    event_triggers: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=False, default=list)
+    events_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)  # ONVIF 이벤트 구독
     manual_record_until: Mapped[dt.datetime | None] = mapped_column(TS)
     retention_days: Mapped[int | None] = mapped_column(Integer)
     is_test_source: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
@@ -177,9 +184,9 @@ class RecordingSegment(Base):
     audio_codec: Mapped[str] = mapped_column(String(20), nullable=False, default="")
     width: Mapped[int | None] = mapped_column(Integer)
     height: Mapped[int | None] = mapped_column(Integer)
-    kind: Mapped[str] = mapped_column(String(20), nullable=False, default="continuous")
+    kind: Mapped[str] = mapped_column(String(20), nullable=False, default="continuous")  # continuous/schedule/event/manual
     protected: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    status: Mapped[str] = mapped_column(String(10), nullable=False, default="ready")  # ready/deleting
+    status: Mapped[str] = mapped_column(String(10), nullable=False, default="ready")  # ready/deleting/buffer
     created_at: Mapped[dt.datetime] = mapped_column(TS, nullable=False, server_default=func.now())
     __table_args__ = (
         Index("ix_segments_camera_start", "camera_id", "start_at"),
@@ -203,7 +210,9 @@ class Event(Base):
     acknowledged_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
     acknowledged_at: Mapped[dt.datetime | None] = mapped_column(TS)
     note: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    __table_args__ = (Index("ix_events_started", "started_at"), Index("ix_events_dedup_open", "dedup_key", "ended_at"))
+    triggers_recording: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    __table_args__ = (Index("ix_events_started", "started_at"), Index("ix_events_dedup_open", "dedup_key", "ended_at"),
+                      Index("ix_events_camera_started", "camera_id", "started_at"))
 
 
 class ExportJob(Base):
@@ -272,3 +281,78 @@ class SystemSetting(Base):
     __tablename__ = "system_settings"
     key: Mapped[str] = mapped_column(String(60), primary_key=True)
     value: Mapped[Any] = mapped_column(JSONB, nullable=False)
+
+
+# ───────────────────────── 2·3단계 ─────────────────────────
+class UserCamera(Base):
+    """카메라 단위 접근 제한. 사용자에게 행이 하나라도 있으면 그 카메라만 볼 수 있다(현장 권한과 AND)."""
+    __tablename__ = "user_cameras"
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    camera_id: Mapped[int] = mapped_column(ForeignKey("cameras.id", ondelete="CASCADE"), primary_key=True)
+
+
+class Bookmark(Base):
+    __tablename__ = "bookmarks"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    camera_id: Mapped[int] = mapped_column(ForeignKey("cameras.id"), nullable=False)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    at: Mapped[dt.datetime] = mapped_column(TS, nullable=False)
+    end_at: Mapped[dt.datetime | None] = mapped_column(TS)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    note: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    created_at: Mapped[dt.datetime] = mapped_column(TS, nullable=False, server_default=func.now())
+    __table_args__ = (Index("ix_bookmarks_camera_at", "camera_id", "at"),)
+
+
+class NotifyChannel(Base):
+    __tablename__ = "notify_channels"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    type: Mapped[str] = mapped_column(String(10), nullable=False)  # email / webhook
+    config_enc: Mapped[str] = mapped_column(Text, nullable=False)  # 암호화된 JSON(SMTP 비밀번호·웹훅 비밀키 포함)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    min_severity: Mapped[str] = mapped_column(String(10), nullable=False, default="warning")
+    event_types: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=False, default=list)  # 비면 전체
+    repeat_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)  # 0 = 반복 안 함
+    suppress_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=10)
+    created_at: Mapped[dt.datetime] = mapped_column(TS, nullable=False, server_default=func.now())
+
+
+class NotifyLog(Base):
+    __tablename__ = "notify_log"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    channel_id: Mapped[int] = mapped_column(ForeignKey("notify_channels.id", ondelete="CASCADE"), nullable=False)
+    event_id: Mapped[int | None] = mapped_column(ForeignKey("events.id", ondelete="SET NULL"))
+    dedup_key: Mapped[str] = mapped_column(String(160), nullable=False, default="")
+    kind: Mapped[str] = mapped_column(String(10), nullable=False, default="new")  # new / repeat / resolved / test
+    sent_at: Mapped[dt.datetime] = mapped_column(TS, nullable=False, server_default=func.now())
+    ok: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    error: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    __table_args__ = (Index("ix_notify_log_key", "channel_id", "dedup_key", "sent_at"),)
+
+
+class EdgeNode(Base):
+    """중앙 관리 서버에 상태를 보고하는 현장 서버(Edge)."""
+    __tablename__ = "edge_nodes"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    url: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    created_at: Mapped[dt.datetime] = mapped_column(TS, nullable=False, server_default=func.now())
+    last_seen_at: Mapped[dt.datetime | None] = mapped_column(TS)
+    last_ip: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    report: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    online: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+
+class ApiKey(Base):
+    """외부 연동(분석 모듈 등) 키. 원문은 생성 시 한 번만 보여주고 해시만 저장."""
+    __tablename__ = "api_keys"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    purpose: Mapped[str] = mapped_column(String(20), nullable=False, default="analytics")
+    key_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    site_ids: Mapped[list[int]] = mapped_column(ARRAY(Integer), nullable=False, default=list)  # 비면 전체
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[dt.datetime] = mapped_column(TS, nullable=False, server_default=func.now())
+    last_used_at: Mapped[dt.datetime | None] = mapped_column(TS)

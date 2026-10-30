@@ -1,11 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { get, put } from "../api";
+import { get, post, put } from "../api";
+import { useAuth } from "../auth";
+import PtzPanel from "../components/PtzPanel";
 import LivePlayer from "../components/LivePlayer";
 import { Alert, StatusBadge, errMsg, useData } from "../ui";
 
-const GRIDS = [1, 4, 9, 16];
+const GRIDS = [1, 4, 9, 16, 25, 36];
+const TOUR_SECONDS = [10, 20, 30, 60];
 
 export default function Live() {
+  const { can } = useAuth();
+  const [tour, setTour] = useState(0); // 화면 순환 간격(초), 0 = 끔
+  const [tourPage, setTourPage] = useState(0);
+  const [audioTile, setAudioTile] = useState<number | null>(null);
+  const [audioInfo, setAudioInfo] = useState<Record<number, { allowAudio: boolean; hasAudio: boolean; mode: string }>>({});
   const cams = useData(() => get("/api/cameras"), [], 15000);
   const layouts = useData(() => get("/api/layouts"), []);
   const [grid, setGrid] = useState(4);
@@ -30,7 +38,26 @@ export default function Live() {
   const camById = useMemo(() => Object.fromEntries((cams.data?.items ?? []).map((c: any) => [c.id, c])), [cams.data]);
   const list = (cams.data?.items ?? []).filter((c: any) => c.enabled && (site === "" || c.site_id === site));
   const sites = Array.from(new Map((cams.data?.items ?? []).map((c: any) => [c.site_id, c.site_name])).entries());
-  const shown = Array.from({ length: grid }, (_, i) => cells[i] ?? null);
+  const tourPages = Math.max(1, Math.ceil(list.length / grid));
+  const shown = tour
+    ? Array.from({ length: grid }, (_, i) => list[(tourPage % tourPages) * grid + i]?.id ?? null)
+    : Array.from({ length: grid }, (_, i) => cells[i] ?? null);
+
+  useEffect(() => {
+    if (!tour) return;
+    const t = window.setInterval(() => setTourPage((p) => p + 1), tour * 1000);
+    return () => window.clearInterval(t);
+  }, [tour]);
+
+  const markEvent = async (camId: number) => {
+    try {
+      const r = await post(`/api/cameras/${camId}/events/manual`, { seconds: 60 });
+      setMsg(r.note);
+    } catch (e) {
+      setMsg(errMsg(e));
+    }
+    window.setTimeout(() => setMsg(""), 5000);
+  };
 
   const place = (idx: number, camId: number | null) => {
     setCells((prev) => {
@@ -87,7 +114,11 @@ export default function Live() {
           {GRIDS.map((g) => (
             <button key={g} className={grid === g && focus === null ? "sel" : ""} onClick={() => { setGrid(g); setFocus(null); }}>{g}분할</button>
           ))}
-          <span className="disabled muted small hide-m" title="2단계 예정">25·36분할, 화면 순환은 2단계</span>
+          <select value={tour} onChange={(e) => { setTour(Number(e.target.value)); setTourPage(0); setFocus(null); }} aria-label="화면 순환">
+            <option value={0}>화면 순환 끔</option>
+            {TOUR_SECONDS.map((s) => <option key={s} value={s}>{s}초마다 순환</option>)}
+          </select>
+          {tour > 0 && <span className="small muted num">{(tourPage % tourPages) + 1}/{tourPages}쪽</span>}
           <span style={{ flex: 1 }} />
           {msg && <span className="small" role="status">{msg}</span>}
           <button onClick={fillAuto}>자동 채우기</button>
@@ -114,7 +145,8 @@ export default function Live() {
               >
                 {cam ? (
                   <>
-                    <LivePlayer cameraId={cam.id} stream={focus !== null ? "main" : "sub"} zoom={z} onVideo={bindVideo(i)} />
+                    <LivePlayer cameraId={cam.id} stream={focus !== null ? "main" : "sub"} zoom={z} onVideo={bindVideo(i)}
+                      muted={audioTile !== i} onInfo={(inf) => setAudioInfo((a) => ({ ...a, [i]: inf }))} />
                     <div className="hud">
                       {cam.status.state === "recording" && <span className="rec">REC</span>}
                       <span className="name">{cam.name}</span>
@@ -126,6 +158,11 @@ export default function Live() {
                       <button onClick={(e) => { e.stopPropagation(); setZoom((zz) => ({ ...zz, [i]: Math.min(4, z + 0.5) })); }} aria-label="디지털 줌 확대">＋</button>
                       <button onClick={(e) => { e.stopPropagation(); setZoom((zz) => ({ ...zz, [i]: Math.max(1, z - 0.5) })); }} aria-label="디지털 줌 축소">－</button>
                       <button onClick={(e) => { e.stopPropagation(); snapshot(i); }}>스냅샷</button>
+                      {can("audio") && audioInfo[i]?.allowAudio && (
+                        <button onClick={(e) => { e.stopPropagation(); setAudioTile(audioTile === i ? null : i); }}
+                          title={audioInfo[i]?.hasAudio ? "" : "이 카메라에서 음성 트랙을 확인하지 못했습니다"}>
+                          {audioTile === i ? "음소거" : "소리 듣기"}</button>)}
+                      <button onClick={(e) => { e.stopPropagation(); markEvent(cam.id); }} title="지금 시각에 수동 이벤트를 남깁니다(이벤트 녹화 설정 시 전후 구간 녹화)">이벤트</button>
                       <button onClick={(e) => { e.stopPropagation(); fullscreen((e.currentTarget as HTMLElement).closest(".tile")); }}>전체</button>
                       <button onClick={(e) => { e.stopPropagation(); place(i, null); if (focus !== null) setFocus(null); }}>비우기</button>
                     </div>
@@ -154,7 +191,7 @@ export default function Live() {
             className={`camitem${shown.includes(c.id) ? " on" : ""}`}
             draggable
             onDragStart={(e) => e.dataTransfer.setData("text/camera", String(c.id))}
-            onClick={() => place(selected, c.id)}
+            onClick={() => { setTour(0); place(selected, c.id); }}
             role="button"
             tabIndex={0}
             onKeyDown={(e) => e.key === "Enter" && place(selected, c.id)}
@@ -164,7 +201,14 @@ export default function Live() {
             <StatusBadge status={c.status} />
           </div>
         ))}
-        <p className="muted small" style={{ padding: 12 }}>칸 더블클릭: 확대(메인 스트림) / Ctrl+휠: 디지털 줌. 오디오·PTZ는 2단계에서 제공합니다.</p>
+        {can("ptz") && shown[selected] && camById[shown[selected] as number]?.capabilities?.ptz && (
+          <section>
+            <h3>PTZ — {camById[shown[selected] as number].name}</h3>
+            <PtzPanel cameraId={shown[selected] as number} />
+          </section>
+        )}
+        <p className="muted small" style={{ padding: 12 }}>칸 더블클릭: 확대(메인 스트림) / Ctrl+휠: 디지털 줌. PTZ 는 칸을 선택하면 여기에 나타납니다(PTZ 지원 카메라).
+          음성은 WebRTC 에서 Opus·G.711, HLS 에서 AAC 를 재생합니다. 양방향 음성은 지원하지 않습니다.</p>
       </aside>
     </div>
   );

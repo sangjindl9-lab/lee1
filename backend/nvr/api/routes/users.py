@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ...audit import audit
-from ...models import AuthSession, Site, User, utcnow
+from ...models import AuthSession, Camera, Site, User, UserCamera, utcnow
 from ...security.passwords import hash_password, validate_password_policy
 from ...security.permissions import PERMISSIONS, ROLES, effective_permissions
 from ..deps import Principal, client_ip, get_db, require_superadmin
@@ -23,6 +23,7 @@ class UserIn(BaseModel):
     role: str
     password: str = Field(max_length=256)
     site_ids: list[int] = []
+    camera_ids: list[int] = []
     permissions_override: dict[str, bool] = {}
 
 
@@ -31,12 +32,14 @@ class UserPatch(BaseModel):
     role: str | None = None
     is_active: bool | None = None
     site_ids: list[int] | None = None
+    camera_ids: list[int] | None = None
     permissions_override: dict[str, bool] | None = None
     new_password: str | None = Field(default=None, max_length=256)
 
 
-def user_out(u: User) -> dict:
+def user_out(u: User, camera_ids: list[int] | None = None) -> dict:
     return {
+        "camera_ids": camera_ids or [],
         "id": u.id,
         "username": u.username,
         "display_name": u.display_name,
@@ -61,7 +64,10 @@ def _check_override(o: dict[str, bool]) -> dict[str, bool]:
 
 @router.get("")
 def list_users(p: Principal = Depends(require_superadmin), db: Session = Depends(get_db)):
-    return {"items": [user_out(u) for u in db.scalars(select(User).order_by(User.id))],
+    cams: dict[int, list[int]] = {}
+    for uc in db.scalars(select(UserCamera)):
+        cams.setdefault(uc.user_id, []).append(uc.camera_id)
+    return {"items": [user_out(u, cams.get(u.id)) for u in db.scalars(select(User).order_by(User.id))],
             "roles": ROLES, "permissions": PERMISSIONS}
 
 
@@ -83,10 +89,11 @@ def create_user(body: UserIn, request: Request, p: Principal = Depends(require_s
     u.sites = list(db.scalars(select(Site).where(Site.id.in_(body.site_ids)))) if body.site_ids else []
     db.add(u)
     db.flush()
+    _set_cameras(db, u.id, body.camera_ids)
     audit(db, action="user.create", user=p.user, ip=client_ip(request), target_type="user", target_id=u.id,
           details={"username": username, "role": body.role, "site_ids": body.site_ids})
     db.commit()
-    return user_out(u)
+    return user_out(u, body.camera_ids)
 
 
 @router.patch("/{user_id}")
@@ -116,6 +123,10 @@ def update_user(user_id: int, body: UserPatch, request: Request, p: Principal = 
     if body.site_ids is not None:
         u.sites = list(db.scalars(select(Site).where(Site.id.in_(body.site_ids)))) if body.site_ids else []
         changes["site_ids"] = body.site_ids
+    if body.camera_ids is not None:
+        _set_cameras(db, u.id, body.camera_ids)
+        changes["camera_ids"] = body.camera_ids
+        _revoke_all(db, u.id)  # 시청 토큰 재발급 강제
     if body.permissions_override is not None:
         u.permissions_override = _check_override(body.permissions_override)
         changes["permissions_override"] = u.permissions_override
@@ -130,7 +141,14 @@ def update_user(user_id: int, body: UserPatch, request: Request, p: Principal = 
     audit(db, action="user.update", user=p.user, ip=client_ip(request), target_type="user", target_id=u.id,
           details=changes)
     db.commit()
-    return user_out(u)
+    return user_out(u, list(db.scalars(select(UserCamera.camera_id).where(UserCamera.user_id == u.id))))
+
+
+def _set_cameras(db: Session, user_id: int, camera_ids: list[int]) -> None:
+    db.query(UserCamera).filter(UserCamera.user_id == user_id).delete()
+    valid = set(db.scalars(select(Camera.id).where(Camera.id.in_(camera_ids)))) if camera_ids else set()
+    for cid in sorted(valid):
+        db.add(UserCamera(user_id=user_id, camera_id=cid))
 
 
 def _revoke_all(db: Session, user_id: int) -> int:

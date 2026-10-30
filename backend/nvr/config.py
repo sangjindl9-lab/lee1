@@ -32,6 +32,12 @@ class Settings(BaseSettings):
     webrtc_tcp: bool = False
     # "auto" = WebRTC 우선·HLS 대체, "hls" = UDP 를 못 쓰는 호스팅(클라우드 데모 등)에서 HLS 만 사용
     live_mode: str = "auto"
+
+    # 여러 현장 통합: 이 서버가 현장(Edge)이면 중앙 서버 주소와 Edge 토큰 파일
+    central_url: str = ""
+    central_token_file: str = ""
+    # ONVIF 자동 탐색: host 네트워크로 도는 탐색 서비스 주소(비우면 이 프로세스에서 직접 탐색)
+    discovery_url: str = ""
     stun_servers: str = ""
 
     cookie_secure: bool = True
@@ -49,6 +55,9 @@ class Settings(BaseSettings):
     trusted_proxies: str = ""
 
     segment_seconds: int = 60
+    event_segment_seconds: int = 10
+    event_buffer_max_seconds: int = 120
+    event_max_minutes: int = 30
     default_retention_days: int = 30
     min_free_percent: float = 10.0
     min_free_gb: float = 5.0
@@ -100,6 +109,10 @@ class KeyMaterial:
     @property
     def token_key(self) -> bytes:
         return self.derive("media-token")
+
+    @property
+    def discovery_key(self) -> str:
+        return base64.urlsafe_b64encode(self.derive("discovery-service")).decode().rstrip("=")
 
     @property
     def mediamtx_hook_key(self) -> str:

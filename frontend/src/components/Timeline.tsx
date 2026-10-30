@@ -4,10 +4,11 @@ import { fmtTime } from "../format";
 export type Seg = { id: number; start: string; end: string; kind: string; protected: boolean };
 export type Gap = { start: string; end: string };
 export type Ev = { id: number; start: string; type: string; message: string };
+export type Bm = { id: number; at: string; title: string; note: string };
 
 /** 시간축: 클릭=그 시각부터 재생, 드래그=구간 선택(내보내기·보호). 녹화 누락은 안전띠 빗금으로 표시. */
-export default function Timeline({ from, to, segments, gaps, events, cursor, selection, tz, onSeek, onSelect }: {
-  from: Date; to: Date; segments: Seg[]; gaps: Gap[]; events: Ev[]; cursor: Date | null;
+export default function Timeline({ from, to, segments, gaps, events, cursor, selection, tz, onSeek, onSelect, bookmarks = [], gapsExpected = false }: {
+  from: Date; to: Date; segments: Seg[]; gaps: Gap[]; events: Ev[]; cursor: Date | null; bookmarks?: Bm[]; gapsExpected?: boolean;
   selection: [Date, Date] | null; tz: string; onSeek: (t: Date) => void; onSelect: (r: [Date, Date] | null) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -67,9 +68,10 @@ export default function Timeline({ from, to, segments, gaps, events, cursor, sel
         {gaps.map((g, i) => {
           const a = clampPct(new Date(g.start).getTime());
           const b = clampPct(new Date(g.end).getTime());
-          return b > a ? <div key={i} className="gap" title={`녹화 없음 ${fmtTime(g.start, tz)} ~ ${fmtTime(g.end, tz)}`} style={{ left: `${a}%`, width: `${b - a}%` }} /> : null;
+          return b > a ? <div key={i} className={`gap${gapsExpected ? " soft" : ""}`} title={`녹화 없음 ${fmtTime(g.start, tz)} ~ ${fmtTime(g.end, tz)}`} style={{ left: `${a}%`, width: `${b - a}%` }} /> : null;
         })}
         {events.map((ev) => <div key={ev.id} className="ev" title={ev.message} style={{ left: `${clampPct(new Date(ev.start).getTime())}%` }} />)}
+        {bookmarks.map((b) => <div key={`b${b.id}`} className="bm" title={`북마크: ${b.title}${b.note ? " — " + b.note : ""}`} style={{ left: `${clampPct(new Date(b.at).getTime())}%` }} />)}
         {selection && (
           <div className="sel" style={{ left: `${clampPct(selection[0].getTime())}%`, width: `${clampPct(selection[1].getTime()) - clampPct(selection[0].getTime())}%` }} />
         )}
@@ -77,8 +79,13 @@ export default function Timeline({ from, to, segments, gaps, events, cursor, sel
       </div>
       <div className="legend" style={{ marginTop: 6 }}>
         <span><i style={{ background: "var(--ok)" }} />연속 녹화</span>
+        <span><i style={{ background: "#7fb069" }} />일정 녹화</span>
+        <span><i style={{ background: "var(--warn)" }} />이벤트 녹화</span>
         <span><i style={{ background: "var(--info)" }} />수동 녹화</span>
-        <span><i style={{ background: "repeating-linear-gradient(-45deg, var(--signal) 0 4px, #1b1a12 4px 8px)" }} />녹화 없음(누락·꺼짐)</span>
+        <span><i style={{ background: "var(--signal)", width: 8, clipPath: "polygon(0 0,100% 0,50% 100%)" }} />북마크</span>
+        {gapsExpected
+          ? <span><i style={{ background: "repeating-linear-gradient(-45deg, #3a4652 0 4px, transparent 4px 8px)" }} />녹화 없음(이벤트 대기·일정 외 시간 또는 단절 — 이벤트 센터에서 확인)</span>
+          : <span><i style={{ background: "repeating-linear-gradient(-45deg, var(--signal) 0 4px, #1b1a12 4px 8px)" }} />녹화 없음(누락·꺼짐)</span>}
         <span><i style={{ background: "var(--ok)", boxShadow: "inset 0 -3px 0 var(--signal)" }} />보호 구간</span>
         <span><i style={{ background: "var(--rec)", width: 3 }} />이벤트</span>
         <span>클릭: 재생 / 끌기: 구간 선택 / ←→: 10초 이동</span>

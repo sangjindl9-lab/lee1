@@ -50,6 +50,7 @@ class Principal:
     session: AuthSession
     permissions: set[str]
     site_ids: set[int] | None  # None = 전체 현장
+    camera_ids: set[int] | None = None  # None = 현장 안의 모든 카메라
 
     @property
     def is_superadmin(self) -> bool:
@@ -60,6 +61,10 @@ class Principal:
 
     def can_site(self, site_id: int) -> bool:
         return self.site_ids is None or site_id in self.site_ids
+
+    def can_cam(self, cam) -> bool:
+        """현장 권한 + (지정된 경우) 카메라 단위 권한."""
+        return self.can_site(cam.site_id) and (self.camera_ids is None or cam.id in self.camera_ids)
 
 
 def load_principal(db: Session, token: str) -> Principal | None:
@@ -74,7 +79,13 @@ def load_principal(db: Session, token: str) -> Principal | None:
         return None
     perms = effective_permissions(user.role, user.permissions_override)
     sites = None if user.role == "superadmin" else {s.id for s in user.sites}
-    return Principal(user=user, session=sess, permissions=perms, site_ids=sites)
+    cams = None
+    if user.role != "superadmin":
+        from ..models import UserCamera
+
+        rows = set(db.scalars(select(UserCamera.camera_id).where(UserCamera.user_id == user.id)))
+        cams = rows or None
+    return Principal(user=user, session=sess, permissions=perms, site_ids=sites, camera_ids=cams)
 
 
 def current_principal(request: Request, db: Session = Depends(get_db)) -> Principal:
@@ -130,7 +141,7 @@ def get_camera_for(db: Session, p: Principal, camera_id: int, request: Request |
     cam = db.get(Camera, camera_id)
     if not cam or (cam.deleted_at and not include_deleted):
         raise HTTPException(status_code=404, detail="카메라를 찾을 수 없습니다.")
-    if not p.can_site(cam.site_id):
+    if not p.can_cam(cam):
         audit(db, action="access.denied", user=p.user, ip=client_ip(request) if request else "",
               target_type="camera", target_id=camera_id, result="denied", commit=True)
         # 존재 여부를 숨기기 위해 404

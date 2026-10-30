@@ -40,6 +40,7 @@ NS_ANALYTICS = "http://www.onvif.org/ver20/analytics/wsdl"
 
 WSSE = "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd"
 WSU = "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd"
+WSA = "http://www.w3.org/2005/08/addressing"
 PWD_DIGEST = "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordDigest"
 B64 = "http://docs.oasis-open.org/wss/2004/01/oasis-200401-soap-message-security-1.0#Base64Binary"
 
@@ -173,19 +174,24 @@ class OnvifClient:
         digest = base64.b64encode(hashlib.sha1(nonce + created.encode() + self.t.password.encode()).digest()).decode()
         u = _xml_escape(self.t.username)
         return (
-            f'<s:Header><wsse:Security s:mustUnderstand="1" xmlns:wsse="{WSSE}" xmlns:wsu="{WSU}">'
+            f'<wsse:Security s:mustUnderstand="1" xmlns:wsse="{WSSE}" xmlns:wsu="{WSU}">'
             f"<wsse:UsernameToken><wsse:Username>{u}</wsse:Username>"
             f'<wsse:Password Type="{PWD_DIGEST}">{digest}</wsse:Password>'
             f'<wsse:Nonce EncodingType="{B64}">{base64.b64encode(nonce).decode()}</wsse:Nonce>'
-            f"<wsu:Created>{created}</wsu:Created></wsse:UsernameToken></wsse:Security></s:Header>"
+            f"<wsu:Created>{created}</wsu:Created></wsse:UsernameToken></wsse:Security>"
         )
 
-    def call(self, url: str, body: str, action: str, auth: bool = True):
+    def call(self, url: str, body: str, action: str, auth: bool = True, wsa_to: str | None = None):
+        header = self._security_header() if auth else ""
+        if wsa_to is not None:
+            # WS-Addressing(이벤트 구독 주소로 보내는 PullMessages 등에 필요)
+            header += (f'<wsa:Action s:mustUnderstand="1" xmlns:wsa="{WSA}">{_xml_escape(action)}</wsa:Action>'
+                       f'<wsa:To s:mustUnderstand="1" xmlns:wsa="{WSA}">{_xml_escape(wsa_to)}</wsa:To>')
         env = (
             f'<?xml version="1.0" encoding="UTF-8"?>'
             f'<s:Envelope xmlns:s="{NS["s"]}" xmlns:tds="{NS["tds"]}" xmlns:trt="{NS["trt"]}" '
             f'xmlns:tr2="{NS["tr2"]}" xmlns:tt="{NS["tt"]}">'
-            f'{self._security_header() if auth else ""}<s:Body>{body}</s:Body></s:Envelope>'
+            f'{"<s:Header>" + header + "</s:Header>" if header else ""}<s:Body>{body}</s:Body></s:Envelope>'
         )
         headers = {"Content-Type": f'application/soap+xml; charset=utf-8; action="{action}"'}
         resp = self._post(url, env.encode("utf-8"), headers)

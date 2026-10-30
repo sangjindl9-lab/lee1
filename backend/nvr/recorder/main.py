@@ -27,6 +27,7 @@ from ..events import close_event, open_event, point_event
 from ..media.ffmpeg import (AUDIO_TRANSCODE, ERROR_TEXT, MP4_AUDIO_COPY, SUPPORTED_VIDEO, StreamSource,
                             classify_error, input_args, probe_stream)
 from ..models import Camera, CameraStatus, ServiceHeartbeat, utcnow
+from ..policy import CamPolicy
 from ..security.netguard import TargetDenied
 from ..security.redact import redact
 from ..storage import disk_info
@@ -88,6 +89,7 @@ class Recorder:
         self.last_hb = 0.0
         self.last_sweep = time.time()
         self.storage_ok = True
+        self.policies: dict[int, CamPolicy] = {}
 
     # ------------------------------------------------------------ 시작·복구
     def startup(self) -> None:
@@ -107,6 +109,9 @@ class Recorder:
             point_event(db, type="service_started", message=f"녹화 서비스 시작 ({self.instance})")
         if not sentinel.exists():
             sentinel.write_text("web-nvr recordings volume\n", encoding="utf-8")
+        with session_scope() as db:  # 복구 구간에도 카메라 녹화 정책을 적용
+            for c in db.scalars(select(Camera)):
+                self.policies[c.id] = CamPolicy.of(c)
         recovered = self.recover_incoming()
         added = reindex_orphans() if self.storage_ok else 0
         log.info("복구 완료: 미확정 구간 %d개 확정, 미색인 파일 %d개 재색인", recovered, added)
@@ -174,10 +179,11 @@ class Recorder:
             cams = db.scalars(select(Camera).where(Camera.deleted_at.is_(None), Camera.enabled.is_(True))).all()
             out = {}
             for c in cams:
-                manual = c.manual_record_until is not None and c.manual_record_until > now
-                if c.record_mode == "continuous" or manual:
+                pol = CamPolicy.of(c)
+                if pol.decide(now) is not None:
                     _ = c.site.allowed_networks  # 관계 로드
                     out[c.id] = c
+                    self.policies[c.id] = pol
             # 녹화 꺼진 카메라 상태 표시
             for c in db.scalars(select(Camera).where(Camera.deleted_at.is_(None))):
                 if c.id not in out:
@@ -206,7 +212,7 @@ class Recorder:
                     cs.config_version = cam.config_version
                     cs.retry_count, cs.next_start = 0, 0
         for cid, cam in desired.items():
-            kind = "continuous" if cam.record_mode == "continuous" else "manual"
+            kind = (self.policies[cid].decide(utcnow()) or ("continuous", "ready"))[0]
             if cid not in self.cams:
                 self.cams[cid] = CamState(camera_id=cid, site_id=cam.site_id, name=cam.name,
                                           config_version=cam.config_version, kind=kind)
@@ -258,7 +264,7 @@ class Recorder:
         if vcodec == "hevc":
             args += ["-tag:v", "hvc1"]
         args += [
-            "-f", "segment", "-segment_time", str(self.s.segment_seconds), "-segment_atclocktime", "1",
+            "-f", "segment", "-segment_time", str(self._segment_seconds(cs.camera_id)), "-segment_atclocktime", "1",
             "-reset_timestamps", "1", "-strftime", "1", "-segment_format", "mp4",
             "-segment_format_options", "movflags=+frag_keyframe+empty_moov+default_base_moof",
             "-segment_list", str(run_dir / "list.csv"), "-segment_list_type", "csv", "-segment_list_flags", "live",
@@ -277,6 +283,13 @@ class Recorder:
         threading.Thread(target=self._read_stderr, args=(run,), daemon=True).start()
         cs.run = run
         log.info("카메라 %s 녹화 프로세스 시작 (%s, video=%s audio=%s)", cs.camera_id, src.safe_url, vcodec, acodec or "-")
+
+    def _segment_seconds(self, camera_id: int) -> int:
+        """이벤트 녹화를 쓰는 카메라는 전·후 버퍼 정밀도를 위해 짧은 구간(기본 10초)."""
+        pol = self.policies.get(camera_id)
+        if pol and pol.uses_events():
+            return max(4, self.s.event_segment_seconds)
+        return self.s.segment_seconds
 
     @staticmethod
     def _save_stream_info(camera_id: int, probe) -> None:
@@ -390,8 +403,12 @@ class Recorder:
     def _finalize(self, camera_id: int, path: Path, start: dt.datetime, dur: float, kind: str, codecs: dict,
                   cs: CamState | None) -> str:
         """'ok' 확정 / 'skip' 버림(손상·너무 짧음) / 'retry' 저장공간 문제로 나중에 재시도"""
+        pol = self.policies.get(camera_id)
+        decided = pol.decide(start + dt.timedelta(seconds=min(1.0, dur / 2))) if pol else None
+        # 정책 경계(일정 종료 직후 등)에 걸친 구간은 버퍼로 두어 이벤트가 없으면 정리된다
+        kind, status = decided if decided else ("event", "buffer") if pol else (kind, "ready")
         try:
-            seg = finalize_segment(camera_id, path, start, dur, kind, codecs)
+            seg = finalize_segment(camera_id, path, start, dur, kind, codecs, status=status)
         except FinalizeError as exc:
             log.error("카메라 %s 구간 확정 실패: %s", camera_id, exc)
             with session_scope() as db:

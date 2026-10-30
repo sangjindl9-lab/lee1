@@ -6,7 +6,7 @@ x-backend: &backend
   build:
     context: .
     dockerfile: backend/Dockerfile
-  image: web-nvr-backend:0.1.0
+  image: web-nvr-backend:0.2.0
   restart: unless-stopped
   env_file: .env
   environment:
@@ -19,6 +19,7 @@ x-backend: &backend
     NVR_MEDIAMTX_AUTH_URL: http://api:8000/internal/mediamtx/auth
     NVR_DENY_NETWORKS: 172.31.250.0/24
     NVR_TRUSTED_PROXIES: 172.31.250.10/32
+    NVR_DISCOVERY_URL: http://172.31.250.1:8099
   secrets: [db_password, nvr_master_key]
   networks: [nvr]
   logging:
@@ -74,7 +75,23 @@ services:
       - ${NVR_RECORDINGS_HOST_PATH:-./data/recordings}:/recordings
       - ${NVR_EXPORTS_HOST_PATH:-./data/exports}:/exports
       - mediamtx-config:/mediamtx-config
+      # 여러 현장 통합: 이 서버가 현장(Edge)이면 secrets/central.token 을 두고 .env 에 NVR_CENTRAL_URL 설정
+      - ./secrets:/run/nvr-secrets:ro
     stop_grace_period: 30s
+    depends_on:
+      api: { condition: service_healthy }
+
+  # ONVIF 자동 탐색 보조 서비스: 현장망으로 WS-Discovery 멀티캐스트를 보내기 위해 host 네트워크로 실행.
+  # NVR 내부 망 게이트웨이(172.31.250.1)에만 바인딩하고 키로 보호한다. 탐색이 필요 없으면 이 서비스를 지워도 된다.
+  discovery:
+    image: web-nvr-backend:0.2.0
+    restart: unless-stopped
+    command: ["python", "-m", "nvr.discovery_service"]
+    network_mode: host
+    environment:
+      NVR_MASTER_KEY_FILE: /run/secrets/nvr_master_key
+      NVR_DISCOVERY_BIND: 172.31.250.1:8099
+    secrets: [nvr_master_key]
     depends_on:
       api: { condition: service_healthy }
 
@@ -95,7 +112,7 @@ services:
     build:
       context: .
       dockerfile: deploy/caddy/Dockerfile
-    image: web-nvr-caddy:0.1.0
+    image: web-nvr-caddy:0.2.0
     restart: unless-stopped
     env_file: .env
     ports:

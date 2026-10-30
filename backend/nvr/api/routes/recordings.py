@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from ...audit import audit
 from ...config import get_settings
-from ...models import Event, RecordingSegment, utcnow
+from ...models import Bookmark, Event, RecordingSegment, utcnow
 from ...storage import safe_join
 from ..deps import Principal, client_ip, get_camera_for, get_db, require
 
@@ -84,9 +84,15 @@ def timeline(camera_id: int, start: str, end: str, request: Request, p: Principa
     evs = db.scalars(select(Event).where(Event.camera_id == cam.id, Event.started_at < t1,
                                          (Event.ended_at.is_(None)) | (Event.ended_at > t0))
                      .order_by(Event.started_at).limit(500)).all()
-    events = [{"id": e.id, "type": e.type, "severity": e.severity, "start": e.started_at.isoformat(),
+    events = [{"id": e.id, "type": e.type, "severity": e.severity, "source": e.source, "start": e.started_at.isoformat(),
                "end": e.ended_at.isoformat() if e.ended_at else None, "message": e.message} for e in evs]
+    bms = db.scalars(select(Bookmark).where(Bookmark.camera_id == cam.id, Bookmark.at >= t0, Bookmark.at < t1)
+                     .order_by(Bookmark.at).limit(500)).all()
+    bookmarks = [{"id": b.id, "at": b.at.isoformat(), "title": b.title, "note": b.note} for b in bms]
     return {"camera_id": cam.id, "timezone": cam.site.timezone, "segments": items, "gaps": gaps, "events": events,
+            "bookmarks": bookmarks,
+            # 이벤트·일정 녹화 카메라는 녹화 공백이 정상 동작일 수 있음(화면에서 장애와 구분해 표시)
+            "gaps_expected": cam.record_mode in ("event", "schedule", "off"),
             "is_test_source": cam.is_test_source, "now": now.isoformat()}
 
 

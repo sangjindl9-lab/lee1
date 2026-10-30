@@ -14,6 +14,7 @@ from ...audit import audit
 from ...camera_util import camera_source
 from ...config import get_settings
 from ...media.ffmpeg import ERROR_TEXT, build_source, grab_snapshot, probe_stream
+from ...policy import EVENT_TRIGGER_TYPES, RECORD_MODES, validate_schedule
 from ...models import Camera, CameraStatus, Driver, RecordingSegment, Site, utcnow
 from ...onvif.client import OnvifClient, OnvifError, OnvifTarget, fetch_snapshot
 from ...security.crypto import decrypt_secret, encrypt_secret
@@ -89,6 +90,11 @@ class CameraIn(BaseModel):
     location_note: str = Field(default="", max_length=2000)
     enabled: bool = True
     record_mode: str = "continuous"
+    schedule: list[str] = []
+    event_pre_seconds: int = Field(default=10, ge=0, le=120)
+    event_post_seconds: int = Field(default=20, ge=0, le=600)
+    event_triggers: list[str] = []
+    events_enabled: bool = False
     retention_days: int | None = Field(default=None, ge=1, le=3650)
     is_test_source: bool = False
     capabilities: dict[str, Any] = {}
@@ -112,6 +118,11 @@ class CameraPatch(BaseModel):
     location_note: str | None = Field(default=None, max_length=2000)
     enabled: bool | None = None
     record_mode: str | None = None
+    schedule: list[str] | None = None
+    event_pre_seconds: int | None = Field(default=None, ge=0, le=120)
+    event_post_seconds: int | None = Field(default=None, ge=0, le=600)
+    event_triggers: list[str] | None = None
+    events_enabled: bool | None = None
     retention_days: int | None = Field(default=None, ge=0, le=3650)  # 0 = 기본값 사용
     is_test_source: bool | None = None
     tls_insecure: bool | None = None
@@ -153,6 +164,11 @@ def camera_out(cam: Camera, st: CameraStatus | None = None, usage: int | None = 
         "location_note": cam.location_note,
         "enabled": cam.enabled,
         "record_mode": cam.record_mode,
+        "schedule": cam.schedule or [],
+        "event_pre_seconds": cam.event_pre_seconds,
+        "event_post_seconds": cam.event_post_seconds,
+        "event_triggers": cam.event_triggers or [],
+        "events_enabled": cam.events_enabled,
         "manual_record_until": cam.manual_record_until.isoformat() if cam.manual_record_until else None,
         "retention_days": cam.retention_days,
         "effective_retention_days": cam.retention_days or get_settings().default_retention_days,
@@ -213,7 +229,7 @@ def list_cameras(site_id: int | None = None, include_deleted: bool = False, p: P
         q = q.where(Camera.deleted_at.is_(None))
     if site_id:
         q = q.where(Camera.site_id == site_id)
-    cams = [c for c in db.scalars(q) if p.can_site(c.site_id)]
+    cams = [c for c in db.scalars(q) if p.can_cam(c)]
     sts = {s.camera_id: s for s in db.scalars(select(CameraStatus).where(CameraStatus.camera_id.in_([c.id for c in cams])))} if cams else {}
     usage = dict(db.execute(select(RecordingSegment.camera_id, func.sum(RecordingSegment.size_bytes))
                             .group_by(RecordingSegment.camera_id)).all())
@@ -340,10 +356,26 @@ def _validate_urls(site: Site, main: str, sub: str, snap: str) -> None:
 
 
 def _validate_mode(record_mode: str, transport: str) -> None:
-    if record_mode not in ("off", "continuous"):
-        raise HTTPException(400, "녹화 방식은 '끔' 또는 '연속'만 지원합니다(예약·이벤트 녹화는 2단계).")
+    if record_mode not in RECORD_MODES:
+        raise HTTPException(400, "녹화 방식은 off(끔)·continuous(연속)·schedule(일정)·event(이벤트) 중 하나입니다.")
     if transport not in ("tcp", "udp"):
         raise HTTPException(400, "RTSP 전송 방식은 tcp 또는 udp 입니다.")
+
+
+def _validate_event_cfg(mode: str, schedule: list[str], triggers: list[str], events_enabled: bool,
+                        connection_type: str) -> tuple[list[str], list[str]]:
+    try:
+        sched = validate_schedule(schedule)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    if mode == "schedule" and not sched:
+        raise HTTPException(400, "일정 녹화에는 주간 일정표가 필요합니다.")
+    bad = [t for t in triggers if t not in EVENT_TRIGGER_TYPES]
+    if bad:
+        raise HTTPException(400, f"알 수 없는 이벤트 종류: {', '.join(bad)}")
+    if events_enabled and connection_type != "onvif":
+        raise HTTPException(400, "카메라 이벤트 구독은 ONVIF 로 등록한 카메라만 가능합니다.")
+    return sched, list(dict.fromkeys(triggers))
 
 
 def _driver_id(db: Session, connection_type: str) -> int | None:
@@ -357,6 +389,8 @@ def create_camera_record(db: Session, p: Principal, body: CameraIn, ip: str) -> 
     if body.connection_type not in ("onvif", "rtsp"):
         raise HTTPException(400, "연결 방식은 onvif 또는 rtsp 입니다.")
     _validate_mode(body.record_mode, body.rtsp_transport)
+    sched, trig = _validate_event_cfg(body.record_mode, body.schedule, body.event_triggers, body.events_enabled,
+                                      body.connection_type)
     _validate_urls(site, body.main_stream_url, body.sub_stream_url, body.snapshot_url)
     host = body.host.strip()
     if body.connection_type == "onvif":
@@ -390,6 +424,8 @@ def create_camera_record(db: Session, p: Principal, body: CameraIn, ip: str) -> 
         vendor=body.vendor, model=body.model, firmware=body.firmware, serial=body.serial,
         tags=[t.strip() for t in body.tags if t.strip()][:20], location_note=body.location_note,
         enabled=body.enabled, record_mode=body.record_mode, retention_days=body.retention_days,
+        schedule=sched, event_pre_seconds=body.event_pre_seconds, event_post_seconds=body.event_post_seconds,
+        event_triggers=trig, events_enabled=body.events_enabled,
         is_test_source=body.is_test_source, capabilities=body.capabilities, stream_info=body.stream_info,
         driver_id=_driver_id(db, body.connection_type),
     )
@@ -418,9 +454,18 @@ def update_camera(camera_id: int, body: CameraPatch, request: Request, p: Princi
     changes: dict[str, Any] = {}
     data = body.model_dump(exclude_unset=True)
     reconnect_fields = {"host", "onvif_port", "rtsp_transport", "main_stream_url", "sub_stream_url", "username",
-                        "password", "tls_insecure", "enabled"}
+                        "password", "tls_insecure", "enabled", "record_mode", "schedule", "events_enabled"}
     if "record_mode" in data or "rtsp_transport" in data:
         _validate_mode(data.get("record_mode", cam.record_mode), data.get("rtsp_transport", cam.rtsp_transport))
+    if any(k in data for k in ("record_mode", "schedule", "event_triggers", "events_enabled")):
+        sched, trig = _validate_event_cfg(data.get("record_mode", cam.record_mode),
+                                          data["schedule"] if data.get("schedule") is not None else (cam.schedule or []),
+                                          data["event_triggers"] if data.get("event_triggers") is not None else (cam.event_triggers or []),
+                                          data.get("events_enabled", cam.events_enabled), cam.connection_type)
+        if data.get("schedule") is not None:
+            data["schedule"] = sched
+        if data.get("event_triggers") is not None:
+            data["event_triggers"] = trig
     _validate_urls(site, data.get("main_stream_url", cam.main_stream_url), data.get("sub_stream_url", cam.sub_stream_url),
                    data.get("snapshot_url", cam.snapshot_url))
     if "tls_insecure" in data and data["tls_insecure"] != cam.tls_insecure:
@@ -440,6 +485,8 @@ def update_camera(camera_id: int, body: CameraPatch, request: Request, p: Princi
             continue
         if k == "retention_days":
             v = v or None
+        elif v is None:
+            continue  # null 은 '변경 안 함'
         if k == "tags" and v is not None:
             v = [t.strip() for t in v if t.strip()][:20]
         if getattr(cam, k) != v:
