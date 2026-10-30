@@ -337,7 +337,9 @@ test('업데이트: 수정 전부 완료 → 새 버전, 버전 배포(자동 �
   await server.app.locals.idleRollout();
   const mine = calls.slice(c0);
   assert.deepEqual(mine.find((x) => x.name === 'serviceInstanceUpdate').variables.input, { watchPatterns: ['.eum-release-only'] });
-  assert.equal(mine.find((x) => x.name === 'variableCollectionUpsert').variables.input.variables.APP_VERSION, '1.1.0');
+  const vars = mine.find((x) => x.name === 'variableCollectionUpsert').variables.input.variables;
+  assert.equal(vars.APP_VERSION, '1.1.0');
+  assert.equal(vars.S3_PREFIX, 'customers/2148839612/', '예전에 개설한 서버도 배포할 때 파일 저장소 설정을 받는다');
   assert.equal(mine.find((x) => x.name === 'serviceInstanceDeployV2').variables.c, 'bbb2222');
   u = (await call('/api/admin/updates')).body;
   assert.equal(u.customers.find((c) => c.id === id).version, '1.1.0');

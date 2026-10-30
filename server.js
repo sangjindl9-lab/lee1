@@ -813,7 +813,7 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
     const sha = latest.meta.commitHash;
     const rel = await releases();
     const version = rel.find((r) => r.commit_sha === sha)?.version ?? `${rel[0]?.version ?? '0.0.0'}+${sha.slice(0, 7)}`;
-    await R.deployVersion(gql, j.data, version, sha);
+    await R.deployVersion(gql, j.data, version, sha, R.storageVars({ s3: await filesConf(), backup: backupConf() }, j.input.bizRegNo));
     audit(req, 'REDEPLOY', `고객 서버 최신 코드 배포 ${c.name} (${version})`);
     void finishDeploy(gql, j, c.id, null).then((st) => st === 'SUCCESS' && q(`update customer set erp_version = $2, erp_version_at = now() where id = $1`, [c.id, version])).catch(() => undefined);
     res.status(202).json({ ok: true, version });
@@ -941,7 +941,7 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
     const ids = Array.isArray(req.body?.customerIds) && req.body.customerIds.length ? req.body.customerIds.map(String) : null;
     const jobs = await doneJobs(ids);
     const id = await startRollout(req, jobs, { scope: ids ? 'SOME' : 'ALL', version: r.version, label: `버전 ${r.version} 배포` },
-      (gql, j) => R.deployVersion(gql, j.data, r.version, r.commit_sha),
+      async (gql, j) => R.deployVersion(gql, j.data, r.version, r.commit_sha, R.storageVars({ s3: await filesConf(), backup: backupConf() }, j.input.bizRegNo)),
       (j) => q(`update customer set erp_version = $2, erp_version_at = now() where id = $1`, [j.customer_id, r.version]));
     res.status(202).json({ id });
   }));
