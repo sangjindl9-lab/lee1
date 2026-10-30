@@ -1,0 +1,22 @@
+# [샌드박스 전용 오버라이드] 외부 이미지 저장소가 차단된 검증 환경에서만 사용. 배포물 아님.
+services:
+  db:
+    image: sandbox-postgres:16
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U nvr -d nvr"]
+  api:
+    build: !reset null
+  recorder:
+    build: !reset null
+  worker:
+    build: !reset null
+    depends_on: !override
+      api: { condition: service_healthy }
+  mediamtx:
+    profiles: ["needs-mediamtx-image"]
+  caddy:
+    build: !reset null
+    image: sandbox-caddy:2.6
+    depends_on: !override [api]
+    ports: !override
+      - "18443:443"

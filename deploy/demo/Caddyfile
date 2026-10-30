@@ -1,0 +1,34 @@
+{
+	admin off
+	auto_https off
+}
+
+# [클라우드 데모] Railway 가 HTTPS 를 처리하므로 컨테이너 안에서는 HTTP 로 받는다
+:{$PORT} {
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "same-origin"
+		Content-Security-Policy "default-src 'self'; img-src 'self' blob: data:; media-src 'self' blob:; connect-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+		-Server
+	}
+	@internal path /internal/*
+	handle @internal {
+		respond 404
+	}
+	handle /api/* {
+		reverse_proxy 127.0.0.1:8000
+	}
+	handle_path /rtc/* {
+		reverse_proxy 127.0.0.1:8889
+	}
+	handle_path /hls/* {
+		reverse_proxy 127.0.0.1:8888
+	}
+	handle {
+		root * /srv
+		encode gzip
+		try_files {path} /index.html
+		file_server
+	}
+}

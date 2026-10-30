@@ -1,0 +1,54 @@
+{
+	# 관리 API 비활성(외부·내부 모두)
+	admin off
+}
+
+{$NVR_SITE_ADDRESS} {
+	tls {$NVR_TLS}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "same-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		Content-Security-Policy "default-src 'self'; img-src 'self' blob: data:; media-src 'self' blob:; connect-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+		-Server
+	}
+
+	# 내부 전용 경로(mediamtx 인증 훅)는 외부에 노출하지 않는다
+	@internal path /internal/*
+	handle @internal {
+		respond 404
+	}
+
+	handle /api/* {
+		request_body {
+			max_size 2MB
+		}
+		reverse_proxy api:8000 {
+			flush_interval -1
+		}
+	}
+
+	# WebRTC(WHEP) 시그널링·HLS → mediamtx (미디어 자체는 UDP/TCP 8189 로 직접)
+	handle_path /rtc/* {
+		reverse_proxy mediamtx:8889
+	}
+	handle_path /hls/* {
+		reverse_proxy mediamtx:8888
+	}
+
+	handle {
+		root * /srv
+		encode zstd gzip
+		@assets path /assets/*
+		header @assets Cache-Control "public, max-age=31536000, immutable"
+		try_files {path} /index.html
+		file_server
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}

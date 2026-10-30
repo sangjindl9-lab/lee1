@@ -1,0 +1,45 @@
+# MediaMTX 기본 설정 템플릿 (대상 버전 v1.21.2, https://mediamtx.org/docs/references/configuration-file)
+# worker 가 __자리표시자__ 를 채우고 카메라 경로(paths)를 붙여 /mediamtx-config/mediamtx.yml 을 생성한다.
+# 직접 수정한 내용은 덮어써지므로 이 템플릿을 수정하세요.
+
+logLevel: info
+logDestinations: [stdout]
+
+# 관리 API·메트릭·pprof 는 사용하지 않는다(외부 노출 방지)
+api: no
+metrics: no
+pprof: no
+playback: no
+
+# 모든 시청 요청은 웹 NVR API 가 검증(단기 서명 토큰). 2xx 외에는 거부.
+authMethod: http
+authHTTPAddress: __AUTH_HTTP_ADDRESS__
+authHTTPExclude: []
+
+# 시청은 WebRTC(우선)·HLS(대체)만 제공. 카메라 원본은 서버가 RTSP로 당겨온다(source).
+rtsp: no
+rtmp: no
+srt: no
+
+hls: yes
+hlsAddress: :8888
+hlsVariant: lowLatency
+hlsAlwaysRemux: no
+# 같은 출처(caddy 경유)로 사용. 접근 통제는 Origin 이 아니라 서명 토큰으로 한다(mediamtx 기본값 유지).
+hlsAllowOrigins: ["*"]
+hlsTrustedProxies: []
+
+webrtc: yes
+webrtcAddress: :8889
+webrtcAllowOrigins: ["*"]
+webrtcTrustedProxies: []
+webrtcLocalUDPAddress: :8189
+webrtcLocalTCPAddress: __WEBRTC_TCP_ADDRESS__
+webrtcIPsFromInterfaces: yes
+webrtcAdditionalHosts: __WEBRTC_ADDITIONAL_HOSTS__
+webrtcICEServers2: __WEBRTC_ICE_SERVERS__
+
+pathDefaults:
+  source: publisher
+  sourceOnDemand: no
+  record: no

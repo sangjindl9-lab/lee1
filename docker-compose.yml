@@ -1,0 +1,129 @@
+# 웹 NVR — 현장 서버용 Docker Compose
+# 설치: docs/02-설치운영.md 참조. 먼저 scripts/init-secrets.sh 를 실행하세요.
+name: web-nvr
+
+x-backend: &backend
+  build:
+    context: .
+    dockerfile: backend/Dockerfile
+  image: web-nvr-backend:0.1.0
+  restart: unless-stopped
+  env_file: .env
+  environment:
+    NVR_DATABASE_URL: postgresql+psycopg://nvr@db:5432/nvr
+    NVR_DATABASE_PASSWORD_FILE: /run/secrets/db_password
+    NVR_MASTER_KEY_FILE: /run/secrets/nvr_master_key
+    NVR_RECORDINGS_DIR: /recordings
+    NVR_EXPORTS_DIR: /exports
+    NVR_MEDIAMTX_CONFIG_PATH: /mediamtx-config/mediamtx.yml
+    NVR_MEDIAMTX_AUTH_URL: http://api:8000/internal/mediamtx/auth
+    NVR_DENY_NETWORKS: 172.31.250.0/24
+    NVR_TRUSTED_PROXIES: 172.31.250.10/32
+  secrets: [db_password, nvr_master_key]
+  networks: [nvr]
+  logging:
+    driver: json-file
+    options: { max-size: "20m", max-file: "5" }
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: nvr
+      POSTGRES_DB: nvr
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    secrets: [db_password]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nvr -d nvr"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [nvr]
+
+  api:
+    <<: *backend
+    command: ["/app/backend/docker/api-entrypoint.sh"]
+    volumes:
+      - ${NVR_RECORDINGS_HOST_PATH:-./data/recordings}:/recordings
+      - ${NVR_EXPORTS_HOST_PATH:-./data/exports}:/exports
+    depends_on:
+      db: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  recorder:
+    <<: *backend
+    command: ["python", "-m", "nvr.recorder.main"]
+    volumes:
+      - ${NVR_RECORDINGS_HOST_PATH:-./data/recordings}:/recordings
+    # 종료 시 진행 중인 구간을 닫을 시간
+    stop_grace_period: 45s
+    depends_on:
+      api: { condition: service_healthy }   # 마이그레이션 완료 후 시작
+
+  worker:
+    <<: *backend
+    command: ["python", "-m", "nvr.worker.main"]
+    volumes:
+      - ${NVR_RECORDINGS_HOST_PATH:-./data/recordings}:/recordings
+      - ${NVR_EXPORTS_HOST_PATH:-./data/exports}:/exports
+      - mediamtx-config:/mediamtx-config
+    stop_grace_period: 30s
+    depends_on:
+      api: { condition: service_healthy }
+
+  mediamtx:
+    image: bluenviron/mediamtx:1.21.2
+    restart: unless-stopped
+    command: ["/mediamtx-config/mediamtx.yml"]
+    volumes:
+      - mediamtx-config:/mediamtx-config:ro
+    ports:
+      - "8189:8189/udp"   # WebRTC 미디어(ICE)
+      # UDP 가 막힌 망: .env 의 NVR_WEBRTC_TCP=true 와 함께 아래 주석 해제
+      # - "8189:8189/tcp"
+    depends_on: [worker]
+    networks: [nvr]
+
+  caddy:
+    build:
+      context: .
+      dockerfile: deploy/caddy/Dockerfile
+    image: web-nvr-caddy:0.1.0
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on: [api, mediamtx]
+    networks:
+      nvr:
+        ipv4_address: 172.31.250.10
+
+networks:
+  nvr:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.31.250.0/24   # 카메라 현장망과 겹치면 변경하고 NVR_DENY_NETWORKS 도 맞추세요
+
+volumes:
+  pgdata:
+  mediamtx-config:
+  caddy-data:
+  caddy-config:
+
+secrets:
+  db_password:
+    file: ./secrets/db_password
+  nvr_master_key:
+    file: ./secrets/master.key

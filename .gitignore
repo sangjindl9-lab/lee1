@@ -1,0 +1,10 @@
+.env
+secrets/
+data/
+backups/
+frontend/node_modules/
+frontend/dist/
+frontend-dist/
+**/__pycache__/
+*.pyc
+.venv/
