@@ -1,4 +1,4 @@
-/* SS-ERP 라이선스 관리 — 먹(ink)·지면(paper)·강철(steel)·인주(seal) */
+/* 이음ERP 라이선스 관리 — 먹(ink)·지면(paper)·강철(steel)·인주(seal) */
 :root {
   --ink: #18202b;
   --ink-2: #3b4656;
@@ -234,3 +234,4 @@ div.f { display: grid; gap: 5px; align-content: start; font-size: 12.5px; color:
 .choice input { width: auto; min-height: 0; margin: 0; }
 .choice .small { grid-column: 2; }
 @media (max-width: 640px) { .choice { grid-template-columns: 1fr; } }
+.brand .mark-img { height: 22px; width: auto; flex: none; }

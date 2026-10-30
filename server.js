@@ -1,6 +1,6 @@
 'use strict';
 /**
- * SS-ERP 라이선스 발급 관리 (판매자 전용)
+ * 이음ERP 라이선스 발급 관리 (판매자 전용)
  *
  * 환경변수
  *   DATABASE_URL         PostgreSQL 주소
@@ -377,7 +377,7 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
     const lic = shapeLicense(r);
     if (req.query.download) {
       res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-      res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(`SS-ERP_라이선스_${lic.customerName}_${lic.expiresAt}.lic`)}`);
+      res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(`이음ERP_라이선스_${lic.customerName}_${lic.expiresAt}.lic`)}`);
       return res.send(lic.licenseText + '\n');
     }
     res.json(lic);
@@ -536,7 +536,7 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
     const base = j?.status === 'DONE' ? `https://${j.data.domain}` : String(c.server_url ?? '').trim();
     if (!/^https?:\/\//.test(base)) throw bad('고객 ERP 접속 주소가 없습니다. 서버를 개설하거나 고객 정보에 접속 주소를 적어 주세요');
     const now = Date.now();
-    const ticket = L.sign({ kind: 'vendor-access', bizRegNo: c.biz_reg_no, vendor: '에스에스전력', iat: now, exp: now + 2 * 60_000, nonce: crypto.randomBytes(12).toString('hex') }, privateKey);
+    const ticket = L.sign({ kind: 'vendor-access', bizRegNo: c.biz_reg_no, vendor: '이음소프트', iat: now, exp: now + 2 * 60_000, nonce: crypto.randomBytes(12).toString('hex') }, privateKey);
     audit(req, 'VENDOR_ACCESS', `고객 ERP 접속 ${c.name} (${base})`);
     res.json({ url: `${base.replace(/\/$/, '')}/api/v1/auth/vendor-login?ticket=${encodeURIComponent(ticket)}` });
   }));
@@ -853,7 +853,7 @@ async function main() {
   }
   const app = buildApp({ pool, privateKey, adminPassword: process.env.ADMIN_PASSWORD, sessionSecret: process.env.SESSION_SECRET });
   await app.locals.resumeJobs();
-  app.listen(PORT, '0.0.0.0', () => console.log(`SS-ERP 라이선스 발급 관리 시작 :${PORT}\n판매자 공개키:\n${L.publicKeyPem(privateKey)}`));
+  app.listen(PORT, '0.0.0.0', () => console.log(`이음ERP 라이선스 발급 관리 시작 :${PORT}\n판매자 공개키:\n${L.publicKeyPem(privateKey)}`));
 }
 
 if (require.main === module) main().catch((e) => {

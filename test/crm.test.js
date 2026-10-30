@@ -48,10 +48,10 @@ const start = L.kstToday();
 test('계약 작성: 요금제로 이용료 자동 계산, 고객 단계가 제안·견적으로', async () => {
   cust = (await call('/customers', { method: 'POST', json: { name: '삼우전선', bizRegNo: '431-86-01056', deployment: 'ONPREM' } })).body.id;
   assert.equal((await call('/crm/customers')).body[0].stage, '리드');
-  const bad = await call('/contracts', { method: 'POST', json: { customerId: cust, product: 'SS-ERP', planId: 'gm-std', startsOn: start, endsOn: L.oneYearFrom(start) } });
+  const bad = await call('/contracts', { method: 'POST', json: { customerId: cust, product: '이음ERP', planId: 'gm-std', startsOn: start, endsOn: L.oneYearFrom(start) } });
   assert.equal(bad.status, 400, '다른 제품의 요금제는 거부');
   // 스탠다드 설치형 3,000,000 + 추가 5명×100,000 + 세금계산서 600,000 = 4,100,000 / 1회: 구축비 1,500,000 + 이전 500,000
-  const r = await call('/contracts', { method: 'POST', json: { customerId: cust, product: 'SS-ERP', deployment: 'ONPREM', planId: 'erp-std', seats: 20, options: ['taxinv', 'migrate'], startsOn: start, endsOn: L.oneYearFrom(start), billMethod: '분기 분납', payMethod: 'CMS 자동이체', payDays: 10 } });
+  const r = await call('/contracts', { method: 'POST', json: { customerId: cust, product: '이음ERP', deployment: 'ONPREM', planId: 'erp-std', seats: 20, options: ['taxinv', 'migrate'], startsOn: start, endsOn: L.oneYearFrom(start), billMethod: '분기 분납', payMethod: 'CMS 자동이체', payDays: 10 } });
   assert.equal(r.status, 201);
   assert.match(r.body.no, /^SS-C-\d{4}-001$/);
   k = (await call('/contracts/' + r.body.id)).body;
@@ -116,7 +116,7 @@ test('입금: 부분입금 → 완납, 납기 지난 청구는 연체, 입금 �
   assert.match(csv.body, /연체/);
 });
 
-test('SS-ERP 계약 체결 후 기존 발급 기능으로 라이선스 발급, 계약에 연결', async () => {
+test('이음ERP 계약 체결 후 기존 발급 기능으로 라이선스 발급, 계약에 연결', async () => {
   const lic = await call(`/customers/${cust}/licenses`, { method: 'POST', json: { kind: 'NEW', maxUsers: k.seats, startsOn: k.startsOn, expiresAt: k.endsOn, amount: k.annualFee, memo: k.no } });
   assert.equal(lic.status, 201);
   assert.equal((await call(`/contracts/${k.id}/license`, { method: 'POST', json: { licenseRowId: lic.body.id } })).status, 200);

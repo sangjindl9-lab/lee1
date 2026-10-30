@@ -1,5 +1,5 @@
 'use strict';
-/* SS-ERP 라이선스 관리 — 화면 (빌드 없는 단일 스크립트) */
+/* 이음ERP 라이선스 관리 — 화면 (빌드 없는 단일 스크립트) */
 
 const $app = document.getElementById('app');
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -43,7 +43,7 @@ function renderLogin() {
   $app.innerHTML = `
     <div class="login">
       <form id="lf">
-        <div class="brand" style="color:var(--ink);padding:0"><span class="mark">SS</span><div>SS-ERP 라이선스 관리<small style="color:var(--muted)">판매자 전용</small></div></div>
+        <div class="brand" style="color:var(--ink);padding:0"><img class="mark-img" src="/brand/symbol.png" alt="" /><div>이음ERP 라이선스 관리<small style="color:var(--muted)">판매자 전용</small></div></div>
         <label class="f">관리자 비밀번호<input type="password" name="pw" autocomplete="current-password" required autofocus /></label>
         <div class="err" id="le"></div>
         <button class="btn primary" type="submit">로그인</button>
@@ -67,7 +67,7 @@ function shell(active, inner) {
   $app.innerHTML = `
     <div class="shell">
       <nav class="side" aria-label="메뉴">
-        <div class="brand"><span class="mark">SS</span><div>라이선스 관리<small>SS-ERP 판매자 전용</small></div></div>
+        <div class="brand"><img class="mark-img" src="/brand/symbol-light.png" alt="" /><div>이음ERP 라이선스 관리<small>주식회사 이음소프트 · 판매자 전용</small></div></div>
         ${nav.map(([href, label, key]) => `<a href="${href}" class="${active === key ? 'on' : ''}">${label}</a>`).join('')}
         <div class="spacer"></div>
         <button class="link" id="logout">로그아웃</button>
@@ -355,7 +355,7 @@ async function pageDelivery(id) {
       <div class="row"><a class="btn" href="#/customers/${id}">돌아가기</a><button class="btn" id="cpall">문자로 복사</button><button class="btn primary" onclick="window.print()">인쇄 / PDF 저장</button></div></div>
     ${d.installing ? '<div class="note warn noprint" style="margin-bottom:12px">아직 설치 중입니다 (보통 5~10분). 주소와 계정은 그대로이니 미리 전달해도 되고, 설치가 끝나면 바로 접속됩니다.</div>' : ''}
     <article class="panel sheet"><div class="body">
-      <h2 style="font-size:20px;margin-bottom:4px">SS-ERP 사용 안내</h2>
+      <h2 style="font-size:20px;margin-bottom:4px">이음ERP 사용 안내</h2>
       <p class="muted" style="margin:0 0 18px">${esc(d.name)} 귀중 · ${esc(d.issuedOn)}</p>
       <table class="kv"><tbody>
         <tr><th>접속 주소</th><td class="mono">${esc(d.url)}</td></tr>
@@ -371,9 +371,9 @@ async function pageDelivery(id) {
         <li><b>관리 &gt; 회사 정보</b>에서 대표자·주소 등을 확인하고, <b>관리 &gt; 사용자</b>에서 직원 계정을 만듭니다.</li>
         <li>라이선스는 이미 등록되어 있으며, 연간 계약을 연장하면 자동으로 갱신됩니다.</li>
       </ol>
-      <p class="small muted" style="margin-top:20px">문의: ㈜에스에스전력 · 이 안내서는 보안을 위해 첫 로그인 후 폐기해 주세요.</p>
+      <p class="small muted" style="margin-top:20px">문의: 주식회사 이음소프트 · 이 안내서는 보안을 위해 첫 로그인 후 폐기해 주세요.</p>
     </div></article>`);
-  document.getElementById('cpall').onclick = () => copy(`[SS-ERP 사용 안내] ${d.name}\n접속 주소: ${d.url}\n관리자 아이디: ${d.adminId}\n임시 비밀번호: ${d.tempPassword}\n첫 로그인 후 비밀번호를 바꿔 주세요.`, '납품 정보를 복사했습니다');
+  document.getElementById('cpall').onclick = () => copy(`[이음ERP 사용 안내] ${d.name}\n접속 주소: ${d.url}\n관리자 아이디: ${d.adminId}\n임시 비밀번호: ${d.tempPassword}\n첫 로그인 후 비밀번호를 바꿔 주세요.`, '납품 정보를 복사했습니다');
 }
 
 // ── 발급 대화상자 ──────────────────────────────────────────────
@@ -689,7 +689,7 @@ async function pageSettings() {
       </form>
     </section>
     <section class="panel"><header><h2>판매자 공개키</h2><button class="btn sm" id="cp">복사</button></header><div class="body">
-      <p class="muted" style="margin-top:0">SS-ERP에 들어 있는 공개키와 같아야 이 사이트에서 발급한 라이선스가 인정됩니다. 공개키는 알려져도 괜찮습니다.</p>
+      <p class="muted" style="margin-top:0">이음ERP에 들어 있는 공개키와 같아야 이 사이트에서 발급한 라이선스가 인정됩니다. 공개키는 알려져도 괜찮습니다.</p>
       <div class="lic-text">${esc(me.publicKey)}</div>
       <div class="note warn" style="margin-top:12px">비밀키(서명키)는 이 서버의 환경변수에만 있고 화면에는 나오지 않습니다. 따로 보관한 백업 파일을 잃어버리지 마세요. 비밀키가 유출되면 누구나 라이선스를 만들 수 있으니 즉시 키를 교체해야 합니다.</div>
     </div></section>`);

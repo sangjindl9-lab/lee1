@@ -104,7 +104,7 @@ async function pageContracts() {
   loading('contracts');
   const rows = (await api('/contracts')).filter((k) => !st || k.state === st);
   shell('contracts', `
-    <div class="page-head"><div><h1>계약 · 전자계약</h1><p>이용(임대) 계약서를 만들고 양측 서명을 받습니다. 체결 후 청구 일정과 SS-ERP 라이선스로 이어집니다.</p></div>
+    <div class="page-head"><div><h1>계약 · 전자계약</h1><p>이용(임대) 계약서를 만들고 양측 서명을 받습니다. 체결 후 청구 일정과 이음ERP 라이선스로 이어집니다.</p></div>
       <div class="row"><select id="cst" class="search">${opt([['', '전체 상태'], ...Object.entries(CON_STATE).map(([k, v]) => [k, v[0]])], st)}</select><a class="btn primary" href="#/contracts/new">+ 새 계약</a></div></div>
     <section class="panel">${rows.length ? `<div class="table-wrap"><table>
       <thead><tr><th>계약번호</th><th>고객</th><th>제품 / 방식</th><th>기간</th><th class="hide-sm">과금</th><th class="r">연 이용료</th><th>상태</th></tr></thead>
@@ -135,7 +135,7 @@ async function pageContractForm(id) {
   if (k && (k.status === 'SIGNED' || k.status === 'TERMINATED')) { location.hash = '#/contracts/' + id; return; }
   const cust0 = custs.find((c) => c.id === (k?.customerId ?? params.get('customer')));
   const s = today();
-  const v = k ?? { customerId: cust0?.id ?? '', product: 'SS-ERP', deployment: cust0?.deployment ?? 'HOSTED', planId: 'erp-basic', seats: 5, options: [], startsOn: s, endsOn: oneYear(s), billMethod: '연간 선납', payMethod: '계좌이체', payDays: 14, autoRenew: true, discount: 0, extraOnce: 0, special: '' };
+  const v = k ?? { customerId: cust0?.id ?? '', product: '이음ERP', deployment: cust0?.deployment ?? 'HOSTED', planId: 'erp-basic', seats: 5, options: [], startsOn: s, endsOn: oneYear(s), billMethod: '연간 선납', payMethod: '계좌이체', payDays: 14, autoRenew: true, discount: 0, extraOnce: 0, special: '' };
   shell('contracts', `
     <div class="page-head"><div><h1>${k ? `계약서 수정 ${esc(k.no)}` : '새 계약'}</h1><p>${k?.status === 'PENDING' ? '저장하면 이미 받은 서명은 지워지고 처음부터 다시 서명받습니다.' : '저장하면 계약서가 만들어지고 서명 화면으로 넘어갑니다.'}</p></div></div>
     ${custs.length ? '' : '<div class="note warn" style="margin-bottom:16px">먼저 <a href="#/customers/new">고객을 등록</a>해 주세요.</div>'}
@@ -253,7 +253,7 @@ async function pageContract(id) {
   const k = await api('/contracts/' + id);
   const st = k.state;
   const open = k.status === 'DRAFT' || k.status === 'PENDING';
-  const erp = k.product === 'SS-ERP';
+  const erp = k.product === '이음ERP';
   const s = k.signatures;
   const deployDiff = erp && k.customer.deployment !== k.deployment;
   shell('contracts', `
@@ -270,7 +270,7 @@ async function pageContract(id) {
           ${st === 'SIGNED' ? '<button class="btn danger" id="kterm">해지</button>' : ''}` : ''}
       </div></div>
     ${open ? `<div class="note noprint" style="margin-bottom:12px">양측이 모두 서명하면 계약이 체결되고 문서 해시가 기록됩니다. 고객이 멀리 있으면 [인쇄 / PDF 저장]으로 계약서를 보내 검토받은 뒤, 방문·화상 미팅에서 이 화면으로 서명받으세요.</div>` : ''}
-    ${k.status === 'SIGNED' && erp && !k.licenseRowId ? `<div class="note warn noprint" style="margin-bottom:12px">SS-ERP 계약이 체결됐습니다. [라이선스 발급]을 누르면 사용자 ${k.seats}명, ${esc(k.startsOn)} ~ ${esc(k.endsOn)} 라이선스가 이 고객에게 발급됩니다.${deployDiff ? ` 고객 등록 정보의 판매 방식(${k.customer.deployment === 'ONPREM' ? '설치형' : '호스팅형'})이 계약과 다릅니다. 고객 정보를 먼저 맞춰 주세요.` : ''}</div>` : ''}
+    ${k.status === 'SIGNED' && erp && !k.licenseRowId ? `<div class="note warn noprint" style="margin-bottom:12px">이음ERP 계약이 체결됐습니다. [라이선스 발급]을 누르면 사용자 ${k.seats}명, ${esc(k.startsOn)} ~ ${esc(k.endsOn)} 라이선스가 이 고객에게 발급됩니다.${deployDiff ? ` 고객 등록 정보의 판매 방식(${k.customer.deployment === 'ONPREM' ? '설치형' : '호스팅형'})이 계약과 다릅니다. 고객 정보를 먼저 맞춰 주세요.` : ''}</div>` : ''}
     <article class="panel sheet"><div class="body paper">${contractDoc(k)}</div></article>`);
   document.getElementById('kprint').addEventListener('click', () => window.print());
   document.querySelectorAll('[data-sign]').forEach((b) => (b.onclick = () => signDialog(k, b.dataset.sign)));
@@ -300,7 +300,7 @@ async function pageContract(id) {
     if (!confirm(`${k.no} 계약을 오늘 날짜로 해지할까요?`)) return;
     try {
       await api(`/contracts/${k.id}/terminate`, { method: 'POST' });
-      if (erp && k.customer.hasLicense && k.customer.licenseKind !== 'SUSPEND' && confirm('이 고객의 SS-ERP 라이선스도 사용 중지할까요? (고객 ERP가 조회 전용으로 바뀝니다)')) {
+      if (erp && k.customer.hasLicense && k.customer.licenseKind !== 'SUSPEND' && confirm('이 고객의 이음ERP 라이선스도 사용 중지할까요? (고객 ERP가 조회 전용으로 바뀝니다)')) {
         await api(`/customers/${k.customerId}/licenses`, { method: 'POST', json: { kind: 'SUSPEND', memo: `계약 ${k.no} 해지` } });
       }
       toast('해지했습니다');
@@ -506,7 +506,7 @@ async function pagePricing() {
     </div></form></section>`);
   const bindRm = () => document.querySelectorAll('[data-rm]').forEach((b) => (b.onclick = () => b.closest('tr').remove()));
   bindRm();
-  document.getElementById('addplan').onclick = () => { document.querySelector('#plans tbody').insertAdjacentHTML('beforeend', planRow({ product: 'SS-ERP', name: '새 요금제', seats: 5 })); bindRm(); };
+  document.getElementById('addplan').onclick = () => { document.querySelector('#plans tbody').insertAdjacentHTML('beforeend', planRow({ product: '이음ERP', name: '새 요금제', seats: 5 })); bindRm(); };
   document.getElementById('addopt').onclick = () => { document.querySelector('#opts tbody').insertAdjacentHTML('beforeend', optRow({ name: '새 옵션', product: '' })); bindRm(); };
   const read = (sel) => [...document.querySelectorAll(sel + ' tbody tr')].map((tr) => {
     const o = { id: tr.dataset.id || undefined };
