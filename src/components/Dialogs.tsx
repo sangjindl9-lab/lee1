@@ -1,10 +1,11 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Project, Task, TemplateRow, WorkKind } from '../lib/types';
 import { addDays, fmtDot, isValidDate, toNum } from '../lib/date';
 import { buildPeriods, clamp, plannedPct, r2, type ProjectCalc, WorkCalendar } from '../lib/calc';
 import { DEFAULT_TEMPLATE, generateTasks, newProject, uid } from '../lib/schedule';
 import { phaseLabel } from '../lib/phases';
 import { Confirm, Field, fmt1, fmt2, Modal, NumField, won } from './ui';
+import { api } from '../lib/api';
 
 type Upd = (fn: (d: Project) => void, key?: string) => void;
 
@@ -348,6 +349,7 @@ export function ProjectList({
 }
 
 // ───────────────── 신규 프로젝트 ─────────────────
+interface ErpSite { id: string; code: string; name: string; field: string; client: string; contractor: string; location: string; start: string; end: string; amount: number; agent: string }
 export function NewProjectDialog({ onCreate, onClose }: { onCreate: (p: Project) => void; onClose: () => void }) {
   const base = useMemo(() => newProject(), []);
   const [name, setName] = useState('');
@@ -356,6 +358,20 @@ export function NewProjectDialog({ onCreate, onClose }: { onCreate: (p: Project)
   const [start, setStart] = useState(base.info.start);
   const [end, setEnd] = useState(base.info.end);
   const [gen, setGen] = useState(true);
+  // 이음ERP 안에서 쓸 때: ERP에 등록한 현장을 골라 채운다
+  const [erp, setErp] = useState<ErpSite[] | null>(null);
+  const [extra, setExtra] = useState<Partial<Project['info']>>({});
+  useEffect(() => {
+    if ((window as any).ERP_GONGMU) api<ErpSite[]>('GET', '/api/erp-sites').then(setErp).catch(() => setErp([]));
+  }, []);
+  const pickErp = (x: ErpSite) => {
+    setName(x.name);
+    setClient(x.client);
+    if (isValidDate(x.start)) setStart(x.start);
+    if (isValidDate(x.end)) setEnd(x.end);
+    setKind(x.field === '정보통신' ? 'comm' : x.field === '전기+통신' ? 'both' : 'elec');
+    setExtra({ contractor: x.contractor, amount: x.amount, location: x.location, agent: x.agent, docNo: x.code });
+  };
   const ok = name.trim() && isValidDate(start) && isValidDate(end) && end >= start;
   const days = ok ? toNum(end) - toNum(start) + 1 : 0;
   return (
@@ -371,7 +387,7 @@ export function NewProjectDialog({ onCreate, onClose }: { onCreate: (p: Project)
             className="btn btn-primary"
             disabled={!ok}
             onClick={() => {
-              const p = newProject({ name: name.trim(), client, kind, start, end, baseDate: start });
+              const p = newProject({ ...extra, name: name.trim(), client, kind, start, end, baseDate: start });
               if (gen) {
                 p.tasks = generateTasks(p);
                 p.scheduleBase = { start, end };
@@ -385,6 +401,16 @@ export function NewProjectDialog({ onCreate, onClose }: { onCreate: (p: Project)
       }
     >
       <div className="grid grid-cols-2 gap-3">
+        {erp && (
+          <Field label="ERP 현장에서 불러오기" htmlFor="n-erp" className="col-span-2">
+            <select id="n-erp" className="inp" defaultValue="" onChange={(e) => { const x = erp[Number(e.target.value)]; if (x) pickErp(x); }}>
+              <option value="">{erp.length ? '현장을 고르면 공사명·발주처·공사기간·계약금액을 채웁니다' : 'ERP에 등록된 현장이 없습니다'}</option>
+              {erp.map((x, i) => (
+                <option key={x.id} value={i}>{x.name} ({x.code}{x.start ? ` · ${x.start}~${x.end}` : ''})</option>
+              ))}
+            </select>
+          </Field>
+        )}
         <Field label="공사명 *" htmlFor="n-name" className="col-span-2">
           <input id="n-name" className="inp" value={name} onChange={(e) => setName(e.target.value)} autoFocus />
         </Field>
