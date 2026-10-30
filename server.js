@@ -51,7 +51,11 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
   const app = express();
   app.disable('x-powered-by');
   app.set('trust proxy', 1);
-  app.use(express.json({ limit: '64kb' }));
+  // 수정 요청·댓글은 첨부 파일(base64)을 함께 받으므로 그 두 경로만 본문 한도를 크게 둔다
+  const smallJson = express.json({ limit: '64kb' });
+  const bigJson = express.json({ limit: '40mb' });
+  const isUpload = (req) => req.method === 'POST' && /^\/api\/admin\/(customers\/[^/]+\/requests|requests|requests\/[^/]+\/comments)$/.test(req.path);
+  app.use((req, res, next) => (isUpload(req) ? bigJson : smallJson)(req, res, next));
   app.use((req, res, next) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('X-Frame-Options', 'DENY');
@@ -571,6 +575,7 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
 
   const shapeRequest = (r) => ({
     id: r.id, customerId: r.customer_id, customerName: r.customer_name ?? null, kind: r.kind, title: r.title, screen: r.screen, deploy: r.deploy,
+    type: r.req_type, priority: r.priority, dueOn: r.due_on ? ymd(r.due_on) : null, fileCount: (r.files ?? []).length,
     issueNumber: r.issue_number, issueUrl: r.issue_url, status: r.status, createdAt: r.created_at, closedAt: r.closed_at, deployedAt: r.deployed_at, rolloutId: r.rollout_id,
   });
   const REQ_SQL = `select r.*, c.name as customer_name from request r left join customer c on c.id = r.customer_id`;
@@ -593,20 +598,55 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
     return rows;
   }
 
+  const FILE_OK = /\.(png|jpe?g|gif|webp|pdf|xlsx?|xlsm|csv|docx?|hwpx?|pptx?|txt|zip|dwg|dxf)$/i;
+  const MAX_FILE = 10 * 1024 * 1024, MAX_TOTAL = 25 * 1024 * 1024, MAX_COUNT = 10;
+  const cleanName = (n) => String(n ?? '').replace(/[\\/:*?"<>|\x00-\x1f]/g, '_').replace(/^\.+/, '').trim().slice(0, 120);
+  /** 화면에서 받은 첨부(base64)를 검사 → requests 브랜치에 올리고 [{path,name,size,at}] 반환 */
+  async function uploadFiles(g, folder, raw, note) {
+    const list = Array.isArray(raw) ? raw : [];
+    if (list.length > MAX_COUNT) throw bad(`첨부는 한 번에 ${MAX_COUNT}개까지입니다`);
+    const files = list.map((f) => {
+      const name = cleanName(f?.name);
+      if (!name || !FILE_OK.test(name)) throw bad(`올릴 수 없는 파일 형식입니다: ${name || '(이름 없음)'} — 그림·PDF·엑셀·한글·워드·도면·압축 파일만`);
+      const buf = Buffer.from(String(f.data ?? ''), 'base64');
+      if (!buf.length) throw bad(`빈 파일입니다: ${name}`);
+      if (buf.length > MAX_FILE) throw bad(`${name} 이(가) 10MB를 넘습니다`);
+      return { name, buf };
+    });
+    if (files.reduce((a, f) => a + f.buf.length, 0) > MAX_TOTAL) throw bad('첨부 합계가 25MB를 넘습니다');
+    const out = [];
+    const used = new Set();
+    for (const f of files) {
+      let name = f.name;
+      for (let i = 2; used.has(name); i++) name = f.name.replace(/(\.[^.]+)?$/, `(${i})$1`);
+      used.add(name);
+      const path = `${folder}/${Date.now().toString(36)}-${name}`;
+      await g.putFile(path, f.buf, `${note}: ${name}`).catch((e) => { throw bad(`첨부 올리기 실패 (${name}): ${e.message}. GitHub 토큰에 Contents 쓰기 권한이 있는지 확인하세요`, 502); });
+      out.push({ path, name, size: f.buf.length, at: new Date().toISOString() });
+    }
+    return out;
+  }
+
   async function createRequest(req, customer) {
     const b = req.body ?? {};
-    const want = String(b.want ?? '').trim();
+    const t = (v, n) => String(v ?? '').trim().slice(0, n);
+    const want = t(b.want, 20000);
     if (want.length < 5) throw bad('원하는 것을 적어 주세요');
-    const screen = String(b.screen ?? '').trim().slice(0, 100);
-    const now = String(b.now ?? '').trim().slice(0, 1000);
-    const deploy = String(b.deploy ?? (customer ? '고객 서버까지' : '우리 ERP까지')).slice(0, 40);
-    const title = (customer ? `[고객 맞춤 — ${customer.name}] ` : '[전체 업데이트] ') + want.split('\n')[0].slice(0, 70);
+    const type = G.TYPES.includes(b.type) ? b.type : '기타';
+    const priority = G.PRIORITIES.includes(b.priority) ? b.priority : '보통';
+    const dueOn = /^\d{4}-\d{2}-\d{2}$/.test(b.dueOn ?? '') ? b.dueOn : null;
+    const screen = t(b.screen, 200), now = t(b.now, 5000), criteria = t(b.criteria, 5000);
+    const deploy = t(b.deploy, 40) || (customer ? '고객 서버까지' : '우리 ERP까지');
+    const title = `${customer ? `[고객 맞춤 — ${customer.name}]` : '[전체 업데이트]'}${priority !== '보통' ? `[${priority}]` : ''} ${b.title ? t(b.title, 80) : want.split('\n')[0].slice(0, 70)}`;
     const g = await gh();
-    const issue = await g.createIssue(title, G.issueBody({ customer: customer && { name: customer.name, bizRegNo: customer.biz_reg_no, serverUrl: customer.server_url }, screen, now, want: want.slice(0, 4000), deploy }),
-      customer ? ['고객맞춤', `고객:${customer.name}`] : ['전체업데이트']).catch((e) => { throw bad(e.message, 502); });
+    const folder = `requests/${L.kstToday()}-${crypto.randomBytes(3).toString('hex')}`;
+    const files = await uploadFiles(g, folder, b.files, `수정 요청 첨부 ${customer?.name ?? '전체'}`);
+    const body = G.issueBody(g, { customer: customer && { name: customer.name, bizRegNo: customer.biz_reg_no, serverUrl: customer.server_url }, type, priority, dueOn, screen, now, want, criteria, deploy, files, folder });
+    const labels = [customer ? '고객맞춤' : '전체업데이트', type, ...(customer ? [`고객:${customer.name}`] : []), ...(priority !== '보통' ? [priority] : [])];
+    const issue = await g.createIssue(title, body, labels).catch((e) => { throw bad(e.message, 502); });
     const row = (await q(
-      `insert into request(customer_id, kind, title, screen, deploy, issue_number, issue_url) values ($1,$2,$3,$4,$5,$6,$7) returning *`,
-      [customer?.id ?? null, customer ? 'CUSTOMER' : 'GLOBAL', title, screen, deploy, issue.number, issue.html_url],
+      `insert into request(customer_id, kind, title, screen, deploy, issue_number, issue_url, req_type, priority, due_on, folder, files) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) returning *`,
+      [customer?.id ?? null, customer ? 'CUSTOMER' : 'GLOBAL', title, screen, deploy, issue.number, issue.html_url, type, priority, dueOn, folder, JSON.stringify(files)],
     )).rows[0];
     audit(req, 'REQUEST', `수정 요청 #${issue.number} ${title}`);
     return shapeRequest({ ...row, customer_name: customer?.name ?? null });
@@ -614,6 +654,56 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
 
   admin.post('/customers/:id/requests', wrap(async (req, res) => res.status(201).json(await createRequest(req, await loadCustomer(req.params.id)))));
   admin.post('/requests', wrap(async (req, res) => res.status(201).json(await createRequest(req, null))));
+
+  const loadRequest = async (id) => {
+    if (!/^[0-9a-f-]{36}$/i.test(id)) throw bad('요청을 찾을 수 없습니다', 404);
+    const r = (await q(`${REQ_SQL} where r.id = $1`, [id])).rows[0];
+    if (!r) throw bad('요청을 찾을 수 없습니다', 404);
+    return r;
+  };
+
+  /** 요청 상세 — 이슈 본문과 댓글(Claude의 질문·결과 보고)을 함께 */
+  admin.get('/requests/:id', wrap(async (req, res) => {
+    const r = (await syncRequests([await loadRequest(req.params.id)]))[0];
+    const g = await gh();
+    const [issue, comments] = await Promise.all([g.getIssue(r.issue_number), g.comments(r.issue_number)]);
+    res.json({
+      ...shapeRequest(r), type: r.req_type, priority: r.priority, dueOn: r.due_on ? ymd(r.due_on) : null, files: r.files ?? [],
+      issue: { state: issue.state, body: issue.body ?? '', title: issue.title },
+      comments: comments.map((c) => ({ id: c.id, author: c.user?.login ?? '', body: c.body ?? '', createdAt: c.created_at })),
+    });
+  }));
+
+  /** 답변·추가 요청 — 댓글 + 첨부. reopen 이면 닫힌 이슈를 다시 열어 '요청'으로 되돌린다 */
+  admin.post('/requests/:id/comments', wrap(async (req, res) => {
+    const r = await loadRequest(req.params.id);
+    const text = String(req.body?.text ?? '').trim().slice(0, 20000);
+    const reopen = !!req.body?.reopen;
+    if (!text && !(req.body?.files ?? []).length) throw bad('내용이나 첨부를 넣어 주세요');
+    const g = await gh();
+    const folder = r.folder ?? `requests/${L.kstToday()}-${crypto.randomBytes(3).toString('hex')}`;
+    const files = await uploadFiles(g, folder, req.body?.files, `요청 #${r.issue_number} 추가 첨부`);
+    const body = `${reopen ? '**[다시 작업 요청]**\n\n' : ''}${text}${files.length ? `\n\n**첨부**\n${G.fileLines(g, files)}` : ''}\n\n<sub>라이선스 발급 사이트에서 작성</sub>`;
+    await g.addComment(r.issue_number, body).catch((e) => { throw bad(e.message, 502); });
+    if (reopen) await g.updateIssue(r.issue_number, { state: 'open' }).catch((e) => { throw bad(e.message, 502); });
+    await q(`update request set files = files || $2::jsonb, folder = $3 ${reopen ? `, status = 'REQUESTED', closed_at = null, deployed_at = null, rollout_id = null` : ''} where id = $1`, [r.id, JSON.stringify(files), folder]);
+    audit(req, 'REQUEST_COMMENT', `요청 #${r.issue_number} ${reopen ? '다시 작업 요청' : '댓글'}${files.length ? ` · 첨부 ${files.length}개` : ''}`);
+    res.status(201).json({ ok: true });
+  }));
+
+  /** 첨부 내려받기 — 저장소가 비공개라 사이트가 대신 받아서 전달 */
+  const MIME = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', pdf: 'application/pdf' };
+  admin.get('/requests/:id/file', wrap(async (req, res) => {
+    const r = await loadRequest(req.params.id);
+    const f = (r.files ?? []).find((x) => x.path === req.query.path);
+    if (!f) throw bad('파일을 찾을 수 없습니다', 404);
+    const buf = await (await gh()).getFile(f.path);
+    const ext = f.name.split('.').pop().toLowerCase();
+    res.setHeader('content-type', MIME[ext] ?? 'application/octet-stream');
+    res.setHeader('content-disposition', `${MIME[ext] && req.query.download !== '1' ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(f.name)}`);
+    res.setHeader('cache-control', 'private, max-age=600');
+    res.end(buf);
+  }));
 
   admin.get('/requests', wrap(async (req, res) => {
     const cid = req.query.customerId;

@@ -45,24 +45,47 @@ function fakeRailway(req, res) {
   });
 }
 
+const ghFiles = new Map(); // path -> base64
+const ghComments = {}; // number -> [{ body }]
+let ghBranch = false;
 function fakeGithub(req, res) {
   let raw = '';
   req.on('data', (c) => (raw += c));
   req.on('end', () => {
-    res.setHeader('content-type', 'application/json');
-    if (req.headers.authorization !== 'Bearer gh-secret') { res.statusCode = 401; return res.end(JSON.stringify({ message: 'Bad credentials' })); }
-    const m = req.url.match(/^\/repos\/sangjindl9-lab\/sspower(\/issues(?:\/(\d+))?)?$/);
-    if (!m) { res.statusCode = 404; return res.end(JSON.stringify({ message: 'Not Found' })); }
-    if (!m[1]) return res.end(JSON.stringify({ full_name: 'sangjindl9-lab/sspower' }));
-    if (req.method === 'POST') {
+    const send = (code, obj) => { res.statusCode = code; res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(obj)); };
+    if (req.headers.authorization !== 'Bearer gh-secret') return send(401, { message: 'Bad credentials' });
+    const u = new URL(req.url, 'http://x');
+    const p = u.pathname.replace(/^\/repos\/sangjindl9-lab\/sspower/, '');
+    if (p === u.pathname) return send(404, { message: 'Not Found' });
+    if (p === '') return send(200, { full_name: 'sangjindl9-lab/sspower' });
+    if (p === '/git/ref/heads/requests') return ghBranch ? send(200, { object: { sha: 'b' } }) : send(404, { message: 'Not Found' });
+    if (p === '/git/ref/heads/ss-erp') return send(200, { object: { sha: 'a' } });
+    if (p === '/git/refs' && req.method === 'POST') { ghBranch = true; return send(201, {}); }
+    let m;
+    if ((m = p.match(/^\/contents\/(.+)$/))) {
+      const path = decodeURIComponent(m[1]);
+      if (req.method === 'PUT') { const b = JSON.parse(raw); assert.equal(b.branch, 'requests'); ghFiles.set(path, b.content); return send(201, {}); }
+      if (!ghFiles.has(path)) return send(404, { message: 'Not Found' });
+      res.statusCode = 200; return res.end(Buffer.from(ghFiles.get(path), 'base64'));
+    }
+    if (p === '/issues' && req.method === 'POST') {
       const b = JSON.parse(raw);
       const i = { number: issues.length + 1, state: 'open', html_url: `https://github.com/sangjindl9-lab/sspower/issues/${issues.length + 1}`, ...b };
       issues.push(i);
-      res.statusCode = 201;
-      return res.end(JSON.stringify(i));
+      return send(201, i);
     }
-    const i = issues[Number(m[2]) - 1];
-    res.end(JSON.stringify(i));
+    if ((m = p.match(/^\/issues\/(\d+)\/comments$/))) {
+      const n = Number(m[1]);
+      ghComments[n] ??= [];
+      if (req.method === 'POST') { const c = { id: Date.now(), body: JSON.parse(raw).body, user: { login: 'sangjindl9' }, created_at: new Date().toISOString() }; ghComments[n].push(c); return send(201, c); }
+      return send(200, ghComments[n]);
+    }
+    if ((m = p.match(/^\/issues\/(\d+)$/))) {
+      const i = issues[Number(m[1]) - 1];
+      if (req.method === 'PATCH') Object.assign(i, JSON.parse(raw));
+      return send(200, i);
+    }
+    send(404, { message: 'Not Found' });
   });
 }
 
@@ -192,20 +215,56 @@ test('배포가 실패하면 한 번 자동으로 다시 배포하고, 그래도
   deployStatus = 'SUCCESS';
 });
 
-test('수정 요청 → GitHub 이슈, 이슈가 닫히면 완료, 재배포가 성공하면 반영으로 바뀐다', async () => {
+test('수정 요청 → GitHub 이슈(첨부는 requests 브랜치), 이슈가 닫히면 완료, 재배포가 성공하면 반영', async () => {
   assert.equal((await call(`/api/admin/customers/${id}/requests`, { method: 'POST', json: { want: '발주서에 현장소장 확인 칸' } })).status, 400, 'GitHub 연결 전');
   assert.equal((await call('/api/admin/github', { method: 'PUT', json: { token: 'wrong' } })).status, 400);
   assert.equal((await call('/api/admin/github', { method: 'PUT', json: { token: 'gh-secret' } })).status, 200);
   assert.ok(!(await pool.query(`select value from portal_setting where key = 'github_token'`)).rows[0].value.includes('gh-secret'));
 
-  const r = await call(`/api/admin/customers/${id}/requests`, { method: 'POST', json: { screen: '발주 › 발주서 출력', now: '서명란 1칸', want: '현장소장 확인 칸 추가. 다른 고객은 그대로', deploy: '고객 서버까지' } });
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
+  const xlsx = Buffer.from('PK fake excel form');
+  // 형식·크기 검사
+  assert.equal((await call(`/api/admin/customers/${id}/requests`, { method: 'POST', json: { want: '양식대로 출력', files: [{ name: 'virus.exe', data: 'AAAA' }] } })).status, 400);
+  assert.equal((await call(`/api/admin/customers/${id}/requests`, { method: 'POST', json: { want: '양식대로 출력', files: [{ name: 'big.pdf', data: Buffer.alloc(10 * 1024 * 1024 + 1).toString('base64') }] } })).status, 400);
+
+  const r = await call(`/api/admin/customers/${id}/requests`, { method: 'POST', json: {
+    title: '발주서 결재란 변경', type: '출력 양식', priority: '급함', dueOn: '2026-11-06', screen: '발주 › 발주서 출력', now: '서명란 1칸',
+    want: '1. 현장소장 확인 칸 추가\n2. 500만원 이상만 대표이사 결재', criteria: '- 600만원: 소장→대표\n- 300만원: 소장만', deploy: '고객 서버까지',
+    files: [{ name: '삼우전선_발주서.xlsx', data: xlsx.toString('base64') }, { name: 'image.png', data: png.toString('base64') }, { name: 'image.png', data: png.toString('base64') }],
+  } });
   assert.equal(r.status, 201);
   assert.equal(r.body.issueNumber, 1);
   assert.equal(r.body.status, 'REQUESTED');
-  assert.match(issues[0].title, /^\[고객 맞춤 — ㈜한누리통신\] 현장소장 확인 칸 추가/);
-  assert.match(issues[0].body, /214-88-39612|2148839612/);
-  assert.match(issues[0].body, /모듈 스위치/);
-  assert.deepEqual(issues[0].labels, ['고객맞춤', '고객:㈜한누리통신']);
+  assert.equal(r.body.fileCount, 3);
+  const issue = issues[0];
+  assert.equal(issue.title, '[고객 맞춤 — ㈜한누리통신][급함] 발주서 결재란 변경');
+  assert.deepEqual(issue.labels, ['고객맞춤', '출력 양식', '고객:㈜한누리통신', '급함']);
+  assert.match(issue.body, /\| 출력 양식 \| 급함 \| 2026-11-06 \| 고객 서버까지 \|/);
+  assert.match(issue.body, /### 완료 기준[\s\S]*600만원/);
+  assert.match(issue.body, /삼우전선_발주서\.xlsx/);
+  assert.match(issue.body, /git fetch origin requests/);
+  assert.equal(ghFiles.size, 3, '같은 이름은 (2) 붙여 따로 저장');
+  assert.ok([...ghFiles.keys()].every((k) => k.startsWith('requests/')));
+
+  // 상세: 이슈 본문·첨부·댓글, 첨부 내려받기
+  const d = (await call(`/api/admin/requests/${r.body.id}`)).body;
+  assert.equal(d.files.length, 3);
+  assert.equal(d.type, '출력 양식');
+  assert.equal(d.dueOn, '2026-11-06');
+  const xf = d.files.find((f) => f.name === '삼우전선_발주서.xlsx');
+  const dl = await fetch(`${base}/api/admin/requests/${r.body.id}/file?path=${encodeURIComponent(xf.path)}`, { headers: { cookie } });
+  assert.equal(dl.status, 200);
+  assert.deepEqual(Buffer.from(await dl.arrayBuffer()), xlsx);
+  assert.match(dl.headers.get('content-disposition'), /attachment/);
+  assert.equal((await fetch(`${base}/api/admin/requests/${r.body.id}/file?path=requests/other.pdf`, { headers: { cookie } })).status, 404, '요청에 없는 경로는 못 받음');
+
+  // Claude가 질문 댓글 → 사이트에서 답변 + 추가 첨부
+  ghComments[1] = [{ id: 1, body: '현장소장 이름은 현장 담당자 중 누구로?', user: { login: 'claude' }, created_at: new Date().toISOString() }];
+  assert.equal((await call(`/api/admin/requests/${r.body.id}`)).body.comments[0].author, 'claude');
+  assert.equal((await call(`/api/admin/requests/${r.body.id}/comments`, { method: 'POST', json: { text: '현장 대리인으로', files: [{ name: '현장목록.pdf', data: png.toString('base64') }] } })).status, 201);
+  assert.match(ghComments[1][1].body, /현장 대리인으로[\s\S]*현장목록\.pdf/);
+  assert.equal((await call(`/api/admin/requests/${r.body.id}`)).body.files.length, 4);
+
   const g = await call('/api/admin/requests', { method: 'POST', json: { want: '작업일보에 날씨 자동 입력' } });
   assert.equal(g.body.kind, 'GLOBAL');
   assert.equal(issues[1].labels[0], '전체업데이트');
@@ -230,6 +289,11 @@ test('수정 요청 → GitHub 이슈, 이슈가 닫히면 완료, 재배포가 
   list = (await call('/api/admin/requests')).body.rows;
   assert.deepEqual(list.map((x) => x.status), ['DEPLOYED', 'DEPLOYED']);
   assert.ok(list.every((x) => x.rolloutId === rs.id));
+
+  // 반영 뒤 "다시 작업 요청" → 이슈 다시 열리고 요청 상태로
+  assert.equal((await call(`/api/admin/requests/${r.body.id}/comments`, { method: 'POST', json: { text: '결재란 글꼴이 양식과 다름', reopen: true } })).status, 201);
+  assert.equal(issues[0].state, 'open');
+  assert.equal((await call(`/api/admin/requests/${r.body.id}`)).body.status, 'REQUESTED');
 
   // 고객 한 곳만 재배포
   assert.equal((await call(`/api/admin/customers/${id}/redeploy`, { method: 'POST' })).status, 202);

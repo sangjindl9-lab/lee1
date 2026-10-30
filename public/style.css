@@ -153,3 +153,28 @@ table.kv td, table.kv th { border: 1px solid var(--line); }
   body { background: #fff; }
   .panel.sheet { border: 0; }
 }
+
+/* 수정 요청 — 첨부·상세 */
+.drop { border: 1.5px dashed var(--line-strong); border-radius: var(--radius); padding: 16px; text-align: center; color: var(--muted); background: var(--surface); cursor: default; }
+.drop.on { border-color: var(--steel); background: color-mix(in srgb, var(--steel) 6%, transparent); }
+.drop .link-like { color: var(--steel); text-decoration: underline; cursor: pointer; margin: 0 2px; }
+.files, .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px; margin-top: 10px; }
+.file { position: relative; display: flex; gap: 8px; align-items: center; border: 1px solid var(--line); border-radius: var(--radius); padding: 6px; background: var(--surface); color: var(--ink); text-decoration: none; min-width: 0; }
+.file img { width: 48px; height: 48px; object-fit: cover; border-radius: 3px; flex: none; }
+.file .ext { width: 48px; height: 48px; display: grid; place-items: center; background: var(--line); border-radius: 3px; font-size: 11px; font-weight: 700; flex: none; }
+.file .nm { display: grid; min-width: 0; font-size: 13px; overflow-wrap: anywhere; }
+.file .nm small { color: var(--muted); }
+.file .x { position: absolute; top: 2px; right: 4px; border: 0; background: none; font-size: 16px; cursor: pointer; color: var(--muted); }
+.md-body { font-size: 14px; line-height: 1.65; overflow-wrap: anywhere; }
+.md-body h4 { margin: 14px 0 4px; font-size: 14px; }
+.md-body h4:first-child { margin-top: 0; }
+.md-body .sp { height: 6px; }
+.md-body code { background: var(--line); padding: 0 4px; border-radius: 3px; font-size: 12.5px; }
+.md-body table.md { border-collapse: collapse; margin: 6px 0; font-size: 13px; }
+.md-body table.md th, .md-body table.md td { border: 1px solid var(--line); padding: 4px 8px; text-align: left; }
+.md-body hr { border: 0; border-top: 1px solid var(--line); margin: 10px 0; }
+.msg { border-left: 3px solid var(--line-strong); padding: 4px 0 4px 12px; margin-bottom: 14px; }
+.msg .who { font-weight: 600; font-size: 13px; margin-bottom: 4px; }
+.grid.req { align-items: start; }
+#rqf .form-grid { align-items: start; }
+#rqf div.f > span { font-size: 13px; color: var(--ink-2); font-weight: 500; }

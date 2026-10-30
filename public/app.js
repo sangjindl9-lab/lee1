@@ -246,7 +246,7 @@ async function pageCustomer(id) {
     </section>`);
 
   document.getElementById('copycode').onclick = () => copy(c.activationCode, '설치 코드를 복사했습니다');
-  document.getElementById('reqbtn').onclick = () => requestDialog(c);
+  document.getElementById('reqbtn').onclick = () => { location.hash = `#/requests/new?customer=${c.id}`; };
   bindServerPanel(c);
   document.getElementById('regen').onclick = async () => {
     if (!confirm('설치 코드를 새로 만들면 지금 연결된 고객 서버는 새 코드로 다시 연결해야 합니다. 계속할까요?')) return;
@@ -458,36 +458,145 @@ function requestTable(rows, forCustomer = false) {
   if (!rows.length) return '<div class="empty">요청이 없습니다</div>';
   return `<div class="table-wrap"><table><thead><tr><th>요청일</th>${forCustomer ? '' : '<th>고객</th>'}<th>내용</th><th class="hide-sm">화면</th><th>상태</th><th class="hide-sm">반영</th><th></th></tr></thead><tbody>
     ${rows.map((r) => `<tr><td class="num small">${dt(r.createdAt)}</td>${forCustomer ? '' : `<td>${r.kind === 'GLOBAL' ? '<span class="badge">전체</span>' : esc(r.customerName ?? '')}</td>`}
-      <td>${esc(r.title.replace(/^\[[^\]]+\]\s*/, ''))}</td><td class="hide-sm small">${esc(r.screen ?? '')}</td><td>${badge(RSTATUS[r.status])}</td>
+      <td><a href="#/requests/${r.id}">${esc(r.title.replace(/^(\[[^\]]+\])+\s*/, ''))}</a>${r.priority && r.priority !== '보통' ? ` <span class="badge seal">${esc(r.priority)}</span>` : ''}${r.fileCount ? ` <span class="muted small">📎${r.fileCount}</span>` : ''}${r.type ? `<div class="small muted">${esc(r.type)}</div>` : ''}</td><td class="hide-sm small">${esc(r.screen ?? '')}</td><td>${badge(RSTATUS[r.status])}</td>
       <td class="hide-sm small num">${r.deployedAt ? dt(r.deployedAt) : r.closedAt ? '완료 ' + dt(r.closedAt) : '—'}</td>
-      <td class="r">${r.issueUrl ? `<a class="btn sm" href="${esc(r.issueUrl)}" target="_blank" rel="noopener">#${r.issueNumber}</a>` : ''}</td></tr>`).join('')}
+      <td class="r"><a class="btn sm" href="#/requests/${r.id}">열기</a></td></tr>`).join('')}
   </tbody></table></div>`;
 }
-function requestDialog(c) {
-  const back = document.createElement('div');
-  back.className = 'dlg-back';
-  back.innerHTML = `<form class="dlg" role="dialog" aria-modal="true" aria-label="수정 요청">
-    <header><h2>${c ? `수정 요청 — ${esc(c.name)}` : '전체 업데이트 요청'}</h2><button type="button" class="x" aria-label="닫기">×</button></header>
-    <div class="body"><div class="form-grid">
-      <label class="f wide">화면<input name="screen" placeholder="예: 발주 › 발주서 출력" /></label>
-      <label class="f wide">지금<input name="now" placeholder="예: 서명란이 대표이사 1칸" /></label>
-      <label class="f wide">원하는 것 *<textarea name="want" rows="4" required placeholder="${c ? '예: 현장소장 확인 칸 추가. 다른 고객은 그대로' : '예: 작업일보에 날씨 자동 입력'}"></textarea></label>
-      <label class="f">배포 범위<select name="deploy">${(c ? ['고객 서버까지', '코드만'] : ['우리 ERP까지', '고객 서버 전체', '코드만']).map((o) => `<option>${o}</option>`).join('')}</select></label>
-    </div>
-    <p class="small muted" style="margin:10px 0 0">GitHub 저장소에 이슈로 등록됩니다. 월요일에 Claude에게 "이번 주 작업: 열린 이슈 처리"라고 하면 이 요청을 읽고 처리합니다.</p></div>
-    <footer><button type="button" class="btn" data-close>취소</button><button class="btn primary">요청 등록</button></footer></form>`;
-  document.body.appendChild(back);
-  const close = () => back.remove();
-  back.querySelector('.x').onclick = close;
-  back.querySelector('[data-close]').onclick = close;
-  back.onclick = (e) => { if (e.target === back) close(); };
-  back.querySelector('form').onsubmit = async (e) => {
+// 첨부 — 파일 선택·끌어다 놓기·스크린샷 붙여넣기(Ctrl+V)
+const MAX_FILE_MB = 10;
+function attachBox(host) {
+  const files = [];
+  host.innerHTML = `<div class="drop" tabindex="0">파일을 끌어다 놓거나 <label class="link-like">선택<input type="file" multiple hidden accept=".png,.jpg,.jpeg,.gif,.webp,.pdf,.xlsx,.xls,.xlsm,.csv,.docx,.doc,.hwp,.hwpx,.pptx,.ppt,.txt,.zip,.dwg,.dxf" /></label>하세요. 화면 캡처는 이 페이지에서 <b>Ctrl+V</b>로 붙여 넣을 수 있습니다.<div class="small muted">그림·PDF·엑셀·한글·워드·도면·압축 · 파일당 10MB, 합계 25MB, 10개까지</div></div><div class="files"></div>`;
+  const list = host.querySelector('.files');
+  const draw = () => {
+    list.innerHTML = files.map((f, i) => `<div class="file">${f.type.startsWith('image/') ? `<img src="${f.url}" alt="" />` : '<span class="ext">' + esc(f.name.split('.').pop().toUpperCase()) + '</span>'}<span class="nm">${esc(f.name)}<small>${Math.ceil(f.size / 1024)}KB</small></span><button type="button" class="x" data-i="${i}" aria-label="빼기">×</button></div>`).join('');
+    list.querySelectorAll('[data-i]').forEach((b) => (b.onclick = () => { files.splice(Number(b.dataset.i), 1); draw(); }));
+  };
+  const add = (fl) => {
+    for (const f of fl) {
+      if (f.size > MAX_FILE_MB * 1048576) { toast(`${f.name}: 10MB를 넘습니다`, 'error'); continue; }
+      if (files.length >= 10) { toast('첨부는 10개까지입니다', 'error'); break; }
+      const name = f.name && f.name !== 'image.png' ? f.name : `캡처-${new Date().toTimeString().slice(0, 8).replace(/:/g, '')}.png`;
+      files.push({ file: f, name, size: f.size, type: f.type || '', url: f.type.startsWith('image/') ? URL.createObjectURL(f) : '' });
+    }
+    draw();
+  };
+  host.querySelector('input[type=file]').onchange = (e) => { add(e.target.files); e.target.value = ''; };
+  const drop = host.querySelector('.drop');
+  drop.ondragover = (e) => { e.preventDefault(); drop.classList.add('on'); };
+  drop.ondragleave = () => drop.classList.remove('on');
+  drop.ondrop = (e) => { e.preventDefault(); drop.classList.remove('on'); add(e.dataTransfer.files); };
+  const onPaste = (e) => { const fl = [...(e.clipboardData?.files ?? [])]; if (fl.length) { e.preventDefault(); add(fl); } };
+  document.addEventListener('paste', onPaste);
+  return {
+    detach: () => document.removeEventListener('paste', onPaste),
+    payload: () => Promise.all(files.map((f) => new Promise((ok, no) => {
+      const r = new FileReader();
+      r.onload = () => ok({ name: f.name, data: String(r.result).split(',')[1] });
+      r.onerror = no;
+      r.readAsDataURL(f.file);
+    }))),
+  };
+}
+let pasteBox = null;
+
+const REQ_TYPES = ['화면·기능 수정', '출력 양식', '새 기능', '계산·업무 규칙', '데이터 이관·정리', '오류 신고', '기타'];
+async function pageRequestNew() {
+  const cid = new URLSearchParams(location.hash.split('?')[1] ?? '').get('customer');
+  loading('requests');
+  const [c, gh] = await Promise.all([cid ? api('/customers/' + cid) : null, api('/github')]);
+  shell('requests', `
+    <div class="page-head"><div><h1>${c ? `수정 요청 — ${esc(c.name)}` : '전체 업데이트 요청'}</h1>
+      <p>${c ? '이 고객만 달라지는 수정입니다. 다른 고객에게는 영향이 없도록 설정·양식·모듈 스위치로 반영합니다.' : '모든 고객이 받게 되는 기능 추가·수정입니다.'} 등록하면 GitHub 이슈가 되고, Claude가 이 내용과 첨부를 그대로 읽고 작업합니다.</p></div></div>
+    ${gh.connected ? '' : '<div class="note warn" style="margin-bottom:12px">먼저 <a href="#/settings">설정 &gt; GitHub 연결</a>을 마쳐 주세요.</div>'}
+    <form id="rqf" class="panel"><div class="body">
+      <div class="form-grid">
+        <label class="f wide">제목<input name="title" maxlength="80" placeholder="비우면 '원하는 것' 첫 줄로 만듭니다 · 예: 발주서에 현장소장 확인란 추가" /></label>
+        <label class="f">유형<select name="type">${REQ_TYPES.map((t) => `<option>${t}</option>`).join('')}</select></label>
+        <label class="f">우선순위<select name="priority"><option>보통</option><option>급함</option><option>긴급(당일)</option></select><span class="hint">긴급은 금요 배포를 기다리지 않고 당일 반영</span></label>
+        <label class="f">희망 반영일<input name="dueOn" type="date" /></label>
+        <label class="f">배포 범위<select name="deploy">${(c ? ['고객 서버까지', '코드만'] : ['우리 ERP까지', '고객 서버 전체', '코드만']).map((o) => `<option>${o}</option>`).join('')}</select></label>
+        <label class="f wide">화면<input name="screen" maxlength="200" placeholder="예: 발주 › 발주서 출력 / 현장관리 › 작업일보 / 회계 › 손익계산서" /></label>
+        <label class="f wide">지금은 어떤가<textarea name="now" rows="3" placeholder="지금 화면·출력이 어떻게 되어 있는지. 캡처를 붙이면 더 정확합니다"></textarea></label>
+        <label class="f wide">원하는 것 *<textarea name="want" rows="12" required placeholder="항목별로 줄을 나눠 적으세요. 계산식·규칙·예시 숫자가 있으면 그대로 적어 주세요.&#10;&#10;예)&#10;1. 발주서 결재란에 '현장소장 확인' 칸을 대표이사 왼쪽에 추가&#10;2. 현장소장 칸은 그 현장 담당 소장 이름이 자동으로 들어감&#10;3. 금액 500만원 이상만 대표이사 결재, 미만은 현장소장 확인으로 끝&#10;4. 출력 양식은 첨부한 엑셀(삼우전선_발주서.xlsx)과 똑같이"></textarea><span class="hint">마크다운 사용 가능 (표, 목록, **굵게**)</span></label>
+        <label class="f wide">완료 기준 — 이렇게 되면 끝<textarea name="criteria" rows="4" placeholder="예)&#10;- 600만원 발주서: 현장소장 → 대표이사 순으로 결재&#10;- 300만원 발주서: 현장소장 확인만으로 승인&#10;- 출력물이 첨부 엑셀과 칸·글꼴·위치가 같음"></textarea></label>
+        <div class="f wide"><span>첨부 — 고객 양식, 화면 캡처, 계산 예시 엑셀, 공문 등</span><div id="att"></div></div>
+      </div>
+    </div><div class="body row end" style="border-top:1px solid var(--line)">
+      <a class="btn" href="${c ? `#/customers/${c.id}` : '#/requests'}">취소</a><button class="btn primary" id="rqsend">요청 등록</button>
+    </div></form>`);
+  pasteBox?.detach();
+  pasteBox = attachBox(document.getElementById('att'));
+  document.getElementById('rqf').onsubmit = async (e) => {
     e.preventDefault();
+    const btn = document.getElementById('rqsend');
+    btn.disabled = true; btn.textContent = '올리는 중…';
     try {
-      const r = await api(c ? `/customers/${c.id}/requests` : '/requests', { method: 'POST', json: formData(e.target) });
-      close(); toast(`이슈 #${r.issueNumber} 로 등록했습니다`);
-      if (c) pageCustomer(c.id); else pageRequests();
-    } catch (err) { toast(err.message, 'error'); }
+      const json = { ...formData(e.target), files: await pasteBox.payload() };
+      const r = await api(c ? `/customers/${c.id}/requests` : '/requests', { method: 'POST', json });
+      pasteBox.detach(); pasteBox = null;
+      toast(`이슈 #${r.issueNumber} 로 등록했습니다`);
+      location.hash = `#/requests/${r.id}`;
+    } catch (err) { toast(err.message, 'error'); btn.disabled = false; btn.textContent = '요청 등록'; }
+  };
+}
+
+// 이슈 본문·댓글을 읽기 좋게 — 제목(###), 굵게, 표, 목록, 링크 정도만 (나머지는 그대로 글자)
+function miniMd(md) {
+  const lines = esc(md).split('\n');
+  let out = '', table = null;
+  const inline = (t) => t.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/`([^`]+)`/g, '<code>$1</code>').replace(/!\[([^\]]*)\]\([^)]*\)/g, '🖼 $1').replace(/\[([^\]]+)\]\((https:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  const flush = () => { if (table) { out += `<table class="md">${table.map((r, i) => `<tr>${r.map((c) => (i ? `<td>${inline(c)}</td>` : `<th>${inline(c)}</th>`)).join('')}</tr>`).join('')}</table>`; table = null; } };
+  for (const l of lines) {
+    if (/^\|.*\|$/.test(l.trim())) { if (/^\|[\s|:-]+\|$/.test(l.trim())) continue; (table ??= []).push(l.trim().slice(1, -1).split('|').map((x) => x.trim())); continue; }
+    flush();
+    if (/^#{1,4}\s/.test(l)) out += `<h4>${inline(l.replace(/^#+\s/, ''))}</h4>`;
+    else if (/^-{3,}$/.test(l.trim())) out += '<hr />';
+    else if (/^&gt;\s?/.test(l)) out += `<div class="small muted">${inline(l.replace(/^&gt;\s?/, ''))}</div>`;
+    else if (l.trim()) out += `<div>${inline(l)}</div>`;
+    else out += '<div class="sp"></div>';
+  }
+  flush();
+  return out;
+}
+
+async function pageRequest(id) {
+  loading('requests');
+  const r = await api('/requests/' + id);
+  const fileUrl = (f, dl) => `/api/admin/requests/${r.id}/file?path=${encodeURIComponent(f.path)}${dl ? '&download=1' : ''}`;
+  const img = (f) => /\.(png|jpe?g|gif|webp)$/i.test(f.name);
+  shell('requests', `
+    <div class="page-head"><div><h1>${esc(r.title)}</h1>
+      <p>${badge(RSTATUS[r.status])} ${r.customerName ? `<a href="#/customers/${r.customerId}">${esc(r.customerName)}</a>` : '전체 업데이트'} · ${esc(r.type ?? '')} · 우선순위 ${esc(r.priority ?? '보통')}${r.dueOn ? ` · 희망 ${esc(r.dueOn)}` : ''} · ${dt(r.createdAt)} 요청</p></div>
+      <div class="row"><a class="btn" href="${esc(r.issueUrl)}" target="_blank" rel="noopener">GitHub #${r.issueNumber}</a></div></div>
+    <div class="grid cols-2 req">
+      <section class="panel"><header><h2>요청 내용</h2></header><div class="body md-body">${miniMd(r.issue.body.split('\n---\n규칙')[0])}</div></section>
+      <section class="panel"><header><h2>첨부</h2><span class="muted small">${r.files.length}개</span></header><div class="body">
+        ${r.files.length ? `<div class="gallery">${r.files.map((f) => `<a class="file" href="${fileUrl(f, !img(f))}" ${img(f) ? 'target="_blank"' : ''}>${img(f) ? `<img src="${fileUrl(f)}" alt="" loading="lazy" />` : `<span class="ext">${esc(f.name.split('.').pop().toUpperCase())}</span>`}<span class="nm">${esc(f.name)}<small>${Math.ceil(f.size / 1024)}KB · ${dt(f.at)}</small></span></a>`).join('')}</div>` : '<div class="empty">첨부가 없습니다</div>'}
+      </div></section>
+    </div>
+    <section class="panel"><header><h2>주고받은 내용</h2><span class="muted small">Claude의 질문·결과 보고가 여기 올라옵니다</span></header><div class="body">
+      ${r.comments.length ? r.comments.map((m) => `<div class="msg"><div class="who">${esc(m.author)} <span class="muted small">${dt(m.createdAt)}</span></div><div class="md-body">${miniMd(m.body)}</div></div>`).join('') : '<div class="empty">아직 답변이 없습니다. 월요일 작업 때 Claude가 처리하거나 질문을 남깁니다.</div>'}
+      <form id="cmf" style="margin-top:16px;border-top:1px solid var(--line);padding-top:16px">
+        <label class="f">답변·추가 요청<textarea name="text" rows="5" placeholder="Claude 질문에 대한 답, 빠진 내용, 고객이 추가로 말한 것"></textarea></label>
+        <div id="att2" style="margin-top:10px"></div>
+        <div class="row end" style="margin-top:12px">
+          ${r.status !== 'REQUESTED' ? '<label class="small" style="display:flex;gap:6px;align-items:center;margin-right:auto"><input type="checkbox" name="reopen" style="width:auto;min-height:0" /> 다시 작업 요청 (완료된 요청을 되돌림)</label>' : ''}
+          <button class="btn primary" id="cmsend">보내기</button></div>
+      </form>
+    </div></section>`);
+  pasteBox?.detach();
+  pasteBox = attachBox(document.getElementById('att2'));
+  document.getElementById('cmf').onsubmit = async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById('cmsend');
+    btn.disabled = true; btn.textContent = '보내는 중…';
+    try {
+      const f = e.target;
+      await api(`/requests/${r.id}/comments`, { method: 'POST', json: { text: f.text.value, reopen: !!f.reopen?.checked, files: await pasteBox.payload() } });
+      toast('보냈습니다'); pageRequest(r.id);
+    } catch (err) { toast(err.message, 'error'); btn.disabled = false; btn.textContent = '보내기'; }
   };
 }
 let rolloutTimer = null;
@@ -509,7 +618,7 @@ async function pageRequests() {
         </tbody></table></div>
         ${ro.rows.length > 1 ? `<p class="small muted" style="margin:10px 0 0">이전: ${ro.rows.slice(1, 6).map((r) => `${dt(r.startedAt)} (${ok(r)}/${r.results.length})`).join(' · ')}</p>` : ''}</div>` : '<div class="empty">아직 전체 재배포를 한 적이 없습니다</div>'}
     </section>`);
-  document.getElementById('greq').onclick = () => requestDialog(null);
+  document.getElementById('greq').onclick = () => { location.hash = '#/requests/new'; };
   document.getElementById('rollout').onclick = async () => {
     if (!confirm('개설된 고객 서버 전부를 최신 코드로 하나씩 재배포합니다. 고객당 2~5분, 그동안 그 고객은 잠깐 접속이 끊길 수 있습니다. 계속할까요?')) return;
     try { await api('/rollouts', { method: 'POST' }); toast('전체 재배포를 시작했습니다'); pageRequests(); } catch (err) { toast(err.message, 'error'); }
@@ -547,7 +656,7 @@ async function pageSettings() {
     </section>
     <section class="panel"><header><h2>GitHub 연결 (수정 요청 → 이슈)</h2>${gh.connected ? `<span class="badge ok">연결됨${gh.source === 'env' ? ' · 환경변수' : ''}</span>` : '<span class="badge warn">연결 안 됨</span>'}</header>
       <form id="ghf" class="body" autocomplete="off">
-        <p class="muted" style="margin-top:0">고객 수정 요청을 <span class="mono">${esc(gh.repo)}</span> 저장소 이슈로 남깁니다. GitHub → Settings → Developer settings → <b>Fine-grained tokens</b>에서 이 저장소에 <b>Issues: Read and write</b> 권한만 준 토큰을 만들어 붙여 넣으세요.</p>
+        <p class="muted" style="margin-top:0">고객 수정 요청을 <span class="mono">${esc(gh.repo)}</span> 저장소 이슈로 남깁니다. GitHub → Settings → Developer settings → <b>Fine-grained tokens</b>에서 이 저장소만 선택하고 권한은 <b>Issues: Read and write</b>, <b>Contents: Read and write</b>(첨부 파일을 <span class="mono">requests</span> 브랜치에 올림) 두 가지만 준 토큰을 만들어 붙여 넣으세요.</p>
         <div class="form-grid"><label class="f wide">GitHub 토큰<input type="password" name="token" placeholder="${gh.connected ? '바꿀 때만 입력' : 'github_pat_…'}" autocomplete="off" required /></label></div>
         <div class="row end" style="margin-top:12px"><button class="btn primary">연결 확인 후 저장</button></div>
       </form>
@@ -581,6 +690,7 @@ async function pageSettings() {
 // ── 라우팅 ─────────────────────────────────────────────────────
 async function route() {
   const h = location.hash.split('?')[0] || '#/';
+  if (pasteBox && !h.startsWith('#/requests/')) { pasteBox.detach(); pasteBox = null; }
   try {
     if (h === '#/' || h === '#') await pageHome();
     else if (h === '#/customers') await pageCustomers();
@@ -589,6 +699,8 @@ async function route() {
     else if (h.startsWith('#/customers/')) await pageCustomer(h.slice('#/customers/'.length));
     else if (h === '#/licenses') await pageLicenses();
     else if (h === '#/requests') await pageRequests();
+    else if (h === '#/requests/new') await pageRequestNew();
+    else if (h.startsWith('#/requests/')) await pageRequest(h.slice('#/requests/'.length));
     else if (h === '#/audit') await pageAudit();
     else if (h === '#/settings') await pageSettings();
     else location.hash = '#/';
