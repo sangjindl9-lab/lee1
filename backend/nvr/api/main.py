@@ -15,6 +15,7 @@ from .routes import auth, cameras, exports, live, ops, recordings, sites, system
 def create_app() -> FastAPI:
     s = get_settings()
     logging.basicConfig(level=s.log_level, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    logging.getLogger("httpx").setLevel(logging.WARNING)  # 이벤트 수신 요청마다 남는 로그 억제
     get_keys()  # 마스터 키가 없으면 시작하지 않음
     app = FastAPI(title="웹 NVR API", version=__version__, docs_url=None, redoc_url=None, openapi_url=None)
 

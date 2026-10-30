@@ -578,6 +578,7 @@ class Recorder:
 def main() -> None:
     s = get_settings()
     logging.basicConfig(level=s.log_level, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    logging.getLogger("httpx").setLevel(logging.WARNING)  # 이벤트 수신 요청마다 남는 로그 억제
     r = Recorder()
 
     def _stop(*_):
