@@ -171,7 +171,7 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
 
   /** 고객별 최신 라이선스와 상태 */
   const CUSTOMER_STATE_SQL = `
-    select c.*, l.id as lic_row_id, l.license_id, l.kind as lic_kind, l.max_users, l.storage_mb, l.expires_at, l.issued_at as lic_issued_at
+    select c.*, l.id as lic_row_id, l.license_id, l.kind as lic_kind, l.max_users, l.storage_mb, l.modules as lic_modules, l.expires_at, l.issued_at as lic_issued_at
     from customer c
     left join lateral (select * from license where customer_id = c.id order by issued_at desc limit 1) l on true`;
   const ymd = (d) => (d ? (d instanceof Date ? new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10) : String(d).slice(0, 10)) : null);
@@ -189,7 +189,7 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
     createdAt: r.created_at, lastSeenAt: r.last_seen_at, lastActiveUsers: r.last_active_users, lastAppVersion: r.last_app_version,
     stage: r.stage ?? (r.license_id ? '운영중' : '리드'),
     usedMB: r.last_used_mb, storageCheckedAt: r.last_storage_at,
-    current: r.license_id ? { licenseId: r.license_id, kind: r.lic_kind, maxUsers: r.max_users, storageMB: r.storage_mb, expiresAt: ymd(r.expires_at), daysLeft: L.daysUntil(ymd(r.expires_at)), issuedAt: r.lic_issued_at } : null,
+    current: r.license_id ? { licenseId: r.license_id, kind: r.lic_kind, maxUsers: r.max_users, storageMB: r.storage_mb, modules: r.lic_modules ?? [], expiresAt: ymd(r.expires_at), daysLeft: L.daysUntil(ymd(r.expires_at)), issuedAt: r.lic_issued_at } : null,
     state: stateOf(r),
   });
   const shapeLicense = (r) => ({
@@ -295,7 +295,7 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
     const kind = String(b.kind ?? 'NEW');
     if (!['NEW', 'RENEW', 'CHANGE', 'SUSPEND', 'RESUME'].includes(kind)) throw bad('발급 종류가 올바르지 않습니다');
     const today = L.kstToday();
-    const last = c.license_id ? { maxUsers: c.max_users, storageMB: c.storage_mb, expiresAt: ymd(c.expires_at), kind: c.lic_kind } : null;
+    const last = c.license_id ? { maxUsers: c.max_users, storageMB: c.storage_mb, modules: c.lic_modules ?? [], expiresAt: ymd(c.expires_at), kind: c.lic_kind } : null;
     if (kind !== 'NEW' && !last) throw bad('먼저 신규 라이선스를 발급해 주세요');
     const isDate = (v) => /^\d{4}-\d{2}-\d{2}$/.test(String(v ?? ''));
 
@@ -303,6 +303,9 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
     // 저장 용량 — 화면은 GB 로 받는다. 기본 1GB, 연장·변경 때 입력이 없으면 기존 용량 유지
     const storageMB = b.storageGB != null && b.storageGB !== '' ? Math.round(Number(b.storageGB) * 1024) : (last?.storageMB ?? 1024);
     if (!Number.isInteger(storageMB) || storageMB < 256 || storageMB > 1024 * 1024) throw bad('저장 용량은 0.25GB~1024GB 사이로 입력해 주세요');
+    // 고객 맞춤 모듈 — 이 고객 서버에서만 켜지는 기능. 입력이 없으면 기존 것 유지
+    const modules = b.modules != null ? [...new Set((Array.isArray(b.modules) ? b.modules : String(b.modules).split(/[,\s]+/)).map((m) => String(m).trim().toLowerCase()).filter(Boolean))] : (last?.modules ?? []);
+    if (modules.some((m) => !/^[a-z0-9][a-z0-9-]{1,39}$/.test(m) || m === 'all')) throw bad('모듈 이름은 영문 소문자·숫자·- 로 적어 주세요 (예: samwoo-cable)');
     let startsOn;
     let expiresAt;
     if (kind === 'NEW') {
@@ -343,19 +346,19 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
       storageMB,
       issuedAt: new Date().toISOString(),
       expiresAt,
-      modules: ['all'],
+      modules: ['all', ...modules],
       edition,
       deployment: c.deployment,
     };
     const text = L.sign(payload, privateKey);
     if (!L.verify(text, publicKey)) throw bad('서명 확인에 실패했습니다', 500);
     const { rows: [row] } = await q(
-      `insert into license(customer_id, license_id, kind, max_users, starts_on, expires_at, edition, amount, memo, license_text, issued_at, storage_mb)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) returning *`,
-      [c.id, payload.licenseId, kind, maxUsers, startsOn, expiresAt, edition, amount, b.memo ? String(b.memo).slice(0, 500) : null, text, payload.issuedAt, storageMB],
+      `insert into license(customer_id, license_id, kind, max_users, starts_on, expires_at, edition, amount, memo, license_text, issued_at, storage_mb, modules)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) returning *`,
+      [c.id, payload.licenseId, kind, maxUsers, startsOn, expiresAt, edition, amount, b.memo ? String(b.memo).slice(0, 500) : null, text, payload.issuedAt, storageMB, JSON.stringify(modules)],
     );
     const KIND = { NEW: '신규', RENEW: '연장', CHANGE: '변경', SUSPEND: '사용 중지', RESUME: '중지 해제' };
-    audit(req, 'LICENSE_ISSUE', `${KIND[kind]} 발급 ${c.name} ${maxUsers}명 ${+(storageMB / 1024).toFixed(2)}GB ~${expiresAt}${amount ? ` ${amount.toLocaleString('ko-KR')}원` : ''}`);
+    audit(req, 'LICENSE_ISSUE', `${KIND[kind]} 발급 ${c.name} ${maxUsers}명 ${+(storageMB / 1024).toFixed(2)}GB ~${expiresAt}${modules.length ? ` 맞춤모듈 ${modules.join(',')}` : ''}${amount ? ` ${amount.toLocaleString('ko-KR')}원` : ''}`);
     res.status(201).json(shapeLicense({ ...row, customer_name: c.name, biz_reg_no: c.biz_reg_no }));
   }));
 
@@ -518,6 +521,7 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
       });
       await q(`update server_job set status = 'DONE', step = 'done', data = $2, error = null, updated_at = now(), finished_at = now() where customer_id = $1`, [customerId, job.data]);
       await q('update customer set server_url = $2, updated_at = now() where id = $1', [customerId, `https://${job.data.domain}`]);
+      await R.lockAutoDeploy(R.client(conf.token, railwayEndpoint), job.data).catch((e) => console.error('자동 배포 끄기 실패', e.message));
       await q('insert into audit_log(action, summary) values ($1,$2)', ['SERVER_DONE', `고객 서버 개설 완료 ${j.input.companyName} https://${job.data.domain}`]);
     } catch (e) {
       console.error('고객 서버 개설 실패', e);
@@ -803,37 +807,143 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
     const conf = await railwayConf();
     if (!conf.token) throw bad('먼저 설정 > Railway 연결을 마쳐 주세요');
     const gql = R.client(conf.token, railwayEndpoint);
-    await redeployOne(gql, j);
-    audit(req, 'REDEPLOY', `고객 서버 재배포 ${c.name}`);
-    void finishDeploy(gql, j, c.id, null).catch(() => undefined);
-    res.status(202).json({ ok: true });
+    // 이 고객만 우리 ERP의 최신 코드로 (고객 맞춤 수정 반영용). 다른 고객 서버는 건드리지 않는다
+    const latest = (await R.sourceDeploys(gql, SOURCE, 10)).find((d) => d.status === 'SUCCESS' && d.meta?.commitHash);
+    if (!latest) throw bad('우리 ERP에 성공한 배포가 없습니다. 우리 ERP 배포가 끝난 뒤 다시 눌러 주세요');
+    const sha = latest.meta.commitHash;
+    const rel = await releases();
+    const version = rel.find((r) => r.commit_sha === sha)?.version ?? `${rel[0]?.version ?? '0.0.0'}+${sha.slice(0, 7)}`;
+    await R.deployVersion(gql, j.data, version, sha);
+    audit(req, 'REDEPLOY', `고객 서버 최신 코드 배포 ${c.name} (${version})`);
+    void finishDeploy(gql, j, c.id, null).then((st) => st === 'SUCCESS' && q(`update customer set erp_version = $2, erp_version_at = now() where id = $1`, [c.id, version])).catch(() => undefined);
+    res.status(202).json({ ok: true, version });
   }));
 
   const rolling = { current: null };
-  admin.post('/rollouts', wrap(async (req, res) => {
-    if (rolling.current) throw bad('전체 재배포가 이미 진행 중입니다');
+  /** 고객 서버를 하나씩 배포하고 결과를 rollout 에 기록. deployFn(gql, job) 이 실제 배포, onSuccess(job) 는 성공한 고객마다 */
+  async function startRollout(req, jobs, { scope, version, label }, deployFn, onSuccess) {
+    if (rolling.current) throw bad('다른 배포가 이미 진행 중입니다');
     const conf = await railwayConf();
     if (!conf.token) throw bad('먼저 설정 > Railway 연결을 마쳐 주세요');
-    const jobs = (await q(`select j.*, c.name as customer_name from server_job j join customer c on c.id = j.customer_id where j.status = 'DONE' order by c.name`)).rows;
-    if (!jobs.length) throw bad('개설된 고객 서버가 없습니다');
+    if (!jobs.length) throw bad('배포할 고객 서버가 없습니다');
     await syncOpen();
-    const ro = (await q(`insert into rollout(scope, results) values ('ALL', $1) returning *`, [JSON.stringify(jobs.map((j) => ({ customerId: j.customer_id, name: j.customer_name, status: 'QUEUED' })))])).rows[0];
-    audit(req, 'ROLLOUT', `고객 서버 전체 재배포 시작 (${jobs.length}곳)`);
+    const ro = (await q(`insert into rollout(scope, version, results) values ($1,$2,$3) returning *`, [scope, version ?? null, JSON.stringify(jobs.map((j) => ({ customerId: j.customer_id, name: j.customer_name, status: 'QUEUED' })))])).rows[0];
+    audit(req, 'ROLLOUT', `${label} 시작 (${jobs.length}곳)`);
     rolling.current = ro.id;
     (async () => {
       const gql = R.client(conf.token, railwayEndpoint);
       const results = [];
       for (const j of jobs) {
         let status;
-        try { await redeployOne(gql, j); status = await finishDeploy(gql, j, j.customer_id, ro.id); } catch (e) { status = `ERROR: ${e.message}`.slice(0, 200); }
+        try { await deployFn(gql, j); status = await finishDeploy(gql, j, j.customer_id, ro.id); if (status === 'SUCCESS' && onSuccess) await onSuccess(j); } catch (e) { status = `ERROR: ${e.message}`.slice(0, 200); }
         results.push({ customerId: j.customer_id, name: j.customer_name, status, at: new Date().toISOString() });
         await q(`update rollout set results = $2 where id = $1`, [ro.id, JSON.stringify([...results, ...jobs.slice(results.length).map((x) => ({ customerId: x.customer_id, name: x.customer_name, status: 'QUEUED' }))])]);
       }
       await q(`update rollout set finished_at = now() where id = $1`, [ro.id]);
-      await q('insert into audit_log(action, summary) values ($1,$2)', ['ROLLOUT_DONE', `전체 재배포 끝 — 성공 ${results.filter((r) => r.status === 'SUCCESS').length}/${results.length}`]);
+      await q('insert into audit_log(action, summary) values ($1,$2)', ['ROLLOUT_DONE', `${label} 끝 — 성공 ${results.filter((r) => r.status === 'SUCCESS').length}/${results.length}`]);
       rolling.current = null;
-    })().catch((e) => { console.error('전체 재배포 실패', e); rolling.current = null; });
-    res.status(202).json({ id: ro.id });
+    })().catch((e) => { console.error('배포 실패', e); rolling.current = null; });
+    return ro.id;
+  }
+  const doneJobs = async (ids) => (await q(`select j.*, c.name as customer_name from server_job j join customer c on c.id = j.customer_id where j.status = 'DONE' ${ids ? 'and c.id = any($1)' : ''} order by c.name`, ids ? [ids] : [])).rows;
+
+  admin.post('/rollouts', wrap(async (req, res) => {
+    const id = await startRollout(req, await doneJobs(), { scope: 'ALL', label: '고객 서버 전체 재배포' }, redeployOne);
+    res.status(202).json({ id });
+  }));
+
+  // ── 업데이트 · 버전 관리 ───────────────────────────────────────
+  //  우리 ERP(sspower-erp)는 push 하면 바로 바뀌는 개발 서버. "수정 전부 완료"를 누르면 그때 우리 ERP에
+  //  성공적으로 배포된 커밋이 새 버전으로 고정되고, 고객 서버는 버전을 골라 배포(되돌리기 포함)한다.
+  const SOURCE = {
+    projectId: env('ERP_SOURCE_PROJECT_ID', '33efb4e3-90cc-4108-84ae-ba8b55b70167'),
+    serviceId: env('ERP_SOURCE_SERVICE_ID', '01550f48-7072-498c-9ca6-0de77556d119'),
+    environmentId: env('ERP_SOURCE_ENVIRONMENT_ID', 'db64dd72-4c7e-4c2c-ba69-bfaf4f56cd58'),
+  };
+  const firstLine = (m) => String(m ?? '').split('\n')[0].trim();
+  const shapeRelease = (r) => r && ({ id: r.id, version: r.version, status: r.status, notes: r.notes, changes: r.changes, commitSha: r.commit_sha, createdAt: r.created_at, releasedAt: r.released_at });
+  const draftRelease = async () => (await q(`select * from erp_release where status = 'DRAFT' order by created_at limit 1`)).rows[0]
+    ?? (await q(`insert into erp_release(status) values ('DRAFT') returning *`)).rows[0];
+  const releases = async () => (await q(`select * from erp_release where status = 'RELEASED' order by released_at desc`)).rows;
+  const nextVersion = (last, level) => {
+    const [a, b, c] = (last ?? '1.0.-1').split('.').map(Number);
+    return level === 'major' ? `${a + 1}.0.0` : level === 'minor' ? `${a}.${b + 1}.0` : `${a}.${b}.${c + 1}`;
+  };
+  /** 마지막 버전 이후 우리 ERP에 배포 성공한 변경 (커밋 메시지 첫 줄) — 최신순 */
+  async function pendingChanges(gql, since) {
+    const out = [];
+    const seen = new Set();
+    for (const d of await R.sourceDeploys(gql, SOURCE)) {
+      const sha = d.meta?.commitHash;
+      if (!sha || d.status !== 'SUCCESS' && d.status !== 'REMOVED' || seen.has(sha)) continue;
+      if (sha === since) break;
+      seen.add(sha);
+      out.push({ sha, message: firstLine(d.meta.commitMessage), at: d.createdAt });
+    }
+    return out;
+  }
+
+  admin.get('/updates', wrap(async (req, res) => {
+    const conf = await railwayConf();
+    const draft = await draftRelease();
+    const rel = await releases();
+    let changes = [], source = null, sourceError = null;
+    if (conf.token) {
+      try {
+        const gql = R.client(conf.token, railwayEndpoint);
+        const latest = (await R.sourceDeploys(gql, SOURCE, 1))[0];
+        source = latest ? { status: latest.status, sha: latest.meta?.commitHash ?? null, message: firstLine(latest.meta?.commitMessage), at: latest.createdAt } : null;
+        changes = await pendingChanges(gql, rel[0]?.commit_sha);
+      } catch (e) { sourceError = e.message; }
+    }
+    const customers = (await q(`select c.id, c.name, c.erp_version, c.erp_version_at, j.status as job_status from customer c left join server_job j on j.customer_id = c.id where c.deployment = 'HOSTED' order by c.name`)).rows;
+    const ro = (await q(`select * from rollout where version is not null order by started_at desc limit 10`)).rows;
+    res.json({
+      draft: shapeRelease(draft), changes, source, sourceError, railway: !!conf.token,
+      releases: rel.map(shapeRelease),
+      customers: customers.map((c) => ({ id: c.id, name: c.name, version: c.erp_version, versionAt: c.erp_version_at, server: c.job_status === 'DONE' })),
+      rollouts: ro.map((r) => ({ id: r.id, version: r.version, scope: r.scope, startedAt: r.started_at, finishedAt: r.finished_at, results: r.results })),
+      running: rolling.current,
+    });
+  }));
+
+  admin.put('/updates/draft', wrap(async (req, res) => {
+    const notes = (Array.isArray(req.body?.notes) ? req.body.notes : []).map((x) => String(x ?? '').trim().slice(0, 300)).filter(Boolean).slice(0, 100);
+    const d = await draftRelease();
+    await q(`update erp_release set notes = $2 where id = $1`, [d.id, JSON.stringify(notes)]);
+    res.json({ ok: true });
+  }));
+
+  // 수정 전부 완료 → 지금 우리 ERP에 배포된 코드를 새 버전으로 고정
+  admin.post('/updates/release', wrap(async (req, res) => {
+    const level = ['patch', 'minor', 'major'].includes(req.body?.level) ? req.body.level : 'patch';
+    const conf = await railwayConf();
+    if (!conf.token) throw bad('먼저 설정 > Railway 연결을 마쳐 주세요');
+    const gql = R.client(conf.token, railwayEndpoint);
+    const latest = (await R.sourceDeploys(gql, SOURCE, 1))[0];
+    if (!latest?.meta?.commitHash) throw bad('우리 ERP 배포 기록을 찾지 못했습니다');
+    if (latest.status !== 'SUCCESS') throw bad(`우리 ERP 최신 배포가 아직 끝나지 않았거나 실패했습니다 (${latest.status}). 배포가 성공한 뒤 다시 눌러 주세요`);
+    const rel = await releases();
+    if (rel[0]?.commit_sha === latest.meta.commitHash) throw bad(`지난 버전(${rel[0].version}) 이후 바뀐 코드가 없습니다`);
+    const d = await draftRelease();
+    const changes = await pendingChanges(gql, rel[0]?.commit_sha);
+    if (!d.notes.length && !changes.length) throw bad('업데이트 내용을 한 줄 이상 적어 주세요');
+    const version = nextVersion(rel[0]?.version, level);
+    await q(`update erp_release set version = $2, status = 'RELEASED', commit_sha = $3, changes = $4, released_at = now() where id = $1`, [d.id, version, latest.meta.commitHash, JSON.stringify(changes)]);
+    audit(req, 'RELEASE', `새 버전 ${version} (${latest.meta.commitHash.slice(0, 7)})`);
+    res.status(201).json({ version });
+  }));
+
+  // 버전 배포 (전체 또는 고른 고객) — 예전 버전을 고르면 되돌리기
+  admin.post('/updates/deploy', wrap(async (req, res) => {
+    const r = (await q(`select * from erp_release where version = $1 and status = 'RELEASED'`, [String(req.body?.version ?? '')])).rows[0];
+    if (!r) throw bad('그런 버전이 없습니다', 404);
+    const ids = Array.isArray(req.body?.customerIds) && req.body.customerIds.length ? req.body.customerIds.map(String) : null;
+    const jobs = await doneJobs(ids);
+    const id = await startRollout(req, jobs, { scope: ids ? 'SOME' : 'ALL', version: r.version, label: `버전 ${r.version} 배포` },
+      (gql, j) => R.deployVersion(gql, j.data, r.version, r.commit_sha),
+      (j) => q(`update customer set erp_version = $2, erp_version_at = now() where id = $1`, [j.customer_id, r.version]));
+    res.status(202).json({ id });
   }));
 
   admin.get('/rollouts', wrap(async (req, res) => {

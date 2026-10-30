@@ -111,6 +111,16 @@ test('저장 용량: 기본 1GB, 변경 발급으로 늘리고 연장 때는 유
   const c = (await call('/api/admin/customers/' + cust.id)).body;
   assert.equal(c.usedMB, 4300);
   assert.equal(c.current.storageMB, 5120);
+  // 맞춤 모듈: 이 고객 라이선스에만 들어가고, 연장해도 유지, 비우면 빠진다
+  assert.deepEqual(L.verify(rn.body.licenseText, publicKey).modules, ['all']);
+  assert.equal((await call(`/api/admin/customers/${cust.id}/licenses`, { method: 'POST', json: { kind: 'CHANGE', modules: 'Samwoo_Cable!' } })).status, 400);
+  const mo = await call(`/api/admin/customers/${cust.id}/licenses`, { method: 'POST', json: { kind: 'CHANGE', modules: 'samwoo-cable, ' } });
+  assert.deepEqual(L.verify(mo.body.licenseText, publicKey).modules, ['all', 'samwoo-cable']);
+  const rn2 = await call(`/api/admin/customers/${cust.id}/licenses`, { method: 'POST', json: { kind: 'RENEW' } });
+  assert.deepEqual(L.verify(rn2.body.licenseText, publicKey).modules, ['all', 'samwoo-cable'], '연장은 모듈 유지');
+  assert.deepEqual((await call('/api/admin/customers/' + cust.id)).body.current.modules, ['samwoo-cable']);
+  const off = await call(`/api/admin/customers/${cust.id}/licenses`, { method: 'POST', json: { kind: 'CHANGE', modules: '' } });
+  assert.deepEqual(L.verify(off.body.licenseText, publicKey).modules, ['all']);
 });
 
 test('사용 중지는 어제 만료로 재발급, 해제하면 원래 만료일로 돌아온다', async () => {
@@ -129,7 +139,7 @@ test('대시보드·발급 대장·CSV·활동 기록', async () => {
   assert.equal(s.customers, 1);
   assert.equal(s.revenueYear.total, 2400000);
   const list = (await call('/api/admin/licenses')).body;
-  assert.equal(list.length, 7);
+  assert.equal(list.length, 10);
   assert.equal(list[0].licenseText, undefined, '목록에는 라이선스 원문을 싣지 않는다');
   const csv = await call('/api/admin/licenses?format=csv');
   assert.match(csv.body, /발급일시/);

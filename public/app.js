@@ -71,7 +71,7 @@ function renderLogin() {
 // ── 공통 틀 ────────────────────────────────────────────────────
 function shell(active, inner) {
   const nav = [['#/', '대시보드', 'home'], ['#/customers', '고객', 'customers'], ['#/contracts', '계약 · 전자계약', 'contracts'], ['#/billing', '과금 · 수납', 'billing'], ['#/support', '상담 · 지원', 'support'],
-    ['#/licenses', '발급 대장', 'licenses'], ['#/requests', '요청 대장', 'requests'], ['#/pricing', '요금제', 'pricing'], ['#/audit', '활동 기록', 'audit'], ['#/settings', '설정', 'settings']];
+    ['#/licenses', '발급 대장', 'licenses'], ['#/requests', '요청 대장', 'requests'], ['#/updates', '업데이트', 'updates'], ['#/pricing', '요금제', 'pricing'], ['#/audit', '활동 기록', 'audit'], ['#/settings', '설정', 'settings']];
   $app.innerHTML = `
     <div class="shell">
       <nav class="side" aria-label="메뉴">
@@ -322,7 +322,7 @@ function serverPanel(c) {
         <div><dt>접속 주소</dt><dd><a href="${esc(j.url)}" target="_blank" rel="noopener">${esc(j.url)}</a></dd></div>
         <div><dt>관리자 아이디</dt><dd class="mono">${esc(j.adminId)}</dd></div>
         <div><dt>개설 완료</dt><dd class="small">${dt(j.finishedAt)}</dd></div></dl>
-      <div class="row"><a class="btn primary" href="#/customers/${c.id}/delivery">납품서 보기 · 인쇄</a><button class="btn" id="srvredeploy" title="sspower ss-erp 브랜치의 최신 코드로 이 고객 서버를 다시 배포합니다 (2~5분, 데이터는 그대로)">최신 코드로 재배포</button><button class="btn" id="srvaccess" title="고객 비밀번호 없이 공급사 지원 계정(ss-vendor)으로 들어갑니다. 고객 ERP 감사 로그에 남습니다">고객 ERP 접속</button></div>`
+      <div class="row"><a class="btn primary" href="#/customers/${c.id}/delivery">납품서 보기 · 인쇄</a><button class="btn" id="srvredeploy" title="우리 ERP에 반영된 최신 코드를 이 고객 서버에만 배포합니다. 다른 고객은 그대로입니다 (2~5분, 데이터는 그대로)">이 고객만 최신 코드로 배포</button><button class="btn" id="srvaccess" title="고객 비밀번호 없이 공급사 지원 계정(ss-vendor)으로 들어갑니다. 고객 ERP 감사 로그에 남습니다">고객 ERP 접속</button></div>`
     : `${j.url && j.status === 'RUNNING' ? `<div class="addr"><span class="muted small">접속 주소 (설치 중 — 보통 5~10분 뒤 접속됨)</span><div class="row"><a class="mono" href="${esc(j.url)}" target="_blank" rel="noopener">${esc(j.url)}</a><button type="button" class="btn sm" id="cpurl">복사</button><a class="btn sm primary" href="#/customers/${c.id}/delivery">납품서</a></div><span class="small muted">관리자 아이디 <b class="mono">${esc(j.adminId)}</b></span></div>` : ''}
       <ul style="list-style:none;padding:0;margin:0 0 10px;display:grid;gap:4px">${list}</ul>
       ${j.status === 'RUNNING' ? '<p class="small muted" style="margin:0">처음 설치는 보통 5~10분 걸립니다. 이 화면을 닫아도 계속 진행됩니다.</p>' : ''}
@@ -409,6 +409,7 @@ function issueDialog(c, kind) {
     body = `<div class="form-grid">
       <label class="f">사용자 수 *<input name="maxUsers" type="number" min="1" max="10000" required value="${cur?.maxUsers ?? 10}" /></label>
       <label class="f">저장 용량 (GB) *<input name="storageGB" type="number" min="0.25" max="1024" step="0.25" required value="${+((cur?.storageMB ?? 1024) / 1024).toFixed(2)}" /><span class="hint">현재 사용 ${c.usedMB != null ? gb(c.usedMB) : '확인 전'}</span></label>
+      <label class="f wide">맞춤 모듈<input name="modules" value="${esc((cur?.modules ?? []).join(', '))}" placeholder="예: samwoo-cable" spellcheck="false" /><span class="hint">이 고객만 쓰는 기능의 모듈 이름 (Claude가 알려 준 이름). 여러 개는 쉼표로. 비우면 맞춤 기능 없음</span></label>
       <label class="f">금액 (원)<input name="amount" type="number" min="0" step="1000" value="${kind === 'CHANGE' ? 0 : ''}" placeholder="0" /><span class="hint">매출 집계용 · 공급가액 기준 권장</span></label>
       ${kind === 'CHANGE' ? '' : `<label class="f">시작일<input name="startsOn" type="date" value="${start}" /></label>`}
       <label class="f">만료일<input name="expiresAt" type="date" value="${end}" /><span class="hint">${kind === 'CHANGE' ? '보통 기존 만료일 그대로' : '연간 구독: 시작일부터 1년'}</span></label>
@@ -432,6 +433,7 @@ function issueDialog(c, kind) {
     const json = { kind, memo: f.memo || undefined };
     if (f.maxUsers) json.maxUsers = Number(f.maxUsers);
     if (f.storageGB) json.storageGB = Number(f.storageGB);
+    if (f.modules != null) json.modules = f.modules;
     if (f.amount) json.amount = Number(f.amount);
     if (f.startsOn) json.startsOn = f.startsOn;
     if (f.expiresAt) json.expiresAt = f.expiresAt;
@@ -497,7 +499,7 @@ async function claudeForCustomer(c, reqs) {
     `sspower 저장소(ss-erp 브랜치)에서 CLAUDE.md 운영 규칙대로 해.`,
     `규칙: 이 업체만 달라지게 — ① 회사 설정값 ② 양식 파일 ③ 라이선스 모듈 스위치 순으로 고르고, 다른 고객에게는 아무것도 바뀌지 않아야 해. 고객 전용 브랜치·고객 서버 직접 수정 금지.`,
     j?.status === 'DONE'
-      ? `이 업체 서버: Railway 프로젝트 ${j.projectName ?? ''} (${j.url}). 작업이 끝나면 테스트 통과 → ss-erp push → 우리 ERP 배포 확인 → 이 업체 서버만 재배포 → 이 업체 화면에 반영됐는지 확인까지 해.`
+      ? `이 업체 서버: Railway 프로젝트 ${j.projectName ?? ''} (${j.url}). 고객 서버는 push 해도 자동으로 바뀌지 않아. 작업이 끝나면 테스트 통과 → ss-erp push → 우리 ERP 배포 성공 확인까지 하고 알려줘 — 그다음 내가 라이선스 관리자 이 업체 화면에서 "이 고객만 최신 코드로 배포"를 누를게.`
       : `이 업체는 ${c.deployment === 'ONPREM' ? '설치형(고객사 서버)' : '아직 서버가 없음'}이라 코드 반영까지만 하고, 고객 서버 반영 방법을 알려줘.`,
     c.current ? `라이선스: 사용자 ${c.current.maxUsers}명, 저장 용량 ${gb(c.current.storageMB ?? 1024)}, ${c.current.expiresAt}까지. 모듈을 새로 켜야 하면 모듈 이름을 알려줘 — 발급 사이트에서 이 업체 라이선스를 재발급할게.` : '',
     open.length ? `이 업체의 열린 수정 요청: ${open.map((r) => `#${r.issueNumber} ${r.title.replace(/^(\[[^\]]+\])+\s*/, '')}`).join(', ')} — 필요하면 gh issue view 로 읽어.` : '',
@@ -687,7 +689,7 @@ async function pageRequests() {
   const ok = (r) => r.results.filter((x) => x.status === 'SUCCESS').length;
   shell('requests', `
     <div class="page-head"><div><h1>요청 대장</h1><p>고객 수정 요청과 전체 업데이트 요청, 그리고 고객 서버 반영 상태입니다. 요청은 GitHub 이슈로, 반영은 금요 배포로.</p></div>
-      <div class="row"><button class="btn" id="greq">전체 업데이트 요청</button><button class="btn primary" id="rollout" ${ro.running ? 'disabled' : ''}>${ro.running ? '전체 재배포 진행 중…' : '고객 서버 전체 재배포'}</button></div></div>
+      <div class="row"><button class="btn" id="greq">전체 업데이트 요청</button><a class="btn primary" href="#/updates">버전 만들고 배포 (업데이트)</a></div></div>
     ${gh.connected ? '' : '<div class="note warn" style="margin-bottom:12px">요청을 이슈로 남기려면 <a href="#/settings">설정 &gt; GitHub 연결</a>이 필요합니다.</div>'}
     <section class="panel"><header><h2>요청</h2><span class="muted small">${rq.rows.length}건</span></header>${requestTable(rq.rows)}</section>
     <section class="panel"><header><h2>전체 재배포 기록</h2><span class="muted small">${ro.rows.length}회</span></header>
@@ -698,11 +700,98 @@ async function pageRequests() {
         ${ro.rows.length > 1 ? `<p class="small muted" style="margin:10px 0 0">이전: ${ro.rows.slice(1, 6).map((r) => `${dt(r.startedAt)} (${ok(r)}/${r.results.length})`).join(' · ')}</p>` : ''}</div>` : '<div class="empty">아직 전체 재배포를 한 적이 없습니다</div>'}
     </section>`);
   document.getElementById('greq').onclick = () => { location.hash = '#/requests/new'; };
-  document.getElementById('rollout').onclick = async () => {
-    if (!confirm('개설된 고객 서버 전부를 최신 코드로 하나씩 재배포합니다. 고객당 2~5분, 그동안 그 고객은 잠깐 접속이 끊길 수 있습니다. 계속할까요?')) return;
-    try { await api('/rollouts', { method: 'POST' }); toast('전체 재배포를 시작했습니다'); pageRequests(); } catch (err) { toast(err.message, 'error'); }
-  };
   if (ro.running) rolloutTimer = setTimeout(() => { if (location.hash === '#/requests') pageRequests(); }, 15_000);
+}
+
+// ── 업데이트 · 버전 ────────────────────────────────────────────
+let updatesTimer = null;
+const RO_STATUS = (st) => (st === 'SUCCESS' ? '<span class="badge ok">성공</span>' : st === 'QUEUED' ? '<span class="badge">대기</span>' : `<span class="badge seal">${esc(st)}</span>`);
+async function pageUpdates() {
+  clearTimeout(updatesTimer);
+  loading('updates');
+  const u = await api('/updates');
+  const latest = u.releases[0];
+  const notes = u.draft.notes;
+  const busy = !!u.running;
+  const verOpts = u.releases.map((r) => `<option value="${esc(r.version)}">${esc(r.version)} · ${dt(r.releasedAt)}</option>`).join('');
+  const lastRo = u.rollouts[0];
+  shell('updates', `
+    <div class="page-head"><div><h1>업데이트</h1><p>ERP 전체 수정은 우리 ERP에 먼저 반영해 확인하고, "수정 전부 완료"를 누르면 새 버전이 만들어집니다. 고객 서버에는 버전을 골라 배포하고, 문제가 생기면 이전 버전으로 되돌립니다.</p></div>
+      <div class="row"><button class="btn" id="upclaude" title="ERP 전체 소스를 고치는 작업 메시지를 복사하고 Claude 창을 엽니다">Claude로 전체 수정</button></div></div>
+    ${u.railway ? '' : '<div class="note warn" style="margin-bottom:12px">버전을 만들고 배포하려면 먼저 <a href="#/settings">설정 &gt; Railway 연결</a>을 마쳐 주세요.</div>'}
+    ${u.sourceError ? `<div class="note warn" style="margin-bottom:12px">우리 ERP 배포 기록을 읽지 못했습니다: ${esc(u.sourceError)}</div>` : ''}
+
+    <section class="panel"><header><h2>다음 업데이트 ${latest ? `<span class="muted small">(지금 버전 ${esc(latest.version)})</span>` : ''}</h2>
+      ${u.source ? `<span class="small muted">우리 ERP ${u.source.status === 'SUCCESS' ? '<span class="badge ok">배포 완료</span>' : `<span class="badge warn">${esc(u.source.status)}</span>`} ${dt(u.source.at)}</span>` : ''}</header>
+      <div class="body">
+        <label class="f">업데이트 내용 <span class="hint">고객에게 알릴 내용을 한 줄에 하나씩 적어 두세요</span>
+          <textarea id="upnotes" rows="5" placeholder="예: 작업일보에 날씨 자동 입력&#10;세금계산서 출력 속도 개선">${esc(notes.join('\n'))}</textarea></label>
+        <div class="row end" style="margin-top:8px"><button class="btn" id="upsave">내용 저장</button></div>
+        <h3 class="small" style="margin:16px 0 6px">지난 버전 이후 반영된 수정 (자동)</h3>
+        ${u.changes.length ? `<ul class="small" style="margin:0;padding-left:18px">${u.changes.map((c) => `<li>${esc(c.message)} <span class="muted num">${esc(c.sha.slice(0, 7))} · ${dt(c.at)}</span></li>`).join('')}</ul>` : '<p class="muted small" style="margin:0">아직 없습니다. Claude로 수정하면 여기에 쌓입니다.</p>'}
+        <div class="row end" style="margin-top:16px;gap:8px">
+          <select id="uplevel" aria-label="버전 크기"><option value="patch">작은 수정 (${esc(nextVer(latest?.version, 'patch'))})</option><option value="minor">기능 추가 (${esc(nextVer(latest?.version, 'minor'))})</option><option value="major">큰 변경 (${esc(nextVer(latest?.version, 'major'))})</option></select>
+          <button class="btn primary" id="uprelease" ${u.railway ? '' : 'disabled'}>수정 전부 완료 · 새 버전 만들기</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel"><header><h2>버전 배포</h2>${busy ? '<span class="badge steel">배포 진행 중</span>' : ''}</header>
+      <div class="body">
+        ${u.releases.length ? `<div class="row" style="gap:8px;flex-wrap:wrap">
+          <select id="dver" aria-label="배포할 버전">${verOpts}</select>
+          <button class="btn primary" id="dall" ${busy ? 'disabled' : ''}>모든 고객 서버에 배포</button>
+        </div>
+        <div class="table-wrap" style="margin-top:12px"><table><thead><tr><th>고객</th><th>지금 버전</th><th class="hide-sm">바뀐 때</th><th></th></tr></thead><tbody>
+          ${u.customers.map((c) => `<tr><td><a href="#/customers/${c.id}">${esc(c.name)}</a></td><td>${c.server ? (c.version ? `<span class="num">${esc(c.version)}</span>${latest && c.version !== latest.version ? ' <span class="badge warn">최신 아님</span>' : ''}` : '<span class="muted">개설 시점 코드</span>') : '<span class="muted">서버 없음</span>'}</td><td class="hide-sm small num">${c.versionAt ? dt(c.versionAt) : ''}</td>
+            <td>${c.server ? `<button class="btn small" data-one="${c.id}" data-name="${esc(c.name)}" ${busy ? 'disabled' : ''}>이 고객만 배포</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">호스팅 고객이 없습니다</td></tr>'}
+        </tbody></table></div>
+        <p class="small muted" style="margin:8px 0 0">되돌리기: 위에서 이전 버전을 고르고 배포하면 됩니다. 자료(DB)는 그대로 두고 프로그램만 바뀝니다.</p>`
+        : '<p class="muted" style="margin:0">아직 만든 버전이 없습니다. 위에서 "수정 전부 완료"를 누르면 첫 버전이 만들어집니다.</p>'}
+        ${lastRo ? `<h3 class="small" style="margin:16px 0 6px">최근 배포 — 버전 ${esc(lastRo.version)} · ${dt(lastRo.startedAt)} ${lastRo.finishedAt ? '' : '<span class="badge steel">진행 중</span>'}</h3>
+          <div class="table-wrap"><table><tbody>${lastRo.results.map((x) => `<tr><td>${esc(x.name)}</td><td>${RO_STATUS(x.status)}</td><td class="hide-sm small num">${x.at ? dt(x.at) : ''}</td></tr>`).join('')}</tbody></table></div>` : ''}
+      </div>
+    </section>
+
+    <section class="panel"><header><h2>버전 기록</h2><span class="muted small">${u.releases.length}개</span></header>
+      ${u.releases.length ? `<div class="body">${u.releases.map((r) => `<div style="margin-bottom:14px"><b class="num">${esc(r.version)}</b> <span class="small muted">${dt(r.releasedAt)} · 코드 ${esc((r.commitSha ?? '').slice(0, 7))}</span>
+        <ul class="small" style="margin:4px 0 0;padding-left:18px">${r.notes.map((n) => `<li>${esc(n)}</li>`).join('')}${r.changes.map((c) => `<li class="muted">${esc(c.message)}</li>`).join('')}</ul></div>`).join('')}</div>` : '<div class="empty">아직 없습니다</div>'}
+    </section>`);
+
+  const saveNotes = () => api('/updates/draft', { method: 'PUT', json: { notes: document.getElementById('upnotes').value.split('\n') } });
+  document.getElementById('upsave').onclick = async () => { try { await saveNotes(); toast('업데이트 내용을 저장했습니다'); } catch (e) { toast(e.message, 'error'); } };
+  document.getElementById('upclaude').onclick = async () => { await saveNotes().catch(() => undefined); claudeForUpdate(document.getElementById('upnotes').value.split('\n').filter((x) => x.trim()), latest); };
+  document.getElementById('uprelease').onclick = async () => {
+    const level = document.getElementById('uplevel').value;
+    if (!confirm(`지금 우리 ERP에 배포된 코드를 새 버전 ${nextVer(latest?.version, level)}(으)로 고정합니다. 고객 서버에는 아직 배포되지 않습니다. 계속할까요?`)) return;
+    try { await saveNotes(); const r = await api('/updates/release', { method: 'POST', json: { level } }); toast(`새 버전 ${r.version}을 만들었습니다`); pageUpdates(); } catch (e) { toast(e.message, 'error'); }
+  };
+  const deploy = async (customerIds, who) => {
+    const version = document.getElementById('dver').value;
+    const back = latest && version !== latest.version;
+    if (!confirm(`${who}에 버전 ${version}을 배포합니다.${back ? ' (최신이 아닌 이전 버전 — 되돌리기)' : ''} 고객당 2~5분, 그동안 잠깐 접속이 끊길 수 있습니다. 계속할까요?`)) return;
+    try { await api('/updates/deploy', { method: 'POST', json: { version, customerIds } }); toast('배포를 시작했습니다'); pageUpdates(); } catch (e) { toast(e.message, 'error'); }
+  };
+  document.getElementById('dall')?.addEventListener('click', () => deploy(null, '모든 고객 서버'));
+  document.querySelectorAll('[data-one]').forEach((b) => (b.onclick = () => deploy([b.dataset.one], b.dataset.name)));
+  if (busy) updatesTimer = setTimeout(() => { if (location.hash === '#/updates') pageUpdates(); }, 15_000);
+}
+function nextVer(last, level) {
+  const [a, b, c] = (last ?? '1.0.-1').split('.').map(Number);
+  return level === 'major' ? `${a + 1}.0.0` : level === 'minor' ? `${a}.${b + 1}.0` : `${a}.${b}.${c + 1}`;
+}
+async function claudeForUpdate(notes, latest) {
+  const msg = [
+    `이음ERP 전체 업데이트 작업 — 모든 고객에게 들어갈 수정이야.`,
+    `sspower 저장소(ss-erp 브랜치)에서 CLAUDE.md 운영 규칙대로 해.`,
+    `규칙: 고객 전용 브랜치·고객 서버 직접 수정 금지. 수정 → apps/api 테스트 통과 → ss-erp push → 우리 ERP(sspower-erp) 배포 성공 확인까지. 고객 서버에는 배포하지 마 — 내가 라이선스 관리자 "업데이트" 메뉴에서 "수정 전부 완료"를 눌러 버전을 만들고 배포할 거야.`,
+    `커밋 메시지 첫 줄은 고객이 읽어도 되는 쉬운 한국어로 써 줘 — 업데이트 내역에 그대로 쌓여.`,
+    latest ? `지금 고객 버전: ${latest.version}.` : '',
+    notes.length ? `이번 업데이트에 넣을 내용:\n${notes.map((n) => `- ${n}`).join('\n')}` : '',
+    `무엇을 바꿀지는 지금부터 내가 말할게. 모호하면 먼저 질문해. 다 되면 "수정 전부 완료"를 눌러도 된다고 알려줘.`,
+  ].filter(Boolean).join('\n');
+  try { await navigator.clipboard.writeText(msg); toast('전체 수정 작업 메시지를 복사했습니다 — 새 대화에 붙여 넣으세요'); } catch { prompt('복사해서 새 대화에 붙여 넣으세요', msg); }
+  window.open('https://claude.ai/code', '_blank', 'noopener');
 }
 
 // ── 설정 ───────────────────────────────────────────────────────
@@ -810,6 +899,7 @@ async function route() {
     else if (h === '#/pricing') await pagePricing();
     else if (h === '#/licenses') await pageLicenses();
     else if (h === '#/requests') await pageRequests();
+    else if (h === '#/updates') await pageUpdates();
     else if (h === '#/requests/new') await pageRequestNew();
     else if (h.startsWith('#/requests/')) await pageRequest(h.slice('#/requests/'.length));
     else if (h === '#/audit') await pageAudit();

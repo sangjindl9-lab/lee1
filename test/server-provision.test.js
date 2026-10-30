@@ -15,6 +15,7 @@ const issues = []; // 가짜 GitHub 이슈 저장
 const calls = [];
 let failOnce = null; // 이 mutation 이름이 처음 불릴 때 오류
 let deployStatus = 'SUCCESS';
+let srcSha = 'aaa1111'; // 우리 ERP(개발 서버)의 최신 배포 커밋
 const { privateKey } = crypto.generateKeyPairSync('ed25519');
 
 function fakeRailway(req, res) {
@@ -38,7 +39,8 @@ function fakeRailway(req, res) {
       serviceDomainCreate: { serviceDomainCreate: { id: 'dom-1', domain: 'erp-hn-0440-production.up.railway.app' } },
       variableCollectionUpsert: { variableCollectionUpsert: true },
       serviceConnect: { serviceConnect: { id: 'svc-app' } },
-      deployments: { deployments: { edges: [{ node: { id: 'dep-1', status: deployStatus } }] } },
+      deployments: { deployments: { edges: [{ node: { id: 'dep-1', status: deployStatus, createdAt: new Date().toISOString(), meta: { commitHash: srcSha, commitMessage: `수정 ${srcSha}\n\n본문` } } }] } },
+      serviceInstanceDeployV2: { serviceInstanceDeployV2: 'dep-2' },
       serviceInstanceRedeploy: { serviceInstanceRedeploy: true },
     }[name];
     res.end(JSON.stringify(data ? { data } : { errors: [{ message: 'unknown ' + name }] }));
@@ -185,8 +187,9 @@ test('서버 개설: 실패하면 그 단계부터 다시 이어서, 끝나면 �
   assert.equal(app.S3_BUCKET, 'eum-files-test', '파일 저장소가 연결돼 있으면 고객 서버에 넣어 준다');
   assert.equal(app.S3_PREFIX, 'customers/2148839612/');
   assert.equal(app.S3_SECRET_ACCESS_KEY, 'sk-test');
-  const regions = calls.filter((x) => x.name === 'serviceInstanceUpdate').map((x) => x.variables.input.region);
-  assert.deepEqual(regions, ['asia-southeast1-eqsg3a', 'asia-southeast1-eqsg3a']);
+  const upd = calls.filter((x) => x.name === 'serviceInstanceUpdate').map((x) => x.variables.input);
+  assert.deepEqual(upd.slice(0, 2).map((x) => x.region), ['asia-southeast1-eqsg3a', 'asia-southeast1-eqsg3a']);
+  assert.deepEqual(upd[2], { watchPatterns: ['.eum-release-only'] }, '개설 뒤에는 push 자동 배포를 끄고 버전 배포로만');
   const conn = calls.find((x) => x.name === 'serviceConnect');
   assert.deepEqual(conn.variables.input, { repo: 'sangjindl9-lab/sspower', branch: 'ss-erp' });
   const web = calls.find((x) => x.name === 'variableCollectionUpsert').variables.input.variables;
@@ -305,4 +308,46 @@ test('수정 요청 → GitHub 이슈(첨부는 requests 브랜치), 이슈가 �
 
   // 고객 한 곳만 재배포
   assert.equal((await call(`/api/admin/customers/${id}/redeploy`, { method: 'POST' })).status, 202);
+});
+
+test('업데이트: 수정 전부 완료 → 새 버전, 버전 배포(자동 배포 잠금 + 그 커밋), 이전 버전으로 되돌리기', async () => {
+  let u = (await call('/api/admin/updates')).body;
+  assert.deepEqual(u.changes.map((c) => c.message), ['수정 aaa1111']);
+  assert.equal(u.releases.length, 0);
+  assert.equal((await call('/api/admin/updates/draft', { method: 'PUT', json: { notes: ['작업일보 날씨 자동 입력', ' ', '출력 속도 개선'] } })).status, 200);
+  const r1 = await call('/api/admin/updates/release', { method: 'POST', json: { level: 'patch' } });
+  assert.equal(r1.status, 201);
+  assert.equal(r1.body.version, '1.0.0');
+  assert.equal((await call('/api/admin/updates/release', { method: 'POST', json: {} })).status, 400, '바뀐 코드가 없으면 버전을 만들지 않음');
+
+  srcSha = 'bbb2222';
+  deployStatus = 'BUILDING';
+  assert.equal((await call('/api/admin/updates/release', { method: 'POST', json: {} })).status, 400, '우리 ERP 배포가 끝나기 전에는 안 됨');
+  deployStatus = 'SUCCESS';
+  const r2 = await call('/api/admin/updates/release', { method: 'POST', json: { level: 'minor' } });
+  assert.equal(r2.body.version, '1.1.0');
+  u = (await call('/api/admin/updates')).body;
+  assert.deepEqual(u.releases.map((r) => [r.version, r.commitSha]), [['1.1.0', 'bbb2222'], ['1.0.0', 'aaa1111']]);
+  assert.deepEqual(u.releases[1].notes, ['작업일보 날씨 자동 입력', '출력 속도 개선']);
+  assert.deepEqual(u.draft.notes, [], '새 버전을 만들면 다음 업데이트 내용은 비어서 시작');
+
+  // 최신 버전 배포
+  const c0 = calls.length;
+  assert.equal((await call('/api/admin/updates/deploy', { method: 'POST', json: { version: '1.1.0' } })).status, 202);
+  await server.app.locals.idleRollout();
+  const mine = calls.slice(c0);
+  assert.deepEqual(mine.find((x) => x.name === 'serviceInstanceUpdate').variables.input, { watchPatterns: ['.eum-release-only'] });
+  assert.equal(mine.find((x) => x.name === 'variableCollectionUpsert').variables.input.variables.APP_VERSION, '1.1.0');
+  assert.equal(mine.find((x) => x.name === 'serviceInstanceDeployV2').variables.c, 'bbb2222');
+  u = (await call('/api/admin/updates')).body;
+  assert.equal(u.customers.find((c) => c.id === id).version, '1.1.0');
+  assert.deepEqual(u.rollouts[0].results.map((x) => x.status), ['SUCCESS']);
+
+  // 이 고객만 이전 버전으로 되돌리기
+  const c1 = calls.length;
+  assert.equal((await call('/api/admin/updates/deploy', { method: 'POST', json: { version: '1.0.0', customerIds: [id] } })).status, 202);
+  await server.app.locals.idleRollout();
+  assert.equal(calls.slice(c1).find((x) => x.name === 'serviceInstanceDeployV2').variables.c, 'aaa1111');
+  assert.equal((await call('/api/admin/updates')).body.customers.find((c) => c.id === id).version, '1.0.0');
+  assert.equal((await call('/api/admin/updates/deploy', { method: 'POST', json: { version: '9.9.9' } })).status, 404);
 });
