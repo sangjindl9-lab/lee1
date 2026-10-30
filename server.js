@@ -487,7 +487,7 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
   const shapeJob = (j) => j && ({
     status: j.status, step: j.step, error: j.error, createdAt: j.created_at, finishedAt: j.finished_at,
     url: j.data?.domain ? `https://${j.data.domain}` : null, adminId: j.input.adminId, companyCode: j.input.companyCode,
-    projectId: j.data?.projectId ?? null,
+    projectId: j.data?.projectId ?? null, projectName: j.input?.projectName ?? null,
     steps: R.STEPS.map(([key, label]) => ({ key, label })),
   });
   const loadJob = async (customerId) => (await q('select * from server_job where customer_id = $1', [customerId])).rows[0] ?? null;

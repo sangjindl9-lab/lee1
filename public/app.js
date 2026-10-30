@@ -231,6 +231,7 @@ async function pageCustomer(id) {
           <button class="btn primary" data-issue="RENEW">1년 연장</button>
           <button class="btn" data-issue="CHANGE">사용자 수·용량 변경</button>
           <button class="btn danger" data-issue="SUSPEND">사용 중지</button>`}
+        <button class="btn primary" id="claudebtn" title="이 업체만 수정·업데이트하는 Claude 작업 창을 엽니다">Claude로 수정</button>
         <button class="btn" id="reqbtn">수정 요청</button>
       </div></div>
 
@@ -274,6 +275,7 @@ async function pageCustomer(id) {
 
   document.getElementById('copycode').onclick = () => copy(c.activationCode, '설치 코드를 복사했습니다');
   document.getElementById('reqbtn').onclick = () => { location.hash = `#/requests/new?customer=${c.id}`; };
+  document.getElementById('claudebtn').onclick = () => claudeForCustomer(c, reqs.rows);
   bindServerPanel(c);
   document.getElementById('regen').onclick = async () => {
     if (!confirm('설치 코드를 새로 만들면 지금 연결된 고객 서버는 새 코드로 다시 연결해야 합니다. 계속할까요?')) return;
@@ -484,6 +486,25 @@ async function pageAudit() {
     <div class="page-head"><div><h1>활동 기록</h1><p>로그인, 고객 등록, 라이선스 발급 등 최근 300건입니다.</p></div></div>
     <section class="panel">${rows.length ? `<div class="table-wrap"><table><thead><tr><th>일시</th><th>내용</th><th class="hide-sm">접속 IP</th></tr></thead>
       <tbody>${rows.map((r) => `<tr><td class="num small">${dt(r.at)}</td><td>${esc(r.summary)}</td><td class="num small hide-sm">${esc(r.ip ?? '')}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">기록이 없습니다</div>'}</section>`);
+}
+
+// ── Claude로 수정 — 이 업체 전용 작업 창 ─────────────────────────
+async function claudeForCustomer(c, reqs) {
+  const j = c.server;
+  const open = (reqs ?? []).filter((r) => r.status === 'REQUESTED');
+  const msg = [
+    `이음ERP 고객 맞춤 수정 — ${c.name} (사업자번호 ${biz(c.bizRegNo)}).`,
+    `sspower 저장소(ss-erp 브랜치)에서 CLAUDE.md 운영 규칙대로 해.`,
+    `규칙: 이 업체만 달라지게 — ① 회사 설정값 ② 양식 파일 ③ 라이선스 모듈 스위치 순으로 고르고, 다른 고객에게는 아무것도 바뀌지 않아야 해. 고객 전용 브랜치·고객 서버 직접 수정 금지.`,
+    j?.status === 'DONE'
+      ? `이 업체 서버: Railway 프로젝트 ${j.projectName ?? ''} (${j.url}). 작업이 끝나면 테스트 통과 → ss-erp push → 우리 ERP 배포 확인 → 이 업체 서버만 재배포 → 이 업체 화면에 반영됐는지 확인까지 해.`
+      : `이 업체는 ${c.deployment === 'ONPREM' ? '설치형(고객사 서버)' : '아직 서버가 없음'}이라 코드 반영까지만 하고, 고객 서버 반영 방법을 알려줘.`,
+    c.current ? `라이선스: 사용자 ${c.current.maxUsers}명, 저장 용량 ${gb(c.current.storageMB ?? 1024)}, ${c.current.expiresAt}까지. 모듈을 새로 켜야 하면 모듈 이름을 알려줘 — 발급 사이트에서 이 업체 라이선스를 재발급할게.` : '',
+    open.length ? `이 업체의 열린 수정 요청: ${open.map((r) => `#${r.issueNumber} ${r.title.replace(/^(\[[^\]]+\])+\s*/, '')}`).join(', ')} — 필요하면 gh issue view 로 읽어.` : '',
+    `무엇을 바꿀지는 지금부터 내가 말할게. 모호하면 먼저 질문해.`,
+  ].filter(Boolean).join('\n');
+  try { await navigator.clipboard.writeText(msg); toast(`${c.name} 작업 메시지를 복사했습니다 — 새 대화에 붙여 넣으세요`); } catch { prompt('복사해서 새 대화에 붙여 넣으세요', msg); }
+  window.open('https://claude.ai/code', '_blank', 'noopener');
 }
 
 // ── 수정 요청 대장 ─────────────────────────────────────────────
