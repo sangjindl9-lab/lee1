@@ -34,7 +34,6 @@ async function handleInquiry(req, res) {
     let d; try { d = JSON.parse(body); } catch { return json(res, 400, { ok: false, message: '잘못된 요청입니다' }); }
     const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').toString().split(',')[0].trim();
     if (tooMany(ip)) return json(res, 429, { ok: false, message: '잠시 뒤 다시 시도해 주세요' });
-    if (d.website) return json(res, 200, { ok: true }); // 봇용 숨은 칸
     const item = { at: new Date().toISOString(), company: clean(d.company, 100), name: clean(d.name, 50), phone: clean(d.phone, 40), email: clean(d.email, 120), product: clean(d.product, 40), message: String(d.message ?? '').trim().slice(0, 3000), ip };
     if (!item.company || !item.name || !item.phone) return json(res, 400, { ok: false, message: '회사명·담당자·연락처를 입력해 주세요' });
     fs.appendFileSync(LOG, JSON.stringify(item) + '\n');
