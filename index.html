@@ -742,7 +742,7 @@ function vSites(){
   const f=(label,k,o={})=>`<label class="fld ${o.cls||''}"><span>${label}</span><input data-sf="${k}" value="${esc(s[k])}" placeholder="${esc(o.ph||'')}">${o.hint?`<small>${o.hint}</small>`:''}</label>`;
   const cnt=id=>data.inspections.filter(d=>d.siteId===id).length;
   $('#main').innerHTML=`<h2>현장 기본정보</h2>
-  <div class="split"><div class="card list-pick"><div class="row"><b>현장 목록</b><span class="sp"></span><button class="btn sm pri" data-act="site-new">＋ 새 현장</button></div>
+  <div class="split"><div class="card list-pick"><div class="row"><b>현장 목록</b><span class="sp"></span>${window.ERP_GONGMU?'<button class="btn sm" data-act="erp-sites">ERP 현장 불러오기</button>':''}<button class="btn sm pri" data-act="site-new">＋ 새 현장</button></div>
    ${data.sites.map(x=>`<a data-act="site-sel" data-id="${x.id}" class="${x.id===state.siteSel?'on':''}">${esc(x.name||'(이름 없음)')}<div class="muted">${esc(x.prefix)} · ${esc(fieldName(x))} · 검측 ${cnt(x.id)}건</div></a>`).join('')||'<div class="muted">등록된 현장 없음</div>'}</div>
   <div class="card" id="siteForm"><h3>${state.siteSel==='__new'?'새 현장 등록':'현장 정보 수정'}</h3>
    <div class="grid2">
@@ -1214,6 +1214,18 @@ const A={
   'lg-print-sel':()=>{const l=filtered().filter(d=>state.lgSel.has(d.id));if(!l.length){alert('인쇄할 검측을 체크하세요.');return}doPrint(l,$('#lgPart').value)},
   // 현장
   'site-new':()=>{state.siteSel='__new';vSites()},
+  /* 이음ERP 안에서 쓸 때: ERP에 등록한 현장을 골라 새 현장 칸을 채운다 (저장은 직접) */
+  'erp-sites':async()=>{let l;try{const r=await fetch('/api/erp-sites',{cache:'no-store'});if(!r.ok)throw new Error((await r.json().catch(()=>({}))).message||('HTTP '+r.status));l=await r.json()}catch(e){alert('ERP 현장 목록을 불러오지 못했습니다: '+e.message);return}
+    state.erpSites=l;
+    modal(`<h3>ERP 현장 불러오기</h3><p class="muted">고른 현장의 공사명·시공사·분야·현장대리인을 새 현장 칸에 채웁니다. 확인한 뒤 [저장]을 누르세요.</p>
+     <div class="list-pick" style="max-height:60vh;overflow:auto">${l.map((x,i)=>`<a data-act="erp-pick" data-i="${i}">${esc(x.name)}<div class="muted">${esc(x.code)} · ${esc(x.field)} · ${esc(x.client||'발주처 미입력')}${x.start?' · '+esc(x.start)+' ~ '+esc(x.end||''):''}${data.sites.some(s=>s.name===x.name)?' · 이미 등록됨':''}</div></a>`).join('')||'<div class="muted">ERP에 등록된 현장이 없습니다.</div>'}</div>
+     <div class="row"><span class="sp"></span><button class="btn" data-act="modal-close">닫기</button></div>`)},
+  'erp-pick':(el)=>{const x=(state.erpSites||[])[+el.dataset.i];if(!x)return;closeModal();state.siteSel='__new';vSites();
+    const set=(k,v)=>{const i=$(`[data-sf="${k}"]`);if(i&&v)i.value=v};
+    set('name',x.name);set('contractor',x.contractor);set('siteAgent',x.agent);set('inspector',x.agent);
+    if(x.field==='전기'||x.field==='정보통신')set('field',x.field);else{set('field','직접 입력');set('fieldCustom',x.field)}
+    if(x.client)set('recipient',x.name+' 책임감리원');
+    toast('ERP 현장 정보를 채웠습니다. 확인 후 [저장]을 누르세요.')},
   'site-sel':(el)=>{state.siteSel=el.dataset.id;vSites()},
   'site-save':()=>{const o={};$$('[data-sf]').forEach(i=>o[i.dataset.sf]=i.value.trim());
     if(!has(o.name)){alert('공사명을 입력하세요.');return}if(!has(o.prefix)){alert('문서번호 접두어를 입력하세요.');return}
