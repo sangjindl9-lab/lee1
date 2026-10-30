@@ -62,7 +62,7 @@ function renderLogin() {
 
 // ── 공통 틀 ────────────────────────────────────────────────────
 function shell(active, inner) {
-  const nav = [['#/', '대시보드', 'home'], ['#/customers', '고객', 'customers'], ['#/licenses', '발급 대장', 'licenses'], ['#/audit', '활동 기록', 'audit'], ['#/settings', '설정', 'settings']];
+  const nav = [['#/', '대시보드', 'home'], ['#/customers', '고객', 'customers'], ['#/licenses', '발급 대장', 'licenses'], ['#/requests', '요청 대장', 'requests'], ['#/audit', '활동 기록', 'audit'], ['#/settings', '설정', 'settings']];
   $app.innerHTML = `
     <div class="shell">
       <nav class="side" aria-label="메뉴">
@@ -197,7 +197,7 @@ async function pageNewCustomer() {
 // ── 고객 상세 ──────────────────────────────────────────────────
 async function pageCustomer(id) {
   loading('customers');
-  const c = await api('/customers/' + id);
+  const [c, reqs] = await Promise.all([api('/customers/' + id), api('/requests?customerId=' + id)]);
   const cur = c.current;
   const suspended = c.state === 'SUSPENDED';
   shell('customers', `
@@ -207,6 +207,7 @@ async function pageCustomer(id) {
           <button class="btn primary" data-issue="RENEW">1년 연장</button>
           <button class="btn" data-issue="CHANGE">사용자 수 변경</button>
           <button class="btn danger" data-issue="SUSPEND">사용 중지</button>`}
+        <button class="btn" id="reqbtn">수정 요청</button>
       </div></div>
 
     <div class="grid cols-2">
@@ -230,6 +231,8 @@ async function pageCustomer(id) {
 
     ${serverPanel(c)}
 
+    <section class="panel"><header><h2>수정 요청</h2><span class="muted small">GitHub 이슈로 기록 · 월요일 작업, 금요일 반영</span></header><div id="reqlist">${requestTable(reqs.rows, true)}</div></section>
+
     <section class="panel"><header><h2>발급 이력</h2><span class="muted small">${c.licenses.length}건</span></header>
       ${c.licenses.length ? `<div class="table-wrap"><table><thead><tr><th>발급일시</th><th>종류</th><th class="r">사용자</th><th>기간</th><th class="r">금액</th><th class="hide-sm">메모</th><th></th></tr></thead><tbody>
         ${c.licenses.map((l, i) => `<tr><td class="num small">${dt(l.issuedAt)}${i === 0 ? ' <span class="badge steel">현재</span>' : ''}</td><td>${badge(KIND[l.kind])}</td><td class="r num">${l.maxUsers}</td>
@@ -243,6 +246,7 @@ async function pageCustomer(id) {
     </section>`);
 
   document.getElementById('copycode').onclick = () => copy(c.activationCode, '설치 코드를 복사했습니다');
+  document.getElementById('reqbtn').onclick = () => requestDialog(c);
   bindServerPanel(c);
   document.getElementById('regen').onclick = async () => {
     if (!confirm('설치 코드를 새로 만들면 지금 연결된 고객 서버는 새 코드로 다시 연결해야 합니다. 계속할까요?')) return;
@@ -288,7 +292,7 @@ function serverPanel(c) {
         <div><dt>접속 주소</dt><dd><a href="${esc(j.url)}" target="_blank" rel="noopener">${esc(j.url)}</a></dd></div>
         <div><dt>관리자 아이디</dt><dd class="mono">${esc(j.adminId)}</dd></div>
         <div><dt>개설 완료</dt><dd class="small">${dt(j.finishedAt)}</dd></div></dl>
-      <div class="row"><a class="btn primary" href="#/customers/${c.id}/delivery">납품서 보기 · 인쇄</a><button class="btn" id="srvaccess" title="고객 비밀번호 없이 공급사 지원 계정(ss-vendor)으로 들어갑니다. 고객 ERP 감사 로그에 남습니다">고객 ERP 접속</button></div>`
+      <div class="row"><a class="btn primary" href="#/customers/${c.id}/delivery">납품서 보기 · 인쇄</a><button class="btn" id="srvredeploy" title="sspower ss-erp 브랜치의 최신 코드로 이 고객 서버를 다시 배포합니다 (2~5분, 데이터는 그대로)">최신 코드로 재배포</button><button class="btn" id="srvaccess" title="고객 비밀번호 없이 공급사 지원 계정(ss-vendor)으로 들어갑니다. 고객 ERP 감사 로그에 남습니다">고객 ERP 접속</button></div>`
     : `<ul style="list-style:none;padding:0;margin:0 0 10px;display:grid;gap:4px">${list}</ul>
       ${j.status === 'RUNNING' ? '<p class="small muted" style="margin:0">처음 설치는 보통 5~10분 걸립니다. 이 화면을 닫아도 계속 진행됩니다.</p>' : ''}
       ${j.status === 'FAILED' ? `<div class="note seal" style="margin-bottom:10px">${esc(j.error)}</div><button class="btn" id="srvretry">실패한 단계부터 다시 시도</button>` : ''}`}
@@ -300,6 +304,11 @@ function bindServerPanel(c) {
   if (f) f.onsubmit = async (e) => {
     e.preventDefault();
     try { await api(`/customers/${c.id}/server`, { method: 'POST', json: formData(f) }); toast('고객 서버를 만드는 중입니다'); pageCustomer(c.id); } catch (err) { toast(err.message, 'error'); }
+  };
+  const rd = document.getElementById('srvredeploy');
+  if (rd) rd.onclick = async () => {
+    if (!confirm(`${c.name} 서버를 최신 코드로 재배포할까요? 2~5분 동안 접속이 잠깐 끊길 수 있습니다.`)) return;
+    try { await api(`/customers/${c.id}/redeploy`, { method: 'POST' }); toast('재배포를 시작했습니다. 끝나면 완료된 요청이 "반영"으로 바뀝니다'); } catch (err) { toast(err.message, 'error'); }
   };
   const a = document.getElementById('srvaccess');
   if (a) a.onclick = async () => {
@@ -443,10 +452,75 @@ async function pageAudit() {
       <tbody>${rows.map((r) => `<tr><td class="num small">${dt(r.at)}</td><td>${esc(r.summary)}</td><td class="num small hide-sm">${esc(r.ip ?? '')}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">기록이 없습니다</div>'}</section>`);
 }
 
+// ── 수정 요청 대장 ─────────────────────────────────────────────
+const RSTATUS = { REQUESTED: ['요청', 'warn'], DONE: ['완료 · 반영 대기', 'steel'], DEPLOYED: ['반영됨', 'ok'] };
+function requestTable(rows, forCustomer = false) {
+  if (!rows.length) return '<div class="empty">요청이 없습니다</div>';
+  return `<div class="table-wrap"><table><thead><tr><th>요청일</th>${forCustomer ? '' : '<th>고객</th>'}<th>내용</th><th class="hide-sm">화면</th><th>상태</th><th class="hide-sm">반영</th><th></th></tr></thead><tbody>
+    ${rows.map((r) => `<tr><td class="num small">${dt(r.createdAt)}</td>${forCustomer ? '' : `<td>${r.kind === 'GLOBAL' ? '<span class="badge">전체</span>' : esc(r.customerName ?? '')}</td>`}
+      <td>${esc(r.title.replace(/^\[[^\]]+\]\s*/, ''))}</td><td class="hide-sm small">${esc(r.screen ?? '')}</td><td>${badge(RSTATUS[r.status])}</td>
+      <td class="hide-sm small num">${r.deployedAt ? dt(r.deployedAt) : r.closedAt ? '완료 ' + dt(r.closedAt) : '—'}</td>
+      <td class="r">${r.issueUrl ? `<a class="btn sm" href="${esc(r.issueUrl)}" target="_blank" rel="noopener">#${r.issueNumber}</a>` : ''}</td></tr>`).join('')}
+  </tbody></table></div>`;
+}
+function requestDialog(c) {
+  const back = document.createElement('div');
+  back.className = 'dlg-back';
+  back.innerHTML = `<form class="dlg" role="dialog" aria-modal="true" aria-label="수정 요청">
+    <header><h2>${c ? `수정 요청 — ${esc(c.name)}` : '전체 업데이트 요청'}</h2><button type="button" class="x" aria-label="닫기">×</button></header>
+    <div class="body"><div class="form-grid">
+      <label class="f wide">화면<input name="screen" placeholder="예: 발주 › 발주서 출력" /></label>
+      <label class="f wide">지금<input name="now" placeholder="예: 서명란이 대표이사 1칸" /></label>
+      <label class="f wide">원하는 것 *<textarea name="want" rows="4" required placeholder="${c ? '예: 현장소장 확인 칸 추가. 다른 고객은 그대로' : '예: 작업일보에 날씨 자동 입력'}"></textarea></label>
+      <label class="f">배포 범위<select name="deploy">${(c ? ['고객 서버까지', '코드만'] : ['우리 ERP까지', '고객 서버 전체', '코드만']).map((o) => `<option>${o}</option>`).join('')}</select></label>
+    </div>
+    <p class="small muted" style="margin:10px 0 0">GitHub 저장소에 이슈로 등록됩니다. 월요일에 Claude에게 "이번 주 작업: 열린 이슈 처리"라고 하면 이 요청을 읽고 처리합니다.</p></div>
+    <footer><button type="button" class="btn" data-close>취소</button><button class="btn primary">요청 등록</button></footer></form>`;
+  document.body.appendChild(back);
+  const close = () => back.remove();
+  back.querySelector('.x').onclick = close;
+  back.querySelector('[data-close]').onclick = close;
+  back.onclick = (e) => { if (e.target === back) close(); };
+  back.querySelector('form').onsubmit = async (e) => {
+    e.preventDefault();
+    try {
+      const r = await api(c ? `/customers/${c.id}/requests` : '/requests', { method: 'POST', json: formData(e.target) });
+      close(); toast(`이슈 #${r.issueNumber} 로 등록했습니다`);
+      if (c) pageCustomer(c.id); else pageRequests();
+    } catch (err) { toast(err.message, 'error'); }
+  };
+}
+let rolloutTimer = null;
+async function pageRequests() {
+  clearTimeout(rolloutTimer);
+  loading('requests');
+  const [rq, ro, gh] = await Promise.all([api('/requests'), api('/rollouts'), api('/github')]);
+  const last = ro.rows[0];
+  const ok = (r) => r.results.filter((x) => x.status === 'SUCCESS').length;
+  shell('requests', `
+    <div class="page-head"><div><h1>요청 대장</h1><p>고객 수정 요청과 전체 업데이트 요청, 그리고 고객 서버 반영 상태입니다. 요청은 GitHub 이슈로, 반영은 금요 배포로.</p></div>
+      <div class="row"><button class="btn" id="greq">전체 업데이트 요청</button><button class="btn primary" id="rollout" ${ro.running ? 'disabled' : ''}>${ro.running ? '전체 재배포 진행 중…' : '고객 서버 전체 재배포'}</button></div></div>
+    ${gh.connected ? '' : '<div class="note warn" style="margin-bottom:12px">요청을 이슈로 남기려면 <a href="#/settings">설정 &gt; GitHub 연결</a>이 필요합니다.</div>'}
+    <section class="panel"><header><h2>요청</h2><span class="muted small">${rq.rows.length}건</span></header>${requestTable(rq.rows)}</section>
+    <section class="panel"><header><h2>전체 재배포 기록</h2><span class="muted small">${ro.rows.length}회</span></header>
+      ${last ? `<div class="body"><p style="margin:0 0 8px"><b>${dt(last.startedAt)}</b> ${last.finishedAt ? `끝남 — 성공 ${ok(last)}/${last.results.length}` : '<span class="badge steel">진행 중</span>'}</p>
+        <div class="table-wrap"><table><thead><tr><th>고객</th><th>결과</th><th class="hide-sm">시각</th></tr></thead><tbody>
+        ${last.results.map((x) => `<tr><td>${esc(x.name)}</td><td>${x.status === 'SUCCESS' ? '<span class="badge ok">성공</span>' : x.status === 'QUEUED' ? '<span class="badge">대기</span>' : `<span class="badge seal">${esc(x.status)}</span>`}</td><td class="hide-sm small num">${x.at ? dt(x.at) : ''}</td></tr>`).join('')}
+        </tbody></table></div>
+        ${ro.rows.length > 1 ? `<p class="small muted" style="margin:10px 0 0">이전: ${ro.rows.slice(1, 6).map((r) => `${dt(r.startedAt)} (${ok(r)}/${r.results.length})`).join(' · ')}</p>` : ''}</div>` : '<div class="empty">아직 전체 재배포를 한 적이 없습니다</div>'}
+    </section>`);
+  document.getElementById('greq').onclick = () => requestDialog(null);
+  document.getElementById('rollout').onclick = async () => {
+    if (!confirm('개설된 고객 서버 전부를 최신 코드로 하나씩 재배포합니다. 고객당 2~5분, 그동안 그 고객은 잠깐 접속이 끊길 수 있습니다. 계속할까요?')) return;
+    try { await api('/rollouts', { method: 'POST' }); toast('전체 재배포를 시작했습니다'); pageRequests(); } catch (err) { toast(err.message, 'error'); }
+  };
+  if (ro.running) rolloutTimer = setTimeout(() => { if (location.hash === '#/requests') pageRequests(); }, 15_000);
+}
+
 // ── 설정 ───────────────────────────────────────────────────────
 async function pageSettings() {
   loading('settings');
-  const [me, rw] = await Promise.all([api('/me'), api('/railway')]);
+  const [me, rw, gh] = await Promise.all([api('/me'), api('/railway'), api('/github')]);
   shell('settings', `
     <div class="page-head"><div><h1>설정</h1><p>관리자 비밀번호와 판매자 서명키 정보입니다.</p></div></div>
     <section class="panel"><header><h2>관리자 비밀번호 변경</h2><span class="muted small">${me.passwordChangedAt ? '마지막 변경 ' + dt(me.passwordChangedAt) : '처음 받은 비밀번호 사용 중'}</span></header>
@@ -471,12 +545,23 @@ async function pageSettings() {
         <div class="row end" style="margin-top:12px"><button class="btn primary">연결 확인 후 저장</button></div>
       </form>
     </section>
+    <section class="panel"><header><h2>GitHub 연결 (수정 요청 → 이슈)</h2>${gh.connected ? `<span class="badge ok">연결됨${gh.source === 'env' ? ' · 환경변수' : ''}</span>` : '<span class="badge warn">연결 안 됨</span>'}</header>
+      <form id="ghf" class="body" autocomplete="off">
+        <p class="muted" style="margin-top:0">고객 수정 요청을 <span class="mono">${esc(gh.repo)}</span> 저장소 이슈로 남깁니다. GitHub → Settings → Developer settings → <b>Fine-grained tokens</b>에서 이 저장소에 <b>Issues: Read and write</b> 권한만 준 토큰을 만들어 붙여 넣으세요.</p>
+        <div class="form-grid"><label class="f wide">GitHub 토큰<input type="password" name="token" placeholder="${gh.connected ? '바꿀 때만 입력' : 'github_pat_…'}" autocomplete="off" required /></label></div>
+        <div class="row end" style="margin-top:12px"><button class="btn primary">연결 확인 후 저장</button></div>
+      </form>
+    </section>
     <section class="panel"><header><h2>판매자 공개키</h2><button class="btn sm" id="cp">복사</button></header><div class="body">
       <p class="muted" style="margin-top:0">SS-ERP에 들어 있는 공개키와 같아야 이 사이트에서 발급한 라이선스가 인정됩니다. 공개키는 알려져도 괜찮습니다.</p>
       <div class="lic-text">${esc(me.publicKey)}</div>
       <div class="note warn" style="margin-top:12px">비밀키(서명키)는 이 서버의 환경변수에만 있고 화면에는 나오지 않습니다. 따로 보관한 백업 파일을 잃어버리지 마세요. 비밀키가 유출되면 누구나 라이선스를 만들 수 있으니 즉시 키를 교체해야 합니다.</div>
     </div></section>`);
   document.getElementById('cp').onclick = () => copy(me.publicKey, '공개키를 복사했습니다');
+  document.getElementById('ghf').onsubmit = async (e) => {
+    e.preventDefault();
+    try { await api('/github', { method: 'PUT', json: formData(e.target) }); toast('GitHub에 연결했습니다'); pageSettings(); } catch (err) { toast(err.message, 'error'); }
+  };
   document.getElementById('rwf').onsubmit = async (e) => {
     e.preventDefault();
     try { await api('/railway', { method: 'PUT', json: formData(e.target) }); toast('Railway에 연결했습니다'); pageSettings(); } catch (err) { toast(err.message, 'error'); }
@@ -503,6 +588,7 @@ async function route() {
     else if (/^#\/customers\/[^/]+\/delivery$/.test(h)) await pageDelivery(h.split('/')[2]);
     else if (h.startsWith('#/customers/')) await pageCustomer(h.slice('#/customers/'.length));
     else if (h === '#/licenses') await pageLicenses();
+    else if (h === '#/requests') await pageRequests();
     else if (h === '#/audit') await pageAudit();
     else if (h === '#/settings') await pageSettings();
     else location.hash = '#/';

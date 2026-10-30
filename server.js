@@ -15,12 +15,13 @@ const express = require('express');
 const { createPool, migrate } = require('./lib/db');
 const L = require('./lib/license');
 const R = require('./lib/railway');
+const G = require('./lib/github');
 
 const env = (k, d) => (process.env[k] ?? d);
 const PORT = Number(env('PORT', 8080));
 const PROD = env('NODE_ENV') === 'production';
 
-function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpoint, railwaySleep, railwayWaitMs, publicUrl = env('PUBLIC_URL', 'https://ss-license-production.up.railway.app') }) {
+function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpoint, railwaySleep, railwayWaitMs, githubEndpoint, githubTokenEnv = env('GITHUB_TOKEN'), publicUrl = env('PUBLIC_URL', 'https://ss-license-production.up.railway.app') }) {
   const publicKey = crypto.createPublicKey(privateKey);
   const publicPem = L.publicKeyPem(privateKey);
   // ── 관리자 비밀번호 ──
@@ -539,6 +540,160 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
       companyCode: j.input.companyCode, license: cur, contact: { name: c.contact_name, phone: c.phone, email: c.email }, issuedOn: L.kstToday(),
     });
   }));
+
+  // ── 수정 요청 대장 (GitHub 이슈) ─────────────────────────────────
+  const REPO = env('ERP_REPO', 'sangjindl9-lab/sspower');
+  const githubConf = async () => {
+    const envToken = githubTokenEnv;
+    const stored = await setting('github_token');
+    const token = envToken || (stored ? unseal(stored).token : null);
+    return { token, source: envToken ? 'env' : stored ? 'db' : null, repo: REPO };
+  };
+  const gh = async () => {
+    const c = await githubConf();
+    if (!c.token) throw bad('먼저 설정 > GitHub 연결을 마쳐 주세요');
+    return G.client(c.token, c.repo, githubEndpoint);
+  };
+
+  admin.get('/github', wrap(async (req, res) => {
+    const c = await githubConf();
+    res.json({ connected: !!c.token, source: c.source, repo: c.repo });
+  }));
+
+  admin.put('/github', wrap(async (req, res) => {
+    const token = String(req.body?.token ?? '').trim();
+    if (!token) throw bad('GitHub 토큰을 입력해 주세요');
+    try { await G.client(token, REPO, githubEndpoint).check(); } catch (e) { throw bad(`GitHub 연결 확인 실패: ${e.message}`); }
+    await putSetting('github_token', seal({ token }));
+    audit(req, 'GITHUB_CONNECT', 'GitHub 연결 설정');
+    res.json({ ok: true });
+  }));
+
+  const shapeRequest = (r) => ({
+    id: r.id, customerId: r.customer_id, customerName: r.customer_name ?? null, kind: r.kind, title: r.title, screen: r.screen, deploy: r.deploy,
+    issueNumber: r.issue_number, issueUrl: r.issue_url, status: r.status, createdAt: r.created_at, closedAt: r.closed_at, deployedAt: r.deployed_at, rolloutId: r.rollout_id,
+  });
+  const REQ_SQL = `select r.*, c.name as customer_name from request r left join customer c on c.id = r.customer_id`;
+
+  /** 열린 요청의 이슈가 닫혔는지 GitHub에서 확인해 '완료'로 옮긴다 */
+  async function syncRequests(rows) {
+    const open = rows.filter((r) => r.status === 'REQUESTED' && r.issue_number);
+    if (!open.length) return rows;
+    let g;
+    try { g = await gh(); } catch { return rows; }
+    for (const r of open) {
+      try {
+        const i = await g.getIssue(r.issue_number);
+        if (i.state === 'closed') {
+          await q(`update request set status = 'DONE', closed_at = $2 where id = $1`, [r.id, i.closed_at]);
+          r.status = 'DONE'; r.closed_at = i.closed_at;
+        }
+      } catch { /* 다음에 다시 */ }
+    }
+    return rows;
+  }
+
+  async function createRequest(req, customer) {
+    const b = req.body ?? {};
+    const want = String(b.want ?? '').trim();
+    if (want.length < 5) throw bad('원하는 것을 적어 주세요');
+    const screen = String(b.screen ?? '').trim().slice(0, 100);
+    const now = String(b.now ?? '').trim().slice(0, 1000);
+    const deploy = String(b.deploy ?? (customer ? '고객 서버까지' : '우리 ERP까지')).slice(0, 40);
+    const title = (customer ? `[고객 맞춤 — ${customer.name}] ` : '[전체 업데이트] ') + want.split('\n')[0].slice(0, 70);
+    const g = await gh();
+    const issue = await g.createIssue(title, G.issueBody({ customer: customer && { name: customer.name, bizRegNo: customer.biz_reg_no, serverUrl: customer.server_url }, screen, now, want: want.slice(0, 4000), deploy }),
+      customer ? ['고객맞춤', `고객:${customer.name}`] : ['전체업데이트']).catch((e) => { throw bad(e.message, 502); });
+    const row = (await q(
+      `insert into request(customer_id, kind, title, screen, deploy, issue_number, issue_url) values ($1,$2,$3,$4,$5,$6,$7) returning *`,
+      [customer?.id ?? null, customer ? 'CUSTOMER' : 'GLOBAL', title, screen, deploy, issue.number, issue.html_url],
+    )).rows[0];
+    audit(req, 'REQUEST', `수정 요청 #${issue.number} ${title}`);
+    return shapeRequest({ ...row, customer_name: customer?.name ?? null });
+  }
+
+  admin.post('/customers/:id/requests', wrap(async (req, res) => res.status(201).json(await createRequest(req, await loadCustomer(req.params.id)))));
+  admin.post('/requests', wrap(async (req, res) => res.status(201).json(await createRequest(req, null))));
+
+  admin.get('/requests', wrap(async (req, res) => {
+    const cid = req.query.customerId;
+    const rows = (await q(`${REQ_SQL} ${cid ? 'where r.customer_id = $1' : ''} order by r.created_at desc limit 300`, cid ? [cid] : [])).rows;
+    res.json({ rows: (await syncRequests(rows)).map(shapeRequest) });
+  }));
+
+  // ── 재배포 (고객 서버 하나 / 전체) ────────────────────────────────
+  const redeployOne = async (gql, j) => {
+    await gql(`mutation($s: String!, $e: String!) { serviceInstanceRedeploy(serviceId: $s, environmentId: $e) }`, { s: j.data.appServiceId, e: j.data.environmentId });
+  };
+  const deployStatus = async (gql, j) => {
+    const r = await gql(`query($input: DeploymentListInput!) { deployments(input: $input, first: 1) { edges { node { id status } } } }`,
+      { input: { projectId: j.data.projectId, serviceId: j.data.appServiceId, environmentId: j.data.environmentId } });
+    return r.deployments.edges[0]?.node?.status ?? 'UNKNOWN';
+  };
+  /** 배포가 끝나길 기다린 뒤 그 고객의 '완료' 요청(고객 건 + 전체 건)을 '반영'으로 */
+  async function finishDeploy(gql, j, customerId, rolloutId) {
+    const deadline = Date.now() + (railwayWaitMs ?? 20 * 60_000);
+    let st = 'BUILDING';
+    while (Date.now() < deadline) {
+      await (railwaySleep ?? ((ms) => new Promise((r) => setTimeout(r, ms))))(15_000);
+      st = await deployStatus(gql, j).catch(() => 'UNKNOWN');
+      if (['SUCCESS', 'FAILED', 'CRASHED'].includes(st)) break;
+    }
+    if (st === 'SUCCESS') {
+      await q(`update request set status = 'DEPLOYED', deployed_at = now(), rollout_id = coalesce($2, rollout_id) where status = 'DONE' and (customer_id = $1 or (kind = 'GLOBAL' and $3))`, [customerId, rolloutId, !!rolloutId]);
+    }
+    return st;
+  }
+
+  // 재배포 전에 닫힌 이슈를 '완료'로 맞춰 둬야 배포 뒤 '반영'으로 넘어간다
+  const syncOpen = async () => syncRequests((await q(`${REQ_SQL} where r.status = 'REQUESTED'`)).rows);
+
+  admin.post('/customers/:id/redeploy', wrap(async (req, res) => {
+    const c = await loadCustomer(req.params.id);
+    await syncOpen();
+    const j = await loadJob(c.id);
+    if (!j || j.status !== 'DONE') throw bad('이 사이트에서 개설한 서버만 재배포할 수 있습니다');
+    const conf = await railwayConf();
+    if (!conf.token) throw bad('먼저 설정 > Railway 연결을 마쳐 주세요');
+    const gql = R.client(conf.token, railwayEndpoint);
+    await redeployOne(gql, j);
+    audit(req, 'REDEPLOY', `고객 서버 재배포 ${c.name}`);
+    void finishDeploy(gql, j, c.id, null).catch(() => undefined);
+    res.status(202).json({ ok: true });
+  }));
+
+  const rolling = { current: null };
+  admin.post('/rollouts', wrap(async (req, res) => {
+    if (rolling.current) throw bad('전체 재배포가 이미 진행 중입니다');
+    const conf = await railwayConf();
+    if (!conf.token) throw bad('먼저 설정 > Railway 연결을 마쳐 주세요');
+    const jobs = (await q(`select j.*, c.name as customer_name from server_job j join customer c on c.id = j.customer_id where j.status = 'DONE' order by c.name`)).rows;
+    if (!jobs.length) throw bad('개설된 고객 서버가 없습니다');
+    await syncOpen();
+    const ro = (await q(`insert into rollout(scope, results) values ('ALL', $1) returning *`, [JSON.stringify(jobs.map((j) => ({ customerId: j.customer_id, name: j.customer_name, status: 'QUEUED' })))])).rows[0];
+    audit(req, 'ROLLOUT', `고객 서버 전체 재배포 시작 (${jobs.length}곳)`);
+    rolling.current = ro.id;
+    (async () => {
+      const gql = R.client(conf.token, railwayEndpoint);
+      const results = [];
+      for (const j of jobs) {
+        let status;
+        try { await redeployOne(gql, j); status = await finishDeploy(gql, j, j.customer_id, ro.id); } catch (e) { status = `ERROR: ${e.message}`.slice(0, 200); }
+        results.push({ customerId: j.customer_id, name: j.customer_name, status, at: new Date().toISOString() });
+        await q(`update rollout set results = $2 where id = $1`, [ro.id, JSON.stringify([...results, ...jobs.slice(results.length).map((x) => ({ customerId: x.customer_id, name: x.customer_name, status: 'QUEUED' }))])]);
+      }
+      await q(`update rollout set finished_at = now() where id = $1`, [ro.id]);
+      await q('insert into audit_log(action, summary) values ($1,$2)', ['ROLLOUT_DONE', `전체 재배포 끝 — 성공 ${results.filter((r) => r.status === 'SUCCESS').length}/${results.length}`]);
+      rolling.current = null;
+    })().catch((e) => { console.error('전체 재배포 실패', e); rolling.current = null; });
+    res.status(202).json({ id: ro.id });
+  }));
+
+  admin.get('/rollouts', wrap(async (req, res) => {
+    const rows = (await q(`select * from rollout order by started_at desc limit 20`)).rows;
+    res.json({ rows: rows.map((r) => ({ id: r.id, startedAt: r.started_at, finishedAt: r.finished_at, results: r.results })), running: rolling.current });
+  }));
+  app.locals.idleRollout = async () => { while (rolling.current) await new Promise((r) => setTimeout(r, 20)); };
 
   app.use('/api/admin', admin);
 

@@ -10,7 +10,8 @@ const R = require('../lib/railway');
 
 const DB = process.env.TEST_DATABASE_URL ?? 'postgresql://postgres:devpass@127.0.0.1:5432/portal_test2';
 const PW = 'test-admin-password-1';
-let pool, server, base, rail, railUrl, cookie = '';
+let pool, server, base, rail, railUrl, ghs, ghUrl, cookie = '';
+const issues = []; // 가짜 GitHub 이슈 저장
 const calls = [];
 let failOnce = null; // 이 mutation 이름이 처음 불릴 때 오류
 let deployStatus = 'SUCCESS';
@@ -44,6 +45,27 @@ function fakeRailway(req, res) {
   });
 }
 
+function fakeGithub(req, res) {
+  let raw = '';
+  req.on('data', (c) => (raw += c));
+  req.on('end', () => {
+    res.setHeader('content-type', 'application/json');
+    if (req.headers.authorization !== 'Bearer gh-secret') { res.statusCode = 401; return res.end(JSON.stringify({ message: 'Bad credentials' })); }
+    const m = req.url.match(/^\/repos\/sangjindl9-lab\/sspower(\/issues(?:\/(\d+))?)?$/);
+    if (!m) { res.statusCode = 404; return res.end(JSON.stringify({ message: 'Not Found' })); }
+    if (!m[1]) return res.end(JSON.stringify({ full_name: 'sangjindl9-lab/sspower' }));
+    if (req.method === 'POST') {
+      const b = JSON.parse(raw);
+      const i = { number: issues.length + 1, state: 'open', html_url: `https://github.com/sangjindl9-lab/sspower/issues/${issues.length + 1}`, ...b };
+      issues.push(i);
+      res.statusCode = 201;
+      return res.end(JSON.stringify(i));
+    }
+    const i = issues[Number(m[2]) - 1];
+    res.end(JSON.stringify(i));
+  });
+}
+
 async function call(path, { method = 'GET', json } = {}) {
   const res = await fetch(base + path, { method, headers: { 'content-type': 'application/json', 'x-portal': '1', cookie }, body: json ? JSON.stringify(json) : undefined });
   const sc = res.headers.get('set-cookie');
@@ -55,10 +77,13 @@ before(async () => {
   rail = http.createServer(fakeRailway);
   await new Promise((r) => rail.listen(0, '127.0.0.1', r));
   railUrl = `http://127.0.0.1:${rail.address().port}/graphql/v2`;
+  ghs = http.createServer(fakeGithub);
+  await new Promise((r) => ghs.listen(0, '127.0.0.1', r));
+  ghUrl = `http://127.0.0.1:${ghs.address().port}`;
   pool = createPool(DB);
   await pool.query('drop schema public cascade; create schema public;');
   await migrate(pool);
-  const app = buildApp({ pool, privateKey, adminPassword: PW, sessionSecret: 'y'.repeat(40), railwayEndpoint: railUrl, railwaySleep: () => new Promise((r) => setTimeout(r, 5)), railwayWaitMs: 2000, publicUrl: 'https://license.example' });
+  const app = buildApp({ pool, privateKey, adminPassword: PW, sessionSecret: 'y'.repeat(40), railwayEndpoint: railUrl, railwaySleep: () => new Promise((r) => setTimeout(r, 5)), railwayWaitMs: 2000, githubEndpoint: ghUrl, githubTokenEnv: '', publicUrl: 'https://license.example' });
   server = await new Promise((r) => { const s = app.listen(0, '127.0.0.1', () => r(s)); });
   server.app = app;
   base = `http://127.0.0.1:${server.address().port}`;
@@ -67,6 +92,7 @@ before(async () => {
 after(async () => {
   server.close();
   rail.close();
+  ghs.close();
   await pool.end();
 });
 
@@ -164,4 +190,47 @@ test('배포가 실패하면 한 번 자동으로 다시 배포하고, 그래도
   assert.equal(c.server.status, 'FAILED');
   assert.equal(calls.filter((x) => x.name === 'serviceInstanceRedeploy').length, n + 1);
   deployStatus = 'SUCCESS';
+});
+
+test('수정 요청 → GitHub 이슈, 이슈가 닫히면 완료, 재배포가 성공하면 반영으로 바뀐다', async () => {
+  assert.equal((await call(`/api/admin/customers/${id}/requests`, { method: 'POST', json: { want: '발주서에 현장소장 확인 칸' } })).status, 400, 'GitHub 연결 전');
+  assert.equal((await call('/api/admin/github', { method: 'PUT', json: { token: 'wrong' } })).status, 400);
+  assert.equal((await call('/api/admin/github', { method: 'PUT', json: { token: 'gh-secret' } })).status, 200);
+  assert.ok(!(await pool.query(`select value from portal_setting where key = 'github_token'`)).rows[0].value.includes('gh-secret'));
+
+  const r = await call(`/api/admin/customers/${id}/requests`, { method: 'POST', json: { screen: '발주 › 발주서 출력', now: '서명란 1칸', want: '현장소장 확인 칸 추가. 다른 고객은 그대로', deploy: '고객 서버까지' } });
+  assert.equal(r.status, 201);
+  assert.equal(r.body.issueNumber, 1);
+  assert.equal(r.body.status, 'REQUESTED');
+  assert.match(issues[0].title, /^\[고객 맞춤 — ㈜한누리통신\] 현장소장 확인 칸 추가/);
+  assert.match(issues[0].body, /214-88-39612|2148839612/);
+  assert.match(issues[0].body, /모듈 스위치/);
+  assert.deepEqual(issues[0].labels, ['고객맞춤', '고객:㈜한누리통신']);
+  const g = await call('/api/admin/requests', { method: 'POST', json: { want: '작업일보에 날씨 자동 입력' } });
+  assert.equal(g.body.kind, 'GLOBAL');
+  assert.equal(issues[1].labels[0], '전체업데이트');
+
+  // 이슈가 닫히면 대장에서 완료로
+  issues[0].state = 'closed'; issues[0].closed_at = new Date().toISOString();
+  issues[1].state = 'closed'; issues[1].closed_at = new Date().toISOString();
+  let list = (await call(`/api/admin/requests?customerId=${id}`)).body.rows;
+  assert.equal(list.length, 1);
+  assert.equal(list[0].status, 'DONE');
+
+  // 전체 재배포 → 성공하면 고객 건 + 전체 건 모두 반영
+  const calls0 = calls.length;
+  const ro = await call('/api/admin/rollouts', { method: 'POST' });
+  assert.equal(ro.status, 202);
+  assert.equal((await call('/api/admin/rollouts', { method: 'POST' })).status, 400, '동시에 두 번은 안 됨');
+  await server.app.locals.idleRollout();
+  assert.ok(calls.slice(calls0).some((x) => x.name === 'serviceInstanceRedeploy'));
+  const rs = (await call('/api/admin/rollouts')).body.rows[0];
+  assert.ok(rs.finishedAt);
+  assert.deepEqual(rs.results.map((x) => x.status), ['SUCCESS']);
+  list = (await call('/api/admin/requests')).body.rows;
+  assert.deepEqual(list.map((x) => x.status), ['DEPLOYED', 'DEPLOYED']);
+  assert.ok(list.every((x) => x.rolloutId === rs.id));
+
+  // 고객 한 곳만 재배포
+  assert.equal((await call(`/api/admin/customers/${id}/redeploy`, { method: 'POST' })).status, 202);
 });
