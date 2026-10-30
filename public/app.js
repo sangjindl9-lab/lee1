@@ -569,7 +569,7 @@ async function pageRequest(id) {
   shell('requests', `
     <div class="page-head"><div><h1>${esc(r.title)}</h1>
       <p>${badge(RSTATUS[r.status])} ${r.customerName ? `<a href="#/customers/${r.customerId}">${esc(r.customerName)}</a>` : '전체 업데이트'} · ${esc(r.type ?? '')} · 우선순위 ${esc(r.priority ?? '보통')}${r.dueOn ? ` · 희망 ${esc(r.dueOn)}` : ''} · ${dt(r.createdAt)} 요청</p></div>
-      <div class="row"><a class="btn" href="${esc(r.issueUrl)}" target="_blank" rel="noopener">GitHub #${r.issueNumber}</a></div></div>
+      <div class="row"><button class="btn primary" id="talk" title="첫 메시지를 복사하고 Claude를 엽니다. 새 대화에 붙여 넣고 sspower 저장소를 연결하세요">Claude와 대화로 진행</button><a class="btn" href="${esc(r.issueUrl)}" target="_blank" rel="noopener">GitHub #${r.issueNumber}</a></div></div>
     <div class="grid cols-2 req">
       <section class="panel"><header><h2>요청 내용</h2></header><div class="body md-body">${miniMd(r.issue.body.split('\n---\n규칙')[0])}</div></section>
       <section class="panel"><header><h2>첨부</h2><span class="muted small">${r.files.length}개</span></header><div class="body">
@@ -586,6 +586,12 @@ async function pageRequest(id) {
           <button class="btn primary" id="cmsend">보내기</button></div>
       </form>
     </div></section>`);
+  document.getElementById('talk').onclick = async () => {
+    const msg = `sspower 저장소 작업. 수정 요청 이슈 #${r.issueNumber} (${r.customerName ? `고객 맞춤 — ${r.customerName}` : '전체 업데이트'}: ${r.title.replace(/^(\[[^\]]+\])+\s*/, '')}) 을 같이 진행하자.
+CLAUDE.md 운영 규칙대로 해. 먼저 이슈·댓글과 첨부(requests 브랜치)를 읽고, 모호한 건 나한테 질문부터 해. 결정된 건 이슈에 정리해 두고, 내가 "마무리"라고 하면 결과 댓글 남기고 닫아.`;
+    try { await navigator.clipboard.writeText(msg); toast('첫 메시지를 복사했습니다 — 새 대화에 붙여 넣으세요'); } catch { prompt('복사해서 새 대화에 붙여 넣으세요', msg); }
+    window.open('https://claude.ai/code', '_blank', 'noopener');
+  };
   pasteBox?.detach();
   pasteBox = attachBox(document.getElementById('att2'));
   document.getElementById('cmf').onsubmit = async (e) => {
