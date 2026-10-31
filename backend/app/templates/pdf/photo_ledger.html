@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block body %}
+{% for page in pages %}
+<div style="{% if not loop.last %}page-break-after: always;{% endif %}">
+  <h1 style="margin-top:0">사 진 대 장</h1>
+  <table class="kv" style="margin-bottom:3mm"><tr><th>현장명</th><td>{{ project.name }}</td><th>기간</th><td>{{ period }}</td></tr></table>
+  <div class="photos" style="grid-template-columns: repeat({{ cols }}, 1fr);">
+  {% for p in page %}
+    <div class="photo"><div class="img" style="height:{{ img_h }}mm"><img src="{{ p.src }}"></div>
+      <table>
+        <tr><th style="width:14mm">제목</th><td colspan="3">{{ p.title or p.name }}</td></tr>
+        <tr><th>촬영일</th><td>{{ p.taken_date or '-' }}</td><th style="width:12mm">구분</th><td>{{ p.phase or '-' }}</td></tr>
+        <tr><th>위치</th><td>{{ p.location or '-' }}</td><th>공종</th><td>{{ p.work_type or '-' }}</td></tr>
+        <tr><th>작업내용</th><td colspan="3">{{ p.description or '' }}</td></tr>
+      </table></div>
+  {% endfor %}
+  </div>
+</div>
+{% endfor %}
+{% endblock %}

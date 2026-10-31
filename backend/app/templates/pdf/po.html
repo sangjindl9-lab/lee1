@@ -1,0 +1,38 @@
+{% extends "base.html" %}{% from "macros.html" import header %}
+{% block body %}
+{{ header("발 주 서", company, logo, po.po_no, "발주일", po.order_date, signs) }}
+{% if po.status in ('draft','in_approval','rejected') %}<p><span class="watermark">{{ po.status_label }} — 확정되지 않은 발주서</span></p>{% endif %}
+{% if po.status == 'cancelled' %}<p><span class="watermark">발주 취소</span></p>{% endif %}
+<div style="display:flex;gap:3mm">
+<table class="kv" style="flex:1">
+  <tr><th>수신</th><td><b>{{ vendor.name }}</b> 귀하</td></tr>
+  <tr><th>담당</th><td>{{ vendor.contact_name or '' }} {{ vendor.phone or '' }}</td></tr>
+  <tr><th>현장</th><td>{{ po.project_name }}</td></tr>
+  <tr><th>납품장소</th><td>{{ po.delivery_place or '-' }}</td></tr>
+  <tr><th>납기</th><td>{{ po.delivery_date or '-' }}</td></tr>
+  <tr><th>인수자</th><td>{{ po.receiver_name or '-' }}</td></tr>
+</table>
+<table class="kv stamp" style="flex:1">
+  <tr><th>발신</th><td><b>{{ company.name }}</b></td></tr>
+  <tr><th>사업자번호</th><td>{{ company.biz_no or '-' }}</td></tr>
+  <tr><th>대표자</th><td>{{ company.ceo_name or '-' }}{% if seal %}<img src="{{ seal }}">{% endif %}</td></tr>
+  <tr><th>주소</th><td>{{ company.address or '-' }}</td></tr>
+  <tr><th>연락처</th><td>{{ company.phone or '-' }}</td></tr>
+  <tr><th>결제조건</th><td>{{ po.payment_terms or '-' }}</td></tr>
+</table>
+</div>
+<p>아래와 같이 발주합니다. {% if show_amount %}<b>합계금액: 일금 {{ po.total_amount|num }}원정 (VAT 포함)</b>{% endif %}</p>
+<table>
+<thead><tr><th style="width:8mm">No</th><th>품명</th><th>규격</th><th>단위</th><th class="n">수량</th>
+{% if show_amount %}<th class="n">단가</th><th class="n">공급가액</th><th class="n">부가세</th>{% endif %}<th>비고</th></tr></thead>
+<tbody>
+{% for i in po['items'] %}<tr><td class="c">{{ loop.index }}</td><td>{{ i.name }}</td><td>{{ i.spec or '' }}</td><td class="c">{{ i.unit }}</td>
+<td class="n">{{ i.qty|num }}</td>{% if show_amount %}<td class="n">{{ i.unit_price|num }}</td><td class="n">{{ i.supply_amount|num }}</td><td class="n">{{ i.vat_amount|num }}</td>{% endif %}
+<td>{% if i.cancelled_qty|float > 0 %}취소 {{ i.cancelled_qty|num }}{% endif %}</td></tr>{% endfor %}
+{% if show_amount %}
+<tr class="total"><td colspan="6" class="c">계</td><td class="n">{{ po.supply_amount|num }}</td><td class="n">{{ po.vat_amount|num }}</td><td></td></tr>
+<tr class="total"><td colspan="6" class="c">합계 (공급가액 + 부가세)</td><td class="n" colspan="2">{{ po.total_amount|num }}</td><td></td></tr>
+{% endif %}
+</tbody></table>
+<h2>특기사항</h2><div class="box">{{ po.remarks or '' }}</div>
+{% endblock %}

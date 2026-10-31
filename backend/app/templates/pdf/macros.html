@@ -1,0 +1,15 @@
+{% macro header(title, company, logo, doc_no, date_label, date_value, signs) %}
+<div class="head">
+  <div>
+    {% if logo %}<img class="logo" src="{{ logo }}">{% else %}<div style="font-size:12pt;font-weight:700">{{ company.name }}</div>{% endif %}
+    <div class="meta">문서번호: {{ doc_no or '-' }}<br>{{ date_label }}: {{ date_value or '-' }}</div>
+  </div>
+  {% if signs %}
+  <table class="sign">
+    <tr><td class="side" rowspan="2">결재</td>{% for s in signs %}<th>{{ s.label }}</th>{% endfor %}</tr>
+    <tr>{% for s in signs %}<td>{{ s.name or '' }}{% if s.status %}<small>{{ s.status }}</small>{% endif %}{% if s.at %}<small>{{ s.at }}</small>{% endif %}</td>{% endfor %}</tr>
+  </table>
+  {% endif %}
+</div>
+<h1>{{ title }}</h1>
+{% endmacro %}

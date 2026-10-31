@@ -1,0 +1,55 @@
+{% extends "base.html" %}{% from "macros.html" import header %}
+{% block body %}
+{{ header("작 업 일 보", company, logo, r.report_no, "작업일", r.report_date, signs) }}
+{% if r.status != 'approved' %}<p><span class="watermark">{{ r.status_label }} — 승인되지 않은 일보</span></p>{% endif %}
+<table class="kv">
+  <tr><th>현장명</th><td colspan="3">{{ r.project_name }} ({{ r.project_code }})</td><th>작성자</th><td>{{ r.author_name }}</td></tr>
+  <tr><th>날씨</th><td>{{ r.weather or '-' }}</td><th>기온</th><td>{{ r.temp_low or '-' }} ~ {{ r.temp_high or '-' }} ℃</td><th>작업위치</th><td>{{ r.work_location or '-' }}</td></tr>
+</table>
+<h2>금일 작업내용</h2><div class="box">{{ r.work_summary or '' }}</div>
+<h2>공종별 시공수량</h2>
+<table>
+  <thead><tr><th>품명</th><th>규격</th><th>단위</th><th class="n">설계수량</th><th class="n">전일누계</th><th class="n">금일</th><th class="n">누계</th><th class="n">잔량</th><th class="n">공정률(%)</th><th>위치</th></tr></thead>
+  <tbody>
+  {% for i in r['items'] %}
+    <tr><td>{{ i.name }}</td><td>{{ i.spec or '' }}</td><td class="c">{{ i.unit or '' }}</td><td class="n">{{ i.design_qty|num }}</td>
+      <td class="n">{{ i.prev_cum|num }}</td><td class="n">{{ i.qty_today|num }}</td><td class="n">{{ i.cum|num }}</td>
+      <td class="n">{{ i.remaining|num }}</td><td class="n">{{ i.rate if i.rate is not none else '계산불가' }}{% if i.over %} (초과){% endif %}</td><td>{{ i.location or '' }}</td></tr>
+  {% else %}<tr><td colspan="10" class="c muted">입력된 시공수량 없음</td></tr>{% endfor %}
+  </tbody>
+</table>
+<div style="display:flex;gap:3mm">
+<div style="flex:1">
+<h2>투입 인원 (계 {{ r.labor_total|num }}명)</h2>
+<table><thead><tr><th>직종</th><th>소속</th><th class="n">인원</th><th>비고</th></tr></thead><tbody>
+{% for l in r.labor %}<tr><td>{{ l.trade }}</td><td>{{ l.affiliation or '' }}</td><td class="n">{{ l.headcount|num }}</td><td>{{ l.note or '' }}</td></tr>
+{% else %}<tr><td colspan="4" class="c muted">-</td></tr>{% endfor %}</tbody></table>
+</div>
+<div style="flex:1">
+<h2>장비</h2>
+<table><thead><tr><th>장비</th><th>규격</th><th class="n">대수</th><th class="n">시간</th></tr></thead><tbody>
+{% for e in r.equipment %}<tr><td>{{ e.kind }}</td><td>{{ e.spec or '' }}</td><td class="n">{{ e.count|num }}</td><td class="n">{{ e.hours|num }}</td></tr>
+{% else %}<tr><td colspan="4" class="c muted">-</td></tr>{% endfor %}</tbody></table>
+</div></div>
+<h2>사용 자재</h2>
+<table><thead><tr><th>품명</th><th>규격</th><th>단위</th><th class="n">수량</th><th>비고</th></tr></thead><tbody>
+{% for m in r.materials %}<tr><td>{{ m.name }}</td><td>{{ m.spec or '' }}</td><td class="c">{{ m.unit or '' }}</td><td class="n">{{ m.qty|num }}</td><td>{{ m.note or '' }}</td></tr>
+{% else %}<tr><td colspan="5" class="c muted">-</td></tr>{% endfor %}</tbody></table>
+<h2>안전관리</h2>
+<table class="kv">
+  <tr><th>안전교육</th><td style="white-space:pre-wrap">{{ r.safety_education or '-' }}</td></tr>
+  <tr><th>위험요인</th><td style="white-space:pre-wrap">{{ r.hazards or '-' }}</td></tr>
+  <tr><th>조치사항</th><td style="white-space:pre-wrap">{{ r.safety_actions or '-' }}</td></tr>
+</table>
+<h2>지연사유·특이사항</h2><div class="box">{{ r.delay_reason or '' }}{% if r.delay_reason and r.remarks %}
+{% endif %}{{ r.remarks or '' }}</div>
+<h2>명일 작업계획</h2><div class="box">{{ r.tomorrow_plan or '' }}</div>
+{% if photos %}
+<h2 style="page-break-before:auto">작업 사진</h2>
+<div class="photos" style="grid-template-columns: 1fr 1fr;">
+{% for p in photos %}<div class="photo"><div class="img" style="height:58mm"><img src="{{ p.src }}"></div>
+<table><tr><th style="width:15mm">구분</th><td>{{ p.phase or '-' }}</td><th style="width:15mm">위치</th><td>{{ p.location or '-' }}</td></tr>
+<tr><th>내용</th><td colspan="3">{{ p.title or p.name }}</td></tr></table></div>{% endfor %}
+</div>{% endif %}
+{% if r.revision and r.revision > 1 %}<p class="small muted">정정 승인 {{ r.revision }}차 — 이전 승인본은 시스템에 보관되어 있습니다.</p>{% endif %}
+{% endblock %}

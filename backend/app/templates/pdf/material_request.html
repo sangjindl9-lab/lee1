@@ -1,0 +1,14 @@
+{% extends "base.html" %}{% from "macros.html" import header %}
+{% block body %}
+{{ header("자 재 구 매 요 청 서", company, logo, r.req_no, "요청일", r.req_date, signs) }}
+{% if r.status not in ('approved','closed') %}<p><span class="watermark">{{ r.status_label }}</span></p>{% endif %}
+<table class="kv">
+  <tr><th>현장명</th><td>{{ r.project_name }}</td><th>요청자</th><td>{{ r.requester_name }}</td></tr>
+  <tr><th>희망납기</th><td>{{ r.need_date or '-' }}</td><th>긴급</th><td>{{ '긴급' if r.urgent else '일반' }}</td></tr>
+  <tr><th>요청사유</th><td colspan="3" style="white-space:pre-wrap">{{ r.reason or '-' }}</td></tr>
+</table>
+<h2>요청 품목</h2>
+<table><thead><tr><th>No</th><th>품명</th><th>규격</th><th>단위</th><th class="n">요청수량</th><th class="n">발주확정</th><th class="n">미발주</th><th>사용위치</th><th>비고</th></tr></thead>
+<tbody>{% for i in r['items'] %}<tr><td class="c">{{ loop.index }}</td><td>{{ i.name }}</td><td>{{ i.spec or '' }}</td><td class="c">{{ i.unit }}</td>
+<td class="n">{{ i.qty|num }}</td><td class="n">{{ i.ordered_qty|num }}</td><td class="n">{{ i.unordered_qty|num }}</td><td>{{ i.use_location or '' }}</td><td>{{ i.note or '' }}</td></tr>{% endfor %}</tbody></table>
+{% endblock %}

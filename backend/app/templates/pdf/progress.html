@@ -1,0 +1,18 @@
+{% extends "base.html" %}{% from "macros.html" import header %}
+{% block body %}
+{{ header("공 정 현 황", company, logo, doc_no, "기준일", pr.basis_date, None) }}
+<table class="kv">
+  <tr><th>현장명</th><td>{{ project.name }} ({{ project.code }})</td><th>계산방식</th><td>{{ pr.method_label }}</td></tr>
+  <tr><th>계획공정률</th><td>{{ pr.plan_rate or '-' }} %</td><th>실적공정률</th><td>{{ pr.actual_rate or '-' }} % (편차 {{ pr.deviation or '-' }}%p)</td></tr>
+</table>
+<p class="small muted">계산 근거: {{ pr.basis_note }}</p>
+<table>
+<thead><tr><th>공종</th><th>품명</th><th>규격</th><th>단위</th><th class="n">설계수량</th><th class="n">계획누계</th><th class="n">실적누계</th><th class="n">잔량</th>
+<th class="n">계획(%)</th><th class="n">실적(%)</th><th class="n">반영비율(%)</th><th>비고</th></tr></thead>
+<tbody>
+{% for i in pr['items'] %}<tr><td>{{ groups.get(i.group_id, '') }}</td><td>{{ i.name }}</td><td>{{ i.spec or '' }}</td><td class="c">{{ i.unit }}</td>
+<td class="n">{{ i.design_qty|num }}</td><td class="n">{{ i.plan_qty|num if i.plan_qty is not none else '-' }}</td><td class="n">{{ i.cum_qty|num }}</td><td class="n">{{ i.remaining_qty|num }}</td>
+<td class="n">{{ i.plan_rate or '-' }}</td><td class="n">{{ i.rate if i.rate is not none else '계산불가' }}</td><td class="n">{{ i.weight_share or '-' }}</td>
+<td class="small">{{ i.excluded_reason or '' }}{% if i.over_qty %} 초과 {{ i.over_qty|num }}{% endif %}</td></tr>{% endfor %}
+</tbody></table>
+{% endblock %}

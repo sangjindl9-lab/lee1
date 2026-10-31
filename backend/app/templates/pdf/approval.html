@@ -1,0 +1,23 @@
+{% extends "base.html" %}{% from "macros.html" import header %}
+{% block body %}
+{{ header(d.doc_type_label, company, logo, d.doc_no, "상신일", (d.submitted_at or '')[:10], signs) }}
+{% if d.status != 'approved' %}<p><span class="watermark">{{ d.status_label }}</span></p>{% endif %}
+<table class="kv">
+  <tr><th>제목</th><td colspan="3">{{ d.title }}</td></tr>
+  <tr><th>기안자</th><td>{{ d.drafter_name }}</td><th>현장</th><td>{{ d.project_name or '-' }}</td></tr>
+  {% if d.amount %}<tr><th>금액</th><td colspan="3">{{ d.amount|num }} 원</td></tr>{% endif %}
+</table>
+{% if d.body %}<h2>내용</h2><div class="box">{{ d.body }}</div>{% endif %}
+{% set snap = d.content_snapshot or {} %}
+{% if snap.get('items') %}
+<h2>품목 (상신 시점 원문)</h2>
+<table><thead><tr><th>No</th><th>품명</th><th>규격</th><th>단위</th><th class="n">수량</th>{% if snap['items'][0].get('unit_price') is not none %}<th class="n">단가</th><th class="n">공급가액</th>{% endif %}</tr></thead>
+<tbody>{% for i in snap['items'] %}<tr><td class="c">{{ loop.index }}</td><td>{{ i.name }}</td><td>{{ i.spec or '' }}</td><td class="c">{{ i.unit }}</td><td class="n">{{ i.qty|num }}</td>
+{% if i.get('unit_price') is not none %}<td class="n">{{ i.unit_price|num }}</td><td class="n">{{ i.supply_amount|num }}</td>{% endif %}</tr>{% endfor %}</tbody></table>
+{% endif %}
+<h2>결재 의견·이력</h2>
+<table><thead><tr><th>일시</th><th>처리자</th><th>처리</th><th>의견</th></tr></thead><tbody>
+{% for h in d.history %}<tr><td class="c">{{ h.at[:16].replace('T',' ') }}</td><td>{{ h.user }}</td><td class="c">{{ h.action }}</td><td>{{ h.comment or '' }}</td></tr>{% endfor %}
+</tbody></table>
+<p class="small muted">원문 무결성 값(SHA-256): {{ d.content_hash }}</p>
+{% endblock %}

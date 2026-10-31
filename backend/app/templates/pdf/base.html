@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8">
+<style>
+@page {
+  size: A4 {{ 'landscape' if landscape else 'portrait' }};
+  margin: 14mm 12mm 16mm 12mm;
+  @bottom-center { content: counter(page) " / " counter(pages); font-size: 8pt; color: #555; font-family: {{ font }}; }
+  @bottom-left { content: "{{ company.name }} · {{ doc_no or '' }}"; font-size: 7.5pt; color: #777; font-family: {{ font }}; }
+  @bottom-right { content: "출력 {{ printed_at }}"; font-size: 7.5pt; color: #777; font-family: {{ font }}; }
+}
+* { box-sizing: border-box; }
+body { font-family: {{ font }}; font-size: 9pt; color: #111; margin: 0; }
+h1 { font-size: 17pt; text-align: center; letter-spacing: 6px; margin: 2mm 0 4mm; }
+h2 { font-size: 10.5pt; margin: 5mm 0 1.5mm; padding-left: 2mm; border-left: 3px solid #1f3a68; }
+.head { display: flex; justify-content: space-between; align-items: flex-start; gap: 4mm; }
+.logo { height: 13mm; max-width: 45mm; object-fit: contain; }
+.meta { font-size: 8.5pt; color: #333; line-height: 1.5; }
+table { width: 100%; border-collapse: collapse; }
+thead { display: table-header-group; }
+tr { page-break-inside: avoid; }
+th, td { border: 0.6pt solid #666; padding: 1.4mm 1.6mm; vertical-align: middle; }
+th { background: #e8edf5; font-weight: 700; text-align: center; }
+td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+td.c { text-align: center; }
+.kv th { width: 22mm; }
+.sign { border-collapse: collapse; width: auto; margin-left: auto; }
+.sign th { width: 20mm; font-size: 8pt; padding: 1mm; }
+.sign td { height: 13mm; text-align: center; font-size: 8pt; vertical-align: middle; }
+.sign td small { display: block; color: #555; font-size: 6.5pt; }
+.sign .side { width: 6mm; background: #e8edf5; writing-mode: vertical-rl; font-weight: 700; text-align: center; }
+.box { border: 0.6pt solid #666; padding: 2mm; min-height: 10mm; white-space: pre-wrap; }
+.photos { display: grid; gap: 3mm; }
+.photo { border: 0.6pt solid #666; page-break-inside: avoid; break-inside: avoid; }
+.photo .img { display: flex; align-items: center; justify-content: center; background: #f4f4f4; overflow: hidden; }
+.photo img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.photo table td, .photo table th { border-width: 0.4pt; font-size: 8pt; padding: 1mm 1.5mm; }
+.photo table { border-top: 0.6pt solid #666; }
+.muted { color: #666; }
+.stamp { position: relative; }
+.stamp img { position: absolute; right: 0; top: -4mm; height: 16mm; opacity: .9; }
+.watermark { color: #b00; font-weight: 700; border: 1pt solid #b00; padding: 0.5mm 2mm; display: inline-block; }
+.total td { font-weight: 700; background: #f4f6fa; }
+.small { font-size: 7.5pt; }
+</style></head>
+<body>
+{% block body %}{% endblock %}
+</body></html>
