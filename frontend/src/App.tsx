@@ -40,9 +40,11 @@ export default function App() {
   if (!me) return <Login />;
   if (me.must_change_password) return <ChangePassword forced />;
   const close = () => setOpen(false);
+  // 관제 프로그램의 영상벽 창(?kiosk=1): 메뉴 없이 화면만
+  const kiosk = new URLSearchParams(loc.search).get("kiosk") === "1";
   return (
-    <div className="app">
-      <nav className={`nav${open ? " open" : ""}`} onClick={(e) => (e.target as HTMLElement).tagName === "A" && close()}>
+    <div className={`app${kiosk ? " kiosk" : ""}`}>
+      {!kiosk && <nav className={`nav${open ? " open" : ""}`} onClick={(e) => (e.target as HTMLElement).tagName === "A" && close()}>
         <div className="brand"><Logo /><div>현장 영상관제<small>웹 NVR</small></div></div>
         <NavLink to="/" end>운영 대시보드</NavLink>
         {can("live_view") && <NavLink to="/live">실시간 관제</NavLink>}
@@ -67,7 +69,7 @@ export default function App() {
           <div><b>{me.display_name || me.username}</b> <span className="muted">{me.role_label}</span></div>
           <button className="ghost" style={{ padding: "4px 0" }} onClick={logout}>로그아웃</button>
         </div>
-      </nav>
+      </nav>}
       <main className="main" key={loc.pathname === "/live" ? "live" : "page"}>
         <Routes>
           <Route path="/" element={<Dashboard />} />
@@ -91,7 +93,7 @@ export default function App() {
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>
       </main>
-      <button className="menu-btn" onClick={() => setOpen((o) => !o)} aria-expanded={open}>메뉴</button>
+      {!kiosk && <button className="menu-btn" onClick={() => setOpen((o) => !o)} aria-expanded={open}>메뉴</button>}
     </div>
   );
 }

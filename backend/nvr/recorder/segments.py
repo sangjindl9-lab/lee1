@@ -16,11 +16,15 @@ from sqlalchemy.exc import IntegrityError
 from ..config import get_settings
 from ..db import session_scope
 from ..media.ffmpeg import ffprobe_file
+from ..osutil import popen_flags, replace_retry
 from ..models import RecordingSegment
 from ..storage import fsync_dir, segment_rel_path
 
 log = logging.getLogger("nvr.recorder.segments")
-SEG_NAME = re.compile(r"^seg_(\d{9,11})\.mp4$")
+# 구간 파일 이름: seg_<UTC YYYYmmddHHMMSS>.mp4 (윈도우 strftime 은 %s 를 지원하지 않음).
+# 이전 버전의 seg_<epoch>.mp4 도 복구 시 읽는다.
+SEG_NAME = re.compile(r"^seg_(\d{14}|\d{9,11})\.mp4$")
+SEG_PATTERN = "seg_%Y%m%d%H%M%S.mp4"
 
 
 @dataclass
@@ -47,9 +51,20 @@ def parse_list(path: Path) -> list[CsvLine]:
     return out
 
 
-def name_epoch(name: str) -> int | None:
+def name_epoch(name: str, ref: float | None = None) -> int | None:
+    """파일 이름의 시작 시각(UTC epoch). ref(파일 수정 시각 등)를 주면 FFmpeg 가 시간대를 UTC 로 쓰지 않은 경우
+    (윈도우 TZ 미적용 등) 15분 단위 시차를 보정한다."""
     m = SEG_NAME.match(name)
-    return int(m.group(1)) if m else None
+    if not m:
+        return None
+    v = m.group(1)
+    if len(v) == 14:
+        e = int(dt.datetime.strptime(v, "%Y%m%d%H%M%S").replace(tzinfo=dt.timezone.utc).timestamp())
+    else:
+        e = int(v)
+    if ref is not None and abs(e - ref) > 1200:
+        e -= int(round((e - ref) / 900.0)) * 900
+    return e
 
 
 def seg_files(run_dir: Path) -> list[str]:
@@ -87,7 +102,7 @@ def finalize_segment(camera_id: int, src: Path, start: dt.datetime, duration_s: 
         args += ["-tag:v", "hvc1"]
     args += ["-f", "mp4", str(tmp)]
     try:
-        proc = subprocess.run(args, capture_output=True, timeout=120, check=False)
+        proc = subprocess.run(args, capture_output=True, timeout=120, check=False, **popen_flags())
     except subprocess.TimeoutExpired as exc:
         tmp.unlink(missing_ok=True)
         raise FinalizeError("remux_timeout", "구간 확정 시간 초과") from exc
@@ -102,7 +117,7 @@ def finalize_segment(camera_id: int, src: Path, start: dt.datetime, duration_s: 
     try:
         with open(tmp, "rb") as f:
             os.fsync(f.fileno())
-        os.replace(tmp, final)
+        replace_retry(tmp, final)
         fsync_dir(final.parent)
     except OSError as exc:
         tmp.unlink(missing_ok=True)

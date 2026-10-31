@@ -10,7 +10,6 @@ import datetime as dt
 import logging
 import os
 import shutil
-import signal
 import socket
 import subprocess
 import threading
@@ -31,13 +30,24 @@ from ..policy import CamPolicy
 from ..security.netguard import TargetDenied
 from ..security.redact import redact
 from ..storage import disk_info
-from .segments import FinalizeError, finalize_segment, name_epoch, parse_list, probe_duration, reindex_orphans, seg_files
+from ..osutil import ffmpeg_graceful_stop, ffmpeg_nostdin, ffmpeg_stdin, install_stop_handler, kill_orphan, popen_flags
+from .segments import (SEG_PATTERN, FinalizeError, finalize_segment, name_epoch, parse_list, probe_duration,
+                       reindex_orphans, seg_files)
 
 log = logging.getLogger("nvr.recorder")
 
 BACKOFF_MIN, BACKOFF_MAX = 2, 60
 AUTH_BACKOFF_MIN, AUTH_BACKOFF_MAX = 60, 600
 SENTINEL = ".nvr-volume"
+
+
+def _epoch(run_dir: Path, name: str) -> int | None:
+    """구간 파일 시작 시각. 파일 수정 시각으로 시간대 오류를 보정(구간 길이 < 20분 전제)."""
+    try:
+        ref = (run_dir / name).stat().st_mtime
+    except OSError:
+        ref = None
+    return name_epoch(name, ref)
 
 
 @dataclass
@@ -156,21 +166,10 @@ class Recorder:
         pidf = run_dir / "ffmpeg.pid"
         try:
             pid = int(pidf.read_text().strip())
-            cmd = Path(f"/proc/{pid}/cmdline").read_bytes()
         except (OSError, ValueError):
             return
-        if str(run_dir).encode() in cmd:
-            try:
-                os.kill(pid, signal.SIGINT)
-                for _ in range(30):
-                    time.sleep(0.5)
-                    if not Path(f"/proc/{pid}").exists():
-                        break
-                else:
-                    os.kill(pid, signal.SIGKILL)
-                log.warning("이전 실행에서 남은 FFmpeg(pid %d)를 정리했습니다", pid)
-            except ProcessLookupError:
-                pass
+        if kill_orphan(pid, str(run_dir)):
+            log.warning("이전 실행에서 남은 FFmpeg(pid %d)를 정리했습니다", pid)
 
     # ------------------------------------------------------------ 원하는 상태
     def load_desired(self) -> dict[int, Camera]:
@@ -253,7 +252,7 @@ class Recorder:
         self._save_stream_info(cs.camera_id, probe)
         run_dir = self.s.incoming_dir / f"cam{cs.camera_id}" / f"run_{int(time.time() * 1000)}"
         run_dir.mkdir(parents=True, exist_ok=True)
-        args = [self.s.ffmpeg_path, "-hide_banner", "-nostdin", "-loglevel", "warning", "-fflags", "+genpts",
+        args = [self.s.ffmpeg_path, "-hide_banner", *ffmpeg_nostdin(), "-loglevel", "warning", "-fflags", "+genpts",
                 *input_args(src, timeout_s=10), "-map", "0:v:0"]
         if acodec in MP4_AUDIO_COPY:
             args += ["-map", "0:a:0", "-c:v", "copy", "-c:a", "copy"]
@@ -268,12 +267,13 @@ class Recorder:
             "-reset_timestamps", "1", "-strftime", "1", "-segment_format", "mp4",
             "-segment_format_options", "movflags=+frag_keyframe+empty_moov+default_base_moof",
             "-segment_list", str(run_dir / "list.csv"), "-segment_list_type", "csv", "-segment_list_flags", "live",
-            str(run_dir / "seg_%s.mp4"),
+            str(run_dir / SEG_PATTERN),
         ]
-        env = dict(os.environ, TZ="UTC")
+        env = dict(os.environ, TZ="UTC0")  # 구간 파일 이름(strftime)을 UTC 로
+        extra = popen_flags() if os.name == "nt" else {"start_new_session": True}
         try:
-            proc = subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                                    stderr=subprocess.PIPE, env=env, start_new_session=True)
+            proc = subprocess.Popen(args, stdin=ffmpeg_stdin(), stdout=subprocess.DEVNULL,
+                                    stderr=subprocess.PIPE, env=env, **extra)
         except OSError as exc:
             self.fail(cs, "unknown", f"FFmpeg 실행 실패: {exc}")
             return
@@ -320,13 +320,7 @@ class Recorder:
         if not run:
             return
         run.stop_requested = True
-        if run.proc.poll() is None:
-            try:
-                run.proc.send_signal(signal.SIGINT)  # segment 먹서가 현재 구간을 닫도록
-                run.proc.wait(timeout=15)
-            except subprocess.TimeoutExpired:
-                run.proc.kill()
-                run.proc.wait(timeout=5)
+        ffmpeg_graceful_stop(run.proc, timeout=15)  # segment 먹서가 현재 구간을 닫도록
         self.drain(cs, final=True)
         self._remove_if_done(run.run_dir)
         cs.run = None
@@ -361,9 +355,9 @@ class Recorder:
                 # 다음 구간 파일 이름(=시계 경계에서 열린 시각)으로 기준점 계산
                 nxt = [f for f in files if (name_epoch(f) or 0) > (name_epoch(ln.name) or 0)]
                 if nxt:
-                    anchor = name_epoch(nxt[0]) + 0.5 - ln.end
+                    anchor = _epoch(run_dir, nxt[0]) + 0.5 - ln.end
                 else:
-                    anchor = (name_epoch(ln.name) or time.time()) - ln.start
+                    anchor = (_epoch(run_dir, ln.name) or time.time()) - ln.start
                 if run:
                     run.anchor = anchor
             start = dt.datetime.fromtimestamp(anchor + ln.start, tz=dt.timezone.utc)
@@ -389,7 +383,7 @@ class Recorder:
                 if last_end is not None and anchor is not None:
                     start_epoch = anchor + last_end
                 else:
-                    start_epoch = float(name_epoch(f) or time.time())
+                    start_epoch = float(_epoch(run_dir, f) or time.time())
                 start = dt.datetime.fromtimestamp(start_epoch, tz=dt.timezone.utc)
                 res = self._finalize(camera_id, path, start, dur, kind, codecs, cs)
                 if res == "retry":
@@ -584,8 +578,7 @@ def main() -> None:
     def _stop(*_):
         r.running = False
 
-    signal.signal(signal.SIGTERM, _stop)
-    signal.signal(signal.SIGINT, _stop)
+    install_stop_handler(_stop)
     r.loop()
 
 

@@ -225,6 +225,16 @@ def get_layouts(p: Principal = Depends(require("live_view")), db: Session = Depe
                       for r in rows]}
 
 
+@router.delete("/layouts/{layout_id}")
+def delete_layout(layout_id: int, p: Principal = Depends(require("live_view")), db: Session = Depends(get_db)):
+    row = db.get(Layout, layout_id)
+    if not row or row.user_id != p.user.id:
+        raise HTTPException(404, "배치를 찾을 수 없습니다.")
+    db.delete(row)
+    db.commit()
+    return {"ok": True}
+
+
 @router.put("/layouts")
 def put_layout(body: LayoutIn, p: Principal = Depends(require("live_view")), db: Session = Depends(get_db)):
     if body.grid not in (1, 4, 9, 16, 25, 36):

@@ -1,0 +1,9 @@
+# 윈도우 설치판에 넣는 외부 구성 요소(내려받기 주소·SHA-256). 바꾸면 docs/05-윈도우설치.md 의 라이선스 표도 갱신.
+# 이름|주소|sha256
+python|https://github.com/astral-sh/python-build-standalone/releases/download/20251014/cpython-3.12.12+20251014-x86_64-pc-windows-msvc-install_only.tar.gz|2d670beb3b930d30e3a13cc909923a001dbdfcb5537692d5da40b6b41643ce1c
+ffmpeg|https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n8.1-latest-win64-lgpl-shared-8.1.zip|8bd49f74c589d7a63cc33687cd5669cd909526bccdf74298be101b2e8ffec167
+mediamtx|https://github.com/bluenviron/mediamtx/releases/download/v1.21.2/mediamtx_v1.21.2_windows_amd64.zip|a84224f5a490855684e62ba6fb71e80ea2a5e16aed61883bb58380290e93e467
+caddy|https://github.com/caddyserver/caddy/releases/download/v2.10.2/caddy_2.10.2_windows_amd64.zip|9fd1ef9be5d9b05852b66ccc25f96f23d8651bcab20779861a745bdffa273722
+postgresql|https://github.com/theseus-rs/postgresql-binaries/releases/download/16.10.0/postgresql-16.10.0-x86_64-pc-windows-msvc.zip|df927221c283b194a066edf6fced992ff64acf19d9ede2ba220d25f902a7e768
+winsw|https://github.com/winsw/winsw/releases/download/v2.12.0/WinSW-x64.exe|05b82d46ad331cc16bdc00de5c6332c1ef818df8ceefcd49c726553209b3a0da
+yolox|https://media.githubusercontent.com/media/opencv/opencv_zoo/main/models/object_detection_yolox/object_detection_yolox_2022nov.onnx|c5c2d13e59ae883e6af3b45daea64af4833a4951c92d116ec270d9ddbe998063

@@ -1,0 +1,30 @@
+﻿WebNVR 영상관제 — 사용 조건 및 포함된 외부 구성 요소
+=====================================================
+
+이 설치 프로그램은 WebNVR 과 아래 외부 구성 요소를 함께 설치합니다. 각 구성 요소는 해당 라이선스를 따르며,
+라이선스 전문은 설치 폴더의 licenses\ 폴더에 있습니다.
+
+[주의]
+- WebNVR 의 지능형 분석(불꽃·연기·안전모·수위·침입 등)은 보조 알림입니다. 화재감지기·소방설비·안전관리자의
+  확인을 대체하지 않습니다. 실제 현장 정확도는 검증되지 않았습니다.
+- ONVIF 연동은 ONVIF 공식 적합성 인증과 무관합니다. 모든 제조사·모델 지원을 의미하지 않습니다.
+- 녹화 무손실·무중단을 보장하지 않습니다(정전·디스크 고장·윈도우 업데이트 재부팅 등).
+
+[포함된 외부 구성 요소]
+- Python 3.12 (python-build-standalone) — PSF License 및 포함 라이브러리 라이선스
+- FFmpeg 8.1 (BtbN 빌드, LGPL 공유 라이브러리 구성) — GNU LGPL v3. 소스: https://ffmpeg.org / https://github.com/BtbN/FFmpeg-Builds
+  ※ FFmpeg DLL 은 교체 가능하도록 별도 파일(bin\*.dll)로 들어 있습니다.
+- OpenH264 (FFmpeg 에 포함) — BSD 2-Clause (Cisco)
+- MediaMTX 1.21 — MIT License
+- Caddy 2.10 — Apache License 2.0
+- PostgreSQL 16 (theseus-rs/postgresql-binaries) — PostgreSQL License
+- Microsoft Visual C++ 런타임 DLL — Microsoft 소프트웨어 사용 조건(재배포 허용 파일)
+- WinSW 2.12 — MIT License
+- YOLOX-s 사람 검출 모델 (OpenCV Zoo) — Apache License 2.0
+- OpenCV 4.12 (opencv-python-headless) — Apache License 2.0
+- FastAPI, Starlette, Uvicorn, SQLAlchemy, Alembic, Pydantic, psycopg 3, httpx, lxml, cryptography, argon2-cffi,
+  numpy, psutil, certifi, tzdata, pywebview, pythonnet, pystray, Pillow 등 — 각 패키지의 라이선스(MIT·BSD·Apache·LGPL(psycopg) 등)
+- Microsoft Edge WebView2 SDK (pywebview 포함) — Microsoft 라이선스(재배포 허용)
+- React, hls.js 등 웹 화면 라이브러리 — MIT / Apache 2.0
+
+위 내용에 동의하면 ‘동의함’을 누르세요.

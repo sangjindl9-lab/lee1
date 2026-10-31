@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import logging
 import os
-import signal
 import socket
 import threading
 import time
@@ -11,6 +10,7 @@ import time
 from ..config import get_settings
 from ..db import session_scope
 from ..models import ServiceHeartbeat, utcnow
+from ..osutil import install_stop_handler
 from . import edge, event_rec, exports, mediamtx_config, notify, retention
 from .onvif_events import EventManager
 
@@ -112,8 +112,7 @@ def main() -> None:
     def _stop(*_):
         w.running = False
 
-    signal.signal(signal.SIGTERM, _stop)
-    signal.signal(signal.SIGINT, _stop)
+    install_stop_handler(_stop)
     w.loop()
 
 

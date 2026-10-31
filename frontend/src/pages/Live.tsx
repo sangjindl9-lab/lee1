@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { get, post, put } from "../api";
+import { useSearchParams } from "react-router-dom";
+import { del, get, post, put } from "../api";
 import { useAuth } from "../auth";
 import PtzPanel from "../components/PtzPanel";
 import LivePlayer from "../components/LivePlayer";
@@ -10,7 +11,12 @@ const TOUR_SECONDS = [10, 20, 30, 60];
 
 export default function Live() {
   const { can } = useAuth();
-  const [tour, setTour] = useState(0); // 화면 순환 간격(초), 0 = 끔
+  const [params] = useSearchParams();
+  // 관제 프로그램(영상벽 모니터)용: ?kiosk=1&layout=이름&tour=초 — 도구 막대·카메라 목록 없이 영상만
+  const kiosk = params.get("kiosk") === "1";
+  const wantLayout = params.get("layout");
+  const [lname, setLname] = useState("기본");
+  const [tour, setTour] = useState(Number(params.get("tour")) || 0); // 화면 순환 간격(초), 0 = 끔
   const [tourPage, setTourPage] = useState(0);
   const [audioTile, setAudioTile] = useState<number | null>(null);
   const [audioInfo, setAudioInfo] = useState<Record<number, { allowAudio: boolean; hasAudio: boolean; mode: string }>>({});
@@ -28,12 +34,16 @@ export default function Live() {
   const videos = useRef<Record<number, HTMLVideoElement | null>>({});
 
   useEffect(() => {
-    const def = layouts.data?.items?.find((l: any) => l.is_default) ?? layouts.data?.items?.[0];
+    const items = layouts.data?.items ?? [];
+    const def = (wantLayout && items.find((l: any) => l.name === wantLayout))
+      ?? items.find((l: any) => l.name === lname && lname !== "기본")
+      ?? items.find((l: any) => l.is_default) ?? items[0];
     if (def) {
       setGrid(def.grid);
       setCells(def.cells);
+      setLname(def.name);
     }
-  }, [layouts.data]);
+  }, [layouts.data, wantLayout]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const camById = useMemo(() => Object.fromEntries((cams.data?.items ?? []).map((c: any) => [c.id, c])), [cams.data]);
   const list = (cams.data?.items ?? []).filter((c: any) => c.enabled && (site === "" || c.site_id === site));
@@ -71,14 +81,34 @@ export default function Live() {
 
   const fillAuto = () => setCells(list.slice(0, grid).map((c: any) => c.id));
 
-  const save = async () => {
+  const save = async (name = lname) => {
     try {
-      await put("/api/layouts", { name: "기본", grid, cells: shown, is_default: true });
-      setMsg("화면 배치를 저장했습니다.");
+      const cur = layouts.data?.items?.find((l: any) => l.name === name);
+      await put("/api/layouts", { name, grid, cells: shown, is_default: cur ? cur.is_default : name === "기본" });
+      setLname(name);
+      setMsg(`화면 배치 '${name}' 를 저장했습니다.`);
+      layouts.reload();
     } catch (e) {
       setMsg(errMsg(e));
     }
     window.setTimeout(() => setMsg(""), 3000);
+  };
+  const saveAs = () => {
+    const n = window.prompt("새 배치 이름(예: 모니터2, 야간 감시)", "")?.trim();
+    if (n) save(n.slice(0, 60));
+  };
+  const switchLayout = (name: string) => {
+    const l = layouts.data?.items?.find((x: any) => x.name === name);
+    if (!l) return;
+    setLname(l.name);
+    setGrid(l.grid);
+    setCells(l.cells);
+    setFocus(null);
+  };
+  const removeLayout = async () => {
+    const l = layouts.data?.items?.find((x: any) => x.name === lname);
+    if (!l || !window.confirm(`배치 '${l.name}' 를 삭제할까요?`)) return;
+    try { await del(`/api/layouts/${l.id}`); layouts.reload(); } catch (e) { setMsg(errMsg(e)); }
   };
 
   const snapshot = (idx: number) => {
@@ -108,9 +138,13 @@ export default function Live() {
   const tiles = focus !== null ? [focus] : shown.map((_, i) => i);
 
   return (
-    <div className="live">
+    <div className={`live${kiosk ? " kiosk" : ""}`}>
       <div className="stage">
-        <div className="toolbar">
+        {!kiosk && <div className="toolbar">
+          {(layouts.data?.items?.length ?? 0) > 0 && (
+            <select value={lname} onChange={(e) => switchLayout(e.target.value)} aria-label="화면 배치">
+              {layouts.data.items.map((l: any) => <option key={l.id} value={l.name}>{l.name}{l.is_default ? " (기본)" : ""}</option>)}
+            </select>)}
           {GRIDS.map((g) => (
             <button key={g} className={grid === g && focus === null ? "sel" : ""} onClick={() => { setGrid(g); setFocus(null); }}>{g}분할</button>
           ))}
@@ -122,9 +156,12 @@ export default function Live() {
           <span style={{ flex: 1 }} />
           {msg && <span className="small" role="status">{msg}</span>}
           <button onClick={fillAuto}>자동 채우기</button>
-          <button onClick={save}>배치 저장</button>
+          <button onClick={() => save()}>배치 저장</button>
+          <button onClick={saveAs}>새 배치로 저장</button>
+          {layouts.data?.items?.some((l: any) => l.name === lname) && lname !== "기본" && <button className="ghost" onClick={removeLayout}>배치 삭제</button>}
           <button onClick={() => fullscreen(wallRef.current)}>전체화면</button>
-        </div>
+        </div>}
+        {kiosk && msg && <div className="kiosk-msg" role="status">{msg}</div>}
         <div className="wall" ref={wallRef} style={{ gridTemplateColumns: `repeat(${cols}, 1fr)`, gridTemplateRows: `repeat(${cols}, 1fr)` }}>
           {tiles.map((i) => {
             const camId = shown[i];
@@ -168,14 +205,14 @@ export default function Live() {
                     </div>
                   </>
                 ) : (
-                  <div className="msg placeholder">카메라 목록에서 선택하거나<br />끌어다 놓으세요</div>
+                  <div className="msg placeholder">{kiosk ? "" : <>카메라 목록에서 선택하거나<br />끌어다 놓으세요</>}</div>
                 )}
               </div>
             );
           })}
         </div>
       </div>
-      <aside className="camlist">
+      {!kiosk && <aside className="camlist">
         <h3>카메라</h3>
         <div style={{ padding: "0 12px 8px" }}>
           <select value={site} onChange={(e) => setSite(e.target.value ? Number(e.target.value) : "")} style={{ width: "100%" }} aria-label="현장 선택">
@@ -209,7 +246,7 @@ export default function Live() {
         )}
         <p className="muted small" style={{ padding: 12 }}>칸 더블클릭: 확대(메인 스트림) / Ctrl+휠: 디지털 줌. PTZ 는 칸을 선택하면 여기에 나타납니다(PTZ 지원 카메라).
           음성은 WebRTC 에서 Opus·G.711, HLS 에서 AAC 를 재생합니다. 양방향 음성은 지원하지 않습니다.</p>
-      </aside>
+      </aside>}
     </div>
   );
 }

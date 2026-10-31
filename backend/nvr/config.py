@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     mediamtx_config_path: Path = Path("/mediamtx-config/mediamtx.yml")
     mediamtx_base_config_path: Path = Path("/app/deploy/mediamtx/mediamtx.base.yml")
     mediamtx_auth_url: str = "http://api:8000/internal/mediamtx/auth"
+    # 설치형(윈도우·단일 서버)에서 mediamtx HLS·WebRTC 신호 포트를 묶을 주소(예: 127.0.0.1). 비우면 모든 주소
+    mediamtx_listen_host: str = ""
 
     # WebRTC 후보 주소(서버 LAN IP, 공인 IP/도메인) — 쉼표 구분
     public_hosts: str = ""
@@ -65,7 +67,7 @@ class Settings(BaseSettings):
     recorder_min_free_mb: int = 512
     export_ttl_hours: int = 24
     export_max_minutes: int = 240
-    watermark_font: str = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+    watermark_font: str = ""  # 비우면 운영체제 기본 글꼴(리눅스 DejaVuSans, 윈도우 맑은 고딕)
 
     # 지능형 분석(analytics 서비스)
     analytics_model_path: str = "/app/models/yolox_s.onnx"

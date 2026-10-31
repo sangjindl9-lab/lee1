@@ -15,6 +15,7 @@ from ..db import session_scope
 from ..models import Camera, ExportJob, RecordingSegment, User, utcnow
 from ..settings_store import get_all
 from ..storage import safe_join
+from ..osutil import default_font, ffmpeg_filter_path, popen_flags, replace_retry
 
 log = logging.getLogger("nvr.worker.exports")
 
@@ -46,6 +47,30 @@ def _cancel_requested(job_id: int) -> bool:
     with session_scope() as db:
         j = db.get(ExportJob, job_id)
         return bool(j and j.cancel_requested)
+
+
+_ENCODER: list[str] | None = None
+
+
+def h264_encoder_args() -> list[str]:
+    """정확한 구간 내보내기(재인코딩)용 H.264 인코더. libx264(GPL 빌드) → libopenh264 → 윈도우 Media Foundation 순."""
+    global _ENCODER
+    if _ENCODER is None:
+        s = get_settings()
+        try:
+            out = subprocess.run([s.ffmpeg_path, "-hide_banner", "-encoders"], capture_output=True, timeout=20,
+                                 check=False, **popen_flags()).stdout.decode("utf-8", "replace")
+        except (OSError, subprocess.TimeoutExpired):
+            out = ""
+        if " libx264 " in out:
+            _ENCODER = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "23"]
+        elif " libopenh264 " in out:
+            _ENCODER = ["-c:v", "libopenh264", "-b:v", "4M", "-maxrate", "6M"]
+        elif " h264_mf " in out:
+            _ENCODER = ["-c:v", "h264_mf", "-b:v", "4M", "-rate_control", "cbr"]
+        else:
+            _ENCODER = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "23"]  # 없으면 오류 메시지로 안내
+    return list(_ENCODER)
 
 
 def _drawtext_escape(s: str) -> str:
@@ -82,7 +107,7 @@ def run_job(job_id: int) -> None:
             gaps += 1
             gap_total += (st - prev_end).total_seconds()
         prev_end = en
-        lines.append("file '" + str(p).replace("'", "'\\''") + "'")
+        lines.append("file '" + p.as_posix().replace("'", "'\\''") + "'")  # 윈도우도 / 경로 사용
     if not lines:
         _set(job_id, status="failed", error="녹화 파일이 저장소에 없습니다.", finished_at=utcnow())
         return
@@ -104,26 +129,28 @@ def run_job(job_id: int) -> None:
     else:
         vf = []
         if watermark:
-            font = s.watermark_font
+            font = ffmpeg_filter_path(s.watermark_font or default_font())
             label = _drawtext_escape(f"EXPORT #{job_id} by {username} / CAM {job.camera_id}")
-            epoch = int(eff_start.timestamp())
-            clock = f"%{{pts\\:localtime\\:{epoch}\\:%Y-%m-%d %H\\\\\\:%M\\\\\\:%S}}"
+            # 현장 시간대 시각: localtime 은 TZ 환경변수(윈도우 미지원)에 의존하므로 gmtime + 시차로 표시
+            local0 = eff_start.astimezone(__import__("zoneinfo").ZoneInfo(tzname))
+            epoch = int(eff_start.timestamp()) + int(local0.utcoffset().total_seconds())
+            clock = f"%{{pts\\:gmtime\\:{epoch}\\:%Y-%m-%d %H\\\\\\:%M\\\\\\:%S}}"
             vf.append(f"drawtext=fontfile={font}:text='{label}':x=10:y=10:fontsize=20:fontcolor=white@0.85:"
                       "box=1:boxcolor=black@0.45:boxborderw=6")
             vf.append(f"drawtext=fontfile={font}:text='{clock}':x=10:y=h-th-10:fontsize=22:fontcolor=white@0.9:"
                       "box=1:boxcolor=black@0.45:boxborderw=6")
         if vf:
             args += ["-vf", ",".join(vf)]
-        args += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p", "-c:a", "aac",
-                 "-b:a", "96k"]
+        args += [*h264_encoder_args(), "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "96k"]
     tz_local = eff_start.astimezone(__import__("zoneinfo").ZoneInfo(tzname))
     args += ["-metadata", f"title={cam_name} {tz_local:%Y-%m-%d %H:%M:%S}",
              "-metadata", f"comment=web-nvr export job={job_id} camera={job.camera_id} user={username} "
                           f"requested={t0.isoformat()}~{t1.isoformat()} mode={mode}",
              "-movflags", "+faststart", "-progress", "pipe:1", "-nostats", "-f", "mp4", str(out_tmp)]
-    env = dict(os.environ, TZ=tzname)
+    env = dict(os.environ)
     log.info("내보내기 #%s 시작 (%s, %d개 구간)", job_id, mode, len(lines))
-    proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.DEVNULL, env=env)
+    proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.DEVNULL, env=env,
+                            **popen_flags())
     last_check = 0.0
     cancelled = False
     assert proc.stdout is not None
@@ -167,7 +194,7 @@ def run_job(job_id: int) -> None:
         for chunk in iter(lambda: f.read(1024 * 1024), b""):
             h.update(chunk)
         os.fsync(f.fileno())
-    os.replace(out_tmp, out_final)
+    replace_retry(out_tmp, out_final)
     note = []
     actual_start = eff_start
     if mode == "copy":

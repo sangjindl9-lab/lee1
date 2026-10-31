@@ -20,6 +20,7 @@ from ..db import session_scope
 from ..models import Camera
 from ..security.crypto import decrypt_secret
 from ..security.netguard import TargetDenied, check_url
+from ..osutil import replace_retry
 
 log = logging.getLogger("nvr.worker.mediamtx")
 
@@ -51,6 +52,11 @@ def render() -> str:
                 .replace("__WEBRTC_ADDITIONAL_HOSTS__", "[" + ", ".join(q(h) for h in hosts) + "]")
                 .replace("__WEBRTC_TCP_ADDRESS__", q(":8189" if s.webrtc_tcp else ""))
                 .replace("__WEBRTC_ICE_SERVERS__", "[" + ", ".join("{url: " + q(u) + "}" for u in stuns) + "]"))
+    if s.mediamtx_listen_host:
+        # 설치형(윈도우 등): HLS·WebRTC 신호 포트는 프록시(caddy)만 접근하도록 내부 주소에 묶는다(UDP 미디어 포트는 공개)
+        h = s.mediamtx_listen_host
+        base = (base.replace("hlsAddress: :8888", f"hlsAddress: {q(h + ':8888')}")
+                    .replace("webrtcAddress: :8889", f"webrtcAddress: {q(h + ':8889')}"))
     lines = [base.rstrip(), "", "paths:"]
     with session_scope() as db:
         cams = db.scalars(select(Camera).where(Camera.deleted_at.is_(None), Camera.enabled.is_(True))
@@ -97,6 +103,6 @@ def sync() -> bool:
         f.write(content)
         f.flush()
         os.fsync(f.fileno())
-    os.replace(tmp, path)
+    replace_retry(tmp, path)  # 윈도우: mediamtx 가 읽는 중이면 잠시 재시도
     log.info("mediamtx 설정 갱신(%d bytes)", len(content))
     return True

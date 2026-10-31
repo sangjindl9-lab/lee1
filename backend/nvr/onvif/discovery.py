@@ -33,6 +33,16 @@ def local_interfaces() -> list[dict[str, str]]:
     """IPv4 인터페이스 주소 목록(루프백 제외)."""
     out: list[dict[str, str]] = []
     try:
+        import psutil
+
+        for name, addrs in psutil.net_if_addrs().items():
+            for a in addrs:
+                if a.family == socket.AF_INET and a.address and not a.address.startswith(("127.", "169.254.")):
+                    out.append({"name": name, "ip": a.address})
+        return out
+    except ImportError:
+        pass
+    try:
         import fcntl
         import struct
 

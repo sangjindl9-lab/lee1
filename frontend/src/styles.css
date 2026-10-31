@@ -172,6 +172,11 @@ tr:last-child td { border-bottom: 0; }
 .choice button.sel { background: var(--panel-2); }
 
 .analytics { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(320px, 1fr); gap: 16px; align-items: start; }
+.app.kiosk { grid-template-columns: 1fr; }
+.live.kiosk { grid-template-columns: 1fr; }
+.live.kiosk .wall { gap: 1px; padding: 0; }
+.live.kiosk .tile.selected { outline: 1px solid #222; }
+.kiosk-msg { position: fixed; left: 50%; top: 12px; transform: translateX(-50%); background: rgba(0,0,0,.75); padding: 6px 12px; border-radius: 4px; z-index: 20; }
 .analytics > * { min-width: 0; }
 .stageimg { position: relative; background: var(--video); aspect-ratio: 16 / 9; display: grid; width: 100%; overflow: hidden; }
 .stageimg img { width: 100%; max-width: 100%; height: 100%; object-fit: fill; display: block; grid-area: 1 / 1; }

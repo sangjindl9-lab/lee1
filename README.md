@@ -1,4 +1,4 @@
-# 웹 NVR (현장 영상관제) — v0.3.0 (1·2단계, 3단계 일부, 지능형 분석)
+# 웹 NVR (현장 영상관제) — v0.4.0 (1·2단계, 3단계 일부, 지능형 분석, 윈도우 설치판)
 
 여러 제조사 IP 카메라를 ONVIF·RTSP로 등록해 웹브라우저에서 실시간 감시하고, 서버에서 24시간 녹화·검색·재생·MP4 내보내기를
 하는 업무용 웹 NVR 입니다. 플러그인·ActiveX 없이 PC·모바일 브라우저에서 동작합니다.
@@ -7,8 +7,9 @@
 - 설치·운영·백업/복구: [docs/02-설치운영.md](docs/02-설치운영.md)
 - 검증 결과(합성 스트림 / 자동화 / 실장비 구분): [docs/03-검증결과.md](docs/03-검증결과.md)
 - 미구현·제약 목록: [docs/04-미구현목록.md](docs/04-미구현목록.md)
+- 윈도우 설치판(VMS 소프트웨어): [docs/05-윈도우설치.md](docs/05-윈도우설치.md) — 설치 프로그램 만들기: `bash packaging/windows/build.sh`
 
-## 빠른 시작
+## 빠른 시작(리눅스 Docker)
 ```bash
 sudo bash scripts/init-secrets.sh        # 마스터 키·DB 비밀번호·데이터 폴더 생성
 sudo nano .env                           # 접속 주소·WebRTC 주소·녹화 디스크 경로
@@ -28,6 +29,8 @@ sudo docker compose exec api python -m nvr.cli create-admin --username admin
 | `backend/alembic` | DB 마이그레이션 |
 | `backend/tests` | 자동화 시험(pytest) |
 | `frontend` | React + TypeScript 웹 화면(한국어) |
+| `backend/nvr/winctl.py` 등 | 윈도우 설치판: 서비스 관리(nvrctl)·관제 프로그램(winclient)·서버 관리 아이콘(wintray) |
+| `packaging/windows` | 윈도우 설치 프로그램 빌드(NSIS)·외부 구성 요소 목록(deps.txt, SHA-256) |
 | `deploy` | Caddy(HTTPS·프록시), MediaMTX 설정 템플릿 |
 | `scripts` | 비밀 파일 생성, 백업, 복구 |
 | `tools/test-camera` | **시험 전용** 합성 RTSP 카메라·ONVIF 시뮬레이터·분석 시험 장면 생성기 (실제 카메라·실제 화재 아님) |

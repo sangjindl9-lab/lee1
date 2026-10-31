@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
-import os
 import time
 
 from sqlalchemy import delete, select, update
@@ -14,6 +13,7 @@ from ..events import close_event, open_event, point_event
 from ..models import AuthSession, Camera, LoginAttempt, RecordingSegment, utcnow
 from ..settings_store import get_all
 from ..storage import disk_info, safe_join
+from ..osutil import unlink_retry
 
 log = logging.getLogger("nvr.worker.retention")
 
@@ -38,7 +38,7 @@ def finish_deleting(limit: int = 1000, base=None) -> tuple[int, int]:
     done_ids = []
     for sid, rel, size in rows:
         try:
-            os.unlink(safe_join(base, rel))
+            unlink_retry(safe_join(base, rel), missing_ok=False)
             freed += size
         except FileNotFoundError:
             pass

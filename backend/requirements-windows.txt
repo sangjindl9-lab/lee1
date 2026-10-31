@@ -1,0 +1,6 @@
+# 윈도우 설치판 추가 패키지(관제 프로그램 창·작업표시줄 아이콘). 서버 구성 요소는 requirements.txt 와 같다.
+-r requirements.txt
+pywebview==6.2.1
+pythonnet==3.2.1
+pystray==0.19.5
+pillow==12.3.0

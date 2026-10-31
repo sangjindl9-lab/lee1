@@ -57,8 +57,8 @@ def disk_info(path: Path | None = None) -> DiskInfo:
 
 def fsync_dir(path: Path) -> None:
     try:
-        fd = os.open(path, os.O_DIRECTORY)
-    except OSError:
+        fd = os.open(path, os.O_DIRECTORY)  # type: ignore[attr-defined]
+    except (OSError, AttributeError):  # 윈도우: 폴더 fsync 없음(NTFS 메타데이터 저널)
         return
     try:
         os.fsync(fd)

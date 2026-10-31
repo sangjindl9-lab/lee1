@@ -8,6 +8,7 @@ from typing import Any
 from urllib.parse import quote, urlsplit, urlunsplit
 
 from ..config import get_settings
+from ..osutil import ca_file, popen_flags
 from ..security.netguard import TargetDenied, check_url
 from ..security.redact import redact
 
@@ -103,7 +104,7 @@ def input_args(src: StreamSource, timeout_s: int = 10) -> list[str]:
         "-protocol_whitelist", INPUT_PROTOCOLS,
     ]
     if src.url.startswith("rtsps://") and not src.tls_insecure:
-        args += ["-tls_verify", "1", "-ca_file", "/etc/ssl/certs/ca-certificates.crt"]
+        args += ["-tls_verify", "1", "-ca_file", ca_file()]
     if not (src.url.startswith("rtsp://") or src.url.startswith("rtsps://")):
         raise TargetDenied("bad_scheme", "RTSP/RTSPS 주소만 사용할 수 있습니다.")
     return args + ["-i", src.url]
@@ -151,7 +152,7 @@ def probe_stream(src: StreamSource, sample_seconds: int = 4, timeout_s: int = 25
             "sample_rate,channels,has_b_frames,pix_fmt:packet=stream_index,size,pts_time,flags",
             "-of", "json", src.url]
     try:
-        proc = subprocess.run(args, capture_output=True, timeout=timeout_s, check=False)
+        proc = subprocess.run(args, capture_output=True, timeout=timeout_s, check=False, **popen_flags())
     except subprocess.TimeoutExpired:
         return ProbeResult(ok=False, error_code="timeout", error_message=ERROR_TEXT["timeout"])
     stderr = redact(proc.stderr.decode("utf-8", "replace"), src.secrets)
@@ -210,7 +211,7 @@ def grab_snapshot(src: StreamSource, timeout_s: int = 20) -> tuple[bytes | None,
     args = [s.ffmpeg_path, "-hide_banner", "-nostdin", "-loglevel", "error", *input_args(src, timeout_s=8),
             "-frames:v", "1", "-q:v", "4", "-f", "image2", "-c:v", "mjpeg", "pipe:1"]
     try:
-        proc = subprocess.run(args, capture_output=True, timeout=timeout_s, check=False)
+        proc = subprocess.run(args, capture_output=True, timeout=timeout_s, check=False, **popen_flags())
     except subprocess.TimeoutExpired:
         return None, "timeout", ERROR_TEXT["timeout"]
     if proc.returncode != 0 or not proc.stdout:
@@ -226,7 +227,7 @@ def ffprobe_file(path: str, timeout_s: int = 30) -> dict[str, Any] | None:
         proc = subprocess.run(
             [s.ffprobe_path, "-v", "error", "-show_entries",
              "format=duration,size:stream=codec_type,codec_name,width,height", "-of", "json", path],
-            capture_output=True, timeout=timeout_s, check=False,
+            capture_output=True, timeout=timeout_s, check=False, **popen_flags(),
         )
     except subprocess.TimeoutExpired:
         return None

@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import logging
 import os
-import signal
 import socket
 import subprocess
 import threading
@@ -30,6 +29,7 @@ from ..db import session_scope
 from ..events import close_event, open_event
 from ..media.ffmpeg import StreamSource, input_args
 from ..models import AnalyticsRule, Camera, Event, ServiceHeartbeat, utcnow
+from ..osutil import install_stop_handler, popen_flags, replace_retry
 from ..policy import triggers
 from ..security.redact import redact
 from . import LABELS, PERSON_RULES
@@ -66,7 +66,7 @@ def live_path(camera_id: int) -> Path:
 def _atomic_write(path: Path, data: bytes) -> None:
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_bytes(data)
-    os.replace(tmp, path)
+    replace_retry(tmp, path)
 
 
 # ───────────────────────── 프레임 입력 ─────────────────────────
@@ -83,7 +83,7 @@ class FrameReader:
 
     def start(self) -> None:
         self.proc = subprocess.Popen(self.args, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                                     stderr=subprocess.PIPE, bufsize=0)
+                                     stderr=subprocess.PIPE, bufsize=0, **popen_flags())
         threading.Thread(target=self._stderr, daemon=True).start()
 
     def _stderr(self) -> None:
@@ -544,8 +544,7 @@ def main() -> None:
     def _stop(*_):
         svc.running = False
 
-    signal.signal(signal.SIGTERM, _stop)
-    signal.signal(signal.SIGINT, _stop)
+    install_stop_handler(_stop)
     svc.loop()
 
 
