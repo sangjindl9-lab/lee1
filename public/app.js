@@ -150,12 +150,12 @@ function customerForm(c = {}) {
 }
 const formData = (form) => Object.fromEntries(new FormData(form).entries());
 /** 따로 파는 옵션 기능 — 라이선스 modules 에 이름이 들어가면 고객 ERP 공무지원 메뉴에 나타난다 */
-const OPTIONS = [['geomcheuk', '검측서류'], ['gongjung', '예정공정표']];
+const OPTIONS = [['geomcheuk', '검측서류'], ['gongjung', '예정공정표'], ['sajindaeji', '사진대지']];
 const optionBoxes = (mods = []) => `<div class="f wide"><span>옵션 (공무지원)</span><div class="row" style="gap:16px;margin-top:6px">${OPTIONS.map(([v, l]) => `<label style="display:flex;gap:6px;align-items:center;font-weight:400"><input type="checkbox" name="opt" value="${v}" ${mods.includes(v) ? 'checked' : ''} /> ${l}</label>`).join('')}</div><span class="hint">체크한 옵션만 고객 ERP의 공무지원 메뉴에 보입니다. 꺼도 작성한 자료는 지워지지 않습니다.</span></div>`;
 const pickedModules = (form, extra = '') => [...form.querySelectorAll('input[name=opt]:checked')].map((x) => x.value).concat(String(extra).split(/[,\s]+/).filter(Boolean)).join(',');
 // 요금제 (홍보 사이트 요금표와 같음, VAT 별도) — 고르면 사용자 수·저장 용량·금액이 채워진다
 const PLANS = [['starter', '스타터', 5, 5, 79000], ['std', '스탠다드', 15, 20, 149000], ['pro', '프로', 30, 50, 229000]];
-const OPT_MONTHLY = { geomcheuk: 24000, gongjung: 16000 };
+const OPT_MONTHLY = { geomcheuk: 24000, gongjung: 16000 }; // 사진대지 요금은 아직 정하지 않음 — 금액에 직접 더하기
 const planSelect = () => `<label class="f wide">요금제<select name="plan"><option value="">직접 입력</option>${PLANS.map(([v, n, u, g, m]) => `<option value="${v}">${n} — ${u}명 · ${g}GB · 월 ${won(m)}</option>`).join('')}</select><span class="hint">고르면 사용자 수·저장 용량·연 금액(월 요금 × 12, 옵션 포함)이 채워집니다. 연 선납 2개월 할인이면 금액을 고쳐 주세요. 추가 사용자 1명 월 6,500원 · 저장 10GB 추가 월 4,000원</span></label>`;
 function wirePlan(form) {
   const sel = form.querySelector('select[name=plan]');
@@ -167,7 +167,7 @@ function wirePlan(form) {
     form.maxUsers.value = users;
     form.storageGB.value = gbs;
     const opts = [...form.querySelectorAll('input[name=opt]:checked')].map((x) => x.value);
-    const optM = opts.includes('geomcheuk') && opts.includes('gongjung') ? 32000 : opts.reduce((a, o) => a + (OPT_MONTHLY[o] ?? 0), 0);
+    const optM = opts.reduce((a, o) => a + (OPT_MONTHLY[o] ?? 0), 0) - (opts.includes('geomcheuk') && opts.includes('gongjung') ? 8000 : 0); // 검측+공정 묶음 월 32,000
     if (form.amount) form.amount.value = (monthly + optM) * 12;
   };
   sel.onchange = fill;
