@@ -153,6 +153,26 @@ const formData = (form) => Object.fromEntries(new FormData(form).entries());
 const OPTIONS = [['geomcheuk', '검측서류'], ['gongjung', '예정공정표']];
 const optionBoxes = (mods = []) => `<div class="f wide"><span>옵션 (공무지원)</span><div class="row" style="gap:16px;margin-top:6px">${OPTIONS.map(([v, l]) => `<label style="display:flex;gap:6px;align-items:center;font-weight:400"><input type="checkbox" name="opt" value="${v}" ${mods.includes(v) ? 'checked' : ''} /> ${l}</label>`).join('')}</div><span class="hint">체크한 옵션만 고객 ERP의 공무지원 메뉴에 보입니다. 꺼도 작성한 자료는 지워지지 않습니다.</span></div>`;
 const pickedModules = (form, extra = '') => [...form.querySelectorAll('input[name=opt]:checked')].map((x) => x.value).concat(String(extra).split(/[,\s]+/).filter(Boolean)).join(',');
+// 요금제 (홍보 사이트 요금표와 같음, VAT 별도) — 고르면 사용자 수·저장 용량·금액이 채워진다
+const PLANS = [['starter', '스타터', 5, 5, 79000], ['std', '스탠다드', 15, 20, 149000], ['pro', '프로', 30, 50, 229000]];
+const OPT_MONTHLY = { geomcheuk: 24000, gongjung: 16000 };
+const planSelect = () => `<label class="f wide">요금제<select name="plan"><option value="">직접 입력</option>${PLANS.map(([v, n, u, g, m]) => `<option value="${v}">${n} — ${u}명 · ${g}GB · 월 ${won(m)}</option>`).join('')}</select><span class="hint">고르면 사용자 수·저장 용량·연 금액(월 요금 × 12, 옵션 포함)이 채워집니다. 연 선납 2개월 할인이면 금액을 고쳐 주세요. 추가 사용자 1명 월 6,500원 · 저장 10GB 추가 월 4,000원</span></label>`;
+function wirePlan(form) {
+  const sel = form.querySelector('select[name=plan]');
+  if (!sel) return;
+  const fill = () => {
+    const p = PLANS.find(([v]) => v === sel.value);
+    if (!p) return;
+    const [, , users, gbs, monthly] = p;
+    form.maxUsers.value = users;
+    form.storageGB.value = gbs;
+    const opts = [...form.querySelectorAll('input[name=opt]:checked')].map((x) => x.value);
+    const optM = opts.includes('geomcheuk') && opts.includes('gongjung') ? 32000 : opts.reduce((a, o) => a + (OPT_MONTHLY[o] ?? 0), 0);
+    if (form.amount) form.amount.value = (monthly + optM) * 12;
+  };
+  sel.onchange = fill;
+  form.querySelectorAll('input[name=opt]').forEach((x) => x.addEventListener('change', fill));
+}
 
 async function pageNewCustomer() {
   loading('customers');
@@ -163,6 +183,7 @@ async function pageNewCustomer() {
     <form id="cf">
       <section class="panel"><header><h2>1. 고객 정보</h2></header><div class="body">${customerForm()}</div></section>
       <section class="panel"><header><h2>2. 라이선스 (연간 구독)</h2></header><div class="body"><div class="form-grid">
+        ${planSelect()}
         <label class="f">사용자 수 *<input name="maxUsers" type="number" min="1" max="10000" value="10" required /></label>
         <label class="f">저장 용량 (GB) *<input name="storageGB" type="number" min="0.25" max="1024" step="0.25" value="1" required /><span class="hint">데이터베이스 + 첨부파일 합계 · 기본 1GB</span></label>
         ${optionBoxes()}
@@ -186,6 +207,7 @@ async function pageNewCustomer() {
       <div class="row end"><a class="btn" href="#/customers">취소</a><button class="btn primary" id="go">${rw.connected ? '등록하고 ERP 만들기' : '등록하고 납품 준비'}</button></div>
     </form>`);
   const form = document.getElementById('cf');
+  wirePlan(form);
   const srv = document.getElementById('srvsec');
   const sync = () => {
     const hosted = form.deployment.value === 'HOSTED';
@@ -416,6 +438,7 @@ function issueDialog(c, kind) {
     body = `<div class="note">중지 전 만료일로 라이선스를 다시 발급합니다.</div><div style="margin-top:12px"><label class="f">메모<input name="memo" /></label></div>`;
   } else {
     body = `<div class="form-grid">
+      ${planSelect()}
       <label class="f">사용자 수 *<input name="maxUsers" type="number" min="1" max="10000" required value="${cur?.maxUsers ?? 10}" /></label>
       <label class="f">저장 용량 (GB) *<input name="storageGB" type="number" min="0.25" max="1024" step="0.25" required value="${+((cur?.storageMB ?? 1024) / 1024).toFixed(2)}" /><span class="hint">현재 사용 ${c.usedMB != null ? gb(c.usedMB) : '확인 전'}</span></label>
       ${optionBoxes(cur?.modules ?? [])}
@@ -437,6 +460,7 @@ function issueDialog(c, kind) {
   back.querySelector('.x').onclick = close;
   back.querySelector('[data-close]').onclick = close;
   back.onclick = (e) => { if (e.target === back) close(); };
+  wirePlan(back.querySelector('form'));
   back.querySelector('form').onsubmit = async (e) => {
     e.preventDefault();
     const f = formData(e.target);
