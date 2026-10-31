@@ -8,28 +8,40 @@
   addr_offset: 모든 주소에 더할 값. 제조사 주소표가 1부터 시작하면 -1
   timeout    : 응답 대기 (초)
   block      : 한 번에 읽을 최대 레지스터 수 (일부 PLC는 64 이하만 허용)
+  transport  : tcp (Modbus TCP) / rtu_tcp, ascii_tcp (통신변환장치 투명 모드) / rtu_serial, ascii_serial (직렬 포트)
+  serial     : 직렬일 때 {"baud": 9600, "parity": "N", "stopbits": 1, "bytesize": 8}, host 자리에 포트 이름 (COM3, /dev/ttyUSB0)
 """
 import asyncio
 import logging
 
-from pymodbus.client import AsyncModbusTcpClient
+from pymodbus import Framer
+from pymodbus.client import AsyncModbusSerialClient, AsyncModbusTcpClient
 
 from .tagmap import FC
 
 log = logging.getLogger("modbus")
 MAX_BITS, MAX_GAP = 1000, 10
-DEFAULT_OPT = {"word_order": "high", "addr_offset": 0, "timeout": 2.0, "block": 100}
+DEFAULT_OPT = {"word_order": "high", "addr_offset": 0, "timeout": 2.0, "block": 100, "transport": "tcp",
+               "baud": 9600, "parity": "N", "stopbits": 1, "bytesize": 8}
+FRAMERS = {"tcp": Framer.SOCKET, "rtu_tcp": Framer.RTU, "ascii_tcp": Framer.ASCII, "rtu_serial": Framer.RTU, "ascii_serial": Framer.ASCII}
 
 
 class Link:
-    def __init__(self, host, port, timeout=2.0):
-        self.host, self.port, self.timeout = host, port, timeout
+    def __init__(self, host, port, timeout=2.0, transport="tcp", serial=None):
+        self.host, self.port, self.timeout, self.transport, self.serial = host, port, timeout, transport, serial or {}
         self.client = None          # 이벤트 루프 안에서 생성
         self.lock = None
 
     async def ensure(self):
         if self.client is None:
-            self.client = AsyncModbusTcpClient(self.host, port=self.port, timeout=self.timeout, retries=1)
+            fr = FRAMERS.get(self.transport, Framer.SOCKET)
+            if self.transport.endswith("_serial"):
+                sp = self.serial
+                self.client = AsyncModbusSerialClient(self.host, framer=fr, baudrate=int(sp.get("baud", 9600)),
+                                                      bytesize=int(sp.get("bytesize", 8)), parity=sp.get("parity", "N"),
+                                                      stopbits=int(sp.get("stopbits", 1)), timeout=self.timeout, retries=1)
+            else:
+                self.client = AsyncModbusTcpClient(self.host, port=self.port, framer=fr, timeout=self.timeout, retries=1)
         if not self.client.connected:
             await self.client.connect()
         return self.client.connected
@@ -47,10 +59,11 @@ class Link:
 _links = {}
 
 
-def link_for(host, port, timeout=2.0):
-    k = (host, int(port), float(timeout))
+def link_for(host, port, timeout=2.0, transport="tcp", serial=None):
+    sp = tuple(sorted((serial or {}).items())) if transport.endswith("_serial") else ()
+    k = (host, int(port), float(timeout), transport, sp)
     if k not in _links:
-        _links[k] = Link(host, int(port), float(timeout))
+        _links[k] = Link(host, int(port), float(timeout), transport, dict(sp))
     return _links[k]
 
 
@@ -101,7 +114,10 @@ class Device:
 
     def __init__(self, host, port, unit, tags, opt=None):
         self.opt = dict(DEFAULT_OPT, **(opt or {}))
-        self.link, self.unit = link_for(host, port, self.opt["timeout"]), unit
+        o = self.opt
+        self.link = link_for(host, port, o["timeout"], o["transport"],
+                             {k: o[k] for k in ("baud", "parity", "stopbits", "bytesize")})
+        self.unit = unit
         self.set_tags(tags)
 
     def set_tags(self, tags):
@@ -131,6 +147,9 @@ class Device:
                 v = raw.get((fc, a), 0)
                 out[name] = (v - 65536 if v > 32767 else v) * t["scale"]
         return out
+
+    def close(self):
+        pass                      # 연결은 같은 주소의 다른 터널과 공유하므로 닫지 않음
 
     async def write(self, tag, value):
         t = self.tags.get(tag)

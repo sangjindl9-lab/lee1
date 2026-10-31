@@ -335,20 +335,35 @@ async def run(cfg_path=None, host="0.0.0.0"):
     cfg, ctx, plcs = build(cfg_path)
     port = cfg.get("simulator", {}).get("port", 5020)
 
+    imgs = []
+
     async def scanner():
         last = time.monotonic()
         while True:
             await asyncio.sleep(0.2)
             now = time.monotonic()
             dt, last = now - last, now
+            for img in imgs:
+                try:
+                    await img.sync_in()
+                except Exception as e:
+                    print("[SIM] sync in", img.proto, e)
             for p in plcs:
                 try:
                     p.scan(dt)
                 except Exception as e:  # 시뮬레이터가 멈추지 않도록
                     print("[SIM] scan error", getattr(p, "cfg", {}).get("key"), e)
+            for img in imgs:
+                try:
+                    await img.sync_out()
+                except Exception as e:
+                    print("[SIM] sync out", img.proto, e)
 
     for p in plcs:
         p.scan(0.01)
+    if cfg.get("simulator", {}).get("protocols", True):
+        from sim.proto_sim import start_all
+        imgs.extend(await start_all(plcs[0], ctx, host))
     asyncio.create_task(scanner())
     tcpdev = TcpDev()
     await asyncio.start_server(tcpdev.handle, host, 5021)

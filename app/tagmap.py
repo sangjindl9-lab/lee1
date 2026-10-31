@@ -158,7 +158,7 @@ def default_tags(t):
 
 
 # ---------- 일람표 불러오기 / 내보내기 ----------
-HEAD = ["태그", "설명", "구분", "주소", "배율", "단위", "형식"]
+HEAD = ["태그", "설명", "구분", "Modbus 주소", "PLC 주소", "배율", "단위", "형식"]
 
 
 def _norm_addr(typ, raw):
@@ -183,6 +183,12 @@ def parse_rows(rows):
                 return "" if v is None else str(v).strip()
         return ""
 
+    def exact(r, keys):
+        for k, v in r.items():
+            if str(k).replace(" ", "").upper() in keys:
+                return "" if v is None else str(v).strip()
+        return ""
+
     out, errs = [], []
     for n, r in enumerate(rows, start=2):
         tag = pick(r, ["태그", "TAG"])
@@ -192,8 +198,10 @@ def parse_rows(rows):
         if typ not in TYPES:
             errs.append("%d행 %s: 구분 '%s'는 DI/DO/AI/AO/PI 중 하나여야 합니다" % (n, tag, typ))
             continue
+        paddr = exact(r, {"PLC주소", "PADDR", "PLCADDR", "PLCADDRESS", "전용주소"})
+        maddr = exact(r, {"MODBUS주소", "주소", "ADDR", "ADDRESS", "MODBUS"})
         try:
-            addr = _norm_addr(typ, pick(r, ["주소", "ADDR"]))
+            addr = _norm_addr(typ, maddr) if maddr or not paddr else 0
         except ValueError as e:
             errs.append("%d행 %s: %s" % (n, tag, e))
             continue
@@ -201,7 +209,7 @@ def parse_rows(rows):
         dt = pick(r, ["형식", "DTYPE"]).lower()
         out.append({
             "tag": tag, "desc": pick(r, ["설명", "명칭", "DESC"]), "type": typ, "addr": addr,
-            "scale": float(sc) if sc else 1.0, "unit": pick(r, ["단위", "UNIT"]),
+            "scale": float(sc) if sc else 1.0, "unit": pick(r, ["단위", "UNIT"]), "paddr": paddr,
             "dtype": dt or ("bool" if typ in ("DI", "DO") else "uint32" if typ == "PI" else "int16"),
         })
     return out, errs
@@ -226,7 +234,7 @@ def display_addr(t):
     return "%d%04d" % (lead, t["addr"] + 1)
 
 
-def to_xlsx(tags, title):
+def to_xlsx(tags, title, paddr_of=None):
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill, Alignment
     wb = Workbook()
@@ -238,8 +246,9 @@ def to_xlsx(tags, title):
         c.fill = PatternFill("solid", fgColor="DDE3EA")
         c.alignment = Alignment(horizontal="center")
     for t in tags:
-        ws.append([t["tag"], t["desc"], t["type"], display_addr(t), t["scale"], t["unit"], t["dtype"]])
-    for col, w in zip("ABCDEFG", [18, 34, 7, 10, 9, 8, 8]):
+        ws.append([t["tag"], t["desc"], t["type"], display_addr(t), (paddr_of(t) if paddr_of else t.get("paddr", "")),
+                   t["scale"], t["unit"], t["dtype"]])
+    for col, w in zip("ABCDEFGH", [18, 34, 7, 12, 22, 9, 8, 8]):
         ws.column_dimensions[col].width = w
     ws.freeze_panes = "A2"
     bio = io.BytesIO()
@@ -252,6 +261,13 @@ def map_path(base, key):
 
 
 def load_tags(base, t):
+    tags, custom = _load_tags(base, t)
+    if not t.get("_sim", True):
+        tags = [x for x in tags if not x["tag"].startswith("SIM.")]
+    return tags, custom
+
+
+def _load_tags(base, t):
     p = map_path(base, t["key"])
     if os.path.exists(p):
         with open(p, encoding="utf-8") as f:

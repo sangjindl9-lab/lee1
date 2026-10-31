@@ -17,9 +17,10 @@ from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile, 
 from fastapi.responses import FileResponse, JSONResponse, Response
 
 from .store import ROLES, Store
-from .modbus_io import Device, Link
 from .tagmap import FEEDER_USE, MAX_GATES, MAX_VMS, STAGES, display_addr, parse_rows, read_table_file, reset_tags, save_tags, to_xlsx
 from . import drivers as D
+from .protocols import PROTOCOLS, make_driver
+from .tagmap import load_tags
 from .tunnel import Alarms, Tunnel, cam_url, plc_opt
 from .vendors import BUILTIN
 
@@ -36,8 +37,10 @@ log = logging.getLogger("scada")
 store = Store(BASE)
 CFG["control"].update(store.get("control", {}) or {})     # 화면에서 바꾼 제어 기준값 우선
 alarms = Alarms(store)
-tunnels = {t["key"]: Tunnel(t, CFG["control"], CFG.get("clock", "real"), store, alarms, BASE) for t in CFG["tunnels"]}
 SIM_ON = CFG.get("simulator", {}).get("embedded", False)
+for _t in CFG["tunnels"]:
+    _t["_sim"] = SIM_ON or CFG.get("clock") == "plc"     # 가상 PLC 전용 신호(SIM.*)는 시뮬레이터일 때만 읽음
+tunnels = {t["key"]: Tunnel(t, CFG["control"], CFG.get("clock", "real"), store, alarms, BASE) for t in CFG["tunnels"]}
 TOKENS = {}
 SOCKETS = set()
 TOKEN_TTL = 12 * 3600
@@ -166,12 +169,13 @@ def meta(u=Depends(need("감시"))):
                          "lv": [f for f in t.c["feeders"] if f != "LV-UPS"], "feeders": t.c["feeders"],
                          "host": t.devcfg["plc"]["host"], "port": t.devcfg["plc"]["port"], "unit": t.devcfg["plc"]["unit"],
                          "dev": public_devices(t.devcfg)} for t in tunnels.values()],
-            "control": CFG["control"], "maxVms": MAX_VMS, "maxGates": MAX_GATES}
+            "control": CFG["control"], "maxVms": MAX_VMS, "maxGates": MAX_GATES, "protocols": PROTOCOLS}
 
 
 def public_devices(d):
     """화면으로 보내는 설비 설정 (카메라 비밀번호는 보내지 않음)."""
     out = json.loads(json.dumps(d))
+    out["plc"]["has_ua_pw"] = bool(out["plc"].pop("ua_pw", ""))
     for c in out["cctv"]:
         c["has_pw"] = bool(c.pop("pw", ""))
         try:
@@ -253,9 +257,12 @@ def fmt(t, v):
 @app.get("/api/tags")
 def tags(tunnel: str, u=Depends(need("감시"))):
     t = T(tunnel)
-    return {"custom": t.custom, "rows": [{"tag": x["tag"], "desc": x["desc"], "type": x["type"], "addr": display_addr(x),
-                                          "value": fmt(x, t.v.get(x["tag"])) if t.comm else "통신두절"}
-                                         for x in t.dev.tags.values()]}
+    proto = t.devcfg["plc"].get("protocol", "modbus")
+    return {"custom": t.custom, "protocol": proto, "protoName": PROTOCOLS.get(proto, proto),
+            "rows": [{"tag": x["tag"], "desc": x["desc"], "type": x["type"], "addr": display_addr(x),
+                      "paddr": "" if proto == "modbus" else x.get("pa", ""),
+                      "value": fmt(x, t.v.get(x["tag"])) if t.comm else "통신두절"}
+                     for x in t.dev.tags.values()]}
 
 
 @app.post("/api/tags/import")
@@ -284,7 +291,10 @@ def tags_reset(tunnel: str, u=Depends(need("관리자"))):
 @app.get("/api/tags/export")
 def tags_export(tunnel: str, u=Depends(need("감시"))):
     t = T(tunnel)
-    data = to_xlsx([x for x in t.dev.tags.values() if not x["tag"].startswith("SIM.")], t.name)
+    p = t.devcfg["plc"]
+    proto = p.get("protocol", "modbus")
+    data = to_xlsx([x for x in t.dev.tags.values() if not x["tag"].startswith("SIM.")], t.name,
+                   (lambda x: x.get("pa") or x.get("paddr", "")) if proto != "modbus" else (lambda x: x.get("paddr", "")))
     fn = "%s_관제점일람표.xlsx" % t.name
     from urllib.parse import quote
     return Response(data, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -325,14 +335,44 @@ def _addr(v, name):
     return _s(v, 10)
 
 
-def clean_plc(p):
+def clean_plc(p, old=None):
+    proto = p.get("protocol") if p.get("protocol") in PROTOCOLS else "modbus"
+    tr = p.get("transport") if p.get("transport") in ("tcp", "rtu_tcp", "ascii_tcp", "rtu_serial", "ascii_serial") else "tcp"
+    serial = proto == "modbus" and tr.endswith("_serial")
     host = _s(p.get("host"), 100)
-    if not host:
+    if not host and not serial:
         raise HTTPException(400, "PLC IP 주소를 입력하세요")
-    return {"host": host, "port": _int(p.get("port"), "PLC 포트", 1, 65535), "unit": _int(p.get("unit"), "Unit ID", 0, 255),
-            "vendor": _s(p.get("vendor"), 60) or "generic", "word_order": "low" if p.get("word_order") == "low" else "high",
-            "addr_offset": _int(p.get("addr_offset", 0), "주소 보정", -100000, 100000),
-            "timeout": max(.3, min(30.0, _num(p.get("timeout", 2), "응답 대기"))), "block": _int(p.get("block", 100), "한 번에 읽기", 1, 125)}
+    o = {"protocol": proto, "host": host, "port": _int(p.get("port") or 502, "PLC 포트", 1, 65535),
+         "unit": _int(p.get("unit") if p.get("unit") not in (None, "") else 1, "Unit ID", 0, 255),
+         "vendor": _s(p.get("vendor"), 60) or "generic", "word_order": "low" if p.get("word_order") == "low" else "high",
+         "timeout": max(.3, min(30.0, _num(p.get("timeout", 2), "응답 대기")))}
+    if proto == "modbus":
+        o.update(transport=tr, addr_offset=_int(p.get("addr_offset", 0), "주소 보정", -100000, 100000),
+                 block=_int(p.get("block", 100), "한 번에 읽기", 1, 125))
+        if serial:
+            sp = _s(p.get("serial_port"), 60)
+            if not sp:
+                raise HTTPException(400, "직렬 포트 이름을 입력하세요 (예: COM3, /dev/ttyUSB0)")
+            o.update(serial_port=sp, baud=_int(p.get("baud") or 9600, "통신 속도", 300, 921600),
+                     parity=p.get("parity") if p.get("parity") in ("N", "E", "O") else "N",
+                     stopbits=1 if str(p.get("stopbits", 1)) != "2" else 2, bytesize=7 if str(p.get("bytesize", 8)) == "7" else 8)
+    elif proto == "s7":
+        o.update(s7_rack=_int(p.get("s7_rack") or 0, "랙", 0, 7), s7_slot=_int(p.get("s7_slot") if p.get("s7_slot") not in (None, "") else 1, "슬롯", 0, 31))
+    elif proto == "fins":
+        o.update(fins_mode="udp" if p.get("fins_mode") == "udp" else "tcp",
+                 fins_plc_node=_int(p.get("fins_plc_node") or 0, "PLC 노드", 0, 254), fins_pc_node=_int(p.get("fins_pc_node") or 0, "PC 노드", 0, 254))
+    elif proto == "mc":
+        o.update(mc_net=_int(p.get("mc_net") or 0, "네트워크 번호", 0, 239),
+                 mc_pc=_int(p.get("mc_pc") if p.get("mc_pc") not in (None, "") else 255, "PC 번호", 0, 255))
+    elif proto == "opcua":
+        pw = p.get("ua_pw")
+        o.update(ua_url=_s(p.get("ua_url"), 200), ua_ns=_int(p.get("ua_ns") or 2, "네임스페이스", 0, 999),
+                 ua_security=p.get("ua_security") if p.get("ua_security") in ("none", "Basic256Sha256_Sign", "Basic256Sha256_SignAndEncrypt") else "none",
+                 ua_user=_s(p.get("ua_user"), 60),
+                 ua_pw=(old or {}).get("ua_pw", "") if pw in (None, "") else ("" if pw == "__clear__" else str(pw)))
+    elif proto == "eip":
+        o.update(eip_mode="slc" if p.get("eip_mode") == "slc" else "logix", eip_slot=_s(p.get("eip_slot"), 4))
+    return o
 
 
 def clean_cam(c, oldpw):
@@ -415,7 +455,7 @@ def clean_direct(x, kind, name):
 async def devices_save(tunnel: str, body: dict, u=Depends(need("관리자"))):
     t = T(tunnel)
     old = t.devcfg
-    plc = clean_plc(body.get("plc", {}))
+    plc = clean_plc(body.get("plc", {}), old["plc"])
     oldpw = {c["id"]: c.get("pw", "") for c in old["cctv"]}
     cams, ids = [], set()
     for c in body.get("cctv", []):
@@ -490,18 +530,23 @@ def vendors_delete(body: dict, u=Depends(need("관리자"))):
 # ---------- 연결 시험 · 명령 미리보기 ----------
 @app.post("/api/devices/test")
 async def devices_test(body: dict, u=Depends(need("관리자"))):
-    """PLC 응답 확인 (DI 0 읽기). 제조사 설정(워드 순서·주소 보정·대기)을 그대로 적용한다."""
-    p = clean_plc(body)
-    dev = Device(p["host"], p["port"], p["unit"], [{"tag": "T", "type": "DI", "addr": 0, "scale": 1, "unit": "", "dtype": "bool"}], plc_opt(p))
-    dev.link = Link(p["host"], p["port"], p["timeout"])   # 운영 연결과 분리
+    """PLC 응답 확인. 고른 프로토콜로 관제점 전체를 한 번 읽어 본다 (쓰기는 하지 않음)."""
+    t = T(body.get("tunnel") or next(iter(tunnels)))
+    p = clean_plc(body, t.devcfg["plc"])
+    tags = load_tags(BASE, t.c)[0]
+    try:
+        dev = make_driver(p, tags, BASE)
+    except Exception as e:
+        return {"ok": False, "msg": "설정 오류: %s" % e}
     t0 = time.monotonic()
     try:
-        await asyncio.wait_for(dev.read_all(), p["timeout"] + 3)
-        return {"ok": True, "msg": "응답 정상 (%d ms)" % ((time.monotonic() - t0) * 1000)}
+        v = await asyncio.wait_for(dev.read_all(), p["timeout"] + 5)
+        return {"ok": True, "msg": "응답 정상 · 관제점 %d점 읽음 (%d ms)" % (len(v), (time.monotonic() - t0) * 1000)}
     except Exception as e:
         return {"ok": False, "msg": "응답 없음: %s" % (str(e) or type(e).__name__)}
     finally:
-        dev.link.close()
+        if p["protocol"] != "modbus":
+            dev.close()
 
 
 @app.post("/api/devices/probe")

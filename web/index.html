@@ -569,18 +569,20 @@ function drawTrend(){
 
 /* ---------- 관제점 ---------- */
 let tagFilter='전체', tagRows=[], tagCustom=false, tagAt=0;
-async function loadTags(){try{const d=await api('/api/tags?tunnel='+curKey);tagRows=d.rows;tagCustom=d.custom;renderTags()}catch(e){toast(e.message)}}
+let tagProto='modbus',tagProtoName='';
+async function loadTags(){try{const d=await api('/api/tags?tunnel='+curKey);tagRows=d.rows;tagCustom=d.custom;tagProto=d.protocol;tagProtoName=d.protoName;renderTags()}catch(e){toast(e.message)}}
 function renderTags(){
   const s=cur(),cnt={};tagRows.forEach(t=>{if(!t.tag.startsWith('SIM.'))cnt[t.type]=(cnt[t.type]||0)+1});
   const n=tagRows.filter(t=>!t.tag.startsWith('SIM.')).length;
   $('#tagSum').innerHTML=`<span>전체 <b>${n}</b>점</span>${Object.entries(cnt).map(([k,v])=>`<span>${k} <b>${v}</b></span>`).join('')}<span class="sub">도면 기준 · RTU ${s.c.rtu}점, 전자배전반/통신 ${s.c.com}점</span>`;
-  $('#tagSrc').textContent=(tagCustom?'현장 일람표 적용':'기본 맵')+' · '+s.c.name+' RTU '+s.c.host+':'+s.c.port+' Unit '+s.c.unit;
+  $('#tagSrc').textContent=(tagCustom?'현장 일람표 적용':'기본 맵')+' · '+s.c.name+' · '+tagProtoName;
   $('#tagType').innerHTML=['전체','DI','DO','AI','AO','PI'].map(k=>`<button data-tt="${k}" aria-pressed="${tagFilter===k}">${k}</button>`).join('');
   $('#tagExport').href='/api/tags/export?tunnel='+curKey+'&token='+encodeURIComponent(TOKEN);
   const adm=can('관리자');$('#tagReset').disabled=!adm||!tagCustom;$('#tagImportLbl').style.opacity=adm?1:.45;$('#tagImportLbl').title=adm?'':'관리자만 적용할 수 있습니다';
   const q=$('#tagQ').value.trim().toLowerCase();
   const rows=tagRows.filter(t=>(tagFilter==='전체'||t.type===tagFilter)&&(!q||(t.tag+' '+t.desc).toLowerCase().includes(q)));
-  $('#tagTbl').innerHTML=`<thead><tr><th>태그</th><th>설명</th><th>구분</th><th class="r">Modbus 주소</th><th class="r">현재값</th></tr></thead><tbody>${rows.map(t=>`<tr><td class="num">${t.tag}</td><td>${t.desc}</td><td>${t.type}</td><td class="r num">${t.addr}</td><td class="r num">${t.value}</td></tr>`).join('')}</tbody>`;
+  const pa=tagProto!=='modbus';
+  $('#tagTbl').innerHTML=`<thead><tr><th>태그</th><th>설명</th><th>구분</th>${pa?'<th>PLC 주소</th>':'<th class="r">Modbus 주소</th>'}<th class="r">현재값</th></tr></thead><tbody>${rows.map(t=>`<tr><td class="num">${t.tag}</td><td>${t.desc}</td><td>${t.type}</td>${pa?`<td class="num">${esc(t.paddr)}</td>`:`<td class="r num">${t.addr}</td>`}<td class="r num">${t.value}</td></tr>`).join('')}</tbody>`;
 }
 $('#tagType').addEventListener('click',e=>{const b=e.target.closest('[data-tt]');if(b){tagFilter=b.dataset.tt;renderTags()}});
 $('#tagQ').addEventListener('input',renderTags);
@@ -733,20 +735,9 @@ function renderSettings(){
   const opt=v=>d.vms.presets.map(p=>`<option value="${p.no}" ${p.no===v?'selected':''}>${p.no}. ${esc(p.l1)} / ${esc(p.l2)}</option>`).join('');
   const pv=(VENDORS.plc||[]).find(x=>x.key===P.vendor);
   $('#setDev').innerHTML=`<h2>${esc(t.name)} 설비 설정 <span class="r sub">${adm?'바꾼 뒤 아래 "설비 설정 저장"을 누르세요':'관리자만 바꿀 수 있습니다'}</span></h2>
-  <h3>1. PLC · RTU 연결 (Modbus TCP)</h3>
-  <div class="fgrid">
-   <label class="field full">제조사 프로필 ${sel('plc-vendor',(VENDORS.plc||[]).map(v=>[v.key,v.name+(v.builtin?'':' (내 프로필)')]),P.vendor||'generic')}</label>
-   <label class="field">IP 주소<input type="text" id="plc-host" value="${esc(P.host)}" ${dis}></label>
-   <label class="field">포트<input type="number" id="plc-port" value="${P.port}" ${dis}></label>
-   <label class="field">Unit ID (국번)<input type="number" id="plc-unit" value="${P.unit}" ${dis}></label>
-   <label class="field">32비트 워드 순서 ${sel('plc-word',[['high','상위 워드 먼저'],['low','하위 워드 먼저']],P.word_order||'high')}</label>
-   <label class="field">주소 보정 (모든 주소에 더함)<input type="number" id="plc-off" value="${P.addr_offset||0}" ${dis}></label>
-   <label class="field">응답 대기 (초)<input type="number" step="0.5" id="plc-tmo" value="${P.timeout||2}" ${dis}></label>
-   <label class="field">한 번에 읽을 최대 레지스터<input type="number" id="plc-blk" value="${P.block||100}" ${dis}></label>
-  </div>
-  ${pv&&pv.note?`<p class="vnote" id="plc-note">${esc(pv.note)}</p>`:'<p class="vnote" id="plc-note" hidden></p>'}
+  <h3>1. PLC · RTU 연결</h3>
+  <div id="plcBox"></div>
   <div class="row"><button class="btn" id="plcTest" type="button" ${dis}>연결 시험</button><input type="text" id="plc-pname" placeholder="프로필 이름 (예: 우리 현장 LS XGI)" ${dis} style="max-width:260px"><button class="btn" id="plcProf" type="button" ${dis}>내 프로필로 저장</button><span class="okmsg" id="plcMsg"></span></div>
-  <p class="note" style="margin:0">신호별 레지스터 주소는 관제점 탭의 일람표로 맞춥니다. 제조사 주소표가 1부터 시작하면 주소 보정에 -1을 넣으세요.</p>
   <h3>2. CCTV</h3>
   <div class="tbl-wrap"><table><thead><tr><th>번호</th><th>이름</th><th>위치 (STA)</th><th>영상 방식</th><th>제조사 · 주소</th><th></th><th></th></tr></thead><tbody>${camRows}</tbody></table></div>
   <div class="row"><button class="btn sm" id="camAdd" type="button" ${dis}>카메라 추가</button></div>
@@ -774,15 +765,49 @@ function renderSettings(){
    <label class="field" style="width:170px">UPS 잔량 경보 (%)<input type="number" id="k-batt" value="${C.alarm_batt_low}" ${dis}></label>
   </div>
   <div class="row"><button class="btn pri" id="ctlSave" type="button" ${dis}>기준값 저장</button><span class="okmsg" id="ctlMsg"></span></div>`;
-  const pvs=$('#plc-vendor'); if(pvs)pvs.onchange=()=>{const v=(VENDORS.plc||[]).find(x=>x.key===pvs.value);if(!v)return;const V=v.values;
-    if(V.port&&!$('#plc-port').value)$('#plc-port').value=V.port;$('#plc-word').value=V.word_order||'high';$('#plc-off').value=V.addr_offset||0;$('#plc-tmo').value=V.timeout||2;$('#plc-blk').value=V.block||100;
-    const n=$('#plc-note');n.hidden=!v.note;n.textContent=v.note||''};
+  plcForm(P);
 }
-function readPlc(){const v=id=>{const e=document.getElementById(id);return e?e.value:''};
-  return {host:v('plc-host').trim(),port:+v('plc-port'),unit:+v('plc-unit'),vendor:v('plc-vendor'),word_order:v('plc-word'),addr_offset:+v('plc-off'),timeout:+v('plc-tmo'),block:+v('plc-blk')}}
+const TRANS=[['tcp','Modbus TCP'],['rtu_tcp','RTU over TCP (변환장치 투명 모드)'],['ascii_tcp','ASCII over TCP'],['rtu_serial','RTU 직렬 (RS-485/232)'],['ascii_serial','ASCII 직렬 (RS-485/232)']];
+const DEFPORT={modbus:502,xgt:2004,mc:5007,s7:102,opcua:4840,fins:9600,eip:44818};
+function plcForm(P){
+  const adm=can('관리자'),dis=adm?'':'disabled',pr=P.protocol||'modbus',tr=P.transport||'tcp',ser=pr==='modbus'&&tr.endsWith('_serial');
+  const sel=(k,opts,v)=>`<select data-p="${k}" ${dis}>${opts.map(([a,b])=>`<option value="${a}" ${String(v)===String(a)?'selected':''}>${b}</option>`).join('')}</select>`;
+  const inp=(k,label,v,type,ph)=>`<label class="field">${label}<input type="${type||'text'}" ${type==='number'?'step="any"':''} data-p="${k}" value="${esc(v??'')}" placeholder="${ph||''}" ${dis}></label>`;
+  const groups={};(VENDORS.plc||[]).forEach(v=>{const g=v.builtin?(v.maker||'공통'):'내 프로필';(groups[g]=groups[g]||[]).push(v)});
+  const vsel=`<select data-p="vendor" id="plc-vendor" ${dis}><option value="">직접 설정</option>${Object.entries(groups).map(([g,L])=>`<optgroup label="${esc(g)}">${L.map(v=>`<option value="${esc(v.key)}" ${v.key===P.vendor?'selected':''}>${esc(v.name)}</option>`).join('')}</optgroup>`).join('')}</select>`;
+  const pv=(VENDORS.plc||[]).find(x=>x.key===P.vendor);
+  const WO=sel('word_order',[['high','상위 워드 먼저'],['low','하위 워드 먼저']],P.word_order||'high');
+  let f=`<label class="field full">제조사 · 제품군 프로필 ${vsel}</label>
+    <label class="field">통신 프로토콜 ${sel('protocol',Object.entries(META.protocols||{}),pr)}</label>`;
+  if(pr==='modbus')f+=`<label class="field">연결 방식 ${sel('transport',TRANS,tr)}</label>`;
+  if(!ser)f+=inp('host','IP 주소',P.host)+inp('port','포트',P.port||DEFPORT[pr],'number');
+  if(pr==='modbus'){
+    if(ser)f+=inp('serial_port','직렬 포트',P.serial_port,'text','COM3 또는 /dev/ttyUSB0')+`<label class="field">통신 속도 ${sel('baud',[[1200,1200],[2400,2400],[4800,4800],[9600,9600],[19200,19200],[38400,38400],[57600,57600],[115200,115200]],P.baud||9600)}</label>`+
+      `<label class="field">데이터 비트 ${sel('bytesize',[[8,8],[7,7]],P.bytesize||8)}</label><label class="field">패리티 ${sel('parity',[['N','없음 (N)'],['E','짝수 (E)'],['O','홀수 (O)']],P.parity||'N')}</label><label class="field">정지 비트 ${sel('stopbits',[[1,1],[2,2]],P.stopbits||1)}</label>`;
+    f+=inp('unit','Unit ID (국번)',P.unit??1,'number')+`<label class="field">32비트 워드 순서 ${WO}</label>`+inp('addr_offset','주소 보정 (모든 주소에 더함)',P.addr_offset||0,'number')+inp('block','한 번에 읽을 최대 레지스터',P.block||100,'number');
+  }
+  if(pr==='xgt')f+=`<label class="field">32비트 워드 순서 ${WO}</label>`;
+  if(pr==='mc')f+=`<label class="field">32비트 워드 순서 ${WO}</label>`+inp('mc_net','네트워크 번호',P.mc_net??0,'number')+inp('mc_pc','PC 번호 (자국 255)',P.mc_pc??255,'number');
+  if(pr==='s7')f+=inp('s7_rack','랙',P.s7_rack??0,'number')+inp('s7_slot','슬롯 (1200·1500=1, 300=2)',P.s7_slot??1,'number');
+  if(pr==='fins')f+=`<label class="field">방식 ${sel('fins_mode',[['tcp','FINS/TCP'],['udp','FINS/UDP']],P.fins_mode||'tcp')}</label><label class="field">32비트 워드 순서 ${WO}</label>`+
+    inp('fins_plc_node','PLC 노드 (0 = 자동)',P.fins_plc_node??0,'number')+inp('fins_pc_node','이 PC 노드 (0 = 자동)',P.fins_pc_node??0,'number');
+  if(pr==='opcua')f+=`<label class="field full">엔드포인트 URL (비우면 opc.tcp://IP:포트)<input type="text" data-p="ua_url" value="${esc(P.ua_url||'')}" placeholder="opc.tcp://192.168.0.10:4840" ${dis}></label>`+
+    inp('ua_ns','기본 네임스페이스 번호',P.ua_ns??2,'number')+`<label class="field">보안 ${sel('ua_security',[['none','없음'],['Basic256Sha256_Sign','Basic256Sha256 · 서명'],['Basic256Sha256_SignAndEncrypt','Basic256Sha256 · 서명·암호화']],P.ua_security||'none')}</label>`+
+    inp('ua_user','계정 (없으면 익명)',P.ua_user)+`<label class="field">비밀번호<input type="password" data-p="ua_pw" autocomplete="new-password" placeholder="${P.has_ua_pw?'저장됨 · 바꿀 때만 입력':''}" ${dis}></label>`;
+  if(pr==='eip')f+=`<label class="field">대상 PLC ${sel('eip_mode',[['logix','Micro800 · CompactLogix · ControlLogix (태그)'],['slc','MicroLogix · SLC 500 (데이터 파일)']],P.eip_mode||'logix')}</label>`+inp('eip_slot','CPU 슬롯 (ControlLogix만)',P.eip_slot||'');
+  f+=inp('timeout','응답 대기 (초)',P.timeout||2,'number');
+  $('#plcBox').innerHTML=`<div class="fgrid">${f}</div>${pv&&pv.note?`<p class="vnote">${esc(pv.note)}</p>`:''}
+   <p class="note" style="margin:6px 0 0">${pr==='modbus'?'신호별 레지스터 주소는 관제점 탭 일람표의 Modbus 주소로 맞춥니다.':'신호별 PLC 주소는 관제점 탭에서 확인하고, 일람표 엑셀의 "PLC 주소" 칸을 PLC 프로그램 주소로 고쳐 적용하세요. 비워 두면 기본 제안 주소를 씁니다.'}</p>`;
+}
+$('#setDev').addEventListener('change',e=>{const k=e.target.dataset&&e.target.dataset.p;if(!k||!draft)return;
+  const P=Object.assign({},draft.d.plc,readPlc());
+  if(k==='vendor'){const v=(VENDORS.plc||[]).find(x=>x.key===e.target.value);if(v){const keep={host:P.host,serial_port:P.serial_port,unit:P.unit};Object.assign(P,JSON.parse(JSON.stringify(v.values)),{vendor:v.key});if(keep.host)P.host=keep.host;if(keep.serial_port)P.serial_port=keep.serial_port;if(P.protocol==='modbus'&&keep.unit!==undefined&&keep.unit!=='')P.unit=keep.unit}}
+  if(k==='protocol'){P.port=DEFPORT[P.protocol];P.vendor=''}
+  if(k==='protocol'||k==='transport'||k==='vendor'){draft.d.plc=P;plcForm(P)}});
+function readPlc(){const o={};document.querySelectorAll('#plcBox [data-p]').forEach(e=>{if(e.type==='password'){if(e.value)o[e.dataset.p]=e.value;return}o[e.dataset.p]=e.type==='number'?(e.value===''?'':+e.value):e.value.trim()});return o}
 function readDraft(){
   const t=metaOf(curKey),d=draft.d,v=id=>{const e=document.getElementById(id);return e?e.value:''},ck=id=>{const e=document.getElementById(id);return !!(e&&e.checked)};
-  if(!document.getElementById('plc-host'))return d;
+  if(!document.getElementById('plcBox'))return d;
   d.plc=Object.assign({},d.plc,readPlc());
   d.cctv=d.cctv.map((c,i)=>{const pos=parseSta(t,v('c-pos-'+i));if(pos===null)throw new Error((v('c-id-'+i)||'카메라')+' 위치를 11+560 같은 측점으로 입력하세요');
     return Object.assign({},c,{id:v('c-id-'+i).trim(),name:v('c-name-'+i).trim(),pos,mode:v('c-mode-'+i)})});
@@ -877,8 +902,8 @@ $('#v-set').addEventListener('click',async e=>{
     if(b.dataset.del==='preset'){readDraft();draft.d.vms.presets.splice(+b.dataset.i,1);renderSettings()}
     if(b.id==='devUndo'){draft=null;renderSettings()}
     if(b.dataset.dm){openDM(b.dataset.dm,+b.dataset.i);return}
-    if(b.id==='plcTest'){msg('#plcMsg','시험 중…',true);const r=await api('/api/devices/test',readPlc());msg('#plcMsg',r.msg,r.ok)}
-    if(b.id==='plcProf'){const name=$('#plc-pname').value.trim();if(!name){msg('#plcMsg','프로필 이름을 입력하세요',false);return}const p=readPlc();const r=await api('/api/vendors',{kind:'plc',name,values:p});await loadVendors();readDraft();draft.d.plc.vendor=r.key;renderSettings();msg('#plcMsg',"'"+name+"' 프로필을 저장했습니다",true)}
+    if(b.id==='plcTest'){msg('#plcMsg','시험 중…',true);const r=await api('/api/devices/test',Object.assign({},draft.d.plc,readPlc(),{tunnel:curKey}));msg('#plcMsg',r.msg,r.ok)}
+    if(b.id==='plcProf'){const name=$('#plc-pname').value.trim();if(!name){msg('#plcMsg','프로필 이름을 입력하세요',false);return}const p=Object.assign({},draft.d.plc,readPlc());delete p.has_ua_pw;delete p.ua_pw;const r=await api('/api/vendors',{kind:'plc',name,values:p});await loadVendors();readDraft();draft.d.plc.vendor=r.key;renderSettings();msg('#plcMsg',"'"+name+"' 프로필을 저장했습니다",true)}
     if(b.id==='devSave'){const d=readDraft();const body=JSON.parse(JSON.stringify(d));body.cctv.forEach(c=>{if(!c.pw||c.pw===undefined)c.pw='';delete c.has_pw});
       const r=await api('/api/devices?tunnel='+curKey,body);META=await api('/api/meta');draft=null;$('#devModal').hidden=true;lastSig='';lastCam='';lastGrid='';renderSettings();msg('#devMsg',r.reconnected?'저장했습니다 · PLC에 새 주소로 다시 연결합니다':'저장했습니다',true)}
     if(b.id==='ctlSave'){const L=id=>$(id).value.split(/[,\s]+/).filter(Boolean).map(Number);

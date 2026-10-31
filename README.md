@@ -58,6 +58,29 @@
 - **진입차단**: 차단봉 아래 차량 감지 인터락은 차단기 제어반·PLC에서 처리해야 합니다. 화재 감지 중에는 프로그램에서 개방할 수 없고, 화재 복구 후에도 자동 개방하지 않습니다(운영자 확인 후 개방).
 - 화재 시나리오에 VMS 화재 문안 표출과 진입차단 자동 하강이 포함됩니다.
 
+## PLC 제조사·프로토콜
+
+설비 설정 › 1. PLC · RTU 연결에서 **제조사 · 제품군 프로필**을 고르면 프로토콜과 기본값이 채워집니다.
+
+| 제조사 | 제품군 | 이 프로그램이 쓰는 프로토콜 | PLC 주소 표기 |
+|---|---|---|---|
+| LS ELECTRIC | XGT·XGB (FEnet) | **XGT 전용** (TCP 2004) 또는 Modbus TCP | `%MX100` `%MW10` `%DW200` |
+| LS ELECTRIC | XGT·XGB (Cnet) | **Modbus RTU** 직렬 (RS-485) | Modbus 주소 |
+| 미쓰비시 | MELSEC Q·L·iQ-R | **MC 프로토콜 / SLMP 3E 바이너리** (TCP) | `M100` `X1F` `Y20` `D100` `W1A` |
+| 지멘스 | S7-1200·1500 | **S7 통신**(PUT/GET, TCP 102) · **OPC UA** · Modbus TCP | `DB10.DBX0.3` `DB10.DBW2` `I0.0` `MW20` / NodeId |
+| 오므론 | NJ·NX·CJ·CP | **FINS/TCP · FINS/UDP** (9600) · **OPC UA** | `D100` `W100.05` `H10.01` `CIO0.00` / NodeId |
+| 슈나이더 | Modicon M241 | **Modbus TCP** · OPC UA(지원 모델) | Modbus 주소 / NodeId |
+| 로크웰 (Allen-Bradley) | Micro800·CompactLogix·ControlLogix | **EtherNet/IP** (태그) · Modbus TCP | 태그 이름 `JF01_FWD` |
+| 로크웰 (Allen-Bradley) | MicroLogix 1400·SLC 500 | **EtherNet/IP (PCCC)** · Modbus TCP | `B3:0/1` `N7:10` `L9:0` |
+| 델타 | DVP | **Modbus TCP** · **Modbus RTU/ASCII** 직렬 | Modbus 주소 (X0=1024, Y0=1280, M0=2048, D0=4096) |
+| 공통 | 통신변환장치 | Modbus RTU over TCP (투명) · Modbus TCP 변환 | Modbus 주소 |
+
+- 프로토콜별 설정: Modbus(연결 방식 TCP / RTU·ASCII over TCP / RTU·ASCII 직렬, 직렬 포트·속도·패리티·정지비트, Unit ID, 워드 순서, 주소 보정), XGT(워드 순서), MC(네트워크·PC 번호), S7(랙·슬롯), FINS(TCP/UDP, PLC·PC 노드), OPC UA(엔드포인트, 네임스페이스, 보안 Basic256Sha256, 계정), EtherNet/IP(Logix·SLC, CPU 슬롯).
+- **PLC 주소**: Modbus가 아니면 관제점 탭에 PLC 주소 칸이 생깁니다. 일람표 엑셀을 내려받아 **PLC 주소** 칸을 PLC 프로그램 주소로 고친 뒤 적용합니다. 비워 두면 기본 제안 주소를 씁니다(예: MC는 입력 M1000~, 출력 M3000~, 계측 D1000~, 설정 D3000~). PLC 프로그래머에게 이 제안 주소대로 짜 달라고 하면 일람표 수정 없이 연결됩니다.
+- **필드망은 대상 아님**: CC-Link·CC-Link IE, PROFINET, EtherCAT, DH-485는 PLC와 현장 I/O 사이 통신입니다. 이 프로그램은 PLC를 거쳐 그 장치들을 봅니다. MicroLogix의 DF1, DNP3는 지원하지 않습니다(이더넷 EtherNet/IP·Modbus로 연결).
+- **주의**: 지멘스 S7은 TIA Portal에서 PUT/GET 허용·DB 최적화 해제 필요. 미쓰비시 MC는 RUN 중 쓰기 허용 필요. 오므론 NJ·NX의 FINS는 변수를 메모리 영역에 할당(AT)해야 하고, NX 일부 모델은 FINS 미지원. 오므론 EtherNet/IP 태그 통신은 지원하지 않습니다(FINS·OPC UA 사용).
+- 시험: 가상 PLC가 현지터널을 XGT(2004)·MC(5007)·FINS(9600 TCP·UDP)·S7(1102)·OPC UA(4840)·RTU over TCP(5022)로도 응답합니다. 실제 장비 연결 시에는 현장 시운전에서 점별 입출력을 확인하세요. EtherNet/IP는 시험 서버가 없어 실장비 확인이 필요합니다.
+
 ## 통신·제조사 설정 (코드 수정 없이 다른 제조사 장비 연결)
 
 설비 설정의 각 장치에 있는 **통신·제조사 설정** 버튼(PLC는 1번 칸)에서 제조사 값을 넣습니다.

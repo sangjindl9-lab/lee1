@@ -12,7 +12,7 @@ import copy
 import time
 
 from . import drivers as D
-from .modbus_io import Device
+from .protocols import PROTOCOLS, make_driver
 from .tagmap import MAX_GATES, MAX_VMS, STAGES, fan_ids, load_tags
 
 log = logging.getLogger("tunnel")
@@ -31,8 +31,8 @@ VMS_PRESETS = [
 def default_devices(cfg):
     """설비 설정 기본값. 관리자가 화면에서 바꾸면 DB에 저장된 값이 우선한다."""
     return {
-        "plc": {"host": cfg["host"], "port": cfg["port"], "unit": cfg["unit"], "vendor": "generic",
-                "word_order": "high", "addr_offset": 0, "timeout": 2, "block": 100},
+        "plc": {"protocol": "modbus", "transport": "tcp", "host": cfg["host"], "port": cfg["port"], "unit": cfg["unit"],
+                "vendor": "generic", "word_order": "high", "addr_offset": 0, "timeout": 2, "block": 100},
         "cctv": [
             {"id": "CAM-01", "name": "시점 갱구 외부", "pos": 0.0, "mode": "sim", "url": "", "user": "", "pw": ""},
             {"id": "CAM-02", "name": "터널 내 1", "pos": 0.3, "mode": "sim", "url": "", "user": "", "pw": ""},
@@ -49,11 +49,9 @@ def default_devices(cfg):
     }
 
 
-PLC_OPT_KEYS = ("word_order", "addr_offset", "timeout", "block")
-
-
 def plc_opt(p):
-    return {k: p[k] for k in PLC_OPT_KEYS if k in p}
+    """연결에 영향을 주는 PLC 설정 (제조사 이름 제외)."""
+    return {k: v for k, v in p.items() if k not in ("vendor",)}
 
 
 def cam_url(c, kind="snap"):
@@ -119,8 +117,7 @@ class Tunnel:
         self.key, self.name = cfg["key"], cfg["name"]
         self.devcfg = merge_devices(default_devices(cfg), store.get(cfg["key"] + ".devices"))
         tags, self.custom = load_tags(base, cfg)
-        p = self.devcfg["plc"]
-        self.dev = Device(p["host"], int(p["port"]), int(p["unit"]), tags, plc_opt(p))
+        self.dev = make_driver(self.devcfg["plc"], tags, base)
         self.ext, self.ext_t = {}, {}        # PLC를 거치지 않는 장치(VMS·차단기 직접 연결) 상태
         self.fan_ids = fan_ids(cfg["fans"])
         n = len(self.fan_ids)
@@ -140,15 +137,21 @@ class Tunnel:
         self.store.put(self.key + ".devices", d)
         p = d["plc"]
         self.ext, self.ext_t = {}, {}
-        if (old["host"], int(old["port"]), int(old["unit"]), plc_opt(old)) != (p["host"], int(p["port"]), int(p["unit"]), plc_opt(p)):
-            self.dev = Device(p["host"], int(p["port"]), int(p["unit"]), list(self.dev.tags.values()), plc_opt(p))
+        if plc_opt(old) != plc_opt(p):
+            self.dev.close()
+            self.dev = make_driver(p, load_tags(self.base, self.c)[0], self.base)
             self.comm, self.fails = False, 0
             return True
         return False
 
     def plc_desc(self):
         p = self.devcfg["plc"]
-        return "%s:%s Unit %s" % (p["host"], p["port"], p["unit"])
+        proto = p.get("protocol", "modbus")
+        if proto == "modbus" and str(p.get("transport", "tcp")).endswith("_serial"):
+            return "Modbus %s %s %s Unit %s" % ("RTU" if p["transport"].startswith("rtu") else "ASCII", p.get("serial_port"), p.get("baud"), p["unit"])
+        if proto == "modbus":
+            return "Modbus%s %s:%s Unit %s" % ({"rtu_tcp": " RTU over TCP", "ascii_tcp": " ASCII over TCP"}.get(p.get("transport"), " TCP"), p["host"], p["port"], p["unit"])
+        return "%s %s:%s" % (PROTOCOLS.get(proto, proto), p["host"], p["port"])
 
     def reload_tags(self):
         tags, self.custom = load_tags(self.base, self.c)
