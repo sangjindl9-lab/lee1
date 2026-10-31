@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AI 트레이더</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+<script src="/static/chart.umd.min.js"></script>
+<style>
+  :root{
+    --bg:#f4f5f7;--card:#fff;--ink:#16181d;--sub:#6b7280;--line:#e8eaee;--soft:#f7f8fa;
+    --up:#e5484d;--down:#2f6fde;--acc:#2f5bea;--ok:#1f9d55;--warn:#d97706;
+  }
+  @media (prefers-color-scheme:dark){:root{
+    --bg:#0f1115;--card:#171a21;--ink:#e8eaee;--sub:#9aa1ad;--line:#262a33;--soft:#1d2129;
+    --up:#ff6369;--down:#5b8def;--acc:#6b8cff;--ok:#3ecf8e;--warn:#f5a524;
+  }}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 Pretendard,system-ui,sans-serif;font-variant-numeric:tabular-nums}
+  header{position:sticky;top:0;z-index:5;background:var(--card);border-bottom:1px solid var(--line)}
+  .bar{max-width:1200px;margin:0 auto;padding:12px 16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .bar h1{font-size:17px;margin:0 8px 0 0}
+  .chip{font-size:12px;font-weight:600;padding:3px 9px;border-radius:99px;background:var(--soft);color:var(--sub);border:1px solid var(--line)}
+  .chip.live{background:var(--up);color:#fff;border-color:transparent}
+  .chip.ok{color:var(--ok)} .chip.stop{background:var(--warn);color:#fff;border-color:transparent}
+  .sp{flex:1}
+  .muted{color:var(--sub);font-size:12px}
+  button{font:inherit;font-weight:600;border:1px solid var(--line);background:var(--card);color:var(--ink);padding:7px 12px;border-radius:8px;cursor:pointer}
+  button.primary{background:var(--acc);color:#fff;border-color:transparent}
+  button.danger{background:var(--warn);color:#fff;border-color:transparent}
+  button:disabled{opacity:.5;cursor:default}
+  main{max-width:1200px;margin:0 auto;padding:16px;display:grid;gap:16px;grid-template-columns:repeat(12,1fr)}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;min-width:0}
+  .card h2{font-size:14px;margin:0 0 12px;display:flex;align-items:center;gap:8px}
+  .c3{grid-column:span 3}.c4{grid-column:span 4}.c5{grid-column:span 5}.c7{grid-column:span 7}.c8{grid-column:span 8}.c12{grid-column:span 12}
+  @media (max-width:600px){.bar button{padding:6px 9px;font-size:13px}.bar h1{font-size:15px}}
+  @media (max-width:900px){.c3{grid-column:span 6}.c4,.c5,.c7,.c8{grid-column:span 12}}
+  @media (max-width:520px){.c3{grid-column:span 12}}
+  .kpi .lbl{color:var(--sub);font-size:12px}
+  .kpi .val{font-size:22px;font-weight:700;margin-top:2px}
+  .up{color:var(--up)} .down{color:var(--down)}
+  .alert{grid-column:span 12;background:color-mix(in srgb,var(--warn) 12%,var(--card));border:1px solid color-mix(in srgb,var(--warn) 40%,transparent);color:var(--ink);border-radius:12px;padding:12px 16px;font-size:13px}
+  .alert:empty{display:none}
+  .tbl{width:100%;border-collapse:collapse;font-size:13px}
+  .tbl th{font-weight:500;color:var(--sub);text-align:right;padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+  .tbl td{text-align:right;padding:9px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+  .tbl th:first-child,.tbl td:first-child{text-align:left}
+  .scroll{overflow-x:auto}
+  .tag{font-size:11px;font-weight:600;padding:1px 6px;border-radius:4px;background:var(--acc);color:#fff;margin-left:6px}
+  .tag.me{background:var(--soft);color:var(--sub);border:1px solid var(--line)}
+  .prob{display:grid;grid-template-columns:110px 1fr 44px;align-items:center;gap:10px;padding:5px 0;font-size:13px}
+  .prob .name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .track{position:relative;height:10px;background:var(--soft);border-radius:5px;overflow:visible}
+  .fill{height:100%;border-radius:5px;background:var(--sub);opacity:.5}
+  .fill.buy{background:var(--up);opacity:1}
+  .fill.sell{background:var(--down);opacity:.8}
+  .mark{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--ink);opacity:.35}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--sub);margin-top:10px}
+  .legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:4px;vertical-align:-1px}
+  .log{font:12px/1.6 ui-monospace,Menlo,Consolas,monospace;background:var(--soft);border-radius:8px;padding:10px 12px;max-height:340px;overflow:auto;white-space:pre-wrap;word-break:break-all}
+  .log .e{color:var(--up)} .log .b{color:var(--up);font-weight:600} .log .s{color:var(--down);font-weight:600} .log .w{color:var(--warn)}
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px;margin-bottom:12px}
+  .stats div{background:var(--soft);border-radius:8px;padding:8px 10px}
+  .stats b{display:block;font-size:16px}
+  .stats span{font-size:12px;color:var(--sub)}
+  .kv{display:grid;grid-template-columns:1fr auto;gap:6px 12px;font-size:13px}
+  .kv span:nth-child(odd){color:var(--sub)}
+  .empty{color:var(--sub);font-size:13px;padding:20px 0;text-align:center}
+  .chartbox{position:relative;height:260px}
+</style>
+</head>
+<body>
+<header><div class="bar">
+  <h1>AI 트레이더</h1>
+  <span id="chipMode" class="chip">-</span>
+  <span id="chipEnv" class="chip">-</span>
+  <span id="chipLoop" class="chip">-</span>
+  <span class="sp"></span>
+  <span class="muted" id="updated"></span>
+  <button id="btnTrain" title="최신 시세로 AI 모델을 다시 학습 (1~3분)">AI 재학습</button>
+  <button id="btnDecide" class="primary" title="지금 즉시 AI 판단·매매를 1회 실행">지금 판단 실행</button>
+  <button id="btnStop">긴급정지</button>
+  {% if config.WEB_PASSWORD %}<a href="/logout"><button>로그아웃</button></a>{% endif %}
+</div></header>
+
+<main>
+  <div class="alert" id="alert"></div>
+
+  <div class="card kpi c3"><div class="lbl">총 평가금액</div><div class="val" id="kTotal">-</div><div class="muted" id="kTotalSub"></div></div>
+  <div class="card kpi c3"><div class="lbl">주문가능 예수금</div><div class="val" id="kCash">-</div></div>
+  <div class="card kpi c3"><div class="lbl">봇 보유 평가손익</div><div class="val" id="kBot">-</div><div class="muted" id="kBotSub"></div></div>
+  <div class="card kpi c3"><div class="lbl">오늘 실현손익</div><div class="val" id="kToday">-</div><div class="muted" id="kTodaySub"></div></div>
+
+  <section class="card c7">
+    <h2>보유 종목</h2>
+    <div class="scroll"><table class="tbl" id="tblHold"></table></div>
+  </section>
+
+  <section class="card c5">
+    <h2>AI 상승확률 <span class="muted" id="decideTime"></span></h2>
+    <div id="probs"></div>
+    <div class="legend">
+      <span><i style="background:var(--up)"></i>매수 기준 이상</span>
+      <span><i style="background:var(--down)"></i>매도 기준 미만</span>
+      <span>│ 세로선 = 매수 기준</span>
+    </div>
+  </section>
+
+  <section class="card c8">
+    <h2>백테스트 <span class="muted" id="btPeriod"></span></h2>
+    <div class="stats" id="btStats"></div>
+    <div class="chartbox"><canvas id="btChart"></canvas></div>
+  </section>
+
+  <section class="card c4">
+    <h2>설정</h2>
+    <div class="kv" id="settings"></div>
+    <p class="muted" style="margin:14px 0 0">설정 변경은 <code>.env</code> 파일 수정 후 재시작하세요.</p>
+  </section>
+
+  <section class="card c12">
+    <h2>매매 로그 <span class="muted">최근 80줄 · 최신순</span></h2>
+    <div class="log" id="log"></div>
+  </section>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const won = v => v == null ? '-' : Math.round(v).toLocaleString('ko-KR') + '원';
+const sgnWon = v => v == null ? '-' : (v > 0 ? '+' : '') + Math.round(v).toLocaleString('ko-KR') + '원';
+const pct = v => (v > 0 ? '+' : '') + (v * 100).toFixed(2) + '%';
+const cls = v => v > 0 ? 'up' : v < 0 ? 'down' : '';
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let S = {};
+
+async function load() {
+  const r = await fetch('/api/status');
+  if (r.status === 401) return location.href = '/login';
+  S = await r.json();
+  render();
+}
+
+function render() {
+  $('updated').textContent = S.now.slice(11, 16) + ' 갱신';
+  const m = $('chipMode');
+  m.textContent = S.demo ? '데모 (가짜 데이터)' : S.live ? '실제 주문 ON' : '모의 실행 (주문 안 나감)';
+  m.className = 'chip' + (S.live ? ' live' : S.demo ? ' stop' : '');
+  const bt = $('btnTrain');
+  bt.disabled = S.training; bt.textContent = S.training ? '학습 중…' : 'AI 재학습';
+  if (S.training) setTimeout(load, 5000);
+  if (!S.training && window._wasTraining) loadBacktest();
+  window._wasTraining = S.training;
+  $('chipEnv').textContent = S.env === 'real' ? '실전 서버' : '모의투자 서버';
+  const lp = $('chipLoop');
+  if (S.stopped) { lp.textContent = '긴급정지 중'; lp.className = 'chip stop'; }
+  else if (S.loop) { lp.textContent = '● 자동매매 실행 중'; lp.className = 'chip ok'; }
+  else { lp.textContent = '자동매매 꺼짐'; lp.className = 'chip'; }
+  const bs = $('btnStop');
+  bs.textContent = S.stopped ? '긴급정지 해제' : '긴급정지';
+  bs.className = S.stopped ? '' : 'danger';
+  $('btnDecide').disabled = !!S.engine_error;
+
+  const msgs = [];
+  if (S.demo) msgs.push('데모 모드입니다 — 증권사 키가 없어 가짜 계좌·가짜 시세로 동작합니다. 실제 주문은 나가지 않습니다. 서버 환경변수에 KIS_APP_KEY / KIS_APP_SECRET / KIS_ACCOUNT_NO 를 넣으면 실제 계좌로 전환됩니다.');
+  if (S.train_msg) msgs.push(S.train_msg);
+  if (S.engine_error) msgs.push('매매 엔진을 시작하지 못했습니다: ' + S.engine_error);
+  else if (S.account_error) msgs.push('잔고 조회 오류: ' + S.account_error);
+  if (!S.model && !S.training) msgs.push('학습된 모델이 없습니다. [AI 재학습] 버튼을 눌러주세요.');
+  $('alert').innerHTML = msgs.map(esc).join('<br>');
+
+  // KPI
+  const H = S.holdings || [];
+  const stock = H.reduce((a, h) => a + h.value, 0);
+  const bot = H.filter(h => h.bot);
+  const botPnl = bot.reduce((a, h) => a + h.pnl, 0);
+  const botCost = bot.reduce((a, h) => a + h.avg * h.qty, 0);
+  $('kTotal').textContent = S.cash == null ? '-' : won(stock + S.cash);
+  $('kTotalSub').textContent = S.cash == null ? '' : `주식 ${won(stock)} · 보유 ${H.length}종목`;
+  $('kCash').textContent = won(S.cash);
+  $('kBot').textContent = bot.length ? sgnWon(botPnl) : '-';
+  $('kBot').className = 'val ' + cls(botPnl);
+  $('kBotSub').textContent = bot.length ? `${bot.length}종목 · ${pct(botPnl / botCost)}` : `최대 ${S.settings.max_pos}종목`;
+  $('kToday').textContent = sgnWon(S.today_realized);
+  $('kToday').className = 'val ' + cls(S.today_realized);
+  $('kTodaySub').textContent = `손실 한도 ${won(S.settings.daily_limit)}`;
+
+  // 보유 종목
+  $('tblHold').innerHTML = H.length ? `
+    <tr><th>종목</th><th>수량</th><th>평단가</th><th>현재가</th><th>평가손익</th><th>수익률</th></tr>
+    ${H.map(h => `<tr>
+      <td>${esc(h.name)}<span class="tag ${h.bot ? '' : 'me'}">${h.bot ? '봇' : '직접'}</span>
+        <div class="muted">${h.code}${h.entry ? ' · ' + h.entry + ' 매수' : ''}</div></td>
+      <td>${h.qty.toLocaleString()}</td><td>${won(h.avg)}</td><td>${won(h.price)}</td>
+      <td class="${cls(h.pnl)}">${sgnWon(h.pnl)}</td><td class="${cls(h.ret)}">${pct(h.ret)}</td></tr>`).join('')}`
+    : `<tr><td class="empty">보유 종목이 없습니다.</td></tr>`;
+
+  // 확률
+  const st = S.settings;
+  $('decideTime').textContent = S.last_decide ? S.last_decide + ' 기준' : '';
+  $('probs').innerHTML = (S.probs || []).length ? S.probs.map(p => {
+    const c = p.prob >= st.buy ? 'buy' : p.prob < st.sell ? 'sell' : '';
+    return `<div class="prob"><span class="name">${esc(p.name)}${p.held ? '<span class="tag">보유</span>' : ''}</span>
+      <div class="track"><div class="fill ${c}" style="width:${(p.prob * 100).toFixed(1)}%"></div>
+      <div class="mark" style="left:${st.buy * 100}%"></div></div>
+      <b class="${c === 'buy' ? 'up' : ''}">${(p.prob * 100).toFixed(0)}%</b></div>`;
+  }).join('') : '<div class="empty">아직 판단 기록이 없습니다.<br>평일 15:10에 자동 실행되거나, [지금 판단 실행]을 누르세요.</div>';
+
+  // 설정
+  $('settings').innerHTML = [
+    ['매수 기준 확률', (st.buy * 100) + '% 이상'], ['매도 기준 확률', (st.sell * 100) + '% 미만'],
+    ['보유 기간', st.horizon + '거래일'], ['동시 보유', st.max_pos + '종목'],
+    ['종목당 최대', won(st.max_order)], ['손절 / 익절', pct(st.stop_loss) + ' / ' + pct(st.take_profit)],
+    ['하루 손실 한도', won(st.daily_limit)], ['모델 학습 데이터', S.model ? '~' + S.model.trained_until : '없음'],
+  ].map(([k, v]) => `<span>${k}</span><b>${v}</b>`).join('');
+
+  // 로그
+  $('log').innerHTML = (S.log || []).map(l => {
+    const e = esc(l);
+    if (/ERROR|실패|오류/.test(l)) return `<div class="e">${e}</div>`;
+    if (/매수/.test(l) && /\[/.test(l)) return `<div class="b">${e}</div>`;
+    if (/매도/.test(l) && /\[/.test(l)) return `<div class="s">${e}</div>`;
+    if (/WARNING|정지|한도/.test(l)) return `<div class="w">${e}</div>`;
+    return `<div>${e}</div>`;
+  }).join('') || '<div class="muted">로그가 없습니다.</div>';
+}
+
+let chart;
+async function loadBacktest() {
+  const b = await (await fetch('/api/backtest')).json();
+  if (!b) { $('btStats').innerHTML = '<div style="grid-column:1/-1"><span>python main.py train 을 실행하면 결과가 표시됩니다.</span></div>'; return; }
+  $('btPeriod').textContent = b.period + ' (학습에 안 쓴 기간)';
+  const aucWarn = b.auc != null && b.auc < 0.53;
+  $('btStats').innerHTML = [
+    ['전략 수익률', (b.total > 0 ? '+' : '') + b.total + '%', cls(b.total)],
+    ['단순 보유', (b.bench_total > 0 ? '+' : '') + b.bench_total + '%', cls(b.bench_total)],
+    ['최대낙폭', b.mdd + '%', 'down'],
+    ['거래 / 승률', b.trades + '회 / ' + (b.win_rate ?? '-') + '%', ''],
+    ['예측력 AUC', (b.auc ?? '-') + (aucWarn ? ' ⚠' : ''), aucWarn ? 'up' : ''],
+  ].map(([k, v, c]) => `<div><span>${k}</span><b class="${c}">${v}</b></div>`).join('');
+  const css = getComputedStyle(document.documentElement);
+  const col = n => css.getPropertyValue(n).trim();
+  chart?.destroy();
+  chart = new Chart($('btChart'), {
+    type: 'line',
+    data: { labels: b.dates, datasets: [
+      { label: 'AI 전략', data: b.equity, borderColor: col('--acc'), borderWidth: 2, pointRadius: 0, tension: .1 },
+      { label: '단순 보유', data: b.bench, borderColor: col('--sub'), borderWidth: 1.5, borderDash: [4, 3], pointRadius: 0, tension: .1 },
+    ]},
+    options: {
+      maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { labels: { color: col('--sub'), boxWidth: 12 } },
+        tooltip: { callbacks: { label: c => `${c.dataset.label}: ${(c.parsed.y - 100).toFixed(2)}%` } } },
+      scales: {
+        x: { ticks: { color: col('--sub'), maxTicksLimit: 6 }, grid: { display: false } },
+        y: { ticks: { color: col('--sub'), callback: v => (v - 100).toFixed(0) + '%' }, grid: { color: col('--line') } },
+      },
+    },
+  });
+}
+
+$('btnStop').onclick = async () => {
+  if (!S.stopped && !confirm('긴급정지하면 신규 매수·매도가 모두 멈춥니다. 계속할까요?')) return;
+  await fetch('/api/stop', { method: 'POST' }); load();
+};
+$('btnTrain').onclick = async () => {
+  if (!confirm('최신 시세로 AI 모델을 다시 학습할까요? (1~3분 소요)')) return;
+  const r = await (await fetch('/api/retrain', { method: 'POST' })).json();
+  if (!r.ok) alert(r.error);
+  load();
+};
+$('btnDecide').onclick = async () => {
+  const msg = S.live ? '실제 주문이 나갈 수 있습니다. 지금 AI 판단을 실행할까요?' : '지금 AI 판단을 실행할까요? (모의 실행)';
+  if (!confirm(msg)) return;
+  const b = $('btnDecide'); b.disabled = true; b.textContent = '실행 중…';
+  const r = await (await fetch('/api/decide', { method: 'POST' })).json();
+  if (!r.ok) alert(r.error);
+  setTimeout(() => { b.textContent = '지금 판단 실행'; load(); }, 8000);
+};
+
+load(); loadBacktest();
+setInterval(load, 30000);
+</script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+.env
+.kis_token.json
+state.json
+trader.log
+data/
+model.joblib
+__pycache__/
+STOP
+backtest.json
