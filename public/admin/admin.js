@@ -175,7 +175,7 @@ document.addEventListener('click', async (e) => {
     .concat(sp.expand ? [`확장 ${esc(sym(sp.expand.sym))} 릴 ${sp.expand.reels.map((x) => x + 1).join('·')}`] : []).join('<br>') || '당첨 없음';
   const R = r.result, F = R.feature;
   modal(`<h3>회차 #${r.id} · ${esc(r.game)}</h3>
-    <p class="note">${esc(r.created_at)} · 플레이어 ${esc(r.username)} · RTP 버전 ${esc(r.variantLabel || '—')} · 베팅 ${fmt(r.bet)} · 당첨 ${fmt(r.win)} (${(R.total).toFixed(2)}배)${R.capped ? ` · <b class="neg">한도 적용: 원래 ${fmt(R.capped.raw)} → ${fmt(R.capped.cap)}</b>` : ''} · 잔액 ${fmt(r.balance_after)}</p>
+    <p class="note">${esc(r.created_at)} · 플레이어 ${esc(r.username)} · RTP ${esc(r.variantLabel || '—')} · 베팅 ${fmt(r.bet)} · 당첨 ${fmt(r.win)} (${(R.total).toFixed(2)}배)${R.capped ? ` · <b class="neg">한도 적용: 원래 ${fmt(R.capped.raw)} → ${fmt(R.capped.cap)}</b>` : ''} · 잔액 ${fmt(r.balance_after)}</p>
     <h3>기본 스핀 · 릴 정지 위치 ${R.base.stops ? R.base.stops.join(', ') : ''}</h3>${gridHTML(R.base)}<p class="note">${winsList(R.base)}</p>
     ${F ? `<h3>보너스 · ${F.type === 'expandingFreeSpins' ? `확장 무료 회전 (${esc(sym(F.expandSym))}) ${F.spins.length}회 · 보너스 ${F.win.toFixed(2)}배` : esc(F.type)}</h3>
       <div class="spins">${F.spins.map((sp, i) => `<div class="sp"><b>${i + 1}회</b> · ${(sp.win).toFixed(2)}배${sp.retrigger ? ' · 재트리거' : ''}${gridHTML(sp)}<div class="note" style="margin:0">${winsList(sp)}</div></div>`).join('')}</div>` : ''}`);
@@ -190,16 +190,16 @@ async function loadGames() {
       <header><h4>${esc(g.name)}</h4>
         <label class="switch"><input type="checkbox" data-k="enabled" ${g.enabled ? 'checked' : ''}> ${g.enabled ? '공개 중' : '숨김'}</label></header>
       <dl><dt>구성</dt><dd>${esc(g.layout)} · 변동성 ${esc(g.volatility)}</dd>
-        <dt>현재 RTP</dt><dd>${pct(g.theoretical)}</dd>
+        <dt>설정 RTP</dt><dd>${pct(g.theoretical)}</dd>
         <dt>누적 실제 RTP</dt><dd>${rtpChip(g.actual, g.theoretical, g.rounds)} · ${g.rounds.toLocaleString()}회차</dd>
         <dt>누적 GGR</dt><dd class="${sign(g.ggr)}">${fmt(g.ggr)}</dd></dl>
       <div class="fields">
         <div class="full"><label for="bt-${id}">베팅 단계 (원, 쉼표로 구분 · 라인 수의 배수)</label><input id="bt-${id}" data-k="bets" value="${s.bets.join(', ')}"></div>
         <div><label for="db-${id}">기본 베팅</label><select id="db-${id}" data-k="defaultBet">${s.bets.map((b) => `<option value="${b}" ${b === s.defaultBet ? 'selected' : ''}>${fmt(b)}</option>`).join('')}</select></div>
-        <div><label for="rv-${id}">RTP 버전</label><select id="rv-${id}" data-k="variant">${g.variants.map((v) => `<option value="${esc(v.id)}" ${v.id === s.variant ? 'selected' : ''}>${esc(v.label)}</option>`).join('')}</select></div>
+        <div><label for="rv-${id}">RTP (%)</label><input id="rv-${id}" data-k="rtp" type="number" min="1" max="200" step="0.1" value="${s.rtp}"></div>
         <div><label for="mw-${id}">회차당 최대 당첨 (원, 0=없음)</label><input id="mw-${id}" data-k="maxWin" type="number" min="0" step="1000" value="${s.maxWin}"></div>
         <div><label for="mx-${id}">최대 당첨 배수 (베팅의 N배, 0=없음)</label><input id="mx-${id}" data-k="maxWinX" type="number" min="0" step="100" value="${s.maxWinX}"></div>
-        ${g.features.length ? `<div class="full"><label class="switch"><input type="checkbox" data-k="featuresOn" ${s.featuresOn ? 'checked' : ''}> 보너스 기능 사용 (끄면 RTP가 크게 낮아집니다)</label></div>` : ''}
+        ${g.features.length ? `<div class="full"><label class="switch"><input type="checkbox" data-k="featuresOn" ${s.featuresOn ? 'checked' : ''}> 보너스 기능 사용 (켜고 끄도 설정 RTP는 유지됩니다)</label></div>` : ''}
         <div class="full"><label for="mt-${id}">점검 안내 (입력하면 점검 모드, 비우면 해제)</label><input id="mt-${id}" data-k="maintenance" maxlength="120" value="${esc(s.maintenance)}" placeholder="예: 오후 3시까지 점검"></div>
       </div>
       <div class="act"><button class="btn pri" data-save>저장</button><button class="btn" data-reset>기본값으로</button></div></article>`;
@@ -212,7 +212,7 @@ $('gcards').addEventListener('click', async (e) => {
     if (e.target.matches('[data-k="enabled"]')) { await api('/games/' + id, { method: 'PATCH', body: { enabled: e.target.checked } }); toast(e.target.checked ? '게임 공개됨' : '게임 숨김'); }
     else if (e.target.matches('[data-reset]')) { await api(`/games/${id}/reset`, { body: {} }); toast('기본값으로 되돌림'); }
     else if (e.target.matches('[data-save]')) {
-      const body = { bets: q('bets').value, defaultBet: +q('defaultBet').value, variant: q('variant').value, maxWin: +q('maxWin').value || 0, maxWinX: +q('maxWinX').value || 0, maintenance: q('maintenance').value };
+      const body = { bets: q('bets').value, defaultBet: +q('defaultBet').value, rtp: +q('rtp').value, maxWin: +q('maxWin').value || 0, maxWinX: +q('maxWinX').value || 0, maintenance: q('maintenance').value };
       if (q('featuresOn')) body.featuresOn = q('featuresOn').checked;
       await api('/games/' + id, { method: 'PATCH', body }); toast('게임 설정 저장됨');
     } else return;

@@ -5,7 +5,7 @@ const express = require('express');
 const { db, tx } = require('./db');
 const auth = require('./auth');
 const core = require('./engine/core');
-const { games, ids, variant, variantList, clientConfig } = require('./games');
+const { games, ids, clientConfig, baseGame, payScale, scaleRound } = require('./games');
 
 // Money is stored and shown in whole KRW (원).
 const PORT = process.env.PORT || 3000;
@@ -41,7 +41,7 @@ if (!db.prepare('SELECT 1 FROM admins LIMIT 1').get()) {
 }
 function defaults(id) {
   const g = games[id];
-  return { bets: g.bets.slice(), defaultBet: g.defaultBet, maxWin: 0, maxWinX: 5000, variant: g.defaultVariant, featuresOn: true, maintenance: '' };
+  return { bets: g.bets.slice(), defaultBet: g.defaultBet, maxWin: 0, maxWinX: 5000, rtp: Math.round(baseGame(id).rtp * 1000) / 10, featuresOn: true, maintenance: '' };
 }
 ids.forEach((id, i) => {
   db.prepare('INSERT OR IGNORE INTO games(id,enabled,sort,settings) VALUES(?,1,?,?)').run(id, i, JSON.stringify(defaults(id)));
@@ -86,7 +86,7 @@ app.get('/api/me', player, (req, res) => res.json({ username: req.player.usernam
 function playerBets(row, p) { return row.s.bets.filter((b) => !p.max_bet || b <= p.max_bet); }
 app.get('/api/games', player, (req, res) => {
   const rows = db.prepare('SELECT id FROM games WHERE enabled=1 ORDER BY sort').all().map((r) => gameRow(r.id)).filter(Boolean);
-  res.json(rows.map((r) => { const g = games[r.id]; return { id: r.id, name: g.name, reels: g.reels, rows: g.rows, volatility: g.volatility, rtp: variant(r.id, r.s.variant).rtp, maintenance: r.s.maintenance || '' }; }));
+  res.json(rows.map((r) => { const g = games[r.id]; return { id: r.id, name: g.name, reels: g.reels, rows: g.rows, volatility: g.volatility, rtp: r.s.rtp / 100, maintenance: r.s.maintenance || '' }; }));
 });
 app.get('/api/games/:id', player, (req, res) => {
   const row = gameRow(req.params.id);
@@ -114,14 +114,14 @@ app.post('/api/games/:id/spin', player, (req, res) => {
   if (row.s.maintenance) return bad(res, 503, `점검 중: ${row.s.maintenance}`);
   const bet = won(req.body && req.body.bet);
   if (!playerBets(row, req.player).includes(bet)) return bad(res, 400, '허용되지 않은 베팅 금액입니다.');
-  const g = variant(row.id, row.s.variant);
+  const g = baseGame(row.id), k = payScale(row.id, row.s);
   try {
     const out = tx(() => {
       const p = db.prepare('SELECT * FROM players WHERE id=?').get(req.player.id);
       if (p.status !== 'active') throw err(403, '정지된 계정입니다.');
       if (p.balance < bet) throw err(402, '잔액이 부족합니다.');
       if (p.daily_loss && lossToday(p.id) + bet > p.daily_loss) throw err(403, `오늘 손실 한도(${p.daily_loss.toLocaleString('ko-KR')}원)에 도달했습니다.`);
-      const round = core.play(g, rng, { features: row.s.featuresOn });
+      const round = scaleRound(core.play(g, rng, { features: row.s.featuresOn }), k);
       const raw = Math.floor(round.total * bet);
       const caps = [row.s.maxWin, row.s.maxWinX ? row.s.maxWinX * bet : 0, p.max_win].filter((c) => c > 0);
       const cap = caps.length ? Math.min(...caps) : Infinity;
@@ -130,7 +130,7 @@ app.post('/api/games/:id/spin', player, (req, res) => {
       const after = p.balance - bet + win;
       db.prepare('UPDATE players SET balance=? WHERE id=?').run(after, p.id);
       const rid = db.prepare('INSERT INTO rounds(player_id,game_id,bet,win,raw_win,balance_after,feature,variant,result) VALUES(?,?,?,?,?,?,?,?,?)')
-        .run(p.id, row.id, bet, win, raw, after, round.feature ? round.feature.type : null, row.s.variant, JSON.stringify(round)).lastInsertRowid;
+        .run(p.id, row.id, bet, win, raw, after, round.feature ? round.feature.type : null, `${row.s.rtp}%`, JSON.stringify(round)).lastInsertRowid;
       db.prepare("INSERT INTO tx(player_id,type,amount,balance_after,round_id) VALUES(?,'bet',?,?,?)").run(p.id, -bet, p.balance - bet, rid);
       if (win > 0) db.prepare("INSERT INTO tx(player_id,type,amount,balance_after,round_id) VALUES(?,'win',?,?,?)").run(p.id, win, after, rid);
       return { roundId: Number(rid), round: publicRound(round), win, rawWin: raw, capped: win < raw, balance: after };
@@ -185,7 +185,7 @@ A.get('/stats', (req, res) => {
   const totals = db.prepare("SELECT COUNT(*) n, COALESCE(SUM(balance),0) bal, SUM(status='active') active FROM players").get();
   res.json({
     totals: { rounds: t.rounds, bet: t.bet, win: t.win, ggr: t.bet - t.win, rtp: t.bet ? t.win / t.bet : null, players: t.players, features: t.features, capped: t.capped || 0, capSaved: t.capSaved },
-    byGame: byGame.map((r) => { const row = gameRow(r.game_id); return { id: r.game_id, name: gname(r.game_id), rounds: r.rounds, bet: r.bet, win: r.win, ggr: r.bet - r.win, rtp: r.bet ? r.win / r.bet : null, theoretical: row ? variant(r.game_id, row.s.variant).rtp : null, maxWin: r.maxwin, features: r.features, capped: r.capped }; }),
+    byGame: byGame.map((r) => { const row = gameRow(r.game_id); return { id: r.game_id, name: gname(r.game_id), rounds: r.rounds, bet: r.bet, win: r.win, ggr: r.bet - r.win, rtp: r.bet ? r.win / r.bet : null, theoretical: row ? row.s.rtp / 100 : null, maxWin: r.maxwin, features: r.features, capped: r.capped }; }),
     daily: daily.map((d) => ({ ...d, ggr: d.bet - d.win })),
     playersTotal: totals.n, playersActive: totals.active || 0, liability: totals.bal,
   });
@@ -272,7 +272,7 @@ A.get('/rounds/:id', (req, res) => {
   if (!r) return bad(res, 404, '회차를 찾을 수 없습니다.');
   const g = games[r.game_id];
   res.json({ ...r, result: JSON.parse(r.result), symbols: g ? g.symbols.map((s) => ({ id: s.id, name: s.name })) : [], lines: g ? g.lines : [], game: gname(r.game_id),
-    variantLabel: g && r.variant && g.variants[r.variant] ? g.variants[r.variant].label : '' });
+    variantLabel: r.variant ? (g && g.variants[r.variant] ? g.variants[r.variant].label : r.variant) : '' });
 });
 
 A.get('/games', (req, res) => {
@@ -280,8 +280,8 @@ A.get('/games', (req, res) => {
   res.json(db.prepare('SELECT id FROM games ORDER BY sort').all().map((x) => gameRow(x.id)).filter(Boolean).map((r) => {
     const g = games[r.id], l = life.find((x) => x.game_id === r.id) || { rounds: 0, bet: 0, win: 0 };
     return { id: r.id, name: g.name, layout: `${g.reels}×${g.rows} · ${g.lines.length}라인`, volatility: g.volatility,
-      features: (g.features || []).map((f) => f.type), enabled: !!r.enabled, settings: r.s, variants: variantList(r.id), defaultBets: g.bets,
-      theoretical: variant(r.id, r.s.variant).rtp, rounds: l.rounds, actual: l.bet ? l.win / l.bet : null, ggr: l.bet - l.win };
+      features: (g.features || []).map((f) => f.type), enabled: !!r.enabled, settings: r.s, defaultBets: g.bets,
+      theoretical: r.s.rtp / 100, rounds: l.rounds, actual: l.bet ? l.win / l.bet : null, ggr: l.bet - l.win };
   }));
 });
 A.patch('/games/:id', (req, res) => {
@@ -299,7 +299,11 @@ A.patch('/games/:id', (req, res) => {
   if (!s.bets.includes(s.defaultBet)) s.defaultBet = s.bets[0];
   if (b.maxWin !== undefined) { if (won(b.maxWin) < 0) return bad(res, 400, '최대 당첨 금액은 0원 이상이어야 합니다.'); s.maxWin = won(b.maxWin); }
   if (b.maxWinX !== undefined) { if (won(b.maxWinX) < 0) return bad(res, 400, '최대 당첨 배수는 0 이상이어야 합니다.'); s.maxWinX = won(b.maxWinX); }
-  if (b.variant !== undefined) { if (!g.variants[b.variant]) return bad(res, 400, '없는 RTP 버전입니다.'); s.variant = b.variant; }
+  if (b.rtp !== undefined) {
+    const v = Math.round(Number(b.rtp) * 10) / 10;
+    if (!(v >= 1 && v <= 200)) return bad(res, 400, 'RTP는 1~200% 사이로 입력하세요.');
+    s.rtp = v;
+  }
   if (b.featuresOn !== undefined) s.featuresOn = !!b.featuresOn;
   if (b.maintenance !== undefined) s.maintenance = String(b.maintenance).slice(0, 120);
   const enabled = b.enabled === undefined ? row.enabled : b.enabled ? 1 : 0;

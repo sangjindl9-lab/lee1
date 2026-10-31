@@ -29,7 +29,7 @@ module.exports = {
   // RTP versions the operator can choose between (symbol counts per reel; strips built from these)
   defaultVariant: 'r967',
   variants: {
-    r967: { label: '96.7%', rtp: 0.967, reelSets: { base: [
+    r967: { label: '96.7%', rtp: 0.967, baseRtp: 0.636, reelSets: { base: [
       [1, 1, 2, 3, 3, 8, 8, 12, 12, 12], [2, 1, 2, 3, 3, 8, 8, 11, 11, 11], [2, 1, 2, 3, 3, 8, 8, 11, 11, 11],
       [2, 1, 2, 3, 3, 8, 8, 11, 11, 11], [2, 1, 2, 3, 3, 8, 8, 11, 11, 12]] } },
     r937: { label: '93.7%', rtp: 0.937, reelSets: { base: [
