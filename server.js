@@ -259,7 +259,7 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
   admin.get('/customers/:id', wrap(async (req, res) => {
     const c = shapeCustomer(await loadCustomer(req.params.id));
     const lics = (await q(`select l.*, c.name as customer_name, c.biz_reg_no from license l join customer c on c.id = l.customer_id where l.customer_id = $1 order by l.issued_at desc`, [c.id])).rows.map(shapeLicense);
-    res.json({ ...c, licenses: lics, server: shapeJob(await loadJob(c.id)) });
+    res.json({ ...c, licenses: lics, server: shapeJob(await loadJob(c.id), { server_url: c.serverUrl }) });
   }));
 
   admin.put('/customers/:id', wrap(async (req, res) => {
@@ -488,9 +488,10 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
     res.json({ ok: true });
   }));
 
-  const shapeJob = (j) => j && ({
+  // 개설이 끝난 뒤에는 고객 정보의 'ERP 접속 주소'(예: 새 도메인으로 바꾼 주소)를 우선 보여 준다
+  const shapeJob = (j, c) => j && ({
     status: j.status, step: j.step, error: j.error, createdAt: j.created_at, finishedAt: j.finished_at,
-    url: j.data?.customDomain ? `https://${j.data.customDomain}` : j.data?.domain ? `https://${j.data.domain}` : null, adminId: j.input.adminId, companyCode: j.input.companyCode,
+    url: j.status === 'DONE' && c?.server_url ? String(c.server_url).replace(/\/+$/, '') : j.data?.customDomain ? `https://${j.data.customDomain}` : j.data?.domain ? `https://${j.data.domain}` : null, adminId: j.input.adminId, companyCode: j.input.companyCode,
     projectId: j.data?.projectId ?? null, projectName: j.input?.projectName ?? null,
     steps: R.STEPS.map(([key, label]) => ({ key, label })),
   });
@@ -547,7 +548,7 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
 
   admin.get('/customers/:id/server', wrap(async (req, res) => {
     const c = await loadCustomer(req.params.id);
-    res.json(shapeJob(await loadJob(c.id)));
+    res.json(shapeJob(await loadJob(c.id), c));
   }));
 
   admin.post('/customers/:id/server', wrap(async (req, res) => {
@@ -594,7 +595,7 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
   admin.post('/customers/:id/access', wrap(async (req, res) => {
     const c = await loadCustomer(req.params.id);
     const j = await loadJob(c.id);
-    const base = j?.status === 'DONE' ? `https://${j.data.domain}` : String(c.server_url ?? '').trim();
+    const base = String(c.server_url ?? '').trim() || (j?.status === 'DONE' ? `https://${j.data.domain}` : '');
     if (!/^https?:\/\//.test(base)) throw bad('고객 ERP 접속 주소가 없습니다. 서버를 개설하거나 고객 정보에 접속 주소를 적어 주세요');
     const now = Date.now();
     const ticket = L.sign({ kind: 'vendor-access', bizRegNo: c.biz_reg_no, vendor: '이음소프트', iat: now, exp: now + 2 * 60_000, nonce: crypto.randomBytes(12).toString('hex') }, privateKey);
@@ -611,7 +612,7 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
     audit(req, 'DELIVERY_VIEW', `납품서 열람 ${c.name}`);
     const cur = shapeCustomer(c).current;
     res.json({
-      name: c.name, bizRegNo: c.biz_reg_no, url: `https://${j.data.domain}`, adminId: j.input.adminId, tempPassword: sec.adminPassword,
+      name: c.name, bizRegNo: c.biz_reg_no, url: shapeJob(j, c).url, adminId: j.input.adminId, tempPassword: sec.adminPassword,
       companyCode: j.input.companyCode, license: cur, contact: { name: c.contact_name, phone: c.phone, email: c.email }, issuedOn: L.kstToday(), installing: j.status !== 'DONE',
     });
   }));

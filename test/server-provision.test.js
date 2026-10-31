@@ -205,6 +205,12 @@ test('서버 개설: 실패하면 그 단계부터 다시 이어서, 끝나면 �
   assert.ok(!row.secrets.includes(d.tempPassword));
   // 두 번 개설할 수 없다
   assert.equal((await call(`/api/admin/customers/${id}/server`, { method: 'POST', json: { adminId: 'admin', companyCode: 'HN' } })).status, 400);
+  // 새 도메인으로 바꾸면 고객 화면·납품서의 접속 주소도 바뀐다
+  const cur = (await call(`/api/admin/customers/${id}`)).body;
+  const up = await call(`/api/admin/customers/${id}`, { method: 'PUT', json: { name: cur.name, bizRegNo: cur.bizRegNo ?? cur.biz_reg_no, ceoName: cur.ceoName, contactName: cur.contactName, phone: cur.phone, email: cur.email, deployment: cur.deployment, serverUrl: 'https://hn.ieumerp.kr', memo: cur.memo } });
+  assert.equal(up.status, 200, JSON.stringify(up.body));
+  assert.equal((await call(`/api/admin/customers/${id}`)).body.server.url, 'https://hn.ieumerp.kr');
+  assert.equal((await call(`/api/admin/customers/${id}/delivery`)).body.url, 'https://hn.ieumerp.kr');
 });
 
 test('설치형 고객은 서버 개설 대상이 아니다', async () => {
