@@ -22,7 +22,7 @@ const env = (k, d) => (process.env[k] ?? d);
 const PORT = Number(env('PORT', 8080));
 const PROD = env('NODE_ENV') === 'production';
 
-function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpoint, railwaySleep, railwayWaitMs, githubEndpoint, githubTokenEnv = env('GITHUB_TOKEN'), publicUrl = env('PUBLIC_URL', 'https://ss-license-production.up.railway.app') }) {
+function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpoint, railwaySleep, railwayWaitMs, githubEndpoint, githubTokenEnv = env('GITHUB_TOKEN'), publicUrl = env('PUBLIC_URL', 'https://admin.ieumerp.kr') }) {
   const publicKey = crypto.createPublicKey(privateKey);
   const publicPem = L.publicKeyPem(privateKey);
   // ── 관리자 비밀번호 ──
