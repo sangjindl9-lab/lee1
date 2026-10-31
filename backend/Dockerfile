@@ -1,4 +1,4 @@
-# api / recorder / worker 공용 이미지.
+# api / recorder / worker / analytics 공용 이미지.
 # 검증 환경과 같은 Ubuntu 24.04 패키지(Python 3.12, FFmpeg 6.1.1)를 사용한다.
 # 빌드 컨텍스트: 저장소 루트 (docker compose 가 지정)
 FROM ubuntu:24.04
@@ -16,6 +16,13 @@ RUN apt-get update \
 RUN python3.12 -m venv /opt/venv
 COPY backend/requirements.txt /app/backend/requirements.txt
 RUN /opt/venv/bin/pip install --no-cache-dir -r /app/backend/requirements.txt
+
+# 사람 검출 모델: YOLOX-s (OpenCV Zoo 배포본, Apache-2.0). 해시가 다르면 빌드 실패.
+ARG YOLOX_URL=https://media.githubusercontent.com/media/opencv/opencv_zoo/main/models/object_detection_yolox/object_detection_yolox_2022nov.onnx
+ARG YOLOX_SHA256=c5c2d13e59ae883e6af3b45daea64af4833a4951c92d116ec270d9ddbe998063
+RUN mkdir -p /app/models \
+ && curl -fsSL -o /app/models/yolox_s.onnx "$YOLOX_URL" \
+ && echo "$YOLOX_SHA256  /app/models/yolox_s.onnx" | sha256sum -c -
 
 COPY backend/ /app/backend/
 COPY deploy/mediamtx/mediamtx.base.yml /app/deploy/mediamtx/mediamtx.base.yml

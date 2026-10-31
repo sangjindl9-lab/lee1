@@ -67,6 +67,14 @@ class Settings(BaseSettings):
     export_max_minutes: int = 240
     watermark_font: str = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 
+    # 지능형 분석(analytics 서비스)
+    analytics_model_path: str = "/app/models/yolox_s.onnx"
+    analytics_fps: float = 2.0            # 분석 프레임 수(초당)
+    analytics_detect_interval: float = 1.0  # 사람 검출 간격(초) — CPU 부하의 대부분
+    analytics_width: int = 640
+    analytics_threads: int = 0            # OpenCV 스레드 수(0=자동)
+    analytics_max_cameras: int = 16
+
     ffmpeg_path: str = "ffmpeg"
     ffprobe_path: str = "ffprobe"
     log_level: str = "INFO"
@@ -75,6 +83,10 @@ class Settings(BaseSettings):
     def incoming_dir(self) -> Path:
         # 같은 파일시스템이어야 rename 이 원자적이다
         return self.recordings_dir / ".incoming"
+
+    @property
+    def analytics_dir(self) -> Path:
+        return self.recordings_dir / ".analytics"
 
     def sqlalchemy_url(self) -> str:
         url = self.database_url

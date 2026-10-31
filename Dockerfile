@@ -22,6 +22,18 @@ RUN curl -fsSL "https://github.com/bluenviron/mediamtx/releases/download/${MEDIA
 RUN python3.12 -m venv /opt/venv
 COPY backend/requirements.txt /app/backend/requirements.txt
 RUN /opt/venv/bin/pip install --no-cache-dir -r /app/backend/requirements.txt
+# 사람 검출 모델: YOLOX-s (OpenCV Zoo 배포본, Apache-2.0). 해시가 다르면 빌드 실패.
+ARG YOLOX_URL=https://media.githubusercontent.com/media/opencv/opencv_zoo/main/models/object_detection_yolox/object_detection_yolox_2022nov.onnx
+ARG YOLOX_SHA256=c5c2d13e59ae883e6af3b45daea64af4833a4951c92d116ec270d9ddbe998063
+RUN mkdir -p /app/models \
+ && curl -fsSL -o /app/models/yolox_s.onnx "$YOLOX_URL" \
+ && echo "$YOLOX_SHA256  /app/models/yolox_s.onnx" | sha256sum -c -
+# 분석 시연용 합성 장면 + OpenCV 공개 샘플 보행자 영상(vtest.avi)
+ARG VTEST_URL=https://raw.githubusercontent.com/opencv/opencv/4.x/samples/data/vtest.avi
+ARG VTEST_SHA256=45cddc9490be69345cbdab64ca583be65987e864ca408038e648db99e10516cf
+COPY tools/test-camera/make_scenes.py /app/tools/test-camera/make_scenes.py
+RUN curl -fsSL -o /tmp/vtest.avi "$VTEST_URL" && echo "$VTEST_SHA256  /tmp/vtest.avi" | sha256sum -c - \
+ && /opt/venv/bin/python /app/tools/test-camera/make_scenes.py --out /opt/scenes --vtest /tmp/vtest.avi && rm /tmp/vtest.avi
 COPY backend/ /app/backend/
 COPY deploy/ /app/deploy/
 COPY tools/test-camera/ /app/tools/test-camera/

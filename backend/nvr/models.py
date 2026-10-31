@@ -356,3 +356,23 @@ class ApiKey(Base):
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[dt.datetime] = mapped_column(TS, nullable=False, server_default=func.now())
     last_used_at: Mapped[dt.datetime | None] = mapped_column(TS)
+
+
+# ───────────────────────── 지능형 분석 ─────────────────────────
+class AnalyticsRule(Base):
+    """카메라별 분석 규칙. 좌표는 영상 크기에 대한 비율(0~1)."""
+    __tablename__ = "analytics_rules"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    camera_id: Mapped[int] = mapped_column(ForeignKey("cameras.id", ondelete="CASCADE"), nullable=False, index=True)
+    type: Mapped[str] = mapped_column(String(20), nullable=False)
+    # fire / smoke / no_helmet / water_level / intrusion / loitering / crowd / fall / running / stationary
+    name: Mapped[str] = mapped_column(String(100), nullable=False, default="")
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    zone: Mapped[list[Any]] = mapped_column(JSONB, nullable=False, default=list)  # [[x,y], ...] 비면 화면 전체
+    line: Mapped[list[Any]] = mapped_column(JSONB, nullable=False, default=list)  # 수위 눈금선 [[x,y](바닥), [x,y](위)]
+    params: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    severity: Mapped[str] = mapped_column(String(10), nullable=False, default="warning")
+    cooldown_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=60)
+    ref_requested_at: Mapped[dt.datetime | None] = mapped_column(TS)
+    ref_set_at: Mapped[dt.datetime | None] = mapped_column(TS)
+    updated_at: Mapped[dt.datetime] = mapped_column(TS, nullable=False, server_default=func.now())

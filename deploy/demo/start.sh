@@ -1,5 +1,5 @@
 #!/bin/bash
-# [클라우드 데모 전용] 한 컨테이너에서 api·recorder·worker·mediamtx·caddy·합성 시험 카메라를 함께 실행.
+# [클라우드 데모 전용] 한 컨테이너에서 api·recorder·worker·analytics·mediamtx·caddy·합성 시험 카메라를 함께 실행.
 # 운영(현장 서버)은 docker-compose.yml 을 사용하세요.
 set -euo pipefail
 DATA=${NVR_DATA_DIR:-/data}
@@ -20,6 +20,7 @@ export NVR_LIVE_MODE=hls NVR_TRUSTED_PROXIES=127.0.0.1/32
 # 여러 현장 통합 시연: 자기 자신에게 현장 상태를 보고
 export NVR_CENTRAL_URL=http://127.0.0.1:8000 NVR_CENTRAL_TOKEN_FILE="$DATA/secrets/central.token"
 export PYTHONPATH=/app/backend
+export NVR_ANALYTICS_MODEL_PATH=/app/models/yolox_s.onnx NVR_ANALYTICS_THREADS=${NVR_ANALYTICS_THREADS:-2} NVR_DEMO_SCENES=/opt/scenes
 cd /app/backend
 
 # 합성 카메라는 루프백이 아닌 컨테이너 자체 주소로 연결(루프백은 보안상 항상 차단)
@@ -35,13 +36,15 @@ python -c "from nvr.worker import mediamtx_config as m; m.sync()"
 PIDS=()
 run() { "$@" & PIDS+=($!); }
 run /usr/bin/python3.12 /app/tools/test-camera/rtsp_test_camera.py --bind "$IP" --port 18554 --user cam \
-    --password-file "$DATA/secrets/cam.pass" --main-kbps "${NVR_DEMO_CAM_KBPS:-450}" --audio aac
+    --password-file "$DATA/secrets/cam.pass" --main-kbps "${NVR_DEMO_CAM_KBPS:-450}" --audio aac \
+    --scene fire=/opt/scenes/fire:10 --scene water=/opt/scenes/water:5 --scene people=/opt/scenes/people:10
 run /usr/bin/python3.12 /app/tools/test-camera/onvif_simulator.py --bind "$IP" --port 18080 --user cam \
     --password-file "$DATA/secrets/cam.pass" --rtsp-port 18554 --motion-period 60 --motion-length 8 --discovery
 run /usr/local/bin/mediamtx /mediamtx-config/mediamtx.yml
 run /opt/venv/bin/uvicorn nvr.api.main:app --host 127.0.0.1 --port 8000 --no-server-header
 run /opt/venv/bin/python -m nvr.recorder.main
 run /opt/venv/bin/python -m nvr.worker.main
+run /opt/venv/bin/python -m nvr.analytics.main
 run caddy run --config /app/deploy/demo/Caddyfile --adapter caddyfile
 
 trap 'kill -TERM "${PIDS[@]}" 2>/dev/null; wait' TERM INT

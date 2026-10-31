@@ -7,6 +7,7 @@ import Dashboard from "./pages/Dashboard";
 import Live from "./pages/Live";
 import Playback from "./pages/Playback";
 import Events from "./pages/Events";
+import Analytics from "./pages/Analytics";
 import Cameras from "./pages/Cameras";
 import Sites from "./pages/Sites";
 import Exports from "./pages/Exports";
@@ -49,6 +50,7 @@ export default function App() {
         {can("playback") && <NavLink to="/sync">동기 재생</NavLink>}
         {can("playback") && <NavLink to="/bookmarks">북마크·메모</NavLink>}
         {can("live_view") && <NavLink to="/events">이벤트 센터</NavLink>}
+        {can("live_view") && <NavLink to="/analytics">지능형 분석</NavLink>}
         {can("download") && <NavLink to="/exports">내보내기 작업</NavLink>}
         <div className="group">관리</div>
         <NavLink to="/cameras">카메라 관리</NavLink>
@@ -72,6 +74,7 @@ export default function App() {
           <Route path="/live" element={<Live />} />
           <Route path="/playback" element={<Playback />} />
           <Route path="/events" element={<Events />} />
+          <Route path="/analytics" element={<Analytics />} />
           <Route path="/exports" element={<Exports />} />
           <Route path="/cameras" element={<Cameras />} />
           <Route path="/sites" element={<Sites />} />

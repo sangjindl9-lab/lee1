@@ -9,7 +9,7 @@ from sqlalchemy import text
 from .. import __version__
 from ..config import get_keys, get_settings
 from ..db import SessionLocal
-from .routes import auth, cameras, exports, live, ops, recordings, sites, system, users
+from .routes import analytics, auth, cameras, exports, live, ops, recordings, sites, system, users
 
 
 def create_app() -> FastAPI:
@@ -47,7 +47,7 @@ def create_app() -> FastAPI:
         return JSONResponse(status_code=200 if ok else 503, content={"ok": ok, "version": __version__})
 
     for r in (auth.router, users.router, sites.router, cameras.router, live.router, recordings.router,
-              exports.router, system.router, ops.router):
+              exports.router, system.router, ops.router, analytics.router):
         app.include_router(r)
     return app
 

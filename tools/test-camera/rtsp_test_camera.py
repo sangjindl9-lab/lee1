@@ -53,6 +53,16 @@ def pipeline(width, height, fps, codec, audio, label, kbps=1500):
     return v
 
 
+def scene_pipeline(directory, fps, kbps=600):
+    """make_scenes.py 로 만든 JPEG 연속 이미지를 반복 재생(분석 시험용 합성 장면)."""
+    loc = os.path.join(directory, "%05d.jpg")
+    return (
+        f'( multifilesrc location="{loc}" loop=true index=0 caps="image/jpeg,framerate={fps}/1" ! jpegdec ! '
+        f'videoconvert ! video/x-raw,format=I420 ! x264enc tune=zerolatency speed-preset=ultrafast key-int-max={fps * 2} '
+        f'bitrate={kbps} bframes=0 ! video/x-h264,profile=baseline ! h264parse ! rtph264pay name=pay0 pt=96 config-interval=1 )'
+    )
+
+
 def main():
     ap = argparse.ArgumentParser(description="[시험 전용] 합성 RTSP 카메라")
     ap.add_argument("--port", default="8554")
@@ -61,6 +71,8 @@ def main():
     ap.add_argument("--user", default="")
     ap.add_argument("--password-file", default="")
     ap.add_argument("--audio", choices=["none", "aac", "pcmu"], default="aac")
+    ap.add_argument("--scene", action="append", default=[],
+                    help="이름=폴더:fps — make_scenes.py 결과를 /이름 으로 제공 (예: fire=/opt/scenes/fire:10)")
     args = ap.parse_args()
 
     password = os.environ.get("TEST_CAM_PASSWORD", "")
@@ -79,6 +91,12 @@ def main():
         "/sub": pipeline(640, 360, 10, "h264", "none", "SUB 640x360", kbps=max(200, args.main_kbps // 3)),
         "/h265": pipeline(1280, 720, 15, "h265", "none", "H265 1280x720"),
     }
+    for spec in args.scene:
+        name, rest = spec.split("=", 1)
+        d, fps = rest.rsplit(":", 1)
+        if not name.isidentifier() or not os.path.isdir(d):
+            raise SystemExit(f"잘못된 --scene: {spec}")
+        streams["/" + name] = scene_pipeline(d, int(fps))
     for path, launch in streams.items():
         factory = GstRtspServer.RTSPMediaFactory()
         factory.set_launch(launch)
@@ -105,7 +123,7 @@ def main():
         server.set_auth(auth)
 
     server.attach(None)
-    print(f"[TEST CAMERA] rtsp://{args.bind}:{args.port}/{{main,sub,h265}} auth={'on' if args.user else 'off'} audio={args.audio}", flush=True)
+    print(f"[TEST CAMERA] rtsp://{args.bind}:{args.port}/{{{','.join(p[1:] for p in streams)}}} auth={'on' if args.user else 'off'} audio={args.audio}", flush=True)
     loop = GLib.MainLoop()
     signal.signal(signal.SIGTERM, lambda *_: loop.quit())
     signal.signal(signal.SIGINT, lambda *_: loop.quit())
