@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>운영 관리</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600;700&family=IBM+Plex+Mono:wght@500&display=swap">
+<link rel="stylesheet" href="/admin/admin.css">
+</head>
+<body>
+<section id="login" class="login" hidden>
+  <form id="lf" class="lcard">
+    <h1>운영 관리</h1>
+    <label for="lu">관리자 아이디</label><input id="lu" autocomplete="username" required>
+    <label for="lp">비밀번호</label><input id="lp" type="password" autocomplete="current-password" required>
+    <p class="err" id="lerr" role="alert"></p>
+    <button class="btn pri" type="submit">로그인</button>
+  </form>
+</section>
+
+<div id="appA" class="shell" hidden>
+  <aside class="side">
+    <div class="logo">운영 관리</div>
+    <nav id="nav">
+      <a href="#dash" data-v="dash">대시보드</a>
+      <a href="#players" data-v="players">플레이어</a>
+      <a href="#rounds" data-v="rounds">회차 기록</a>
+      <a href="#games" data-v="games">게임 설정</a>
+      <a href="#audit" data-v="audit">감사 로그</a>
+      <a href="#account" data-v="account">계정</a>
+    </nav>
+    <div class="me"><span id="meName"></span><button class="link" id="logout">로그아웃</button></div>
+  </aside>
+  <main class="main">
+    <!-- Dashboard -->
+    <section data-view="dash">
+      <header class="vh"><h2>대시보드</h2>
+        <div class="seg" id="range"><button data-r="today" class="on">오늘</button><button data-r="7d">7일</button><button data-r="30d">30일</button><button data-r="all">전체</button></div>
+      </header>
+      <div class="kpis" id="kpis"></div>
+      <h3>게임별 성과</h3>
+      <div class="tbl"><table><thead><tr><th>게임</th><th class="n">회차</th><th class="n">총 베팅</th><th class="n">총 지급</th><th class="n">GGR</th><th class="n">실제 RTP</th><th class="n">이론 RTP</th><th class="n">보너스</th><th class="n">최고 당첨</th></tr></thead><tbody id="byGame"></tbody></table></div>
+      <h3>최근 14일</h3>
+      <div class="tbl"><table><thead><tr><th>날짜</th><th class="n">회차</th><th class="n">총 베팅</th><th class="n">총 지급</th><th class="n">GGR</th><th style="width:34%">GGR 비중</th></tr></thead><tbody id="daily"></tbody></table></div>
+    </section>
+
+    <!-- Players -->
+    <section data-view="players" hidden>
+      <header class="vh"><h2>플레이어</h2><input id="pq" placeholder="아이디 검색" aria-label="아이디 검색"></header>
+      <details class="box" id="newBox"><summary>새 플레이어 등록</summary>
+        <form id="pf" class="grid4">
+          <div><label for="nu">아이디</label><input id="nu" required pattern="[A-Za-z0-9_.\-]{3,24}" title="영문·숫자·_.- 3~24자"></div>
+          <div><label for="np">비밀번호</label><input id="np" required minlength="6"></div>
+          <div><label for="nb">초기 크레딧</label><input id="nb" type="number" min="0" step="0.01" value="1000"></div>
+          <div><label for="nn">메모</label><input id="nn" maxlength="200"></div>
+          <div class="full"><button class="btn pri" type="submit">등록</button> <span class="err" id="perr"></span></div>
+        </form>
+      </details>
+      <div class="tbl"><table><thead><tr><th>아이디</th><th class="n">잔액</th><th>상태</th><th class="n">회차</th><th class="n">총 베팅</th><th class="n">총 당첨</th><th class="n">플레이어 손익</th><th>최근 로그인</th><th>메모</th><th></th></tr></thead><tbody id="players"></tbody></table></div>
+    </section>
+
+    <!-- Rounds -->
+    <section data-view="rounds" hidden>
+      <header class="vh"><h2>회차 기록</h2></header>
+      <form id="rf" class="filters">
+        <input id="rp" placeholder="플레이어 아이디" aria-label="플레이어 아이디">
+        <select id="rg" aria-label="게임"><option value="">전체 게임</option></select>
+        <input id="rw" type="number" min="0" step="0.01" placeholder="최소 당첨" aria-label="최소 당첨">
+        <label class="chk"><input type="checkbox" id="rfe"> 보너스만</label>
+        <button class="btn" type="submit">조회</button>
+      </form>
+      <div class="tbl"><table><thead><tr><th class="n">회차</th><th>시간</th><th>플레이어</th><th>게임</th><th class="n">베팅</th><th class="n">당첨</th><th class="n">배수</th><th class="n">잔액</th><th></th></tr></thead><tbody id="rounds"></tbody></table></div>
+      <div class="more"><button class="btn" id="rmore" hidden>더 보기</button></div>
+    </section>
+
+    <!-- Games -->
+    <section data-view="games" hidden>
+      <header class="vh"><h2>게임 설정</h2></header>
+      <p class="note">베팅 한도는 게임에 정의된 베팅 단계 중에서 고릅니다. 수학 모델(RTP)은 인증된 파일로만 바뀌며 여기서 수정할 수 없습니다.</p>
+      <div class="gcards" id="gcards"></div>
+    </section>
+
+    <!-- Audit -->
+    <section data-view="audit" hidden>
+      <header class="vh"><h2>감사 로그</h2></header>
+      <div class="tbl"><table><thead><tr><th>시간</th><th>관리자</th><th>작업</th><th>내용</th></tr></thead><tbody id="audit"></tbody></table></div>
+    </section>
+
+    <!-- Account -->
+    <section data-view="account" hidden>
+      <header class="vh"><h2>계정</h2></header>
+      <form id="af" class="box narrow">
+        <label for="ac">현재 비밀번호</label><input id="ac" type="password" required autocomplete="current-password">
+        <label for="an">새 비밀번호 (10자 이상)</label><input id="an" type="password" required minlength="10" autocomplete="new-password">
+        <p class="err" id="aerr"></p>
+        <button class="btn pri" type="submit">비밀번호 변경</button>
+      </form>
+    </section>
+  </main>
+</div>
+
+<div class="modal" id="modal" hidden><div class="mcard" role="dialog" aria-modal="true">
+  <button class="x" id="mclose" aria-label="닫기">×</button>
+  <div id="mbody"></div>
+</div></div>
+<div class="toast" id="toast" role="status"></div>
+<script src="/admin/admin.js"></script>
+</body>
+</html>

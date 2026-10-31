@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>로그인</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@600;900&family=IBM+Plex+Sans+KR:wght@400;600;700&display=swap">
+<link rel="stylesheet" href="/shared/site.css">
+</head>
+<body class="center">
+<main class="panel">
+  <div class="brand"><span class="seal">運</span><h1>슬롯 라운지</h1></div>
+  <form id="f" autocomplete="on">
+    <label for="u">아이디</label><input id="u" name="username" autocomplete="username" required>
+    <label for="p">비밀번호</label><input id="p" name="password" type="password" autocomplete="current-password" required>
+    <p class="err" id="err" role="alert"></p>
+    <button class="primary" type="submit">로그인</button>
+  </form>
+  <p class="fine">계정은 운영자가 발급합니다. 만 21세 이상만 이용할 수 있습니다.</p>
+</main>
+<script>
+fetch('/api/me').then((r) => { if (r.ok) location.href = '/lobby'; });
+document.getElementById('f').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const err = document.getElementById('err'); err.textContent = '';
+  const r = await fetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: u.value, password: p.value }) });
+  const j = await r.json().catch(() => ({}));
+  if (r.ok) location.href = '/lobby'; else err.textContent = j.error || '로그인하지 못했습니다.';
+});
+</script>
+</body>
+</html>

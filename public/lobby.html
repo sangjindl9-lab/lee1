@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>게임 목록</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@600;900&family=IBM+Plex+Sans+KR:wght@400;600;700&display=swap">
+<link rel="stylesheet" href="/shared/site.css">
+</head>
+<body>
+<header class="bar">
+  <div class="brand sm"><span class="seal">運</span><h1>슬롯 라운지</h1></div>
+  <div class="who"><span id="name"></span><b id="bal">—</b><button class="ghost" id="hist">내 기록</button><button class="ghost" id="out">로그아웃</button></div>
+</header>
+<main class="wrap">
+  <h2 class="sec">게임</h2>
+  <div class="games" id="games"></div>
+  <section id="histBox" hidden>
+    <h2 class="sec">최근 플레이 50건</h2>
+    <div class="tbl"><table><thead><tr><th>시간</th><th>게임</th><th class="n">베팅</th><th class="n">당첨</th><th class="n">잔액</th></tr></thead><tbody id="histRows"></tbody></table></div>
+  </section>
+</main>
+<script>
+const fmt = (v) => Number(v).toLocaleString('ko-KR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const ART = { 'jade-scroll': ['#0b4334', '#3fbf8f', '龍'], 'golden-lantern': ['#6b0a16', '#ff4d5e', '燈'] };
+(async () => {
+  const me = await fetch('/api/me'); if (!me.ok) { location.href = '/'; return; }
+  const m = await me.json(); document.getElementById('name').textContent = m.username; document.getElementById('bal').textContent = fmt(m.balance);
+  const list = await (await fetch('/api/games')).json();
+  document.getElementById('games').innerHTML = list.map((g) => {
+    const [a, b, ch] = ART[g.id] || ['#222', '#888', '◎'];
+    return `<a class="game" href="/play?g=${encodeURIComponent(g.id)}" style="--a:${a};--b:${b}">
+      <div class="art"><span>${ch}</span></div>
+      <div class="meta"><b>${esc(g.name)}</b><small>${g.reels}×${g.rows} · 변동성 ${esc(g.volatility)} · RTP ${(g.rtp * 100).toFixed(1)}%</small></div></a>`;
+  }).join('') || '<p class="fine">지금 이용할 수 있는 게임이 없습니다.</p>';
+})();
+document.getElementById('out').onclick = async () => { await fetch('/api/logout', { method: 'POST' }); location.href = '/'; };
+document.getElementById('hist').onclick = async () => {
+  const box = document.getElementById('histBox'); box.hidden = !box.hidden; if (box.hidden) return;
+  const rows = await (await fetch('/api/history')).json();
+  document.getElementById('histRows').innerHTML = rows.map((r) => `<tr><td>${esc(r.created_at)}</td><td>${esc(r.game)}${r.feature ? ' <em>보너스</em>' : ''}</td><td class="n">${fmt(r.bet)}</td><td class="n ${r.win > 0 ? 'pos' : ''}">${fmt(r.win)}</td><td class="n">${fmt(r.balance_after)}</td></tr>`).join('') || '<tr><td colspan="5">기록이 없습니다.</td></tr>';
+};
+</script>
+</body>
+</html>
