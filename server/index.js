@@ -327,7 +327,8 @@ app.use('/admin/api', A);
 
 /* ---------- static ---------- */
 const pub = path.join(__dirname, '..', 'public');
-app.use(express.static(pub, { extensions: ['html'], maxAge: SECURE ? '10m' : 0 }));
+// Always revalidate so a new deploy reaches browsers immediately (ETag keeps it cheap)
+app.use(express.static(pub, { extensions: ['html'], maxAge: 0, setHeaders: (res) => res.set('Cache-Control', 'no-cache') }));
 app.get('/admin', (req, res) => res.sendFile(path.join(pub, 'admin', 'index.html')));
 app.use((e, req, res, next) => { console.error(e); bad(res, 500, '서버 오류가 발생했습니다.'); });
 

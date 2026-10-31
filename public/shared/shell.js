@@ -20,8 +20,8 @@ function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.add
 let data;
 try { data = await api(`/api/games/${encodeURIComponent(gameId || '')}`); } catch (e) { if (e.message !== 'login') { toast(e.message); setTimeout(() => (location.href = '/lobby'), 1500); } return; }
 const cfg = data.game;
-await loadScript(`/games/${cfg.id}/theme.js`);
-for (const f of cfg.features) await loadScript(`/shared/features/${f.type}.js`);
+await loadScript(`/games/${cfg.id}/theme.js?v=1793420815`);
+for (const f of cfg.features) await loadScript(`/shared/features/${f.type}.js?v=1793420815`);
 const theme = window.SlotThemes[cfg.id];
 
 /* ---------- theme application ---------- */

@@ -37,7 +37,7 @@ function route() {
   const v = VIEWS[location.hash.slice(1)] ? location.hash.slice(1) : 'dash';
   document.querySelectorAll('[data-view]').forEach((s) => { s.hidden = s.dataset.view !== v; });
   document.querySelectorAll('#nav a').forEach((a) => a.classList.toggle('on', a.dataset.v === v));
-  VIEWS[v]();
+  Promise.resolve().then(VIEWS[v]).catch((e) => toast(e.message || '화면을 불러오지 못했습니다. 새로고침해 주세요.'));
 }
 addEventListener('hashchange', route);
 
