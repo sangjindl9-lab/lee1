@@ -135,6 +135,23 @@ def cmd_seed_demo(a):
     return 0
 
 
+def cmd_ensure_db(a):
+    """DB_NAME 데이터베이스가 없으면 같은 서버에 생성한다."""
+    import os
+    import psycopg
+    name = os.environ.get("DB_NAME")
+    if not name:
+        return 0
+    base = os.environ["DATABASE_URL"].replace("postgresql+psycopg://", "postgresql://").replace("postgres://", "postgresql://")
+    with psycopg.connect(base, autocommit=True) as conn:
+        if conn.execute("select 1 from pg_database where datname=%s", (name,)).fetchone():
+            print(f"데이터베이스 {name} 확인")
+        else:
+            conn.execute(f'create database "{name}"')
+            print(f"데이터베이스 {name} 생성")
+    return 0
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="app.cli")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -145,8 +162,9 @@ def main(argv=None):
     i.add_argument("--no-force-change", action="store_true")
     i.add_argument("--if-empty", action="store_true", help="이미 초기화돼 있으면 조용히 통과 (배포 시작 스크립트용)")
     sub.add_parser("seed-demo")
+    sub.add_parser("ensure-db")
     a = ap.parse_args(argv)
-    return {"init": cmd_init, "seed-demo": cmd_seed_demo}[a.cmd](a)
+    return {"init": cmd_init, "seed-demo": cmd_seed_demo, "ensure-db": cmd_ensure_db}[a.cmd](a)
 
 
 if __name__ == "__main__":

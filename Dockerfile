@@ -13,4 +13,4 @@ COPY frontend frontend
 COPY scripts scripts
 WORKDIR /app/backend
 ENV FILE_STORAGE_DIR=/app/data/files PORT=8000
-CMD ["sh", "-c", "alembic upgrade head && python -m app.cli init --if-empty --company \"${COMPANY_NAME:-우리회사}\" --admin-login \"${ADMIN_LOGIN:-admin}\" --admin-name 관리자 && exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT} --proxy-headers --forwarded-allow-ips='*'"]
+CMD ["sh", "-c", "python -m app.cli ensure-db && alembic upgrade head && python -m app.cli init --if-empty --company \"${COMPANY_NAME:-우리회사}\" --admin-login \"${ADMIN_LOGIN:-admin}\" --admin-name 관리자 && exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT} --proxy-headers --forwarded-allow-ips='*'"]

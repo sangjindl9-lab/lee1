@@ -27,6 +27,10 @@ class Settings:
         for pre in ("postgres://", "postgresql://"):
             if url.startswith(pre):
                 url = "postgresql+psycopg://" + url[len(pre):]
+        # DB_NAME 이 있으면 같은 Postgres 서버 안의 별도 데이터베이스를 사용 (기존 유료 DB 공유 시)
+        db_name = _env("DB_NAME")
+        if db_name:
+            url = url.rsplit("/", 1)[0] + "/" + db_name if "?" not in url else url.rsplit("/", 1)[0] + "/" + db_name + "?" + url.split("?", 1)[1]
         self.database_url = url
         self.file_storage_mode = _env("FILE_STORAGE_MODE", "disk")  # disk | db
         self.file_storage_dir = Path(_env("FILE_STORAGE_DIR", str(BASE_DIR / "storage")))
