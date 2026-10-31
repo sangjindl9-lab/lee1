@@ -29,17 +29,51 @@ const nextFrame = () => new Promise(r=>requestAnimationFrame(()=>requestAnimatio
 
 function loadImg(src){ return new Promise((res,rej)=>{ const i=new Image(); i.onload=()=>res(i); i.onerror=rej; i.src=src; }); }
 
+const isHeic = f => /\.(heic|heif)$/i.test(f.name||'') || /image\/hei[cf]/i.test(f.type||'');
+const isImageFile = f => /^image\//.test(f.type||'') || /\.(jpe?g|jfif|pjpeg|png|webp|gif|bmp|avif|heic|heif)$/i.test(f.name||'');
+
+let heicLib = null;
+function loadHeicLib(){
+  if(window.heic2any) return Promise.resolve(window.heic2any);
+  if(!heicLib) heicLib = new Promise((res,rej)=>{
+    const sc=document.createElement('script');
+    sc.src='https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js';
+    sc.onload=()=>window.heic2any?res(window.heic2any):rej(new Error('heic2any'));
+    sc.onerror=()=>{ heicLib=null; rej(new Error('heic2any load')); };
+    document.head.appendChild(sc);
+  });
+  return heicLib;
+}
+
+/* 브라우저가 읽을 수 있는 그림으로 바꾸기: HEIC는 JPG로 변환 */
+async function decodeFile(file){
+  let blob = file;
+  if(isHeic(file)){
+    try{ // 사파리 등 HEIC를 직접 읽는 브라우저 먼저
+      const bmp = await createImageBitmap(file); return bmp;
+    }catch(e){}
+    const h2a = await loadHeicLib();
+    const r = await h2a({ blob:file, toType:'image/jpeg', quality:0.9 });
+    blob = Array.isArray(r) ? r[0] : r;
+  }
+  try{ return await createImageBitmap(blob, { imageOrientation:'from-image' }); }
+  catch(e){
+    const url = URL.createObjectURL(blob);
+    try{ return await loadImg(url); } finally { setTimeout(()=>URL.revokeObjectURL(url),1000); }
+  }
+}
+
 async function compressFile(file){
-  const url = URL.createObjectURL(file);
-  try{
-    const img = await loadImg(url);
-    const max = 1800, k = Math.min(1, max/Math.max(img.naturalWidth,img.naturalHeight));
-    const c = document.createElement('canvas');
-    c.width = Math.round(img.naturalWidth*k); c.height = Math.round(img.naturalHeight*k);
-    const g = c.getContext('2d'); g.fillStyle='#fff'; g.fillRect(0,0,c.width,c.height);
-    g.drawImage(img,0,0,c.width,c.height);
-    return { src:c.toDataURL('image/jpeg',0.86), w:c.width, h:c.height };
-  } finally { URL.revokeObjectURL(url); }
+  const img = await decodeFile(file);
+  const iw = img.naturalWidth||img.width, ih = img.naturalHeight||img.height;
+  if(!iw || !ih) throw new Error('empty image');
+  const max = 1800, k = Math.min(1, max/Math.max(iw,ih));
+  const c = document.createElement('canvas');
+  c.width = Math.max(1,Math.round(iw*k)); c.height = Math.max(1,Math.round(ih*k));
+  const g = c.getContext('2d'); g.fillStyle='#fff'; g.fillRect(0,0,c.width,c.height);
+  g.drawImage(img,0,0,c.width,c.height);
+  if(img.close) img.close();
+  return { src:c.toDataURL('image/jpeg',0.86), w:c.width, h:c.height };
 }
 
 async function rotateSrc(src){
@@ -352,18 +386,24 @@ function App(){
 
   /* 사진 추가 */
   const insertFiles = async (files, idx=null, replace=false) => {
-    const all = Array.from(files||[]);
-    const imgs = all.filter(f=>/^image\/(jpeg|png|webp|gif|bmp)/.test(f.type) || /\.(jpe?g|png|webp|gif|bmp)$/i.test(f.name));
-    const heic = all.filter(f=>/\.(heic|heif)$/i.test(f.name)).length;
-    if(!imgs.length){ say(heic ? 'HEIC 사진은 지원하지 않습니다. 휴대폰에서 JPG로 바꿔 올려 주세요.' : '사진 파일(JPG, PNG)을 넣어 주세요.'); return; }
+    const all = Array.from(files||[]).filter(f=>!/^\./.test(f.name||'') && !/thumbs\.db$/i.test(f.name||''));
+    const imgs = all.filter(isImageFile);
+    if(!imgs.length){ say(all.length ? '사진 파일이 아닙니다. JPG, PNG, HEIC 사진을 넣어 주세요.' : '넣을 사진을 찾지 못했습니다. 사진 파일을 직접 끌어다 놓거나 \'사진 선택\'을 눌러 주세요.'); return; }
     imgs.sort((a,b)=>(a._path||a.webkitRelativePath||a.name).localeCompare(b._path||b.webkitRelativePath||b.name,'ko',{numeric:true}));
-    const out = [];
+    const out = [], failed = [];
+    const hasHeic = imgs.some(isHeic);
     for(let i=0;i<imgs.length;i++){
-      setBusy({ title:'사진 불러오는 중', prog:`${i+1} / ${imgs.length}`, pct:(i+1)/imgs.length });
+      setBusy({ title: hasHeic ? '사진 불러오는 중 (HEIC 변환 포함)' : '사진 불러오는 중', prog:`${i+1} / ${imgs.length}`, pct:(i+1)/imgs.length });
+      const f=imgs[i];
       try{
-        const f=imgs[i], c=await compressFile(f);
+        const c=await compressFile(f);
         out.push({ id:uid(), ...c, name:f.name, gong:'', loc:'', desc:doc.nameDesc?baseName(f.name):'', date:doc.autoDate?fmtDate(f.lastModified||Date.now()):'' });
-      }catch(e){}
+      }catch(e){ console.warn('사진 읽기 실패', f.name, e); failed.push(f.name); }
+    }
+    if(!out.length){
+      setBusy(null);
+      say(`사진을 읽지 못했습니다: ${failed.slice(0,3).join(', ')}${failed.length>3?` 외 ${failed.length-3}장`:''}. JPG로 바꿔서 다시 넣어 주세요.`);
+      return;
     }
     setBusy(null);
     const wasSample = sampleRef.current;
@@ -377,7 +417,7 @@ function App(){
       return Array.from(arr, x=>x||null);
     });
     if(wasSample) setExtraPages(0);
-    say(`사진 ${out.length}장을 넣었습니다.`+(heic?` (HEIC ${heic}장 제외)`:''));
+    say(`사진 ${out.length}장을 넣었습니다.`+(failed.length?` 읽지 못한 사진 ${failed.length}장: ${failed.slice(0,2).join(', ')}${failed.length>2?' 등':''}`:''));
   };
 
   const h = {
@@ -556,7 +596,7 @@ function App(){
         </main>
       </div>
 
-      <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={e=>{ const {idx,replace}=pickTarget.current; insertFiles(e.target.files, idx, replace); e.target.value=''; }}/>
+      <input ref={fileRef} type="file" accept="image/*,.heic,.heif,.jfif" multiple hidden onChange={e=>{ const {idx,replace}=pickTarget.current; insertFiles(e.target.files, idx, replace); e.target.value=''; }}/>
       <input ref={dirRef} type="file" multiple hidden onChange={e=>{ insertFiles(e.target.files, null); e.target.value=''; }}/>
       <input ref={jsonRef} type="file" accept=".json,application/json" hidden onChange={e=>{ e.target.files[0] && loadJSON(e.target.files[0]); e.target.value=''; }}/>
 
