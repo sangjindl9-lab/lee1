@@ -51,12 +51,12 @@ test('계약 작성: 요금제로 이용료 자동 계산, 고객 단계가 제�
   const bad = await call('/contracts', { method: 'POST', json: { customerId: cust, product: '이음ERP', planId: 'gm-std', startsOn: start, endsOn: L.oneYearFrom(start) } });
   assert.equal(bad.status, 400, '다른 제품의 요금제는 거부');
   // 스탠다드 설치형 3,000,000 + 추가 5명×100,000 + 세금계산서 600,000 = 4,100,000 / 1회: 구축비 1,500,000 + 이전 500,000
-  const r = await call('/contracts', { method: 'POST', json: { customerId: cust, product: '이음ERP', deployment: 'ONPREM', planId: 'erp-std', seats: 20, options: ['taxinv', 'migrate'], startsOn: start, endsOn: L.oneYearFrom(start), billMethod: '분기 분납', payMethod: 'CMS 자동이체', payDays: 10 } });
+  const r = await call('/contracts', { method: 'POST', json: { customerId: cust, product: '이음ERP', deployment: 'ONPREM', planId: 'erp-std', seats: 20, options: ['taxinv', 'setupfee'], startsOn: start, endsOn: L.oneYearFrom(start), billMethod: '분기 분납', payMethod: 'CMS 자동이체', payDays: 10 } });
   assert.equal(r.status, 201);
   assert.match(r.body.no, /^SS-C-\d{4}-001$/);
   k = (await call('/contracts/' + r.body.id)).body;
-  assert.equal(k.annualFee, 4100000);
-  assert.equal(k.onceFee, 2000000);
+  assert.equal(k.annualFee, 894000 + 5 * 78000 + 192000, '설치형 스탠다드 + 추가 5명 + 전자세금계산서 (분기 분납이라 선납 할인 없음)');
+  assert.equal(k.onceFee, 3000000 + 300000, '설치형 구축비 + 도입비');
   assert.equal(k.status, 'DRAFT');
   assert.equal((await call('/crm/customers')).body[0].stage, '제안·견적');
 });
@@ -84,8 +84,8 @@ test('청구 일정: 분기 분납 4회, 1회성 비용은 첫 회차, 합계는
   assert.equal((await call(`/contracts/${k.id}/invoices`, { method: 'POST' })).status, 400, '두 번 만들 수 없다');
   const list = (await call('/invoices?customerId=' + cust)).body;
   assert.equal(list.length, 4);
-  assert.equal(list[0].supply, 1025000 + 2000000);
-  assert.equal(list.reduce((a, i) => a + i.supply, 0), 4100000 + 2000000);
+  assert.equal(list[0].supply, 1476000 / 4 + 3300000);
+  assert.equal(list.reduce((a, i) => a + i.supply, 0), 1476000 + 3300000);
   assert.equal(list[0].vat, Math.round(list[0].supply * 0.1));
   assert.equal(list[1].issueDate, addMonths(start, 3));
   assert.equal(list[0].dueDate, L.addDays(start, 10));
@@ -110,7 +110,7 @@ test('입금: 부분입금 → 완납, 납기 지난 청구는 연체, 입금 �
   assert.equal(s.overdue.count, 1);
   assert.equal(s.overdue.total, 550000);
   assert.equal(s.overdue.list[0].overdueDays, 35);
-  assert.equal(s.arr, 4100000);
+  assert.equal(s.arr, 1476000);
   assert.ok(s.monthly.at(-1).paid >= first.total);
   const csv = await call('/invoices?format=csv');
   assert.match(csv.body, /연체/);
@@ -130,7 +130,7 @@ test('갱신 계약은 다음 날부터 1년, 1회성 비용 제외 / 해지하�
   assert.equal(nk.startsOn, L.addDays(k.endsOn, 1));
   assert.equal(nk.onceFee, 0);
   assert.deepEqual(nk.options, ['taxinv']);
-  assert.equal(nk.annualFee, 4100000);
+  assert.equal(nk.annualFee, 1476000);
   assert.equal(nk.renewOf, k.id);
   assert.equal((await call(`/contracts/${k.id}/terminate`, { method: 'POST' })).status, 200);
   assert.equal((await call('/crm/customers')).body[0].stage, '해지');
@@ -153,4 +153,17 @@ test('상담 기록과 요금제 설정', async () => {
   assert.equal(after.plans[0].hosting, 2000000);
   assert.equal(after.examplePrices, false);
   assert.equal((await call('/crm/config', { method: 'PUT', json: { ...cfg, plans: [] } })).status, 400);
+});
+
+test('홍보 사이트 요금표: 호스팅 스타터 연간 선납 = 79만원 (2개월 무료), 월 분납은 월 7.9만원', async () => {
+  const cfg = (await call('/crm/config')).body;
+  const def = require('../lib/crm').DEFAULT_PLANS;
+  assert.equal(def.find((p) => p.id === 'erp-starter').hosting - Math.round(948000 / 12 * 2 / 1000) * 1000, 790000, '기본 단가: 스타터 월 79,000원 · 연 선납 790,000원');
+  assert.deepEqual(cfg.plans.filter((p) => p.product === '이음ERP').map((p) => p.name), ['스타터', '스탠다드', '프로']);
+  const mk = (billMethod) => call('/contracts', { method: 'POST', json: { customerId: cust, product: '이음ERP', deployment: 'HOSTED', planId: 'erp-starter', seats: 5, options: [], startsOn: start, endsOn: L.oneYearFrom(start), billMethod, payMethod: '계좌이체', payDays: 14 } });
+  const a = (await call('/contracts/' + (await mk('연간 선납')).body.id)).body;
+  const h = cfg.plans.find((p) => p.id === 'erp-starter').hosting; // 앞 시험에서 단가를 바꿔 저장했을 수 있어 설정값으로 계산
+  assert.equal(a.annualFee, h - Math.round(h / 12 * 2 / 1000) * 1000, '연간 선납은 2개월 무료');
+  const m = (await call('/contracts/' + (await mk('월 분납')).body.id)).body;
+  assert.equal(m.annualFee, h);
 });

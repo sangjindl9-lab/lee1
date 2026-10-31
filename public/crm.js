@@ -122,8 +122,9 @@ function calcFee(f, cfg) {
   if (!p) return { annual: 0, once: Number(f.extraOnce) || 0 };
   const n = (v) => Math.round(Number(v) || 0);
   let annual = n(f.deployment === 'ONPREM' ? p.install : p.hosting) + Math.max(0, n(f.seats) - n(p.seats)) * n(p.perSeat);
-  let once = n(f.extraOnce) + (f.deployment === 'ONPREM' ? n(p.setup) : 0);
+  let once = n(f.extraOnce) + (f.deployment === 'ONPREM' || !n(p.hosting) ? n(p.setup) : 0);
   for (const id of f.options) { const o = cfg.options.find((x) => x.id === id); if (o) { if (o.once) once += n(o.price); else annual += n(o.price); } }
+  if (f.billMethod === '연간 선납') annual -= Math.round(annual / 12 * 2 / 1000) * 1000; // 2개월 무료
   if (n(f.discount)) annual = Math.round((annual * (100 - n(f.discount))) / 100 / 1000) * 1000;
   return { annual, once };
 }
@@ -135,7 +136,7 @@ async function pageContractForm(id) {
   if (k && (k.status === 'SIGNED' || k.status === 'TERMINATED')) { location.hash = '#/contracts/' + id; return; }
   const cust0 = custs.find((c) => c.id === (k?.customerId ?? params.get('customer')));
   const s = today();
-  const v = k ?? { customerId: cust0?.id ?? '', product: '이음ERP', deployment: cust0?.deployment ?? 'HOSTED', planId: 'erp-basic', seats: 5, options: [], startsOn: s, endsOn: oneYear(s), billMethod: '연간 선납', payMethod: '계좌이체', payDays: 14, autoRenew: true, discount: 0, extraOnce: 0, special: '' };
+  const v = k ?? { customerId: cust0?.id ?? '', product: '이음ERP', deployment: cust0?.deployment ?? 'HOSTED', planId: 'erp-starter', seats: 5, options: [], startsOn: s, endsOn: oneYear(s), billMethod: '연간 선납', payMethod: '계좌이체', payDays: 14, autoRenew: true, discount: 0, extraOnce: 0, special: '' };
   shell('contracts', `
     <div class="page-head"><div><h1>${k ? `계약서 수정 ${esc(k.no)}` : '새 계약'}</h1><p>${k?.status === 'PENDING' ? '저장하면 이미 받은 서명은 지워지고 처음부터 다시 서명받습니다.' : '저장하면 계약서가 만들어지고 서명 화면으로 넘어갑니다.'}</p></div></div>
     ${custs.length ? '' : '<div class="note warn" style="margin-bottom:16px">먼저 <a href="#/customers/new">고객을 등록</a>해 주세요.</div>'}
@@ -161,7 +162,7 @@ async function pageContractForm(id) {
     </form>`);
   const f = document.getElementById('kf');
   let seatsTouched = !!k;
-  const draft = () => ({ planId: f.planId.value, deployment: f.deployment.value, seats: Number(f.seats.value), options: [...f.querySelectorAll('[name=opt]:checked')].map((x) => x.value), discount: Number(f.discount.value), extraOnce: Number(f.extraOnce.value) });
+  const draft = () => ({ billMethod: f.billMethod.value, planId: f.planId.value, deployment: f.deployment.value, seats: Number(f.seats.value), options: [...f.querySelectorAll('[name=opt]:checked')].map((x) => x.value), discount: Number(f.discount.value), extraOnce: Number(f.extraOnce.value) });
   const calc = () => {
     const r = calcFee(draft(), cfg);
     const n = cfg.lists.BILL_METHODS[f.billMethod.value] ?? 1;
