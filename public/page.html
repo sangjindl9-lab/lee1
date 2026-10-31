@@ -150,6 +150,11 @@ footer.foot{background:var(--bg2);color:var(--mute);padding-block:28px 44px;font
 .ptable th{background:var(--bg2);font-size:13px;color:var(--mute)}
 .pgrid2{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:28px}
 @media (max-width:860px){.pgrid2{grid-template-columns:1fr}}
+.ptable td.c,.ptable th.c{text-align:center}
+.cmp td:first-child{color:var(--ink2)}.cmp td{font-size:14.5px}
+.price-faq{list-style:none;padding:0;margin:20px 0 0;display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.price-faq li{background:var(--bg2);border-radius:12px;padding:16px;font-size:14px;color:var(--ink2)}.price-faq b{display:block;color:var(--ink);margin-bottom:4px}
+@media (max-width:860px){.price-faq{grid-template-columns:1fr}}
 </style>
 
 <div class="top"><div class="wrap">
@@ -350,6 +355,15 @@ footer.foot{background:var(--bg2);color:var(--mute);padding-block:28px 44px;font
       <div class="price">229,000원<small>/ 월</small></div><p class="price-note">연 선납 2,290,000원 (2개월 무료) · VAT 별도</p>
       <ul><li>저장 용량 50GB</li><li>매일 자동 백업 · 다른 지역 사본</li><li>본사·현장 조직이 큰 회사</li><li>전 기능 + 결재선·권한 맞춤</li><li>30명 초과 시 1명당 월 6,500원</li></ul></article>
   </div>
+
+  <div style="overflow-x:auto;margin-top:28px">
+    <table class="ptable cmp"><thead><tr><th>요금제별 포함 내용</th><th class="c">스타터</th><th class="c">스탠다드</th><th class="c">프로</th></tr></thead><tbody><tr><td>사용자 수</td><td class="c">5명까지</td><td class="c">15명까지</td><td class="c">30명까지 (추가 1명당 월 6,500원)</td></tr><tr><td>저장 용량 (DB + 첨부파일)</td><td class="c">5GB</td><td class="c">20GB</td><td class="c">50GB</td></tr><tr><td>전 기능 (현장·구매·결재·기성·세금계산서·자금·회계·노무·인사·총무·공공입찰)</td><td class="c"><span style="color:var(--blue);font-weight:800">✓</span></td><td class="c"><span style="color:var(--blue);font-weight:800">✓</span></td><td class="c"><span style="color:var(--blue);font-weight:800">✓</span></td></tr><tr><td>현장 작업일보 앱 (안드로이드)</td><td class="c"><span style="color:var(--blue);font-weight:800">✓</span></td><td class="c"><span style="color:var(--blue);font-weight:800">✓</span></td><td class="c"><span style="color:var(--blue);font-weight:800">✓</span></td></tr><tr><td>회사 전용 서버 · 매일 자동 백업 · 다른 지역 사본</td><td class="c"><span style="color:var(--blue);font-weight:800">✓</span></td><td class="c"><span style="color:var(--blue);font-weight:800">✓</span></td><td class="c"><span style="color:var(--blue);font-weight:800">✓</span></td></tr><tr><td>2단계 인증 · 감사 로그 · 역할별 권한</td><td class="c"><span style="color:var(--blue);font-weight:800">✓</span></td><td class="c"><span style="color:var(--blue);font-weight:800">✓</span></td><td class="c"><span style="color:var(--blue);font-weight:800">✓</span></td></tr><tr><td>영어 · 일본어 · 중국어 화면</td><td class="c"><span style="color:var(--blue);font-weight:800">✓</span></td><td class="c"><span style="color:var(--blue);font-weight:800">✓</span></td><td class="c"><span style="color:var(--blue);font-weight:800">✓</span></td></tr><tr><td>고장·수정 요청 (ERP 안에서 접수, 답변 확인)</td><td class="c"><span style="color:var(--blue);font-weight:800">✓</span></td><td class="c"><span style="color:var(--blue);font-weight:800">✓</span></td><td class="c"><span style="color:var(--blue);font-weight:800">✓</span></td></tr><tr><td>결재선 · 권한 · 양식 맞춤 설정</td><td class="c">기본 설정</td><td class="c">현장 배정 규칙까지</td><td class="c">회사 조직에 맞춰 설정</td></tr><tr><td>도입 교육</td><td class="c">온라인 1회</td><td class="c">온라인 2회</td><td class="c">방문 또는 온라인 3회</td></tr></tbody></table>
+  </div>
+  <ul class="price-faq">
+    <li><b>계약 기간</b>연간 구독입니다. 월 요금으로 매월 내거나, 연 선납하면 2개월 요금이 빠집니다.</li>
+    <li><b>요금제 변경</b>사용자가 늘면 언제든 위 요금제로 올릴 수 있고, 남은 기간만큼 차액만 받습니다.</li>
+    <li><b>계약이 끝나면</b>자료는 지워지지 않고 조회·출력은 계속됩니다. 원하시면 전체 자료를 엑셀·백업 파일로 넘겨 드립니다.</li>
+  </ul>
   <div class="pgrid2">
     <div>
       <h3 style="font-size:20px;margin-bottom:12px">옵션 (이음ERP에 추가)</h3>
