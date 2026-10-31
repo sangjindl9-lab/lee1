@@ -15,6 +15,7 @@ const express = require('express');
 const { createPool, migrate } = require('./lib/db');
 const L = require('./lib/license');
 const R = require('./lib/railway');
+const D = require('./lib/dns');
 const G = require('./lib/github');
 const B = require('./lib/backup');
 
@@ -22,7 +23,7 @@ const env = (k, d) => (process.env[k] ?? d);
 const PORT = Number(env('PORT', 8080));
 const PROD = env('NODE_ENV') === 'production';
 
-function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpoint, railwaySleep, railwayWaitMs, githubEndpoint, githubTokenEnv = env('GITHUB_TOKEN'), publicUrl = env('PUBLIC_URL', 'https://admin.ieumerp.kr') }) {
+function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpoint, railwaySleep, railwayWaitMs, githubEndpoint, githubTokenEnv = env('GITHUB_TOKEN'), publicUrl = env('PUBLIC_URL', 'https://admin.ieumerp.kr'), cfToken = env('CF_API_TOKEN'), cfEndpoint, customerZone = env('CUSTOMER_DOMAIN', 'ieumerp.kr') }) {
   const publicKey = crypto.createPublicKey(privateKey);
   const publicPem = L.publicKeyPem(privateKey);
   // ── 관리자 비밀번호 ──
@@ -489,7 +490,7 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
 
   const shapeJob = (j) => j && ({
     status: j.status, step: j.step, error: j.error, createdAt: j.created_at, finishedAt: j.finished_at,
-    url: j.data?.domain ? `https://${j.data.domain}` : null, adminId: j.input.adminId, companyCode: j.input.companyCode,
+    url: j.data?.customDomain ? `https://${j.data.customDomain}` : j.data?.domain ? `https://${j.data.domain}` : null, adminId: j.input.adminId, companyCode: j.input.companyCode,
     projectId: j.data?.projectId ?? null, projectName: j.input?.projectName ?? null,
     steps: R.STEPS.map(([key, label]) => ({ key, label })),
   });
@@ -522,6 +523,15 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
       await q(`update server_job set status = 'DONE', step = 'done', data = $2, error = null, updated_at = now(), finished_at = now() where customer_id = $1`, [customerId, job.data]);
       await q('update customer set server_url = $2, updated_at = now() where id = $1', [customerId, `https://${job.data.domain}`]);
       await R.lockAutoDeploy(R.client(conf.token, railwayEndpoint), job.data).catch((e) => console.error('자동 배포 끄기 실패', e.message));
+      if (cfToken) {
+        // 회사코드.ieumerp.kr 주소 자동 연결 — 실패해도 Railway 주소로 계속 쓸 수 있다
+        try {
+          const host = await D.attachCustomerDomain({ gql: R.client(conf.token, railwayEndpoint), cf: D.cloudflare(cfToken, cfEndpoint), zone: customerZone, d: job.data, code: j.input.companyCode, bizRegNo: j.input.bizRegNo });
+          await q('update customer set server_url = $2, updated_at = now() where id = $1', [customerId, `https://${host}`]);
+          job.data.customDomain = host;
+          await q('update server_job set data = $2 where customer_id = $1', [customerId, job.data]);
+        } catch (e) { console.error('고객 주소 연결 실패', e.message); }
+      }
       await q('insert into audit_log(action, summary) values ($1,$2)', ['SERVER_DONE', `고객 서버 개설 완료 ${j.input.companyName} https://${job.data.domain}`]);
     } catch (e) {
       console.error('고객 서버 개설 실패', e);
