@@ -96,6 +96,13 @@ async function upstream(svc, op, params) {
   const url = `${SERVICES[svc]}/${op}?serviceKey=${encodeURIComponent(KEY)}&${qs}`;
   const r = await fetch(url, { signal: AbortSignal.timeout(25000) });
   const text = await r.text();
+  if (/^\s*<!DOCTYPE html|^\s*<html/i.test(text)) {
+    // 공공데이터포털이 API 대신 웹페이지(점검·오류 안내)를 돌려줌
+    const title = ((text.match(/<title>([\s\S]*?)<\/title>/i) || [])[1] || '').trim();
+    const body = text.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200);
+    console.log(`[upstream] ${svc}/${op} HTTP ${r.status} 웹페이지 응답: ${title} | ${body}`);
+    throw new Error(`공공데이터포털(조달청 API)이 지금 응답하지 않고 안내 페이지를 보내고 있습니다${title ? ` (${title})` : ''}. 잠시 후 다시 검색해 주세요.`);
+  }
   if (!text.trim().startsWith('{')) {
     const e = parseXmlError(text);
     throw new Error(`[${e.code}] ${e.msg}`);
