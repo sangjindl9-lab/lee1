@@ -301,10 +301,14 @@ async function pageCustomer(id) {
 // ── 고객 서버 패널 ─────────────────────────────────────────────
 let pollTimer = null;
 function serverPanel(c) {
-  if (c.deployment !== 'HOSTED') return '';
+  // 설치형·직접 만든 서버도 접속 주소만 적혀 있으면 공급사 지원 계정으로 들어갈 수 있게
+  if (c.deployment !== 'HOSTED') return `<section class="panel"><header><h2>고객 ERP</h2></header><div class="body">${c.serverUrl
+    ? `<p style="margin-top:0">접속 주소: <a href="${esc(c.serverUrl)}" target="_blank" rel="noopener">${esc(c.serverUrl)}</a></p><div class="row"><button class="btn" id="srvaccess" title="고객 비밀번호 없이 공급사 지원 계정(ss-vendor)으로 들어갑니다. 고객 ERP 감사 로그에 남습니다">고객 ERP 접속</button></div>`
+    : '<p class="muted" style="margin:0">아래 고객 정보의 <b>ERP 접속 주소</b>를 적어 저장하면 여기에 [고객 ERP 접속] 버튼이 생깁니다.</p>'}</div></section>`;
   const j = c.server;
   if (!j) {
     return `<section class="panel"><header><h2>고객 전용 서버</h2><span class="badge">미개설</span></header><div class="body">
+      ${!c.serverUrl ? '<p class="muted" style="margin-top:0">직접 만든 서버라면 아래 고객 정보의 <b>ERP 접속 주소</b>를 적어 저장하세요. [고객 ERP 접속] 버튼이 생깁니다.</p>' : ''}
       ${c.serverUrl ? `<p style="margin-top:0">등록된 접속 주소: <a href="${esc(c.serverUrl)}" target="_blank" rel="noopener">${esc(c.serverUrl)}</a> (직접 만든 서버)</p><div class="row" style="margin-bottom:12px"><button class="btn" id="srvaccess" title="고객 비밀번호 없이 공급사 지원 계정(ss-vendor)으로 들어갑니다. 고객 ERP 감사 로그에 남습니다">고객 ERP 접속</button></div>` : ''}
       ${c.current && c.state !== 'SUSPENDED' ? `<form id="srvf"><div class="form-grid">
         <label class="f">고객 관리자 아이디<input name="adminId" value="admin" required /></label>
