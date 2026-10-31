@@ -51,12 +51,12 @@
         <form id="pf" class="grid4">
           <div><label for="nu">아이디</label><input id="nu" required pattern="[A-Za-z0-9_.\-]{3,24}" title="영문·숫자·_.- 3~24자"></div>
           <div><label for="np">비밀번호</label><input id="np" required minlength="6"></div>
-          <div><label for="nb">초기 크레딧</label><input id="nb" type="number" min="0" step="0.01" value="1000"></div>
+          <div><label for="nb">초기 금액 (원)</label><input id="nb" type="number" min="0" step="1000" value="100000"></div>
           <div><label for="nn">메모</label><input id="nn" maxlength="200"></div>
           <div class="full"><button class="btn pri" type="submit">등록</button> <span class="err" id="perr"></span></div>
         </form>
       </details>
-      <div class="tbl"><table><thead><tr><th>아이디</th><th class="n">잔액</th><th>상태</th><th class="n">회차</th><th class="n">총 베팅</th><th class="n">총 당첨</th><th class="n">플레이어 손익</th><th>최근 로그인</th><th>메모</th><th></th></tr></thead><tbody id="players"></tbody></table></div>
+      <div class="tbl"><table><thead><tr><th>아이디</th><th class="n">잔액</th><th>상태</th><th class="n">회차</th><th class="n">총 베팅</th><th class="n">총 당첨</th><th class="n">플레이어 손익</th><th>최근 로그인</th><th>개별 한도</th><th>메모</th><th></th></tr></thead><tbody id="players"></tbody></table></div>
     </section>
 
     <!-- Rounds -->
@@ -65,8 +65,9 @@
       <form id="rf" class="filters">
         <input id="rp" placeholder="플레이어 아이디" aria-label="플레이어 아이디">
         <select id="rg" aria-label="게임"><option value="">전체 게임</option></select>
-        <input id="rw" type="number" min="0" step="0.01" placeholder="최소 당첨" aria-label="최소 당첨">
+        <input id="rw" type="number" min="0" step="1000" placeholder="최소 당첨 (원)" aria-label="최소 당첨">
         <label class="chk"><input type="checkbox" id="rfe"> 보너스만</label>
+        <label class="chk"><input type="checkbox" id="rca"> 한도 적용만</label>
         <button class="btn" type="submit">조회</button>
       </form>
       <div class="tbl"><table><thead><tr><th class="n">회차</th><th>시간</th><th>플레이어</th><th>게임</th><th class="n">베팅</th><th class="n">당첨</th><th class="n">배수</th><th class="n">잔액</th><th></th></tr></thead><tbody id="rounds"></tbody></table></div>
@@ -76,7 +77,7 @@
     <!-- Games -->
     <section data-view="games" hidden>
       <header class="vh"><h2>게임 설정</h2></header>
-      <p class="note">베팅 한도는 게임에 정의된 베팅 단계 중에서 고릅니다. 수학 모델(RTP)은 인증된 파일로만 바뀌며 여기서 수정할 수 없습니다.</p>
+      <p class="note">저장하면 바로 다음 스핀부터 적용됩니다. RTP 버전은 시뮬레이션으로 검증한 릴 구성 중에서 고르며, 최대 당첨 한도는 게임 정보 화면에 플레이어에게 표시됩니다.</p>
       <div class="gcards" id="gcards"></div>
     </section>
 

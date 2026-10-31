@@ -95,11 +95,11 @@ function evalSpin(g, grid, stops) {
 }
 
 // One paid round: base spin plus any triggered features.
-function play(g, rng) {
+function play(g, rng, opts = {}) {
   const s = spinGrid(g, rng);
   const base = evalSpin(g, s.grid, s.stops);
   const round = { base, feature: null, total: base.win };
-  for (const { cfg, impl } of g.featureImpls) {
+  for (const { cfg, impl } of opts.features === false ? [] : g.featureImpls) {
     const f = impl.trigger(g, cfg, base, rng, { spinGrid, evalSpin, pickWeighted, countSym });
     if (f) { round.feature = f; round.total += f.win; break; }
   }

@@ -4,7 +4,7 @@
 const $ = (id) => document.getElementById(id);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const Audio = window.SlotAudio, FX = window.SlotFX;
-const fmt = (v) => Number(v).toLocaleString('ko-KR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmt = (v) => Math.round(Number(v) || 0).toLocaleString('ko-KR') + '원';
 const gameId = new URLSearchParams(location.search).get('g');
 
 async function api(url, body) {
@@ -203,7 +203,7 @@ const shell = {
 async function play() {
   if (busy) return;
   const b = bet();
-  if (shownBal < b) { toast('크레딧이 부족합니다. 베팅을 낮추세요.'); stopAuto(); return; }
+  if (shownBal < b) { toast('잔액이 부족합니다. 베팅을 낮추세요.'); stopAuto(); return; }
   setBusy(true); clearWins();
   let res;
   try { res = await api(`/api/games/${cfg.id}/spin`, { bet: b }); }
@@ -220,6 +220,7 @@ async function play() {
     await plugin.run(shell, R.feature, b);
     shell.setWinLabel('총 당첨'); $('win').textContent = fmt(res.win);
   }
+  if (res.capped) { shell.setWinLabel('당첨 · 한도 적용'); $('win').textContent = fmt(res.win); toast(`최대 당첨 한도 적용 · ${fmt(res.rawWin)} → ${fmt(res.win)}`); }
   shownBal = res.balance; renderBal();
   await bigWin(res.win, b);
   if (R.feature) stopAuto();
@@ -258,7 +259,15 @@ function renderPay() {
 const featureRules = cfg.features.map((f) => (window.SlotFeatures[f.type].describe ? window.SlotFeatures[f.type].describe(f, cfg) : '')).join('');
 $('rules').innerHTML = (theme.rulesHTML || '') + featureRules +
   `<h3>페이라인</h3><div class="lines-mini">${cfg.lines.map((L, i) => `<svg viewBox="0 0 ${cfg.reels * 10} ${cfg.rows * 10 + 4}"><g fill="rgba(255,255,255,.08)">${L.map((_, c) => Array.from({ length: cfg.rows }, (_, r) => `<rect x="${c * 10 + 1}" y="${r * 10 + 2}" width="8" height="8" rx="1"/>`).join('')).join('')}</g><polyline points="${L.map((r, c) => `${c * 10 + 5},${r * 10 + 6}`).join(' ')}" fill="none" stroke="${lineColor(i)}" stroke-width="2"/></svg>`).join('')}</div>` +
+  `<h3>최대 당첨 한도</h3>${maxWinText()}` +
   `<h3>수학 정보</h3>이론 환수율(RTP) ${(cfg.rtp * 100).toFixed(1)}% · 변동성 ${cfg.volatility}. 당첨은 왼쪽 첫 릴부터 연속으로 계산하며 라인당 최고 당첨만 지급합니다. 모든 결과는 서버에서 결정되며, 오작동 시 해당 플레이와 지급은 무효입니다.`;
+
+function maxWinText() {
+  const parts = [];
+  if (cfg.maxWinX) parts.push(`베팅의 ${cfg.maxWinX.toLocaleString('ko-KR')}배`);
+  if (cfg.maxWin) parts.push(fmt(cfg.maxWin));
+  return parts.length ? `한 회차(보너스 포함) 당첨금은 ${parts.join(' 또는 ')} 중 작은 금액을 넘지 않습니다. 초과분은 지급되지 않습니다.` : '한도가 없습니다.';
+}
 
 /* ---------- layout ---------- */
 function fit() {

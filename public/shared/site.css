@@ -41,3 +41,4 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 td.pos{color:var(--ok)}
 em{font-style:normal;font-size:11px;color:var(--gold);border:1px solid var(--gold-lo);border-radius:4px;padding:1px 5px;margin-left:4px}
 [hidden]{display:none!important}
+.game.off{opacity:.5;cursor:not-allowed}.game.off:hover{transform:none;border-color:var(--line)}

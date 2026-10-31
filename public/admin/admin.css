@@ -112,3 +112,12 @@ th{color:var(--muted);font-weight:600;font-size:12px;background:var(--panel-2);p
   .grid4{grid-template-columns:1fr 1fr}
 }
 [hidden]{display:none!important}
+.fields{display:grid;grid-template-columns:1fr 1fr;gap:4px 10px}
+.fields .full{grid-column:1/-1}
+.fields input,.fields select{width:100%}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:4px 12px}
+.grid2 input{width:100%}.grid2 .full{grid-column:1/-1}
+td.lims{font-size:11px;line-height:1.45;color:var(--muted)}
+.gcards{grid-template-columns:repeat(auto-fill,minmax(340px,1fr))}
+@media (max-width:520px){.fields,.grid2{grid-template-columns:1fr}.gcards{grid-template-columns:1fr}}
+.fields .switch input{width:38px;flex:none}

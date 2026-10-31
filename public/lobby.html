@@ -21,7 +21,7 @@
   </section>
 </main>
 <script>
-const fmt = (v) => Number(v).toLocaleString('ko-KR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmt = (v) => Math.round(Number(v) || 0).toLocaleString('ko-KR') + '원';
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const ART = { 'jade-scroll': ['#0b4334', '#3fbf8f', '龍'], 'golden-lantern': ['#6b0a16', '#ff4d5e', '燈'] };
 (async () => {
@@ -30,9 +30,10 @@ const ART = { 'jade-scroll': ['#0b4334', '#3fbf8f', '龍'], 'golden-lantern': ['
   const list = await (await fetch('/api/games')).json();
   document.getElementById('games').innerHTML = list.map((g) => {
     const [a, b, ch] = ART[g.id] || ['#222', '#888', '◎'];
-    return `<a class="game" href="/play?g=${encodeURIComponent(g.id)}" style="--a:${a};--b:${b}">
+    const tag = g.maintenance ? 'div' : 'a';
+    return `<${tag} class="game${g.maintenance ? ' off' : ''}" ${g.maintenance ? '' : `href="/play?g=${encodeURIComponent(g.id)}"`} style="--a:${a};--b:${b}">
       <div class="art"><span>${ch}</span></div>
-      <div class="meta"><b>${esc(g.name)}</b><small>${g.reels}×${g.rows} · 변동성 ${esc(g.volatility)} · RTP ${(g.rtp * 100).toFixed(1)}%</small></div></a>`;
+      <div class="meta"><b>${esc(g.name)}</b><small>${g.maintenance ? '점검 중 · ' + esc(g.maintenance) : `${g.reels}×${g.rows} · 변동성 ${esc(g.volatility)} · RTP ${(g.rtp * 100).toFixed(1)}%`}</small></div></${tag}>`;
   }).join('') || '<p class="fine">지금 이용할 수 있는 게임이 없습니다.</p>';
 })();
 document.getElementById('out').onclick = async () => { await fetch('/api/logout', { method: 'POST' }); location.href = '/'; };
