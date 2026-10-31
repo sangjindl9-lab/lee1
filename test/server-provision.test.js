@@ -174,7 +174,7 @@ test('서버 개설: 실패하면 그 단계부터 다시 이어서, 끝나면 �
   assert.ok(calls.every((x) => x.auth === 'Bearer rw-secret-token'));
 
   // ERP 에 넘긴 설정 확인
-  const app = calls.find((x) => x.name === 'serviceCreate' && x.variables.input.name === 'ss-erp').variables.input.variables;
+  const app = calls.find((x) => x.name === 'serviceCreate' && x.variables.input.name === 'ieum-erp').variables.input.variables;
   assert.equal(app.INIT_COMPANY_NAME, '㈜한누리통신');
   assert.equal(app.INIT_COMPANY_BIZNO, '2148839612');
   assert.equal(app.INIT_COMPANY_CODE, 'HN');
