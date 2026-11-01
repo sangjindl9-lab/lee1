@@ -6,7 +6,7 @@ import nodemailer from 'nodemailer';
 
 const PORT = Number(process.env.PORT || 8080);
 const DATA_DIR = process.env.DATA_DIR || './data';
-const TO = process.env.INQUIRY_TO || 'sangjindl9@gmail.com';
+const TO = process.env.INQUIRY_TO || 'lee@ieumerp.kr';
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN || '';
 const SMTP = process.env.SMTP_USER && process.env.SMTP_PASS
   ? { host: process.env.SMTP_HOST || 'smtp.gmail.com', port: Number(process.env.SMTP_PORT || 465), secure: (process.env.SMTP_PORT || '465') === '465', auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS } }
