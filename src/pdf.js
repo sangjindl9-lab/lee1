@@ -11,16 +11,18 @@ const FONT = path.join(__dirname, '..', 'fonts', 'NotoSansKR-Regular.otf');
 const FONT_B = path.join(__dirname, '..', 'fonts', 'NotoSansKR-Bold.otf');
 const KIND = { photo: '사진', drawing: '도면', other: '첨부' };
 
+// {{항목}}, {{항목|한글}}(금액 한글 표기), {{@company}} 등 시스템 값
 function fillBody(body, vals) {
-  return String(body).replace(/\{\{\s*([\w]+)\s*\}\}/g, (_, k) => {
+  return String(body).replace(/\{\{\s*(@?[\w.]+)\s*(?:\|\s*(\w+|한글))?\s*\}\}/g, (_, k, fmt) => {
     const v = vals[k];
-    if (v == null || v === '') return '__________';
+    if (v == null || v === '') return k.startsWith('@') ? '없음' : '__________';
+    if (fmt === '한글' || fmt === 'kr') return C.krMoney(v);
     if (typeof v === 'boolean') return v ? '예(확인함)' : '아니오';
     return typeof v === 'number' ? v.toLocaleString('ko-KR') : String(v);
   });
 }
 function allValues(d) {
-  const vals = { ...J(d.vals, {}) };
+  const vals = { ...E.sysValues(d), ...J(d.vals, {}) };
   for (const p of all(`select vals from participants where document_id=?`, d.id)) Object.assign(vals, J(p.vals, {}));
   return vals;
 }
@@ -74,7 +76,7 @@ function render(d, { draft = false } = {}) {
       if (y + 88 > doc.page.height - 56) { doc.addPage(); y = 56; }
       doc.roundedRect(x, y, colW, 84, 4).strokeColor('#bbb').stroke().strokeColor('#000');
       doc.font('B').fontSize(9).text(`${p.role_label}`, x + 8, y + 7, { width: colW - 110 });
-      doc.font('R').fontSize(9).text(p.name, x + 8, y + 21, { width: colW - 110 });
+      doc.font('R').fontSize(9).text(p.org_name ? `${p.org_name}${p.org_no ? ` (${p.org_no})` : ''} · ${p.name}` : p.name, x + 8, y + 21, { width: colW - 110, height: 14, ellipsis: true });
       doc.fontSize(7).fillColor('#555').text(
         p.signed_at ? `${kst(p.signed_at)}\n${p.sign_kind === 'preseal' ? '사전날인 정책에 따른 직인' : p.sign_kind === 'seal' ? '직인 날인' : '전자서명'} · ${p.confirm_method || (p.verified_at ? p.auth_method : '서명 링크')}` : '미서명',
         x + 8, y + 36, { width: colW - 110 }).fillColor('#000');
@@ -108,8 +110,14 @@ function render(d, { draft = false } = {}) {
       ['템플릿', `${tv.template_name} v${tv.version}`], ['문서 버전', d.version], ['내용 해시(SHA-256)', d.content_hash], ['완료 시각', kst(d.completed_at)],
       ['첨부', [d.base_file_id ? '원본 파일 1건' : null, atts.length ? `첨부 ${atts.length}건 (PDF ${pdfAtts.length}건은 이 확인서 뒤에 이어 붙임)` : null].filter(Boolean).join(', ') || '없음']];
     for (const [k, v] of info) doc.text(`${k}: ${v ?? '-'}`, { width: W });
+    const cl = tv.extra.checklist || [];
+    if (cl.length) {
+      const st = J(d.checklist, {});
+      doc.moveDown(0.6).font('B').fontSize(10).text(`작성자 계약 전 확인 (${cl.filter((_, i) => st[i]).length}/${cl.length})`).font('R').fontSize(8.5);
+      cl.forEach((t, i) => doc.text(`${st[i] ? '[확인]' : '[미확인]'} ${t}`, { width: W }));
+    }
     doc.moveDown(0.6).font('B').fontSize(10).text('참여자').font('R').fontSize(8.5);
-    for (const p of ps) doc.text(`· ${p.role_label} ${p.name}${p.email ? ` <${p.email}>` : ''}${p.phone ? ` ${C.maskPhone(p.phone)}` : ''} — ${p.signed_at ? kst(p.signed_at) : '미서명'} / 확인 방식: ${p.confirm_method || (p.verified_at ? p.auth_method : p.kind === 'external' ? '서명 링크' : '로그인 직원')}${p.ip ? ` / IP ${p.ip}` : ''}`, { width: W });
+    for (const p of ps) doc.text(`· ${p.role_label} ${p.org_name ? p.org_name + ' ' : ''}${p.name}${p.email ? ` <${p.email}>` : ''}${p.phone ? ` ${C.maskPhone(p.phone)}` : ''} — ${p.signed_at ? kst(p.signed_at) : '미서명'} / 확인 방식: ${p.confirm_method || (p.verified_at ? p.auth_method : p.kind === 'external' ? '서명 링크' : '로그인 직원')}${p.ip ? ` / IP ${p.ip}` : ''}`, { width: W });
     doc.moveDown(0.6).font('B').fontSize(10).text('처리 이력 (시각은 한국시간, 내용 해시는 감사 기록 해시 체인으로 보관)').font('R').fontSize(8);
     for (const l of all(`select * from audit_logs where document_id=? order by id`, d.id)) {
       if (doc.y > doc.page.height - 80) doc.addPage();

@@ -84,6 +84,7 @@ function fieldInput(f, value, name = 'v_' + f.key) {
   const v = value ?? '';
   if (f.type === 'textarea') return `<textarea class="inp" name="${name}"${req}>${esc(v)}</textarea>`;
   if (f.type === 'check') return `<label class="chk"><input type="checkbox" name="${name}"${v === true ? ' checked' : ''}> ${esc(f.label)}</label>`;
+  if (f.type === 'select') return `<select class="inp" name="${name}"${req}><option value="">고르세요</option>${(f.options || []).map((o) => `<option${o === v ? ' selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
   const type = { number: 'text', date: 'date', email: 'email', phone: 'tel' }[f.type] || 'text';
   const extra = f.type === 'number' ? ' inputmode="numeric"' : f.type === 'phone' ? ' placeholder="010-0000-0000"' : '';
   return `<input class="inp" type="${type}" name="${name}" value="${esc(v)}"${req}${extra}>`;
@@ -100,11 +101,21 @@ function readFields(root, fields, prefix = 'v_') {
   }
   return out;
 }
-// 본문의 {{항목}} 을 값으로 바꿔 보여 준다 (미입력은 밑줄)
+// 금액 한글 표기 (서버 krMoney 와 같은 규칙)
+function krMoney(n) {
+  n = Math.floor(Number(String(n).replace(/,/g, ''))); if (!Number.isFinite(n) || n < 0) return '';
+  if (n === 0) return '일금 영원정';
+  const D = ['', '일', '이', '삼', '사', '오', '육', '칠', '팔', '구'], U = ['', '십', '백', '천'], B = ['', '만', '억', '조', '경'];
+  let out = '', i = 0;
+  while (n > 0) { const c = n % 10000; n = Math.floor(n / 10000); if (c) { let t = ''; String(c).padStart(4, '0').split('').forEach((x, k) => { if (+x) t += D[+x] + U[3 - k]; }); out = t + B[i] + out; } i++; }
+  return `일금 ${out}원정`;
+}
+// 본문의 {{항목}}·{{항목|한글}}·{{@시스템값}} 을 값으로 바꿔 보여 준다 (미입력은 밑줄)
 function renderBody(body, vals) {
-  return esc(body).replace(/\{\{\s*(\w+)\s*\}\}/g, (_, k) => {
+  return esc(body).replace(/\{\{\s*(@?[\w.]+)\s*(?:\|\s*([^}\s]+))?\s*\}\}/g, (_, k, fmt) => {
     const v = vals[k];
-    if (v == null || v === '') return '<u style="color:var(--faint)">          </u>';
+    if (v == null || v === '') return k.startsWith('@') ? '<span class="faint">없음</span>' : '<u style="color:var(--faint)">          </u>';
+    if (fmt && /^\d[\d,]*$/.test(String(v))) return `<b>${esc(krMoney(v))}</b>`;
     if (v === true) return '<b>예(확인함)</b>'; if (v === false) return '아니오';
     return `<b>${esc(typeof v === 'number' ? v.toLocaleString('ko-KR') : v)}</b>`;
   }).replace(/^##\s*(.*)$/gm, '<strong style="display:block;margin-top:10px">$1</strong>');

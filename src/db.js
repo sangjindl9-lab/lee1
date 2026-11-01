@@ -149,7 +149,7 @@ create table if not exists webhook_deliveries (id integer primary key, webhook_i
 `;
 db.exec(SCHEMA);
 // 이후 추가된 열 (기존 DB 호환)
-for (const [t, c] of [['sessions', 'locked integer not null default 0']]) { try { db.exec(`alter table ${t} add column ${c}`); } catch { /* 이미 있음 */ } }
+for (const [t, c] of [['sessions', 'locked integer not null default 0'], ['templates', "category text not null default '일반'"], ['template_versions', "extra text not null default '{}'"], ['participants', 'org_name text'], ['participants', 'org_no text'], ['documents', "checklist text not null default '{}'"]]) { try { db.exec(`alter table ${t} add column ${c}`); } catch { /* 이미 있음 */ } }
 
 // 작은 도우미
 const all = (sql, ...p) => db.prepare(sql).all(...p);

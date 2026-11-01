@@ -35,13 +35,13 @@ function checkDup(c, ph) {
 
 function makeDoc(c, st, ip) {
   const tv = E.loadTV(c.template_version_id);
-  const ext = tv.roles.find((x) => x.kind === 'external');
+  const ext = tv.roles.find((x) => x.kind === 'external' && !x.optional);
   const owner = get(`select * from users where id=?`, c.created_by);
   const ownerId = owner?.status === 'active' ? owner.id : get(`select id from users where company_id=? and status='active' and role='admin' limit 1`, c.company_id).id;
   const vals = {};
   if (c.site && tv.fields.find((f) => f.key === 'site' && (f.owner || 'sender') === 'sender')) vals.site = c.site;
   const docId = E.createDocument({ companyId: c.company_id, user: null, ownerId, tvId: tv.id, title: `${c.title} - ${st.name}`, mode: 'link', vals,
-    participants: tv.roles.map((ro) => (ro.kind === 'external' ? { role_key: ro.key, name: st.name, phone: st.phone, auth_method: c.auth === 'phone_otp' ? 'phone_otp' : 'link', delivery: 'none' } : { role_key: ro.key })),
+    participants: tv.roles.filter((ro) => !ro.optional).map((ro) => (ro.kind === 'external' ? { role_key: ro.key, name: st.name, phone: st.phone, auth_method: c.auth === 'phone_otp' ? 'phone_otp' : 'link', delivery: 'none' } : { role_key: ro.key })),
     linkCampaignId: c.id, ip });
   const p = get(`select * from participants where document_id=? and role_key=?`, docId, ext.key);
   const how = c.auth === 'phone_otp' ? '휴대폰 인증번호(링크 접수)' : '본인 입력(인증 없음, 링크 접수)';

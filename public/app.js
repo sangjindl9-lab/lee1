@@ -35,7 +35,7 @@ function shell() {
   $('#app').innerHTML = `<div class="shell"><nav class="side" aria-label="주 메뉴">
     <div class="logo"><i>이</i><div>이음사인<small>${esc(ME.company.name)}</small></div></div>
     ${n('/', '홈')}${n('/new', '＋ 새 계약')}${n('/docs', '문서함')}${n('/approvals', '결재함', ME.approvalsWaiting)}${n('/schedules', '일정')}
-    <div class="sec">계약 방식</div>${can('link.manage') ? n('/links', '링크계약·QR') : ''}${can('bulk.send') ? n('/bulk', '대량계약') : ''}${n('/templates', '템플릿')}
+    <div class="sec">계약 방식</div>${can('link.manage') ? n('/links', '링크계약·QR') : ''}${can('bulk.send') ? n('/bulk', '대량계약') : ''}${n('/templates', '템플릿')}${n('/tools', '부동산 도구')}
     <div class="sec">관리</div>${n('/settings', '설정')}${n('/inbox', '알림', ME.unread)}
     <div class="me"><b>${esc(ME.user.name)}</b>${esc(ME.user.email)}<br><a href="#" id="logout" style="padding:0;color:var(--ink-muted)">로그아웃</a></div>
   </nav><main class="main" id="view" tabindex="-1"></main></div>`;
@@ -51,7 +51,7 @@ async function route() {
   view().innerHTML = '<div class="empty">불러오는 중…</div>';
   const P = {
     '': pageHome, new: pageNew, docs: pageDocs, doc: pageDoc, approvals: pageApprovals, schedules: pageSchedules, links: pageLinks, bulk: pageBulk,
-    templates: pageTemplates, settings: pageSettings, inbox: pageInbox, inperson: pageInperson,
+    templates: pageTemplates, tools: pageTools, settings: pageSettings, inbox: pageInbox, inperson: pageInperson,
   }[parts[0] || ''];
   try { await (P || pageHome)(...parts.slice(1)); view().focus({ preventScroll: true }); } catch (e) { view().innerHTML = `<div class="note bad">${esc(e.message)}</div>`; }
 }
@@ -78,20 +78,19 @@ const docTitleCache = {};
 // ── 새 계약: 네 가지 방식
 async function pageNew(mode) {
   if (mode === 'remote' || mode === 'inperson') return newDocForm(mode);
-  view().innerHTML = `<div class="head"><div><h1>새 계약 시작</h1><p>네 방식 모두 같은 템플릿과 문서 처리 엔진을 씁니다. 참여자를 확인하는 방법과 문서를 만드는 방법만 다릅니다.</p></div></div>
+  view().innerHTML = `<div class="head"><div><h1>새 계약 시작</h1><p>기업 간(B2B)·개인 고객(B2C)·부동산·건설 현장 계약을 같은 엔진으로 처리합니다. 네 방식은 참여자 확인 방법과 문서를 만드는 방법만 다릅니다.</p></div></div>
   <div class="modes">
     <button class="mode" data-go="/new/remote"><span class="n">① 비대면계약</span><b>링크 보내서 서명</b><p>담당자가 문서를 작성하고 수신자마다 개별 링크를 보냅니다.</p><ul><li>참여자 확인: 서명 링크 + 이메일·휴대폰 인증(선택)</li><li>내부 결재 후 발송</li></ul></button>
     <button class="mode" data-go="/new/inperson"><span class="n">② 대면계약</span><b>현장 기기 한 대로 차례 서명</b><p>태블릿·휴대폰 한 대로 참여자가 차례로 확인하고 서명합니다.</p><ul><li>참여자 확인: 담당자가 신분증 대조 등 기록</li><li>온라인 상태에서 사용</li></ul></button>
     <button class="mode" data-go="/links" ${can('link.manage') ? '' : 'disabled'}><span class="n">③ 링크계약</span><b>공통 URL·QR 접수</b><p>접속한 사람마다 별도 문서가 만들어집니다. 동의서·신청서 접수용.</p><ul><li>참여자 확인: 휴대폰 인증 또는 인증 없음</li><li>QR 접속만으로는 확인 처리 안 함</li></ul></button>
     <button class="mode" data-go="/bulk/new" ${can('bulk.send') ? '' : 'disabled'}><span class="n">④ 대량계약</span><b>엑셀로 여러 건 발송</b><p>템플릿 전용 엑셀 양식에 수신자별 값을 넣어 독립 계약을 만듭니다.</p><ul><li>오류 행 검증 · 미리보기 · 큐 발송</li><li>실패 건만 재시도</li></ul></button>
   </div>
-  <div class="card" style="margin-top:16px"><h2>업무 예시 흐름 <span class="small muted">(예시 서식은 회사 검토용입니다. 기관 승인·법정 서식이 아닙니다)</span></h2>
-    <table class="t"><tr><th>업무</th><th>방식</th><th>흐름</th></tr>
-    <tr><td>A. 근로계약</td><td>대면 또는 대량</td><td class="flow"><span class="st">현장·근로조건 입력</span><span class="ar">→</span><span class="st">근로자별 계약 생성</span><span class="ar">→</span><span class="st ex">근로자 서명</span><span class="ar">→</span><span class="st in">직인</span><span class="ar">→</span><span class="st">현장 폴더 보관(자동분류)</span></td></tr>
-    <tr><td>B. 자재 인수확인</td><td>대면</td><td class="flow"><span class="st">발주번호·품목 입력</span><span class="ar">→</span><span class="st">인수 사진 첨부</span><span class="ar">→</span><span class="st ex">인수자 확인·서명</span></td></tr>
-    <tr><td>C. 검측 확인</td><td>비대면(직원)</td><td class="flow"><span class="st">검측서 작성</span><span class="ar">→</span><span class="st">사진대장 2×2 · 도면 첨부</span><span class="ar">→</span><span class="st in">지정 검토자 확인</span></td></tr>
-    <tr><td>D. 협력업체 계약</td><td>비대면</td><td class="flow"><span class="st">거래처·금액·기간</span><span class="ar">→</span><span class="st in">현장소장 검토</span><span class="ar">→</span><span class="st in">본사 승인</span><span class="ar">→</span><span class="st ex">거래처 서명</span><span class="ar">→</span><span class="st in">당사 직인</span><span class="ar">→</span><span class="st">갱신 일정</span></td></tr>
-    <tr><td>E. 현장 동의서</td><td>링크·QR</td><td class="flow"><span class="st">현장 QR 접속</span><span class="ar">→</span><span class="st">개별 문서 생성</span><span class="ar">→</span><span class="st ex">작성·서명</span><span class="ar">→</span><span class="st in">담당자 확인</span></td></tr></table></div>`;
+  <div class="card" style="margin-top:16px"><h2>업종별 예시 서식 <span class="small muted">(모두 회사 검토용 예시입니다. 기관 승인·법정 서식이 아닙니다)</span></h2>
+    <div class="grid g3">
+      <div><h3>기업 간(B2B) · 개인 고객(B2C)</h3><ul class="small" style="margin:0;padding-left:16px"><li>용역(업무위탁)·물품 공급 계약 — 상대 회사 상호·사업자번호 입력, 당사 직인</li><li>비밀유지계약(NDA)</li><li>서비스 이용 계약(개인 고객) — 약관·개인정보·마케팅 동의 분리</li><li>개인정보 수집·이용 동의서 — 링크·QR 접수에 적합</li></ul></div>
+      <div><h3>부동산</h3><ul class="small" style="margin:0;padding-left:16px"><li>주택 임대차(전세·월세), 매매, 상가 임대차, 갱신·변경 합의, 확인·설명서 수령 확인</li><li>공동명의·대리 없이 공동 임대인/임차인, 당사·공동중개 중개사 선택 추가</li><li>계약금+중도금+잔금 합계 검증, 중도금·잔금일 일정</li><li>거래신고·임대차 신고 30일, 갱신 통지 기간 자동 일정 · <a href="#/tools">중개보수 계산</a></li></ul></div>
+      <div><h3>건설·현장</h3><ul class="small" style="margin:0;padding-left:16px"><li>현장 근로계약(대면·대량)</li><li>자재 인수확인(사진 첨부)</li><li>검측 확인(사진대장 2×2·도면)</li><li>협력업체 계약(내부결재 → 외부 서명 → 직인)</li><li>현장 출입·안전교육 동의(QR)</li></ul></div>
+    </div></div>`;
   $$('[data-go]').forEach((b) => b.addEventListener('click', () => go(b.dataset.go)));
 }
 
@@ -99,27 +98,31 @@ async function newDocForm(mode) {
   const tpls = (await api('/templates')).filter((t) => t.usable);
   const cloud = await api('/cloud/providers');
   const q = new URLSearchParams(location.hash.split('?')[1]);
-  const tid = Number(q.get('t')) || tpls[0]?.id;
+  const tid = Number(q.get('t')) || (q.get('cat') && tpls.find((x) => x.category === q.get('cat'))?.id) || tpls[0]?.id;
   if (!tid) { view().innerHTML = '<div class="empty">사용할 수 있는 템플릿이 없습니다</div>'; return; }
   const t = await api('/templates/' + tid);
   const tv = t.version;
   const sender = tv.fields.filter((f) => (f.owner || 'sender') === 'sender');
   const lines = await api('/approval-lines');
+  const optToggle = (r) => (r.optional ? `<label class="chk small" style="float:right"><input type="checkbox" data-use="${r.key}"> 이 참여자 추가</label>` : '');
   const rolesHtml = tv.roles.map((r) => {
-    if (r.kind === 'internal') return `<div class="card flat"><h3>${esc(r.label)} <span class="tag">직원</span></h3><select class="inp" name="p_${r.key}_user">${userOpts(ME.user.id)}</select></div>`;
-    if (r.kind === 'seal') return `<div class="card flat"><h3>${esc(r.label)} <span class="tag">직인</span></h3><p class="muted small" style="margin:0">차례가 되면 직인 사용 권한자가 날인합니다. 회사가 승인한 사전날인 정책 범위 안이면 자동 날인됩니다.</p></div>`;
-    return `<div class="card flat"><h3>${esc(r.label)} <span class="tag">외부</span></h3><div class="grid g3">
-      <label class="f"><span>이름 <i>*</i></span><input class="inp" name="p_${r.key}_name" required></label>
+    const box = (inner) => `<div class="card flat" data-role="${r.key}"${r.optional ? ' data-optional="1"' : ''}><h3>${esc(r.label)} <span class="tag">${KIND[r.kind]}${r.party === 'company' ? '·회사' : ''}</span>${r.optional ? ' <span class="faint small">선택</span>' : ''}${optToggle(r)}</h3><div class="rbody"${r.optional ? ' hidden' : ''}>${inner}</div></div>`;
+    if (r.kind === 'internal') return box(`<select class="inp" name="p_${r.key}_user">${userOpts(ME.user.id)}</select>`);
+    if (r.kind === 'seal') return box('<p class="muted small" style="margin:0">차례가 되면 직인 사용 권한자가 날인합니다. 회사가 승인한 사전날인 정책 범위 안이면 자동 날인됩니다.</p>');
+    return box(`${r.party === 'company' ? `<div class="grid g2"><label class="f"><span>상호(회사명) <i>*</i></span><input class="inp" name="p_${r.key}_org"></label><label class="f"><span>사업자등록번호</span><input class="inp" name="p_${r.key}_orgno" placeholder="000-00-00000"></label></div>` : ''}
+      <div class="grid g3"><label class="f"><span>${r.party === 'company' ? '대표자·담당자' : '이름'} <i>*</i></span><input class="inp" name="p_${r.key}_name"></label>
       <label class="f"><span>이메일</span><input class="inp" type="email" name="p_${r.key}_email"></label>
       <label class="f"><span>휴대폰</span><input class="inp" type="tel" name="p_${r.key}_phone" placeholder="010-0000-0000"></label></div>
       ${mode === 'remote' ? `<div class="grid g2"><label class="f"><span>본인 확인 방법</span><select class="inp" name="p_${r.key}_auth"><option value="link">서명 링크만</option><option value="email_otp">이메일 인증번호</option><option value="phone_otp">휴대폰 인증번호</option></select></label>` : '<div class="grid g2">'}
-      <label class="f"><span>완료 문서 전달</span><select class="inp" name="p_${r.key}_delivery"><option value="email">이메일</option><option value="sms">문자</option><option value="none">전달 안 함(현장 출력)</option></select></label></div></div>`;
+      <label class="f"><span>완료 문서 전달</span><select class="inp" name="p_${r.key}_delivery"><option value="email">이메일</option><option value="sms">문자</option><option value="none">전달 안 함(현장 출력)</option></select></label></div>`);
   }).join('');
+  const checksHint = (tv.extra?.checks || []).map((c) => `<div class="note small" style="margin-bottom:8px">${esc(c.label || '금액 확인')}: ${c.parts.map((k) => esc(sender.find((f) => f.key === k)?.label || k)).join(' + ')} = ${esc(sender.find((f) => f.key === c.total)?.label || c.total)} <b id="sumchk"></b></div>`).join('');
+  const dlHint = (tv.extra?.deadlines || []).length ? `<p class="small muted">자동 일정: ${tv.extra.deadlines.map((x) => esc(x.title)).join(' · ')}</p>` : '';
   view().innerHTML = `<div class="head"><div><h1>${mode === 'remote' ? '① 비대면계약' : '② 대면계약'} 작성</h1><p>${mode === 'remote' ? '발송하면 외부 참여자에게 개별 서명 링크가 갑니다.' : '발송(시작) 후 대면 진행 화면에서 참여자를 확인하고 한 사람씩 서명받습니다.'}</p></div></div>
   <form id="nf" class="split"><div>
-    <div class="card"><label class="f"><span>템플릿</span><select class="inp" id="tsel">${tpls.map((x) => `<option value="${x.id}"${x.id === tid ? ' selected' : ''}>${esc(x.name)}${x.scope === 'company' ? '' : ' (개인)'}</option>`).join('')}</select></label>
+    <div class="card"><label class="f"><span>템플릿</span><select class="inp" id="tsel">${[...new Set(tpls.map((x) => x.category))].map((c) => `<optgroup label="${esc(c)}">${tpls.filter((x) => x.category === c).map((x) => `<option value="${x.id}"${x.id === tid ? ' selected' : ''}>${esc(x.name)}${x.scope === 'company' ? '' : ' (개인)'}</option>`).join('')}</optgroup>`).join('')}</select></label>
       <label class="f"><span>문서 제목</span><input class="inp" name="title" value="${esc(t.name.replace(/^\[예시\]\s*/, ''))}"></label>
-      <h2 style="margin-top:6px">작성자 입력 항목</h2>${sender.map((f) => fieldBlock(f, '')).join('') || '<p class="muted">없음</p>'}</div>
+      <h2 style="margin-top:6px">작성자 입력 항목</h2>${checksHint}${sender.map((f) => fieldBlock(f, '')).join('') || '<p class="muted">없음</p>'}${dlHint}</div>
     <div class="card"><h2>참여자 <span class="small muted">(서명 순서대로)</span></h2>${rolesHtml}</div>
     <div class="card"><h2>첨부 ${tv.attachments?.photo ? '<span class="tag">사진대장 2×2</span>' : ''}${tv.attachments?.drawing ? '<span class="tag">도면</span>' : ''}</h2>
       <div class="row"><select class="inp" id="akind" style="width:auto"><option value="photo">사진</option><option value="drawing">도면</option><option value="other">기타(PDF 등)</option></select>
@@ -133,6 +136,10 @@ async function newDocForm(mode) {
     <div class="card"><button class="btn primary" style="width:100%;justify-content:center">문서 저장</button><p class="small muted" style="margin:8px 0 0">저장 후 문서 화면에서 결재 요청·발송합니다.</p></div>
   </aside></form>`;
   $('#tsel').addEventListener('change', (e) => go(`/new/${mode}?t=${e.target.value}`));
+  $$('[data-use]').forEach((c) => c.addEventListener('change', () => { c.closest('[data-role]').querySelector('.rbody').hidden = !c.checked; }));
+  const sumCheck = () => { const c = tv.extra?.checks?.[0]; if (!c || !$('#sumchk')) return; const v = readFields($('#nf'), sender); const n = (k) => Number(String(v[k] || 0).replace(/,/g, '')) || 0;
+    const parts = c.parts.reduce((a, k) => a + n(k), 0), total = n(c.total); $('#sumchk').textContent = total ? (parts === total ? '✓ 맞음' : `차이 ${(total - parts).toLocaleString('ko-KR')}원`) : ''; $('#sumchk').style.color = parts === total ? 'var(--ok)' : 'var(--bad)'; };
+  $('#nf').addEventListener('input', sumCheck);
   const atts = []; let baseId = null;
   const drawThumbs = () => { $('#athumbs').innerHTML = atts.map((a, i) => `<figure>${a.mime === 'application/pdf' ? '<div style="height:80px;display:grid;place-items:center;background:#f3f1ea">PDF</div>' : `<img src="${a.preview}" alt="">`}<figcaption><span>${esc({ photo: '사진', drawing: '도면', other: '기타' }[a.kind])} ${i + 1}</span><button type="button" class="btn ghost sm" data-del="${i}" aria-label="삭제">✕</button></figcaption></figure>`).join(''); $$('[data-del]').forEach((b) => b.addEventListener('click', () => { atts.splice(b.dataset.del, 1); drawThumbs(); })); };
   $('#afile').addEventListener('change', async (e) => {
@@ -148,9 +155,10 @@ async function newDocForm(mode) {
   $('#nf').addEventListener('submit', async (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);
-    const participants = tv.roles.map((r) => (r.kind === 'internal' ? { role_key: r.key, user_id: Number(fd.get(`p_${r.key}_user`)) } : r.kind === 'seal' ? { role_key: r.key }
-      : { role_key: r.key, name: fd.get(`p_${r.key}_name`), email: fd.get(`p_${r.key}_email`) || null, phone: fd.get(`p_${r.key}_phone`) || null, auth_method: fd.get(`p_${r.key}_auth`) || 'link', delivery: fd.get(`p_${r.key}_delivery`) }));
-    if (mode === 'remote' && participants.some((p, i) => tv.roles[i].kind === 'external' && !p.email && !p.phone)) return toast('비대면계약은 외부 참여자의 이메일이나 휴대폰이 필요합니다', true);
+    const used = tv.roles.filter((r) => !r.optional || $(`[data-use="${r.key}"]`)?.checked);
+    const participants = used.map((r) => (r.kind === 'internal' ? { role_key: r.key, user_id: Number(fd.get(`p_${r.key}_user`)) } : r.kind === 'seal' ? { role_key: r.key }
+      : { role_key: r.key, name: fd.get(`p_${r.key}_name`), email: fd.get(`p_${r.key}_email`) || null, phone: fd.get(`p_${r.key}_phone`) || null, auth_method: fd.get(`p_${r.key}_auth`) || 'link', delivery: fd.get(`p_${r.key}_delivery`), org_name: fd.get(`p_${r.key}_org`) || null, org_no: fd.get(`p_${r.key}_orgno`) || null }));
+    if (mode === 'remote' && participants.some((p, i) => used[i].kind === 'external' && !p.email && !p.phone)) return toast('비대면계약은 외부 참여자의 이메일이나 휴대폰이 필요합니다', true);
     const r = await guard(() => api('/documents', { method: 'POST', body: { mode, template_id: tid, title: fd.get('title'), vals: readFields(e.target, sender), participants, attachments: atts.map(({ file_id, kind, caption }) => ({ file_id, kind, caption })), base_file_id: baseId } }));
     if (fd.get('line')) await guard(() => api(`/documents/${r.id}/approval`, { method: 'POST', body: { line_id: Number(fd.get('line')) } }));
     toast('저장했습니다'); go('/doc/' + r.id);
@@ -171,14 +179,14 @@ async function pageDocs() {
     <select class="inp" name="status"><option value="">상태 전체</option>${Object.entries(ME.status).map(([k, v]) => `<option value="${k}"${q.get('status') === k ? ' selected' : ''}>${v}</option>`).join('')}</select>
     <select class="inp" name="mode"><option value="">방식 전체</option>${Object.entries(MODE).map(([k, v]) => `<option value="${k}"${q.get('mode') === k ? ' selected' : ''}>${v}</option>`).join('')}</select>
     <select class="inp" name="doc_type"><option value="">문서 종류</option>${opt(fc.doc_types, q.get('doc_type'))}</select>
-    <select class="inp" name="site"><option value="">현장</option>${opt(fc.sites, q.get('site'))}</select>
+    <select class="inp" name="site"><option value="">현장·소재지</option>${opt(fc.sites, q.get('site'))}</select>
     <select class="inp" name="partner"><option value="">거래처</option>${opt(fc.partners, q.get('partner'))}</select>
     <select class="inp" name="owner"><option value="">계약 담당자</option>${userOpts(Number(q.get('owner')), () => true)}</select>
     <select class="inp" name="dept_id"><option value="">부서</option>${ORG.depts.map((d) => `<option value="${d.id}"${String(d.id) === q.get('dept_id') ? ' selected' : ''}>${esc(d.name)}</option>`).join('')}</select>
     <input class="inp" name="amin" inputmode="numeric" placeholder="금액 이상" value="${esc(q.get('amin') || '')}"><input class="inp" name="amax" inputmode="numeric" placeholder="금액 이하" value="${esc(q.get('amax') || '')}">
     <input class="inp" type="date" name="from" title="계약기간 시작" value="${esc(q.get('from') || '')}"><input class="inp" type="date" name="to" title="계약기간 끝" value="${esc(q.get('to') || '')}">
     </div><div class="row" style="margin-top:10px"><button class="btn primary">검색</button><a class="btn ghost" href="#/docs">초기화</a><span class="muted small">총 ${list.total}건</span></div></form>
-  <div class="card tbl-wrap">${list.rows.length ? `<table class="t"><tr><th>번호</th><th>제목</th><th>방식</th><th>상태</th><th>현장</th><th>거래처·참여자</th><th class="num">금액</th><th>기간</th><th>담당</th></tr>
+  <div class="card tbl-wrap">${list.rows.length ? `<table class="t"><tr><th>번호</th><th>제목</th><th>방식</th><th>상태</th><th>현장·소재지</th><th>거래처·참여자</th><th class="num">금액</th><th>기간</th><th>담당</th></tr>
     ${list.rows.map((d) => `<tr class="click" data-id="${d.id}"><td class="faint">${d.id}</td><td><b>${esc(d.title)}</b><div>${(d.tags || '').split(',').filter(Boolean).map((t) => `<span class="tag">${esc(t)}</span>`).join('')}</div></td><td>${MODE[d.mode]}</td><td>${badge(d.status, ME.status[d.status])}</td><td>${esc(d.site || '')}</td><td>${esc(d.partner || d.parties || '')}</td><td class="num">${d.amount != null ? won(d.amount) : ''}</td><td class="small nowrap">${esc(d.start_date || '')}${d.end_date ? ' ~ ' + esc(d.end_date) : ''}</td><td>${esc(d.creator_name || '')}</td></tr>`).join('')}</table>` : '<div class="empty">조건에 맞는 문서가 없습니다</div>'}</div></div></div>`;
   $('#flt').addEventListener('submit', (e) => { e.preventDefault(); const p = new URLSearchParams(); for (const [k, v] of new FormData(e.target)) if (v) p.set(k, v); go('/docs?' + p); });
   $$('tr[data-id]').forEach((r) => r.addEventListener('click', () => go('/doc/' + r.dataset.id)));
@@ -192,7 +200,8 @@ async function pageDoc(id) {
   const cur = D.participants.find((p) => p.status === 'current');
   const myTurn = D.participants.filter((p) => p.status === 'current' && ((p.kind === 'internal' && p.user_id === ME.user.id) || (p.kind === 'seal' && can('seal.use'))));
   const myAppr = D.approvals.find((a) => a.user_id === ME.user.id && a.status === 'waiting' && a.round === D.approval.round && a.kind === 'approve' && a.step_no === Math.min(...D.approvals.filter((x) => x.round === D.approval.round && x.status === 'waiting' && x.kind === 'approve').map((x) => x.step_no)));
-  const vals = { ...d.vals }; D.participants.forEach((p) => Object.assign(vals, p.vals));
+  const vals = { ...D.sys, ...d.vals }; D.participants.forEach((p) => Object.assign(vals, p.vals));
+  const CL = D.template.extra?.checklist || [];
   const flow = [...(D.approvals.length ? [...new Map(D.approvals.filter((a) => a.round === D.approval.round && a.kind === 'approve').map((a) => [a.id, a])).values()].map((a) => `<span class="st in ${a.status === 'approved' ? 'done' : a.status === 'waiting' && d.status === 'approval' ? 'now' : ''}">결재 ${esc(a.user_name)}</span>`) : []),
     ...D.participants.map((p) => `<span class="st ${p.kind === 'external' ? 'ex' : 'in'} ${p.status === 'signed' ? 'done' : p.status === 'current' ? 'now' : ''}">${esc(p.role_label)} ${esc(p.name)}</span>`), `<span class="st ${d.status === 'completed' ? 'done' : ''}">완료</span>`].join('<span class="ar">→</span>');
   view().innerHTML = `<div class="head"><div><div class="row"><h1>${esc(d.title)}</h1>${badge(d.status, d.status_label)}<span class="tag">${MODE[d.mode]}계약</span><span class="faint small">#${d.id} · v${d.version}</span></div>
@@ -211,10 +220,11 @@ async function pageDoc(id) {
     <div class="tabs" role="tablist"><button class="on" data-tab="body">본문</button><button data-tab="att">첨부 ${D.attachments.length}</button><button data-tab="cm">메모·의견</button><button data-tab="audit">처리 이력</button></div>
     <div id="tab"></div></div>
   <aside>
-    <div class="card"><h2>계약 정보</h2><table class="t small">${[['현장', d.site], ['거래처', d.partner], ['문서 종류', d.doc_type], ['계약금액', d.amount != null ? won(d.amount) : null], ['계약기간', d.start_date || d.end_date ? `${d.start_date || ''} ~ ${d.end_date || ''}` : null], ['서명 마감', d.sign_deadline], ['내용 해시', `<span class="mono">${esc(String(d.content_hash).slice(0, 20))}…</span>`]].filter((x) => x[1]).map(([k, v]) => `<tr><td class="muted nowrap">${k}</td><td>${k === '내용 해시' ? v : esc(v)}</td></tr>`).join('')}</table>
+    <div class="card"><h2>계약 정보</h2><table class="t small">${[['현장·소재지', d.site], ['거래처', d.partner], ['문서 종류', d.doc_type], ['계약금액', d.amount != null ? won(d.amount) : null], ['계약기간', d.start_date || d.end_date ? `${d.start_date || ''} ~ ${d.end_date || ''}` : null], ['서명 마감', d.sign_deadline], ['내용 해시', `<span class="mono">${esc(String(d.content_hash).slice(0, 20))}…</span>`]].filter((x) => x[1]).map(([k, v]) => `<tr><td class="muted nowrap">${k}</td><td>${k === '내용 해시' ? v : esc(v)}</td></tr>`).join('')}</table>
       <div style="margin-top:8px">${D.folders.map((f) => `<span class="tag ${f.source === 'rule' ? 'rule' : ''}">📁 ${esc(f.name)}</span>`).join('')}${D.tags.map((t) => `<span class="tag ${t.source === 'rule' ? 'rule' : ''}">${esc(t.tag)}</span>`).join('')}</div>
       <div class="row" style="margin-top:8px"><button class="btn sm" id="b-tag">태그</button><button class="btn sm" id="b-folder">폴더</button></div></div>
-    <div class="card"><h2>참여자</h2><ul class="tl">${D.participants.map((p) => `<li class="${p.status === 'signed' ? 'ok' : p.status === 'current' ? 'now' : p.status === 'rejected' ? 'bad' : ''}"><b>${esc(p.role_label)}</b> ${esc(p.name)} <span class="faint small">${KIND[p.kind]}</span><br><span class="small muted">${p.signed_at ? `${dt(p.signed_at)} · ${esc(p.confirm_method || (p.kind === 'external' ? (p.verified_at ? p.auth_method : '서명 링크') : '로그인 직원'))}` : p.status === 'current' ? '서명 차례' : p.status === 'rejected' ? '거절: ' + esc(p.reject_reason) : '대기'}${p.viewed_at && !p.signed_at ? ' · 열람함' : ''}</span></li>`).join('')}</ul></div>
+    ${CL.length ? `<div class="card" id="clbox"><h2>계약 전 확인 <span class="small muted">${CL.filter((_, i) => D.checklist[i]).length}/${CL.length}</span></h2>${CL.map((t, i) => `<label class="chk small" style="display:flex;align-items:flex-start;margin-bottom:6px"><input type="checkbox" data-cl="${i}"${D.checklist[i] ? ' checked' : ''}${D.doc.creator_id === ME.user.id && !['completed', 'cancelled'].includes(d.status) ? '' : ' disabled'}> <span>${esc(t)}</span></label>`).join('')}<p class="small faint" style="margin:4px 0 0">체크 기록은 처리 이력과 완료 PDF 확인서에 남습니다. 법률 자문이 아닌 점검용 목록입니다.</p></div>` : ''}
+    <div class="card"><h2>참여자</h2><ul class="tl">${D.participants.map((p) => `<li class="${p.status === 'signed' ? 'ok' : p.status === 'current' ? 'now' : p.status === 'rejected' ? 'bad' : ''}"><b>${esc(p.role_label)}</b> ${p.org_name ? esc(p.org_name) + ' · ' : ''}${esc(p.name)} <span class="faint small">${KIND[p.kind]}</span><br><span class="small muted">${p.signed_at ? `${dt(p.signed_at)} · ${esc(p.confirm_method || (p.kind === 'external' ? (p.verified_at ? p.auth_method : '서명 링크') : '로그인 직원'))}` : p.status === 'current' ? '서명 차례' : p.status === 'rejected' ? '거절: ' + esc(p.reject_reason) : '대기'}${p.viewed_at && !p.signed_at ? ' · 열람함' : ''}</span></li>`).join('')}</ul></div>
     ${D.approvals.length ? `<div class="card"><h2>결재 타임라인</h2><ul class="tl">${D.approvals.map((a) => `<li class="${a.status === 'approved' ? 'ok' : a.status === 'rejected' ? 'bad' : a.status === 'waiting' && a.round === D.approval.round ? 'now' : ''}"><span class="faint small">${a.round}차 ${a.kind === 'reference' ? '참조' : a.step_no + '단계'}</span> ${esc(a.user_name)} ${badge(a.status, { waiting: '대기', approved: '승인', rejected: '반려', void: '무효', reference: '참조' }[a.status])}${a.comment ? `<br><span class="small">${esc(a.comment)}</span>` : ''}${a.acted_at ? `<br><span class="faint small">${dt(a.acted_at)}</span>` : ''}</li>`).join('')}</ul></div>` : ''}
     <div class="card"><h2>일정</h2>${D.schedules.length ? `<table class="t small">${D.schedules.map((s) => `<tr><td>${esc(s.title)}${s.source === 'manual' ? ' <span class="faint">수정됨</span>' : ''}</td><td class="nowrap">${esc(s.date)}</td><td>${s.done ? '처리' : `${s.remind_days.join('·')}일 전`}</td><td><button class="btn ghost sm" data-sch="${s.id}">수정</button></td></tr>`).join('')}</table>` : '<div class="faint small">계약 날짜가 없습니다</div>'}
       <button class="btn sm" id="b-sch" style="margin-top:8px">＋ 사용자 일정</button></div>
@@ -264,6 +274,7 @@ async function pageDoc(id) {
   $('#b-tag').addEventListener('click', async () => { const v = await dialog('태그 붙이기', '<input class="inp" id="tg" placeholder="예: 중요계약">', [{ label: '붙이기', cls: 'primary', value: (dd) => $('#tg', dd).value }]); if (v) { await guard(() => api(`/documents/${d.id}/tags`, { method: 'POST', body: { tag: v } })); route(); } });
   $('#b-folder').addEventListener('click', async () => { const v = await dialog('폴더에 넣기', '<input class="inp" id="fd" placeholder="예: A현장">', [{ label: '넣기', cls: 'primary', value: (dd) => $('#fd', dd).value }]); if (v) { await guard(() => api(`/documents/${d.id}/folders`, { method: 'POST', body: { name: v } })); route(); } });
   $('#b-sch').addEventListener('click', () => schedDialog(d.id));
+  $$('[data-cl]').forEach((c) => c.addEventListener('change', () => guard(() => api(`/documents/${d.id}/checklist`, { method: 'POST', body: { index: Number(c.dataset.cl), checked: c.checked } }))));
   $$('[data-sch]').forEach((b) => b.addEventListener('click', () => schedDialog(d.id, D.schedules.find((s) => s.id === Number(b.dataset.sch)))));
   if (myTurn.length) internalSign(D, myTurn[0]);
   void cur;
@@ -301,7 +312,7 @@ async function editDoc(D) {
     <h3>외부 참여자</h3>${D.participants.filter((p) => p.kind === 'external').map((p) => `<div class="grid g3"><input class="inp" data-pn="${p.role_key}" value="${esc(p.name)}"><input class="inp" data-pe="${p.role_key}" value="${esc(p.email || '')}" placeholder="이메일"><input class="inp" data-pp="${p.role_key}" value="${esc(p.phone || '')}" placeholder="휴대폰"></div>`).join('')}`;
   const v = await dialog('내용·참여자 수정', html, [{ label: '저장', cls: 'primary', value: (dd) => dd.cloneNode(true) }], null);
   if (!v) return;
-  const participants = D.participants.map((p) => (p.kind === 'external' ? { role_key: p.role_key, name: $(`[data-pn="${p.role_key}"]`, v).value, email: $(`[data-pe="${p.role_key}"]`, v).value || null, phone: $(`[data-pp="${p.role_key}"]`, v).value || null, auth_method: p.auth_method, delivery: p.delivery } : p.kind === 'internal' ? { role_key: p.role_key, user_id: p.user_id } : { role_key: p.role_key }));
+  const participants = D.participants.map((p) => (p.kind === 'external' ? { role_key: p.role_key, name: $(`[data-pn="${p.role_key}"]`, v).value, email: $(`[data-pe="${p.role_key}"]`, v).value || null, phone: $(`[data-pp="${p.role_key}"]`, v).value || null, auth_method: p.auth_method, delivery: p.delivery, org_name: p.org_name, org_no: p.org_no } : p.kind === 'internal' ? { role_key: p.role_key, user_id: p.user_id } : { role_key: p.role_key }));
   const r = await guard(() => api('/documents/' + D.doc.id, { method: 'PUT', body: { title: $('#et', v).value, vals: readFields(v, sender, 'e_'), participants } }));
   if (r.version !== D.doc.version) toast('결재 후 변경되어 재결재를 요청했습니다'); else toast('저장했습니다');
   route();
@@ -496,24 +507,31 @@ async function pageTemplates(id) {
   if (id) return templateEditor(id === 'new' ? null : Number(id));
   const list = await api('/templates');
   view().innerHTML = `<div class="head"><div><h1>템플릿</h1><p>개인 서식과 회사 공용 서식. 고치면 새 버전이 생기고, 이미 쓴 문서는 예전 버전 그대로입니다.</p></div>${can('template.edit') ? '<a class="btn primary" href="#/templates/new">＋ 새 템플릿</a>' : ''}</div>
-  <div class="card tbl-wrap"><table class="t"><tr><th>이름</th><th>종류</th><th>범위</th><th>버전</th><th>소유</th><th></th></tr>${list.map((t) => `<tr><td><b>${esc(t.name)}</b>${t.usable ? '' : ' <span class="faint small">(공유 안 됨)</span>'}</td><td>${esc(t.doc_type || '')}</td><td>${t.scope === 'company' ? `회사 공용${t.shares.length ? ` · 공유 ${t.shares.length}곳` : ' · 전체'}` : '개인'}</td><td>v${t.current_version}</td><td>${esc(t.owner)}</td><td class="nowrap">${t.usable ? `<a class="btn sm" href="#/new/remote?t=${t.id}">비대면</a> <a class="btn sm" href="#/new/inperson?t=${t.id}">대면</a> ` : ''}<a class="btn sm" href="#/templates/${t.id}">편집</a></td></tr>`).join('')}</table></div>`;
+  <div class="card tbl-wrap"><table class="t"><tr><th>분류</th><th>이름</th><th>종류</th><th>범위</th><th>버전</th><th>소유</th><th></th></tr>${list.map((t) => `<tr><td><span class="tag">${esc(t.category)}</span></td><td><b>${esc(t.name)}</b>${t.usable ? '' : ' <span class="faint small">(공유 안 됨)</span>'}</td><td>${esc(t.doc_type || '')}</td><td>${t.scope === 'company' ? `회사 공용${t.shares.length ? ` · 공유 ${t.shares.length}곳` : ' · 전체'}` : '개인'}</td><td>v${t.current_version}</td><td>${esc(t.owner)}</td><td class="nowrap">${t.usable ? `<a class="btn sm" href="#/new/remote?t=${t.id}">비대면</a> <a class="btn sm" href="#/new/inperson?t=${t.id}">대면</a> ` : ''}<a class="btn sm" href="#/templates/${t.id}">편집</a></td></tr>`).join('')}</table></div>`;
 }
 async function templateEditor(id) {
-  const t = id ? await api('/templates/' + id) : { name: '', doc_type: '', scope: 'personal', shares: [], version: { roles: [{ key: 'party', label: '상대방', kind: 'external' }], fields: [], body: '## 1. 계약 내용\n', attachments: {} } };
+  const t = id ? await api('/templates/' + id) : { name: '', doc_type: '', category: '일반', scope: 'personal', shares: [], version: { roles: [{ key: 'party', label: '상대방', kind: 'external', party: 'company' }, { key: 'company', label: '당사 직인', kind: 'seal' }], fields: [], body: '## 1. 당사자\n{{@company}} 와 {{@party.org}} 는 다음과 같이 계약한다.\n', attachments: {}, extra: { checks: [], deadlines: [], checklist: [] } } };
   const tv = t.version;
   view().innerHTML = `<div class="head"><div><h1>${id ? '템플릿 편집' : '새 템플릿'}</h1><p>${id ? `현재 v${t.current_version} · 저장하면 v${t.current_version + 1}` : ''}</p></div><div class="row">${id && can('template.share') ? '<button class="btn" id="sh">공유 설정</button>' : ''}<button class="btn primary" id="sv">저장</button></div></div>
   <div class="split"><div>
     <div class="card"><div class="grid g2"><label class="f"><span>이름</span><input class="inp" id="tn" value="${esc(t.name)}"></label><label class="f"><span>문서 종류 (분류·결재 규칙에 쓰임)</span><input class="inp" id="td" value="${esc(t.doc_type || '')}" placeholder="예: 근로계약서"></label></div>
-      <label class="f"><span>본문 — {{항목키}} 자리에 값이 들어갑니다. "## 제목" 줄은 소제목.</span><textarea class="inp code" id="tb" style="min-height:320px">${esc(tv.body)}</textarea></label>
+      <label class="f"><span>업종 분류</span><select class="inp" id="tc">${['일반', '부동산', '건설', '인사·노무'].map((c) => `<option${(t.category || '일반') === c ? ' selected' : ''}>${c}</option>`).join('')}</select></label>
+      <label class="f"><span>본문 — {{항목키}} 자리에 값이 들어갑니다. {{금액키|한글}}은 "일금 ○○원정", {{@company}} 요청 회사, {{@date}} 계약일, {{@역할키.name}}·{{@역할키.org}}·{{@역할키.orgno}}. "## 제목" 줄은 소제목.</span><textarea class="inp code" id="tb" style="min-height:320px">${esc(tv.body)}</textarea></label>
       <div class="row small"><span class="muted">항목 넣기:</span><span id="ins"></span></div></div>
     <div class="card"><h2>미리보기</h2><div class="preview-body" id="tp"></div></div></div>
   <aside><div class="card"><h2>참여자 역할 <span class="small muted">(서명 순서)</span></h2><div id="rl"></div><button class="btn sm" id="ra">＋ 역할</button></div>
     <div class="card"><h2>입력 항목</h2><div id="fl"></div><button class="btn sm" id="fa">＋ 항목</button>
       <p class="small muted">작성자=문서 만드는 직원이 입력, 역할=그 참여자가 서명 화면에서 입력. 개인정보 표시 항목은 다른 참여자에게 가려 보입니다. 대량계약에서 '공통'은 모든 행에 같은 값입니다.</p></div>
-    <div class="card"><h2>첨부</h2><label class="chk"><input type="checkbox" id="ap" ${tv.attachments?.photo ? 'checked' : ''}> 사진대장(2×2)</label> <label class="chk"><input type="checkbox" id="ad" ${tv.attachments?.drawing ? 'checked' : ''}> 도면</label></div></aside></div>`;
+    <div class="card"><h2>첨부</h2><label class="chk"><input type="checkbox" id="ap" ${tv.attachments?.photo ? 'checked' : ''}> 사진대장(2×2)</label> <label class="chk"><input type="checkbox" id="ad" ${tv.attachments?.drawing ? 'checked' : ''}> 도면</label></div>
+    <div class="card"><h2>부가 규칙 <span class="small muted">(고급)</span></h2><p class="small muted">금액 합계 검증(checks), 기한 일정(deadlines: 기준 "@contract"=계약 완료일 또는 날짜 항목키 ± 일수), 계약 전 확인 목록(checklist). 정해진 형식만 저장됩니다.</p>
+      <textarea class="inp code" id="tx" style="min-height:160px">${esc(JSON.stringify(tv.extra || { checks: [], deadlines: [], checklist: [] }, null, 1))}</textarea></div></aside></div>`;
   let roles = tv.roles.map((r) => ({ ...r })), fields = tv.fields.map((f) => ({ ...f }));
   const drawR = () => {
-    $('#rl').innerHTML = roles.map((r, i) => `<div class="row" style="margin-bottom:6px"><input class="inp" style="width:90px" value="${esc(r.key)}" data-rk="${i}" aria-label="역할 키"><input class="inp" style="flex:1;min-width:80px" value="${esc(r.label)}" data-rl="${i}" aria-label="이름"><select class="inp" style="width:auto" data-rkind="${i}">${Object.entries(KIND).map(([k, v]) => `<option value="${k}"${r.kind === k ? ' selected' : ''}>${v}</option>`).join('')}</select><button class="btn ghost sm" data-rdel="${i}" aria-label="삭제">✕</button></div>`).join('');
+    $('#rl').innerHTML = roles.map((r, i) => `<div class="row" style="margin-bottom:6px"><input class="inp" style="width:90px" value="${esc(r.key)}" data-rk="${i}" aria-label="역할 키"><input class="inp" style="flex:1;min-width:80px" value="${esc(r.label)}" data-rl="${i}" aria-label="이름"><select class="inp" style="width:auto" data-rkind="${i}">${Object.entries(KIND).map(([k, v]) => `<option value="${k}"${r.kind === k ? ' selected' : ''}>${v}</option>`).join('')}</select><button class="btn ghost sm" data-rdel="${i}" aria-label="삭제">✕</button></div>
+      <div class="row small" style="margin:-2px 0 8px"><label class="chk"><input type="checkbox" data-ropt="${i}"${r.optional ? ' checked' : ''}> 선택 참여자</label><label class="chk"><input type="checkbox" data-rparty="${i}"${r.party === 'company' ? ' checked' : ''}> 회사(상호·사업자번호)</label><span class="faint">순서</span><input class="inp" style="width:56px" data-rord="${i}" value="${r.order || i + 1}"></div>`).join('');
+    $$('[data-ropt]').forEach((e) => e.addEventListener('change', () => { roles[e.dataset.ropt].optional = e.checked; }));
+    $$('[data-rparty]').forEach((e) => e.addEventListener('change', () => { roles[e.dataset.rparty].party = e.checked ? 'company' : undefined; }));
+    $$('[data-rord]').forEach((e) => e.addEventListener('input', () => { roles[e.dataset.rord].order = Number(e.value) || 1; }));
     $$('[data-rk]').forEach((e) => e.addEventListener('input', () => { roles[e.dataset.rk].key = e.value.trim(); drawF(); }));
     $$('[data-rl]').forEach((e) => e.addEventListener('input', () => { roles[e.dataset.rl].label = e.value; }));
     $$('[data-rkind]').forEach((e) => e.addEventListener('change', () => { roles[e.dataset.rkind].kind = e.value; }));
@@ -521,24 +539,30 @@ async function templateEditor(id) {
   };
   const drawF = () => {
     $('#fl').innerHTML = fields.map((f, i) => `<div style="border:1px solid var(--line2);border-radius:6px;padding:6px;margin-bottom:6px"><div class="row"><input class="inp" style="width:100px" value="${esc(f.key)}" data-fk="${i}" placeholder="키(영문)"><input class="inp" style="flex:1;min-width:90px" value="${esc(f.label)}" data-fl="${i}" placeholder="이름"><button class="btn ghost sm" data-fdel="${i}" aria-label="삭제">✕</button></div>
-      <div class="row small" style="margin-top:4px"><select class="inp" style="width:auto" data-ft="${i}">${['text', 'textarea', 'number', 'date', 'email', 'phone', 'check'].map((x) => `<option${f.type === x ? ' selected' : ''}>${x}</option>`).join('')}</select>
+      <div class="row small" style="margin-top:4px"><select class="inp" style="width:auto" data-ft="${i}">${Object.entries({ text: '글', textarea: '긴 글', number: '숫자·금액', date: '날짜', email: '이메일', phone: '전화', check: '확인(체크)', select: '선택 목록' }).map(([x, l]) => `<option value="${x}"${f.type === x ? ' selected' : ''}>${l}</option>`).join('')}</select>
       <select class="inp" style="width:auto" data-fo="${i}"><option value="sender">작성자</option>${roles.map((r) => `<option value="${esc(r.key)}"${f.owner === r.key ? ' selected' : ''}>${esc(r.label)}</option>`).join('')}</select>
-      <label class="chk"><input type="checkbox" data-fr="${i}" ${f.required ? 'checked' : ''}>필수</label><label class="chk"><input type="checkbox" data-fp="${i}" ${f.pii ? 'checked' : ''}>개인정보</label><label class="chk"><input type="checkbox" data-fc="${i}" ${f.scope === 'common' ? 'checked' : ''}>공통</label></div></div>`).join('');
+      <label class="chk"><input type="checkbox" data-fr="${i}" ${f.required ? 'checked' : ''}>필수</label><label class="chk"><input type="checkbox" data-fp="${i}" ${f.pii ? 'checked' : ''}>개인정보</label><label class="chk"><input type="checkbox" data-fc="${i}" ${f.scope === 'common' ? 'checked' : ''}>공통</label></div>
+      ${f.type === 'select' ? `<input class="inp small" style="margin-top:4px" data-fopt="${i}" value="${esc((f.options || []).join(', '))}" placeholder="선택지 (쉼표로 구분)">` : ''}${f.type === 'date' ? `<input class="inp small" style="margin-top:4px" data-fsch="${i}" value="${esc(f.schedule || '')}" placeholder="일정으로 등록할 이름 (예: 잔금 지급일, 비우면 등록 안 함)">` : ''}</div>`).join('');
     const bind = (a, fn, ev = 'input') => $$(`[${a}]`).forEach((e) => e.addEventListener(ev, () => { fn(fields[e.getAttribute(a)], e); preview(); }));
     bind('data-fk', (f, e) => { f.key = e.value.trim(); }); bind('data-fl', (f, e) => { f.label = e.value; });
     bind('data-ft', (f, e) => { f.type = e.value; }, 'change'); bind('data-fo', (f, e) => { f.owner = e.value; }, 'change');
-    bind('data-fr', (f, e) => { f.required = e.checked; }, 'change'); bind('data-fp', (f, e) => { f.pii = e.checked; }, 'change'); bind('data-fc', (f, e) => { f.scope = e.checked ? 'common' : 'each'; }, 'change');
+    bind('data-fr', (f, e) => { f.required = e.checked; }, 'change');
+    bind('data-fopt', (f, e) => { f.options = e.value.split(',').map((x) => x.trim()).filter(Boolean); });
+    bind('data-fsch', (f, e) => { f.schedule = e.value.trim() || undefined; });
+    $$('[data-ft]').forEach((e) => e.addEventListener('change', () => drawF())); bind('data-fp', (f, e) => { f.pii = e.checked; }, 'change'); bind('data-fc', (f, e) => { f.scope = e.checked ? 'common' : 'each'; }, 'change');
     $$('[data-fdel]').forEach((e) => e.addEventListener('click', () => { fields.splice(e.dataset.fdel, 1); drawF(); }));
     $('#ins').innerHTML = fields.map((f) => `<button class="btn ghost sm" data-ins="${esc(f.key)}">{{${esc(f.key)}}}</button>`).join('');
     $$('[data-ins]').forEach((b) => b.addEventListener('click', () => { const ta = $('#tb'); const p = ta.selectionStart; ta.value = ta.value.slice(0, p) + `{{${b.dataset.ins}}}` + ta.value.slice(p); preview(); }));
     preview();
   };
-  const preview = () => { $('#tp').innerHTML = renderBody($('#tb').value, Object.fromEntries(fields.map((f) => [f.key, `[${f.label}]`]))); };
+  const preview = () => { const sv = { '@company': ME.company.name, '@date': '(계약일)', '@company_bizno': '(사업자번호)' }; roles.forEach((r) => { sv[`@${r.key}.name`] = `[${r.label} 이름]`; sv[`@${r.key}.org`] = `[${r.label} 상호]`; sv[`@${r.key}.orgno`] = `[${r.label} 사업자번호]`; });
+    $('#tp').innerHTML = renderBody($('#tb').value.replace(/\|\s*한글/g, ''), { ...sv, ...Object.fromEntries(fields.map((f) => [f.key, `[${f.label}]`])) }); };
   drawR(); drawF(); $('#tb').addEventListener('input', preview);
   $('#ra').addEventListener('click', () => { roles.push({ key: 'r' + (roles.length + 1), label: '참여자', kind: 'external' }); drawR(); drawF(); });
   $('#fa').addEventListener('click', () => { fields.push({ key: 'f' + (fields.length + 1), label: '항목', type: 'text', owner: 'sender', required: false, scope: 'each' }); drawF(); });
   $('#sv').addEventListener('click', async () => {
-    const body = { name: $('#tn').value, doc_type: $('#td').value, body: $('#tb').value, roles: roles.map((r, i) => ({ ...r, order: i + 1 })), fields, attachments: { photo: $('#ap').checked, drawing: $('#ad').checked } };
+    let extra; try { extra = JSON.parse($('#tx').value || '{}'); } catch { return toast('부가 규칙의 형식(JSON)이 올바르지 않습니다', true); }
+    const body = { name: $('#tn').value, doc_type: $('#td').value, category: $('#tc').value, body: $('#tb').value, roles: roles.map((r, i) => ({ ...r, order: r.order || i + 1 })), fields, extra, attachments: { photo: $('#ap').checked, drawing: $('#ad').checked } };
     const r = await guard(() => (id ? api('/templates/' + id, { method: 'PUT', body }) : api('/templates', { method: 'POST', body })));
     toast('저장했습니다'); go('/templates/' + (id || r.id));
   });
@@ -550,6 +574,28 @@ async function templateEditor(id) {
       <h3 style="margin-top:8px">사용자</h3>${ORG.users.filter((u) => u.status === 'active').map((u) => `<label class="chk"><input type="checkbox" data-su="${u.id}"${has('user', u.id)}> ${esc(u.name)}</label> `).join('')}`;
     const v = await dialog('공유 설정', html, [{ label: '저장', cls: 'primary', value: (dd) => ({ scope: $('input[name=sc]:checked', dd).value, shares: [...$$('[data-sd]:checked', dd).map((e) => ({ target_type: 'dept', target_id: Number(e.dataset.sd) })), ...$$('[data-sg]:checked', dd).map((e) => ({ target_type: 'group', target_id: Number(e.dataset.sg) })), ...$$('[data-su]:checked', dd).map((e) => ({ target_type: 'user', target_id: Number(e.dataset.su) }))] }) }]);
     if (v) { await guard(() => api(`/templates/${id}/share`, { method: 'POST', body: v })); toast('공유 설정을 저장했습니다'); route(); }
+  });
+}
+
+// ── 부동산 도구: 중개보수 상한 계산 · 계약 후 기한 안내
+async function pageTools() {
+  const guide = await api('/tools/realestate-guide');
+  view().innerHTML = `<div class="head"><div><h1>부동산 도구</h1><p>중개보수 상한 계산과 계약 후 챙길 기한. 일반 안내이며 법률 자문이 아닙니다.</p></div><a class="btn primary" href="#/new/remote?cat=부동산">＋ 부동산 계약 작성</a></div>
+  <div class="split"><form class="card" id="fee"><h2>중개보수 상한 계산</h2>
+    <div class="grid g2"><label class="f"><span>물건 종류</span><select class="inp" name="property"><option value="house">주택(분양권 포함)</option><option value="officetel">오피스텔</option><option value="other">주택 외(토지·상가 등)</option></select></label>
+    <label class="f"><span>거래 유형</span><select class="inp" name="deal"><option value="sale">매매·교환</option><option value="lease">임대차(전세·월세)</option></select></label></div>
+    <div class="grid g3"><label class="f"><span>매매대금(원)</span><input class="inp" name="price" inputmode="numeric"></label><label class="f"><span>보증금(원)</span><input class="inp" name="deposit" inputmode="numeric"></label><label class="f"><span>월차임(원)</span><input class="inp" name="rent" inputmode="numeric"></label></div>
+    <label class="chk"><input type="checkbox" name="oq" checked> 오피스텔: 전용 85㎡ 이하, 부엌·화장실·목욕시설을 갖춤</label>
+    <div style="margin-top:10px"><button class="btn primary">계산</button></div><div id="fr" style="margin-top:14px"></div></form>
+  <aside class="card"><h2>계약 후 챙길 일</h2>${guide.map((g) => `<div style="margin-bottom:10px"><b>${esc(g.title)}</b><div class="small">${esc(g.body)}</div></div>`).join('')}
+    <p class="small faint">부동산 서식으로 계약하면 거래신고·임대차 신고 30일, 갱신 통지 기간이 계약 일정에 자동으로 들어갑니다. 이음사인은 국토교통부 부동산 전자계약시스템·신고 시스템과 연결되어 있지 않으므로 신고는 따로 해야 합니다.</p></aside></div>`;
+  $('#fee').addEventListener('submit', async (e) => {
+    e.preventDefault(); const f = Object.fromEntries(new FormData(e.target));
+    const q = new URLSearchParams({ property: f.property, deal: f.deal, price: f.price.replace(/,/g, ''), deposit: f.deposit.replace(/,/g, ''), rent: f.rent.replace(/,/g, ''), officetelQualified: f.oq ? '1' : '0' });
+    const r = await guard(() => api('/tools/broker-fee?' + q));
+    $('#fr').innerHTML = `<div class="note ok"><b style="font-size:18px">상한 ${won(r.fee)}</b> (부가세 별도, 10%면 ${won(r.vat)})</div>
+      <table class="t small" style="margin-top:8px"><tr><td class="muted">거래금액</td><td>${won(r.base)}${r.baseNote ? ` <span class="faint">(${esc(r.baseNote)})</span>` : ''}</td></tr><tr><td class="muted">상한요율</td><td>${r.rate}%</td></tr><tr><td class="muted">한도액</td><td>${r.cap ? won(r.cap) : '없음'}</td></tr><tr><td class="muted">근거</td><td>${esc(r.basis)}</td></tr></table>
+      <ul class="small muted">${r.notes.map((n) => `<li>${esc(n)}</li>`).join('')}</ul>`;
   });
 }
 

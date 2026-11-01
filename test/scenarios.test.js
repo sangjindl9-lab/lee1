@@ -556,4 +556,69 @@ test('시나리오 9: 완료 PDF의 한글·서명·첨부 구성 (사진대장 
   console.log('PDF', out, pages);
 });
 
+test('부동산: 주택 임대차 — 금액 분할 검증, 공동명의·중개사 선택, 법정 기한 일정, 한글 금액 PDF, 확인 목록', async () => {
+  for (const r of ok(await req('GET', '/api/approval-rules', { cookie: S.A })).rules) ok(await req('DELETE', `/api/approval-rules/${r.id}`, { cookie: S.A })); // 앞 시험의 1억 이상 결재 규칙 제거
+  const tid = tplId(S.cidA, '주택임대차계약서');
+  const base = { site: '서울시 시험구 예시로 12, 101동 1001호', bldg: '철근콘크리트조 · 아파트', bldg_area: '84.9', lease_part: '101동 1001호 전부', lease_kind: '전세',
+    amount: 300000000, down: 30000000, balance: 260000000, balance_date: '2026-12-20', start_date: '2026-12-20', end_date: '2028-12-19', info_way: '임차인의 정보 열람에 동의함' };
+  const parts = [{ role_key: 'lessor', name: '김임대', email: 'lessor@re.test' }, { role_key: 'lessee', name: '이임차', email: 'lessee@re.test' }, { role_key: 'broker', user_id: S.staff }];
+  const id = ok(await req('POST', '/api/documents', { cookie: S.ST, body: { mode: 'remote', template_id: tid, title: '전세 계약 - 예시로 12', vals: base, participants: parts } }), 201).id;
+  assert.equal(all(`select * from participants where document_id=?`, id).length, 3, '공동명의·공동중개 생략 가능');
+  const bad = await req('POST', `/api/documents/${id}/send`, { cookie: S.ST });
+  assert.equal(bad.status, 400); assert.match(bad.json.error, /계약금.*잔금.*보증금/, '계약금+중도금+잔금 ≠ 보증금 차단');
+  ok(await req('PUT', `/api/documents/${id}`, { cookie: S.ST, body: { vals: { mid: 10000000, mid_date: '2026-11-30' } } }));
+  ok(await req('POST', `/api/documents/${id}/checklist`, { cookie: S.ST, body: { index: 0, checked: true } }));
+  ok(await req('POST', `/api/documents/${id}/send`, { cookie: S.ST }));
+  const t1 = tokenFromOutbox('lessor@re.test', id);
+  const v = ok(await req('GET', `/api/s/${t1}`));
+  assert.equal(v.vals['@company'], 'A전력(시험)'); assert.equal(v.vals['@lessee.name'], '이임차');
+  ok(await req('POST', `/api/s/${t1}/sign`, { body: { vals: { lr_birth: '1970-01-01', lr_addr: '서울시 예시동', lr_phone: '010-7000-0001' }, image: SIGN, agree: true } }));
+  const t2 = tokenFromOutbox('lessee@re.test', id);
+  ok(await req('POST', `/api/s/${t2}/sign`, { body: { vals: { le_birth: '1990-02-02', le_addr: '경기도 예시시', le_phone: '010-7000-0002' }, image: SIGN, agree: true } }));
+  const bk = get(`select id from participants where document_id=? and role_key='broker'`, id).id;
+  const d = ok(await req('POST', `/api/documents/${id}/sign`, { cookie: S.ST, body: { participant_id: bk, vals: { bk_office: '예시공인중개사사무소', bk_regno: '11000-2026-00001', bk_addr: '서울시 예시로 1' }, image: SIGN, agree: true } }));
+  assert.equal(d.doc.status, 'completed');
+  const sch = Object.fromEntries(all(`select kind,title,date from schedules where document_id=?`, id).map((x) => [x.title, x.date]));
+  assert.equal(sch['중도금 지급일'], '2026-11-30'); assert.equal(sch['잔금 지급일'], '2026-12-20');
+  assert.equal(sch['갱신 거절·조건 변경 통지 시작(만료 6개월 전)'], '2028-06-22'); assert.equal(sch['갱신 거절·조건 변경 통지 마감(만료 2개월 전)'], '2028-10-20');
+  const kd = new Date(Date.now() + 9 * 3600e3); kd.setUTCDate(kd.getUTCDate() + 30);
+  assert.equal(sch['주택임대차 신고 기한(신고 대상인 경우)'], kd.toISOString().slice(0, 10), '계약일+30일');
+  const r = await req('GET', `/api/documents/${id}/pdf`, { cookie: S.ST, raw: true });
+  const out = path.join(TMP, 'lease.pdf'); fs.writeFileSync(out, Buffer.from(await r.arrayBuffer()));
+  const txt = execFileSync('pdftotext', ['-layout', out, '-']).toString().replace(/\s+/g, ' ');
+  for (const k of ['일금 삼억원정', '300,000,000', '김임대', '이임차', '예시공인중개사사무소', '임대인의 정보 제시', '작성자 계약 전 확인 (1/6)', '[확인] 등기사항증명서', '주민등록번호는 받지 않습니다'])
+    assert.ok(txt.includes(k), `PDF 에 "${k}" 없음`);
+  S.leasePdf = out;
+});
+
+test('기업 간(B2B) 용역계약: 상대 회사 상호·사업자번호, 거래처 자동, 시스템 값', async () => {
+  const tid = tplId(S.cidA, '용역계약서');
+  const vals = { service_name: '사내 전산 유지보수', scope: 'PC·네트워크 점검', deliverable: '월간 점검 보고서', amount: 12000000, pay_terms: '매월 말 1,000,000원', start_date: '2027-01-01', end_date: '2027-12-31' };
+  assert.equal((await req('POST', '/api/documents', { cookie: S.ST, body: { mode: 'remote', template_id: tid, vals, participants: [{ role_key: 'vendor', name: '박대표', email: 'ceo@vendor.test' }, { role_key: 'company' }] } })).status, 400, '회사 당사자는 상호 필수');
+  assert.equal((await req('POST', '/api/documents', { cookie: S.ST, body: { mode: 'remote', template_id: tid, vals, participants: [{ role_key: 'vendor', name: '박대표', email: 'ceo@vendor.test', org_name: '예시IT(주)', org_no: '12-34' }, { role_key: 'company' }] } })).status, 400, '사업자번호 형식');
+  const id = ok(await req('POST', '/api/documents', { cookie: S.ST, body: { mode: 'remote', template_id: tid, vals, participants: [{ role_key: 'vendor', name: '박대표', email: 'ceo@vendor.test', org_name: '예시IT(주)', org_no: '123-45-67891' }, { role_key: 'company' }] } }), 201).id;
+  assert.equal(get(`select partner from documents where id=?`, id).partner, '예시IT(주)', '거래처 자동');
+  ok(await req('POST', `/api/documents/${id}/send`, { cookie: S.ST }));
+  const tk = tokenFromOutbox('ceo@vendor.test', id);
+  const v = ok(await req('GET', `/api/s/${tk}`));
+  assert.equal(v.vals['@vendor.org'], '예시IT(주)'); assert.equal(v.vals['@vendor.orgno'], '123-45-67891');
+  // 잘못된 시스템 값·표시 방식은 템플릿 저장에서 거부
+  assert.equal((await req('POST', '/api/templates', { cookie: S.ST, body: { name: 'x', roles: [{ key: 'a', label: 'A', kind: 'external' }], fields: [], body: '{{@nobody.name}}' } })).status, 400);
+  assert.equal((await req('POST', '/api/templates', { cookie: S.ST, body: { name: 'x', roles: [{ key: 'a', label: 'A', kind: 'external' }], fields: [{ key: 'n', label: 'N', type: 'number' }], body: '{{n|eval}}' } })).status, 400);
+  ok(await req('POST', '/api/templates', { cookie: S.ST, body: { name: 'B2B 테스트', category: '일반', roles: [{ key: 'a', label: 'A', kind: 'external', party: 'company' }], fields: [{ key: 'n', label: 'N', type: 'number' }, { key: 'd', label: 'D', type: 'date' }],
+    body: '{{@company}} {{@a.org}} {{n|한글}} {{d}}', extra: { checks: [], deadlines: [{ from: 'd', days: -7, title: '7일 전' }], checklist: ['확인1'] } } }), 201);
+});
+
+test('부동산 도구: 중개보수 상한 계산', async () => {
+  const fee = (q) => req('GET', '/api/tools/broker-fee?' + new URLSearchParams(q), { cookie: S.ST });
+  assert.equal(ok(await fee({ property: 'house', deal: 'sale', price: 900000000 })).fee, 4500000);   // 9억: 0.5%
+  assert.equal(ok(await fee({ property: 'house', deal: 'sale', price: 100000000 })).fee, 500000);    // 1억: 0.5% (한도 80만)
+  assert.equal(ok(await fee({ property: 'house', deal: 'sale', price: 190000000 })).fee, 800000);    // 한도 적용
+  assert.equal(ok(await fee({ property: 'house', deal: 'lease', deposit: 10000000, rent: 500000 })).fee, 240000); // 1천+50만×100=6천만, 0.4%
+  const small = ok(await fee({ property: 'house', deal: 'lease', deposit: 5000000, rent: 300000 }));
+  assert.equal(small.base, 26000000); assert.equal(small.fee, 130000);                                // 5천만 미만이면 ×70
+  assert.equal(ok(await fee({ property: 'other', deal: 'lease', deposit: 50000000, rent: 2000000 })).fee, 2250000); // 상가 0.9%
+  assert.equal((await fee({ property: 'house', deal: 'sale' })).status, 400);
+});
+
 test.after(() => { if (S.perf) fs.writeFileSync(path.join(__dirname, '..', 'docs', 'perf.json'), JSON.stringify({ ...S.perf, measuredAt: new Date().toISOString() }, null, 2)); });

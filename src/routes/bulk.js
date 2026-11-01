@@ -17,8 +17,12 @@ const MAX_ROWS = Number(process.env.BULK_MAX_ROWS || 5000);
 function columns(tv) {
   const cols = [{ key: '__title', header: '문서 제목(선택)', optional: true }];
   for (const ro of tv.roles) {
-    if (ro.kind === 'external') cols.push({ key: `${ro.key}.name`, header: `${ro.label} 성명`, role: ro.key }, { key: `${ro.key}.email`, header: `${ro.label} 이메일`, role: ro.key, optional: true }, { key: `${ro.key}.phone`, header: `${ro.label} 전화번호`, role: ro.key, optional: true });
-    if (ro.kind === 'internal') cols.push({ key: `${ro.key}.user`, header: `${ro.label} (직원 이메일)`, role: ro.key });
+    const o = !!ro.optional;
+    if (ro.kind === 'external') {
+      if (ro.party === 'company') cols.push({ key: `${ro.key}.org`, header: `${ro.label} 상호`, role: ro.key, optional: o }, { key: `${ro.key}.orgno`, header: `${ro.label} 사업자등록번호`, role: ro.key, optional: true });
+      cols.push({ key: `${ro.key}.name`, header: `${ro.label} ${ro.party === 'company' ? '대표자·담당자' : '성명'}`, role: ro.key, optional: o }, { key: `${ro.key}.email`, header: `${ro.label} 이메일`, role: ro.key, optional: true }, { key: `${ro.key}.phone`, header: `${ro.label} 전화번호`, role: ro.key, optional: true });
+    }
+    if (ro.kind === 'internal') cols.push({ key: `${ro.key}.user`, header: `${ro.label} (직원 이메일)`, role: ro.key, optional: o });
   }
   for (const f of E.fieldsFor(tv, 'sender').filter((x) => x.scope !== 'common')) cols.push({ key: f.key, header: f.label, field: f, optional: !f.required });
   cols.push({ key: '__owner', header: '계약 담당자(직원 이메일, 선택)', optional: true });
@@ -82,13 +86,15 @@ async function parse(u, tv, buf, commonOverride = {}) {
     if (Object.values(raw).every((v) => v === '')) return;
     const errors = [], vals = {}, participants = [];
     for (const ro of tv.roles) {
+      if (ro.optional && [`${ro.key}.name`, `${ro.key}.org`, `${ro.key}.user`, `${ro.key}.email`, `${ro.key}.phone`].every((k) => !raw[k])) continue; // 선택 참여자 비어 있음
       if (ro.kind === 'external') {
         const name = raw[`${ro.key}.name`], email = raw[`${ro.key}.email`] || null, phone = raw[`${ro.key}.phone`] || null;
+        if (ro.party === 'company' && !raw[`${ro.key}.org`]) errors.push(`${ro.label} 상호가 비었습니다`);
         if (!name) errors.push(`${ro.label} 성명이 비었습니다`);
         if (!email && !phone) errors.push(`${ro.label} 이메일 또는 전화번호가 필요합니다`);
         if (email && !C.EMAIL_RE.test(email)) errors.push(`${ro.label} 이메일 형식 오류: ${email}`);
         if (phone && !C.PHONE_RE.test(phone)) errors.push(`${ro.label} 전화번호 형식 오류: ${phone}`);
-        participants.push({ role_key: ro.key, name, email, phone, delivery: email ? 'email' : 'sms' });
+        participants.push({ role_key: ro.key, name, email, phone, delivery: email ? 'email' : 'sms', org_name: raw[`${ro.key}.org`] || null, org_no: raw[`${ro.key}.orgno`] || null });
       } else if (ro.kind === 'internal') {
         const st = staff[String(raw[`${ro.key}.user`] || '').toLowerCase()];
         if (!st) errors.push(`${ro.label}: 재직 중인 직원 이메일이 아닙니다`);

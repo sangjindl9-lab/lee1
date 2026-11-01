@@ -11,9 +11,9 @@ const STATUS = {
 const META_KEYS = ['site', 'partner', 'amount', 'start_date', 'end_date', 'sign_deadline'];
 
 function loadTV(id) {
-  const tv = get(`select v.*, t.company_id, t.name as template_name, t.doc_type, t.scope, t.owner_id, t.archived from template_versions v join templates t on t.id=v.template_id where v.id=?`, id);
+  const tv = get(`select v.*, t.company_id, t.name as template_name, t.doc_type, t.scope, t.owner_id, t.archived, t.category from template_versions v join templates t on t.id=v.template_id where v.id=?`, id);
   if (!tv) throw C.notFound('템플릿을 찾을 수 없습니다');
-  tv.fields = J(tv.fields, []); tv.roles = J(tv.roles, []); tv.attachments_spec = J(tv.attachments_spec, {});
+  tv.fields = J(tv.fields, []); tv.roles = J(tv.roles, []); tv.attachments_spec = J(tv.attachments_spec, {}); tv.extra = J(tv.extra, {});
   return tv;
 }
 function currentTV(templateId) {
@@ -37,6 +37,7 @@ function checkValue(f, v) {
   if (v == null || v === '' || (f.type === 'check' && v !== true && v !== 'true')) return f.required ? `${f.label}: 필수 ${f.type === 'check' ? '동의' : '입력'}입니다` : null;
   if (f.type === 'check') return null;
   const s = String(v);
+  if (f.type === 'select' && Array.isArray(f.options) && !f.options.includes(s)) return `${f.label}: 목록에서 고르세요`;
   if (f.type === 'number' && !/^-?\d+(\.\d+)?$/.test(s.replace(/,/g, ''))) return `${f.label}: 숫자만 입력하세요`;
   if (f.type === 'date' && (!C.DATE_RE.test(s) || isNaN(Date.parse(s)))) return `${f.label}: 날짜 형식(YYYY-MM-DD)이 아닙니다`;
   if (f.type === 'email' && !C.EMAIL_RE.test(s)) return `${f.label}: 이메일 형식이 아닙니다`;
@@ -51,7 +52,7 @@ function fieldsFor(tv, owner) { return tv.fields.filter((f) => (f.owner || 'send
 // 내용 해시 — 결재가 승인한 대상과 발송 대상이 같은지 확인하는 기준
 function contentHash(docId) {
   const d = get(`select * from documents where id=?`, docId);
-  const ps = all(`select role_key,order_no,kind,user_id,name,email,phone from participants where document_id=? order by order_no,id`, docId);
+  const ps = all(`select role_key,order_no,kind,user_id,name,email,phone,org_name,org_no from participants where document_id=? order by order_no,id`, docId);
   const at = all(`select f.sha256, a.kind, a.caption from doc_attachments a join files f on f.id=a.file_id where a.document_id=? order by a.sort,a.id`, docId);
   const base = d.base_file_id ? get(`select sha256 from files where id=?`, d.base_file_id).sha256 : null;
   return C.sha256(JSON.stringify([d.template_version_id, d.title, J(d.vals, {}), ps, at, base, J(d.delivery, {})]));
@@ -81,7 +82,7 @@ function createDocument({ companyId, user = null, tvId, title, mode, vals = {}, 
     sv[f.key] = normValue(f, vals[f.key]);
   }
   const roleMap = Object.fromEntries(tv.roles.map((r, i) => [r.key, { ...r, order: r.order ?? i + 1 }]));
-  for (const r of tv.roles) if (!participants.find((p) => p.role_key === r.key)) throw C.bad(`참여자 지정이 필요합니다: ${r.label}`);
+  for (const r of tv.roles) if (!r.optional && !participants.find((p) => p.role_key === r.key)) throw C.bad(`참여자 지정이 필요합니다: ${r.label}`);
   const m = metaFrom(sv, meta);
   return tx(() => {
     const d = run(`insert into documents(company_id,template_version_id,title,mode,status,creator_id,dept_id,site,partner,doc_type,amount,start_date,end_date,sign_deadline,vals,link_campaign_id,bulk_job_id,bulk_row,base_file_id,delivery)
@@ -90,6 +91,8 @@ function createDocument({ companyId, user = null, tvId, title, mode, vals = {}, 
     m.site, m.partner, tv.doc_type, m.amount, m.start_date, m.end_date, m.sign_deadline, JSON.stringify(sv), linkCampaignId, bulkJobId, bulkRow, baseFileId, JSON.stringify(delivery));
     const id = Number(d.lastInsertRowid);
     for (const p of participants) addParticipant(id, roleMap, p, companyId);
+    // 거래처를 따로 적지 않았으면 회사 당사자(B2B)의 상호를 거래처로 쓴다 (검색·분류용)
+    if (!m.partner) { const org = get(`select org_name from participants where document_id=? and org_name is not null order by order_no limit 1`, id); if (org) run(`update documents set partner=? where id=?`, org.org_name, id); }
     attachments.forEach((a, i) => run(`insert into doc_attachments(document_id,file_id,kind,caption,sort,added_by) values(?,?,?,?,?,?)`, id, a.file_id, a.kind || 'other', a.caption || null, i, 'creator'));
     run(`update documents set content_hash=? where id=?`, contentHash(id), id);
     C.audit({ companyId, documentId: id, actor: user ? C.actorOf(user) : { type: 'system', name: mode === 'link' ? '링크 접수' : '시스템' }, action: 'DOC_CREATE', detail: { mode, template: tv.template_name, version: tv.version }, ip });
@@ -112,10 +115,14 @@ function addParticipant(docId, roleMap, p, companyId) {
     if (!name) throw C.bad(`${r.label}: 이름을 입력하세요`);
     if (email && !C.EMAIL_RE.test(email)) throw C.bad(`${r.label}: 이메일 형식이 아닙니다`);
     if (phone && !C.PHONE_RE.test(phone)) throw C.bad(`${r.label}: 전화번호 형식이 아닙니다`);
+    if (r.party === 'company' && !String(p.org_name || '').trim()) throw C.bad(`${r.label}: 상호(회사명)를 입력하세요`);
   }
   const auth = ['link', 'email_otp', 'phone_otp'].includes(p.auth_method) ? p.auth_method : 'link';
-  run(`insert into participants(document_id,order_no,role_key,role_label,kind,user_id,name,email,phone,auth_method,delivery) values(?,?,?,?,?,?,?,?,?,?,?)`,
-    docId, r.order, r.key, r.label, r.kind, userId, name.slice(0, 50), email, phone, auth, p.delivery || (email ? 'email' : phone ? 'sms' : 'none'));
+  const orgName = r.party === 'company' ? String(p.org_name || '').trim().slice(0, 100) || null : null;
+  const orgNo = r.party === 'company' ? String(p.org_no || '').trim().slice(0, 20) || null : null;
+  if (orgNo && !/^\d{3}-?\d{2}-?\d{5}$/.test(orgNo)) throw C.bad(`${r.label}: 사업자등록번호 형식(000-00-00000)이 아닙니다`);
+  run(`insert into participants(document_id,order_no,role_key,role_label,kind,user_id,name,email,phone,auth_method,delivery,org_name,org_no) values(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    docId, r.order, r.key, r.label, r.kind, userId, name.slice(0, 50), email, phone, auth, p.delivery || (email ? 'email' : phone ? 'sms' : 'none'), orgName, orgNo);
 }
 
 function getDoc(id) { const d = get(`select * from documents where id=?`, id); if (!d) throw C.notFound('문서를 찾을 수 없습니다'); return d; }
@@ -168,7 +175,7 @@ function updateDocument(user, docId, patch, ip) {
     if (patch.participants) {
       run(`delete from participants where document_id=?`, d.id);
       const roleMap = Object.fromEntries(tv.roles.map((r, i) => [r.key, { ...r, order: r.order ?? i + 1 }]));
-      for (const r of tv.roles) if (!patch.participants.find((p) => p.role_key === r.key)) throw C.bad(`참여자 지정이 필요합니다: ${r.label}`);
+      for (const r of tv.roles) if (!r.optional && !patch.participants.find((p) => p.role_key === r.key)) throw C.bad(`참여자 지정이 필요합니다: ${r.label}`);
       for (const p of patch.participants) addParticipant(d.id, roleMap, p, d.company_id);
     }
     if (patch.delivery) run(`update documents set delivery=? where id=?`, JSON.stringify(patch.delivery), d.id);
@@ -342,6 +349,7 @@ function sendDocument(actor, docId, { system = false, ip = null, dedupePrefix = 
   const tv = loadTV(d.template_version_id);
   const vals = J(d.vals, {});
   for (const f of fieldsFor(tv, 'sender')) { const e = checkValue(f, vals[f.key]); if (e) throw C.bad(e); }
+  checkSums(tv, vals);
   tx(() => {
     run(`update documents set status='in_progress', updated_at=datetime('now') where id=?`, d.id);
     C.audit({ companyId: d.company_id, documentId: d.id, actor: system ? { type: 'system', name: '시스템' } : C.actorOf(actor), action: 'DOC_SEND', detail: { mode: d.mode, version: d.version, hash: d.content_hash }, ip });
@@ -349,6 +357,29 @@ function sendDocument(actor, docId, { system = false, ip = null, dedupePrefix = 
   });
   activateNext(d.id, { dedupePrefix });
   return getDoc(d.id);
+}
+
+// 금액 분할 검증 (예: 계약금+중도금+잔금 = 보증금). 템플릿에 정한 제한된 규칙만 쓴다.
+function checkSums(tv, vals) {
+  for (const c of tv.extra.checks || []) {
+    if (c.type !== 'sum') continue;
+    const total = Number(vals[c.total] || 0);
+    const parts = c.parts.reduce((a, k) => a + Number(vals[k] || 0), 0);
+    if (total && parts !== total) {
+      const L = (k) => tv.fields.find((f) => f.key === k)?.label || k;
+      throw C.bad(`${c.label || '금액 확인'}: ${c.parts.map(L).join(' + ')} = ${parts.toLocaleString('ko-KR')}원이 ${L(c.total)} ${total.toLocaleString('ko-KR')}원과 다릅니다`);
+    }
+  }
+}
+// 본문에 쓰는 시스템 값: {{@company}} 요청 회사, {{@date}} 계약일, {{@역할.name}} {{@역할.org}} {{@역할.orgno}}
+function sysValues(d) {
+  const c = get(`select name, biz_no from companies where id=?`, d.company_id);
+  const date = (d.completed_at ? new Date(d.completed_at.replace(' ', 'T') + 'Z') : new Date());
+  const v = { '@company': c.name, '@company_bizno': c.biz_no || '', '@date': new Date(date.getTime() + 9 * 3600e3).toISOString().slice(0, 10) };
+  for (const p of all(`select * from participants where document_id=?`, d.id)) {
+    v[`@${p.role_key}.name`] = p.name; v[`@${p.role_key}.org`] = p.org_name || ''; v[`@${p.role_key}.orgno`] = p.org_no || '';
+  }
+  return v;
 }
 
 // 다음 차례 참여자 활성화 (같은 순번은 동시에)
@@ -415,7 +446,7 @@ function participantView(p, d) {
       else vals[f.key] = pv[f.key] == null ? '' : (f.pii ? '●●●●' : pv[f.key]);
     }
   }
-  return { body: tv.body, vals, fields: fieldsFor(tv, p.role_key) };
+  return { body: tv.body, vals: { ...sysValues(d), ...vals }, fields: fieldsFor(tv, p.role_key) };
 }
 
 function validateParticipantInput(p, d, input) {
@@ -568,6 +599,15 @@ function syncSchedules(docId) {
   if (d.sign_deadline && !['completed'].includes(d.status)) want.push(['sign_deadline', '서명 마감', d.sign_deadline]);
   if (d.start_date) want.push(['start', '계약 시작', d.start_date]);
   if (d.end_date) { want.push(['end', '계약 종료', d.end_date]); want.push(['renewal', '갱신 검토', addDays(d.end_date, -renewalDays)]); }
+  // 템플릿이 지정한 날짜 항목(중도금일·잔금일 등)과 법정·약정 기한(계약일+30일 신고, 만료 6개월~2개월 전 통지 등)
+  const tv = loadTV(d.template_version_id);
+  const vals = { ...J(d.vals, {}) };
+  for (const f of tv.fields) if (f.schedule && C.DATE_RE.test(String(vals[f.key] || ''))) want.push([`f:${f.key}`, f.schedule, vals[f.key]]);
+  const contractDate = d.completed_at ? sysValues(d)['@date'] : null;
+  (tv.extra.deadlines || []).forEach((x, i) => {
+    const base = x.from === '@contract' ? contractDate : vals[x.from] || d[x.from];
+    if (base && C.DATE_RE.test(base)) want.push([`d:${i}`, x.title, addDays(base, Number(x.days) || 0)]);
+  });
   for (const [kind, title, date] of want) {
     const s = get(`select * from schedules where document_id=? and kind=?`, d.id, kind);
     if (!s) run(`insert into schedules(company_id,document_id,kind,title,date,source) values(?,?,?,?,?,'auto')`, d.company_id, d.id, kind, title, date);
@@ -581,6 +621,6 @@ function syncSchedules(docId) {
 module.exports = {
   STATUS, BASE_URL, loadTV, currentTV, canUseTemplate, checkValue, fieldsFor, contentHash, createDocument, getDoc, canViewDoc, viewableSql, mustView,
   updateDocument, RULE_FIELDS, RULE_OPS, validateConditions, matchApprovalRule, submitApproval, actApproval, roundState, latestRound, openRound,
-  issueToken, sendDocument, activateNext, notifyCurrent, participantView, signParticipant, rejectParticipant, cancelDocument, expireOverdue, reviewConfirm, afterSign,
+  issueToken, sendDocument, activateNext, notifyCurrent, sysValues, checkSums, participantView, signParticipant, rejectParticipant, cancelDocument, expireOverdue, reviewConfirm, afterSign,
   brandOf, CLASS_FIELDS, validateClassRule, applyRules, syncSchedules, addDays, PNG_RE, validateParticipantInput,
 };

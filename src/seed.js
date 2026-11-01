@@ -35,7 +35,7 @@ const SAMPLES = [
     roles: [{ key: 'partner_rep', label: '협력업체 대표', kind: 'external', order: 1 }, { key: 'company', label: '당사(직인)', kind: 'seal', order: 2 }],
     fields: [f('partner', '협력업체명'), f('site', '현장명'), f('scope', '공사 범위', 'textarea'), f('amount', '계약금액(원, VAT 별도)', 'number'), f('start_date', '계약 시작일', 'date'), f('end_date', '계약 종료일', 'date'),
       f('p_bizno', '사업자등록번호', 'text', { owner: 'partner_rep' }), f('p_addr', '주소', 'text', { owner: 'partner_rep' })],
-    body: `## 1. 계약 당사자\n도급인: 요청 회사\n수급인: {{partner}} (사업자등록번호 {{p_bizno}}, 주소 {{p_addr}})\n\n## 2. 공사 내용\n현장: {{site}}\n범위: {{scope}}\n\n## 3. 계약금액과 기간\n계약금액: {{amount}}원 (부가가치세 별도)\n기간: {{start_date}} ~ {{end_date}}\n\n## 4. 기타\n세부 조건은 양측이 따로 합의한 특약을 따릅니다.${NOTE}`,
+    body: `## 1. 계약 당사자\n도급인: {{@company}}\n수급인: {{partner}} (사업자등록번호 {{p_bizno}}, 주소 {{p_addr}})\n\n## 2. 공사 내용\n현장: {{site}}\n범위: {{scope}}\n\n## 3. 계약금액과 기간\n계약금액: {{amount}}원 (부가가치세 별도)\n기간: {{start_date}} ~ {{end_date}}\n\n## 4. 기타\n세부 조건은 양측이 따로 합의한 특약을 따릅니다.${NOTE}`,
   },
   {
     name: '[예시] 현장 출입·안전교육 동의서', doc_type: '현장동의서', flow: 'E',
@@ -47,10 +47,24 @@ const SAMPLES = [
 ];
 
 function createTemplate(companyId, ownerId, t, scope = 'company') {
-  const r = run(`insert into templates(company_id,owner_id,scope,name,doc_type) values(?,?,?,?,?)`, companyId, ownerId, scope, t.name, t.doc_type || null);
+  const r = run(`insert into templates(company_id,owner_id,scope,name,doc_type,category) values(?,?,?,?,?,?)`, companyId, ownerId, scope, t.name, t.doc_type || null, t.category || '일반');
   const id = Number(r.lastInsertRowid);
-  run(`insert into template_versions(template_id,version,body,fields,roles,attachments_spec,created_by) values(?,?,?,?,?,?,?)`, id, 1, t.body, JSON.stringify(t.fields), JSON.stringify(t.roles), JSON.stringify(t.attachments || {}), ownerId);
+  run(`insert into template_versions(template_id,version,body,fields,roles,attachments_spec,extra,created_by) values(?,?,?,?,?,?,?,?)`, id, 1, t.body, JSON.stringify(t.fields), JSON.stringify(t.roles), JSON.stringify(t.attachments || {}), JSON.stringify(t.extra || {}), ownerId);
   return id;
+}
+const { GENERAL, REAL_ESTATE } = require('./samples-general');
+const ALL_SAMPLES = () => [...GENERAL, ...REAL_ESTATE, ...SAMPLES.map((x) => ({ ...x, category: '건설' }))];
+// 서버 시작 때 회사마다 빠진 예시 서식만 추가한다 (이미 있는 이름은 건드리지 않음)
+function ensureSamples() {
+  for (const c of require('./db').all(`select id from companies`)) {
+    const admin = get(`select id from users where company_id=? and role='admin' and status='active' order by id limit 1`, c.id);
+    if (!admin) continue;
+    for (const t of ALL_SAMPLES()) {
+      const ex = get(`select id, category from templates where company_id=? and name=?`, c.id, t.name);
+      if (!ex) createTemplate(c.id, admin.id, t);
+      else if (ex.category !== t.category) run(`update templates set category=? where id=?`, t.category, ex.id);
+    }
+  }
 }
 
 function createCompany({ name, bizNo, adminEmail, adminName, password }) {
@@ -63,17 +77,17 @@ function createCompany({ name, bizNo, adminEmail, adminName, password }) {
       JSON.stringify({ renewal_days: 30 })).lastInsertRowid);
     const dept = Number(run(`insert into departments(company_id,name) values(?,?)`, cid, '본사').lastInsertRowid);
     const uid = Number(run(`insert into users(company_id,dept_id,email,name,pw_hash,role) values(?,?,?,?,?,'admin')`, cid, dept, adminEmail.toLowerCase(), adminName || '관리자', C.hashPw(password)).lastInsertRowid);
-    for (const t of SAMPLES) createTemplate(cid, uid, t);
+    for (const t of ALL_SAMPLES()) createTemplate(cid, uid, t);
     C.audit({ companyId: cid, actor: { type: 'system' }, action: 'COMPANY_CREATE', detail: { name } });
     return cid;
   });
 }
 
 function bootstrap() {
-  if (get(`select 1 from companies limit 1`)) return;
+  if (get(`select 1 from companies limit 1`)) return ensureSamples();
   const email = process.env.ADMIN_EMAIL, pw = process.env.ADMIN_PASSWORD;
   if (!email || !pw) { console.log('[이음사인] 첫 회사가 없습니다. ADMIN_EMAIL·ADMIN_PASSWORD·COMPANY_NAME 환경변수로 시작하세요.'); return; }
   createCompany({ name: process.env.COMPANY_NAME || '우리 회사', bizNo: process.env.COMPANY_BIZNO, adminEmail: email, adminName: process.env.ADMIN_NAME || '관리자', password: pw });
   console.log(`[이음사인] 첫 회사와 관리자(${email})를 만들었습니다.`);
 }
-module.exports = { createCompany, createTemplate, bootstrap, SAMPLES };
+module.exports = { createCompany, createTemplate, bootstrap, ensureSamples, SAMPLES };

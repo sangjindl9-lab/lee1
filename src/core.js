@@ -120,8 +120,22 @@ function auditSummary(l) {
   return parts.join(' · ');
 }
 
+// 금액을 한글로: 55000000 → "일금 오천오백만원정"
+function krMoney(n) {
+  n = Math.floor(Number(n)); if (!Number.isFinite(n) || n < 0) return '';
+  if (n === 0) return '일금 영원정';
+  const D = ['', '일', '이', '삼', '사', '오', '육', '칠', '팔', '구'], U = ['', '십', '백', '천'], B = ['', '만', '억', '조', '경'];
+  let out = '', i = 0;
+  while (n > 0) {
+    const chunk = n % 10000; n = Math.floor(n / 10000);
+    if (chunk) { let t = ''; String(chunk).padStart(4, '0').split('').forEach((c, k) => { const d = Number(c); if (d) t += D[d] + U[3 - k]; }); out = t + B[i] + out; }
+    i++;
+  }
+  return `일금 ${out}원정`;
+}
+
 module.exports = {
-  ACTION_LABEL, auditSummary, HttpError, bad, forbid, notFound, conflict, sha256, token, now, hmac, SECRET,
+  krMoney, ACTION_LABEL, auditSummary, HttpError, bad, forbid, notFound, conflict, sha256, token, now, hmac, SECRET,
   hashPw, checkPw, PERMS, ROLE_PRESETS, userPerms, can, need,
   audit, verifyAuditChain, actorOf, EVENT_TYPES, emitEvent, notify,
   PHONE_RE, EMAIL_RE, DATE_RE, normPhone, esc, maskPhone,

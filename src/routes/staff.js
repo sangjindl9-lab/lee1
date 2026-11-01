@@ -111,10 +111,11 @@ r.post('/groups', wrap(async (req, res) => {
 }));
 
 // ── 템플릿
+const CATS = ['일반', '부동산', '건설', '인사·노무'];
 const tplRow = (t, u) => ({ ...t, mine: t.owner_id === u.id, owner: get(`select name from users where id=?`, t.owner_id)?.name, shares: all(`select target_type,target_id from template_shares where template_id=?`, t.id) });
 r.get('/templates', (req, res) => {
   const u = req.user;
-  res.json(all(`select * from templates where company_id=? and archived=0 order by scope desc, name`, u.company_id).filter((t) => E.canUseTemplate(u, t) || C.can(u, 'template.share')).map((t) => ({ ...tplRow(t, u), usable: E.canUseTemplate(u, t) })));
+  res.json(all(`select * from templates where company_id=? and archived=0 order by case category when '일반' then 1 when '부동산' then 2 when '건설' then 3 else 4 end, scope desc, name`, u.company_id).filter((t) => E.canUseTemplate(u, t) || C.can(u, 'template.share')).map((t) => ({ ...tplRow(t, u), usable: E.canUseTemplate(u, t) })));
 });
 r.get('/templates/:id', (req, res) => {
   const t = ownCompany(req.user, get(`select * from templates where id=?`, req.params.id));
@@ -131,7 +132,8 @@ function checkTplInput(b) {
   const R = roles.map((x, i) => {
     if (!/^[a-z][a-z0-9_]{0,29}$/.test(x.key || '')) throw C.bad('역할 키는 영문 소문자로 시작해야 합니다');
     if (keys.has(x.key)) throw C.bad('역할 키가 겹칩니다'); keys.add(x.key);
-    return { key: x.key, label: str(x.label, 30) || x.key, kind: ['external', 'internal', 'seal'].includes(x.kind) ? x.kind : 'external', order: int(x.order) || i + 1 };
+    return { key: x.key, label: str(x.label, 30) || x.key, kind: ['external', 'internal', 'seal'].includes(x.kind) ? x.kind : 'external', order: int(x.order) || i + 1,
+      ...(x.optional ? { optional: true } : {}), ...(x.party === 'company' && x.kind === 'external' ? { party: 'company' } : {}) };
   });
   const fk = new Set();
   const Fs = fields.map((x) => {
@@ -139,19 +141,45 @@ function checkTplInput(b) {
     if (fk.has(x.key)) throw C.bad(`항목 키가 겹칩니다: ${x.key}`); fk.add(x.key);
     const owner = x.owner || 'sender';
     if (owner !== 'sender' && !keys.has(owner)) throw C.bad(`항목 "${x.label}"의 작성자 역할이 없습니다`);
-    return { key: x.key, label: str(x.label, 50) || x.key, type: ['text', 'textarea', 'number', 'date', 'email', 'phone', 'check'].includes(x.type) ? x.type : 'text', required: !!x.required, owner, pii: !!x.pii, scope: x.scope === 'common' ? 'common' : 'each' };
+    const type = ['text', 'textarea', 'number', 'date', 'email', 'phone', 'check', 'select'].includes(x.type) ? x.type : 'text';
+    const options = type === 'select' ? (Array.isArray(x.options) ? x.options : String(x.options || '').split(',')).map((o) => String(o).trim().slice(0, 100)).filter(Boolean).slice(0, 30) : undefined;
+    if (type === 'select' && !options.length) throw C.bad(`항목 "${x.label}"의 선택지를 넣으세요`);
+    return { key: x.key, label: str(x.label, 200) || x.key, type, required: !!x.required, owner, pii: !!x.pii, scope: x.scope === 'common' ? 'common' : 'each',
+      ...(options ? { options } : {}), ...(x.schedule && type === 'date' ? { schedule: str(x.schedule, 40) } : {}) };
   });
   const body = String(b.body || '');
   if (!body.trim() || body.length > 50000) throw C.bad('본문을 입력하세요');
-  for (const m of body.matchAll(/\{\{\s*(\w+)\s*\}\}/g)) if (!fk.has(m[1])) throw C.bad(`본문의 {{${m[1]}}} 항목이 정의되지 않았습니다`);
-  return { roles: R, fields: Fs, body, attachments: { photo: !!b.attachments?.photo, drawing: !!b.attachments?.drawing } };
+  for (const m of body.matchAll(/\{\{\s*(@?[\w.]+)\s*(?:\|\s*([^}\s]+))?\s*\}\}/g)) {
+    const k = m[1];
+    if (m[2] && !['한글', 'kr'].includes(m[2])) throw C.bad(`본문의 {{${k}|${m[2]}}}: 쓸 수 있는 표시 방식은 |한글 뿐입니다`);
+    if (k.startsWith('@')) {
+      const [r, prop] = k.slice(1).split('.');
+      if (prop ? !(keys.has(r) && ['name', 'org', 'orgno'].includes(prop)) : !['company', 'company_bizno', 'date'].includes(r)) throw C.bad(`본문의 {{${k}}}는 쓸 수 없는 시스템 값입니다`);
+    } else if (!fk.has(k)) throw C.bad(`본문의 {{${k}}} 항목이 정의되지 않았습니다`);
+  }
+  // 템플릿 부가 규칙: 금액 합계 검증·기한 일정·계약 전 확인 목록 (정해진 형식만 허용)
+  const ex = b.extra || {};
+  const numKeys = new Set(Fs.filter((x) => x.type === 'number').map((x) => x.key)), dateKeys = new Set(Fs.filter((x) => x.type === 'date').map((x) => x.key));
+  const extra = {
+    checks: (ex.checks || []).slice(0, 5).map((c) => {
+      if (c.type !== 'sum' || !numKeys.has(c.total) || !Array.isArray(c.parts) || !c.parts.every((k) => numKeys.has(k))) throw C.bad('금액 합계 규칙의 항목은 숫자 항목이어야 합니다');
+      return { type: 'sum', total: c.total, parts: c.parts.slice(0, 10), label: str(c.label, 40) };
+    }),
+    deadlines: (ex.deadlines || []).slice(0, 10).map((x) => {
+      if (x.from !== '@contract' && !dateKeys.has(x.from) && !['start_date', 'end_date'].includes(x.from)) throw C.bad('기한 기준은 계약일 또는 날짜 항목이어야 합니다');
+      const days = int(x.days); if (days == null || Math.abs(days) > 3650) throw C.bad('기한 일수가 올바르지 않습니다');
+      return { from: x.from, days, title: str(x.title, 60) || '기한' };
+    }),
+    checklist: (ex.checklist || []).map((t) => str(t, 200)).filter(Boolean).slice(0, 20),
+  };
+  return { roles: R, fields: Fs, body, extra, attachments: { photo: !!b.attachments?.photo, drawing: !!b.attachments?.drawing } };
 }
 r.post('/templates', wrap(async (req, res) => {
   C.need(req.user, 'template.edit');
   const v = checkTplInput(req.body);
   let baseFile = null;
   if (req.body.base_file_id) baseFile = ownCompany(req.user, get(`select * from files where id=?`, req.body.base_file_id)).id;
-  const id = require('../seed').createTemplate(req.user.company_id, req.user.id, { name: str(req.body.name), doc_type: str(req.body.doc_type, 50), ...v }, 'personal');
+  const id = require('../seed').createTemplate(req.user.company_id, req.user.id, { name: str(req.body.name), doc_type: str(req.body.doc_type, 50), category: CATS.includes(req.body.category) ? req.body.category : '일반', ...v }, 'personal');
   if (baseFile) run(`update template_versions set base_file_id=? where template_id=?`, baseFile, id);
   C.audit({ companyId: req.user.company_id, actor: C.actorOf(req.user), action: 'TEMPLATE_CREATE', detail: { id }, ip: ip(req) });
   res.status(201).json({ id });
@@ -164,8 +192,8 @@ r.put('/templates/:id', wrap(async (req, res) => {
   const v = checkTplInput({ ...req.body, name: req.body.name || t.name });
   const ver = t.current_version + 1;
   tx(() => {
-    run(`insert into template_versions(template_id,version,body,fields,roles,attachments_spec,created_by) values(?,?,?,?,?,?,?)`, t.id, ver, v.body, JSON.stringify(v.fields), JSON.stringify(v.roles), JSON.stringify(v.attachments), req.user.id);
-    run(`update templates set current_version=?, name=?, doc_type=? where id=?`, ver, str(req.body.name) || t.name, str(req.body.doc_type, 50) ?? t.doc_type, t.id);
+    run(`insert into template_versions(template_id,version,body,fields,roles,attachments_spec,extra,created_by) values(?,?,?,?,?,?,?,?)`, t.id, ver, v.body, JSON.stringify(v.fields), JSON.stringify(v.roles), JSON.stringify(v.attachments), JSON.stringify(v.extra), req.user.id);
+    run(`update templates set current_version=?, name=?, doc_type=?, category=? where id=?`, ver, str(req.body.name) || t.name, str(req.body.doc_type, 50) ?? t.doc_type, CATS.includes(req.body.category) ? req.body.category : t.category, t.id);
   });
   C.audit({ companyId: t.company_id, actor: C.actorOf(req.user), action: 'TEMPLATE_VERSION', detail: { id: t.id, version: ver }, ip: ip(req) });
   res.json({ version: ver });
@@ -249,12 +277,13 @@ r.get('/documents/facets', (req, res) => {
 
 function docDetail(u, d) {
   const tv = E.loadTV(d.template_version_id);
-  const ps = all(`select id,order_no,role_key,role_label,kind,user_id,name,email,phone,status,auth_method,verified_at,confirm_method,confirmed_by,vals,sign_kind,signed_at,viewed_at,ip,reject_reason,delivery from participants where document_id=? order by order_no,id`, d.id)
+  const ps = all(`select id,order_no,role_key,role_label,kind,user_id,name,email,phone,org_name,org_no,status,auth_method,verified_at,confirm_method,confirmed_by,vals,sign_kind,signed_at,viewed_at,ip,reject_reason,delivery from participants where document_id=? order by order_no,id`, d.id)
     .map((p) => ({ ...p, vals: J(p.vals, {}), signed: !!p.signed_at }));
   const rounds = all(`select a.*, u.name user_name from approvals a join users u on u.id=a.user_id where target_type='document' and target_id=? order by round, step_no, id`, d.id);
   const rs = E.roundState('document', d.id);
   return {
-    doc: { ...d, vals: J(d.vals, {}), delivery: J(d.delivery, {}), status_label: E.STATUS[d.status] }, template: { id: tv.template_id, name: tv.template_name, version: tv.version, fields: tv.fields, roles: tv.roles, body: tv.body, attachments: tv.attachments_spec },
+    doc: { ...d, vals: J(d.vals, {}), delivery: J(d.delivery, {}), status_label: E.STATUS[d.status] }, template: { id: tv.template_id, name: tv.template_name, category: tv.category, version: tv.version, fields: tv.fields, roles: tv.roles, body: tv.body, attachments: tv.attachments_spec, extra: tv.extra },
+    sys: E.sysValues(d), checklist: J(d.checklist, {}),
     participants: ps, approvals: rounds, approval: { round: rs.round, state: rs.state, ruleRequired: !rs.round && !!E.matchApprovalRule(d) },
     attachments: all(`select a.id,a.kind,a.caption,a.sort,f.name,f.mime,f.size,f.sha256 from doc_attachments a join files f on f.id=a.file_id where a.document_id=? order by a.sort,a.id`, d.id),
     base_file: d.base_file_id ? get(`select id,name,mime,size,sha256,origin from files where id=?`, d.base_file_id) : null,
@@ -372,6 +401,23 @@ r.get('/approvals', (req, res) => {
   res.json(mine.map((a) => { const rs = E.roundState(a.target_type, a.target_id); const cur = rs.rows?.find((x) => x.status === 'waiting'); return { ...a, actionable: a.status === 'waiting' && rs.round === a.round && cur?.id === a.id }; }));
 });
 r.post('/approvals/:id', wrap(async (req, res) => { res.json(E.actApproval(req.user, Number(req.params.id), req.body.decision, req.body.comment, ip(req))); }));
+
+// 계약 전 확인 목록 (작성자가 체크, 처리 이력에 남고 완료 PDF 확인서에 들어감)
+r.post('/documents/:id/checklist', wrap(async (req, res) => {
+  const d = E.getDoc(req.params.id); E.mustView(req.user, d);
+  if (d.creator_id !== req.user.id) throw C.forbid('작성자만 체크할 수 있습니다');
+  if (['completed', 'cancelled'].includes(d.status)) throw C.conflict('완료·취소된 문서는 바꿀 수 없습니다');
+  const list = E.loadTV(d.template_version_id).extra.checklist || [];
+  const i = int(req.body.index); if (i == null || !list[i]) throw C.bad('항목이 없습니다');
+  const st = J(d.checklist, {}); st[i] = !!req.body.checked;
+  run(`update documents set checklist=? where id=?`, JSON.stringify(st), d.id);
+  C.audit({ companyId: d.company_id, documentId: d.id, actor: C.actorOf(req.user), action: 'CHECKLIST', detail: { note: `${st[i] ? '확인' : '확인 취소'}: ${list[i]}` }, ip: ip(req) });
+  res.json({ ok: true });
+}));
+// 부동산 도구: 중개보수 상한 계산·계약 후 기한 안내
+const RE = require('../realestate');
+r.get('/tools/broker-fee', (req, res) => res.json(RE.brokerFee({ ...req.query, officetelQualified: req.query.officetelQualified !== '0' })));
+r.get('/tools/realestate-guide', (req, res) => res.json(RE.GUIDE));
 
 // ── PDF·다운로드 (권한 확인 후 만료 주소)
 r.get('/documents/:id/pdf', wrap(async (req, res) => {
@@ -572,7 +618,7 @@ r.post('/links', wrap(async (req, res) => {
   const t = ownCompany(req.user, get(`select * from templates where id=?`, req.body.template_id));
   if (!E.canUseTemplate(req.user, t)) throw C.forbid('이 템플릿을 사용할 권한이 없습니다');
   const tv = E.currentTV(t.id);
-  if (tv.roles.filter((x) => x.kind === 'external').length !== 1 || tv.roles.some((x) => x.kind === 'internal')) throw C.bad('링크계약 템플릿은 외부 참여자 1명(+직인)이어야 합니다');
+  if (tv.roles.filter((x) => x.kind === 'external' && !x.optional).length !== 1 || tv.roles.some((x) => x.kind === 'internal' && !x.optional)) throw C.bad('링크계약 템플릿은 필수 외부 참여자 1명(+직인)이어야 합니다');
   const v = linkInput(req);
   const slug = C.token(9);
   const id = Number(run(`insert into link_campaigns(company_id,template_version_id,slug,title,intro,starts_at,ends_at,max_count,auth,dup_policy,privacy,after_msg,review_required,site,created_by) values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
