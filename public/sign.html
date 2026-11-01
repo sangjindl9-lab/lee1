@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<meta name="referrer" content="no-referrer">
+<title>서명 요청 — 이음사인</title>
+<link rel="stylesheet" href="/app.css">
+<style>
+  body { background: #f6f5f1; }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 0 16px 60px; }
+  .top { background: var(--panel); border-bottom: 3px solid var(--brand); padding: 14px 0; margin-bottom: 18px; }
+  .top .wrap { padding-bottom: 0; display: flex; align-items: center; gap: 12px; }
+  .top img { height: 36px; } .req { font-size: 12px; color: var(--muted); } .co { font-size: 18px; font-weight: 700; }
+  .doc { background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 20px; max-height: 60vh; overflow: auto; white-space: pre-wrap; line-height: 1.75; }
+  .step { display: flex; gap: 8px; align-items: center; margin: 18px 0 8px; font-weight: 700; } .step i { background: var(--brand); color: #fff; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-style: normal; font-size: 12px; }
+  .done { text-align: center; padding: 50px 10px; } .done b { font-size: 22px; display: block; margin-bottom: 8px; }
+  .who { background: var(--warn-soft); border-radius: 8px; padding: 12px 14px; font-size: 15px; }
+</style>
+</head>
+<body>
+<header class="top"><div class="wrap" id="hd">불러오는 중…</div></header>
+<main class="wrap" id="m"></main>
+<script src="/ui.js"></script>
+<script>
+const TOKEN = location.pathname.split('/').pop();
+const QS = new URLSearchParams(location.search);
+const INPERSON = QS.get('inperson') === '1';
+const BACK = QS.get('back');
+const sapi = (p, o = {}) => api(`/${TOKEN}${p}`, { ...o, base: '/api/s' });
+let V;
+
+function header(v) {
+  const c = v.company;
+  if (c.color) document.documentElement.style.setProperty('--brand', c.color);
+  document.title = `${v.doc.title} — ${c.name}`;
+  $('#hd').innerHTML = `${c.logo ? `<img src="${c.logo}" alt="">` : ''}<div><div class="req">서명을 요청한 회사</div><div class="co">${esc(c.name)}</div></div><div style="margin-left:auto;text-align:right" class="small muted">${esc(v.doc.mode_label)}<br>이음사인 전자서명</div>`;
+}
+// 대면 서명: 제출 뒤 이 화면의 입력·서명 흔적을 모두 지우고, 기기를 담당자에게 돌려주게 한다
+function wipe(msg) {
+  history.replaceState(null, '', '/s/used');
+  document.body.innerHTML = `<main class="wrap"><div class="done"><b>${esc(msg)}</b><p class="muted">입력한 내용은 이 기기 화면에서 지웠습니다.</p>${INPERSON ? '<p style="font-size:18px">기기를 담당자에게 돌려주세요.</p>' + (BACK ? `<a class="btn primary" href="${esc(BACK)}">담당자 화면으로 (담당자 비밀번호 필요)</a>` : '') : ''}</div></main>`;
+}
+
+async function load() {
+  try { V = await sapi(''); } catch (e) { header({ company: { name: '이음사인' }, doc: { mode_label: '' } }); $('#m').innerHTML = `<div class="card"><div class="note bad">${esc(e.message)}</div><p class="small muted">링크가 만료되었거나 이미 서명을 마쳤을 수 있습니다. 요청한 회사에 문의하세요.</p></div>`; return; }
+  header(V);
+  if (V.needVerify) return verifyView();
+  if (V.me.status !== 'current') return statusView();
+  signView();
+}
+
+function verifyView() {
+  $('#m').innerHTML = `<div class="card"><h2>${esc(V.doc.title)}</h2><p><b>${esc(V.me.name)}</b>님(${esc(V.me.role)})께 서명 요청이 왔습니다. 본인 확인을 위해 인증번호를 받아 주세요.</p>
+    <p class="small muted">인증번호 받을 곳: ${esc(V.me.contact || '')}</p><button class="btn primary" id="send">인증번호 받기</button>
+    <div id="cb" style="display:none;margin-top:12px"><label class="f"><span>인증번호 6자리</span><input class="inp" id="code" inputmode="numeric" maxlength="6" autocomplete="one-time-code"></label><button class="btn primary" id="ok">확인</button><span id="dev" class="small muted"></span></div></div>`;
+  $('#send').addEventListener('click', async () => { const r = await guard(() => sapi('/otp', { method: 'POST' })); $('#cb').style.display = ''; if (r.devCode) $('#dev').textContent = ` (개발용 표시: ${r.devCode})`; toast(`${r.sentTo || ''}(으)로 보냈습니다`); });
+  $('#ok').addEventListener('click', async () => { await guard(() => sapi('/verify', { method: 'POST', body: { code: $('#code').value } })); load(); });
+}
+
+function statusView() {
+  const s = V.doc.status;
+  $('#m').innerHTML = `<div class="card"><h2>${esc(V.doc.title)}</h2>${V.me.status === 'signed' ? '<div class="note ok">서명을 마쳤습니다.</div>' : V.me.status === 'waiting' ? '<div class="note">아직 서명 차례가 아닙니다. 앞 순서 참여자가 서명하면 다시 알려 드립니다.</div>' : ''}
+    <p>문서 상태: ${badge(s, V.doc.status_label)}</p>${s === 'completed' ? `<p>${esc(V.company.done_msg || '')}</p>${V.has_pdf ? `<a class="btn primary" href="/api/s/${TOKEN}/pdf" target="_blank">완료 문서(PDF) 보기</a>` : ''}` : ''}
+    ${V.company.contact ? `<p class="small muted">문의: ${esc(V.company.contact)}</p>` : ''}</div>${commentsBox()}`;
+  bindComments();
+}
+
+function signView() {
+  const att = V.attachments.map((a) => a.mime.startsWith('image/') ? `<figure><a href="/api/s/${TOKEN}/att/${a.id}" target="_blank"><img src="/api/s/${TOKEN}/att/${a.id}" alt="${esc(a.caption || a.name)}"></a><figcaption>${esc(a.caption || a.name)}</figcaption></figure>` : `<figure><a href="/api/s/${TOKEN}/att/${a.id}" target="_blank" style="height:80px;display:grid;place-items:center;background:#f3f1ea">PDF</a><figcaption>${esc(a.caption || a.name)}</figcaption></figure>`).join('');
+  $('#m').innerHTML = `${INPERSON ? `<div class="who" role="status">지금 서명할 사람: <b style="font-size:18px">${esc(V.me.name)}</b> (${esc(V.me.role)})<br><span class="small">본인이 아니면 기기를 담당자에게 돌려주세요.</span></div>` : ''}
+    <h1 style="margin:14px 0 4px">${esc(V.doc.title)}</h1><p class="muted" style="margin:0">${esc(V.company.request_msg || '')}${V.doc.sign_deadline ? ` · 서명 기한 ${esc(V.doc.sign_deadline)}` : ''}</p>
+    <div class="flow" style="margin:10px 0">${V.participants.map((p) => `<span class="st ${p.signed ? 'done' : p.status === 'current' ? 'now' : ''}">${esc(p.role)} ${esc(p.name)}</span>`).join('<span class="ar">→</span>')}</div>
+    <div class="step"><i>1</i>문서 전체 읽기 <span class="small muted" id="rd">끝까지 내려 주세요</span></div>
+    <div class="doc" id="doc" tabindex="0">${renderBody(V.body, V.vals)}</div>
+    ${V.has_base ? `<p><a href="/api/s/${TOKEN}/base" target="_blank">원본 파일 보기</a></p>` : ''}${att ? `<div class="thumbs" style="margin-top:10px">${att}</div>` : ''}
+    <form id="sf">${V.fields.length ? `<div class="step"><i>2</i>내가 입력할 항목</div><div class="card">${V.fields.map((f) => fieldBlock(f, '')).join('')}</div>` : ''}
+    <div class="step"><i>${V.fields.length ? 3 : 2}</i>서명</div><canvas class="pad" id="pad" aria-label="서명 칸"></canvas><button type="button" class="btn sm" id="clr" style="margin-top:6px">다시 쓰기</button>
+    <div class="card" style="margin-top:14px"><label class="chk"><input type="checkbox" id="ag" disabled> 위 문서 전체 내용을 확인했고, 이 서명이 제 서명임에 동의합니다</label>
+      <div class="row" style="margin-top:12px"><button class="btn primary" id="go">서명 제출</button><button type="button" class="btn danger" id="rj">서명 거절</button></div></div></form>
+    ${commentsBox()}`;
+  const doc = $('#doc'), ag = $('#ag');
+  // 문서 끝 표시가 보이면(끝까지 읽으면) 동의 칸을 연다. 화면 크기가 바뀌어도 동작하도록 IntersectionObserver 사용.
+  const mark = () => { const m = document.createElement('span'); m.id = 'endmark'; m.style.cssText = 'display:block;height:1px'; doc.appendChild(m); io.observe(m); };
+  const io = new IntersectionObserver((es) => { if (es.some((e) => e.isIntersecting)) { ag.disabled = false; $('#rd').textContent = '✓ 다 읽음'; } }, { root: doc, threshold: 0.5 });
+  mark();
+  // 입력하는 대로 본문에 반영해 보여 준다
+  $('#sf').addEventListener('input', () => { const st = doc.scrollTop; doc.innerHTML = renderBody(V.body, { ...V.vals, ...readFields($('#sf'), V.fields) }); mark(); doc.scrollTop = st; });
+  const pad = signPad($('#pad'));
+  $('#clr').addEventListener('click', () => pad.clear());
+  $('#sf').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (ag.disabled) return toast('문서를 끝까지 읽어 주세요', true);
+    if (!ag.checked) return toast('내용 확인에 동의해 주세요', true);
+    if (pad.empty()) return toast('서명해 주세요', true);
+    $('#go').disabled = true;
+    try {
+      const r = await sapi('/sign', { method: 'POST', body: { vals: readFields(e.target, V.fields), image: pad.png(), agree: true } });
+      pad.clear();
+      wipe(r.after_msg || (r.status === 'completed' ? '서명을 마쳤습니다. 계약이 완료되었습니다.' : '서명을 마쳤습니다. 감사합니다.'));
+    } catch (er) { $('#go').disabled = false; toast(er.message, true); }
+  });
+  $('#rj').addEventListener('click', async () => {
+    const v = await dialog('서명 거절', '<label class="f"><span>거절 사유 (요청한 회사에 전달됩니다)</span><textarea class="inp" id="rr"></textarea></label>', [{ label: '거절', cls: 'danger', value: (d) => $('#rr', d).value }]);
+    if (v === null) return; await guard(() => sapi('/reject', { method: 'POST', body: { reason: v } })); wipe('서명을 거절했습니다.');
+  });
+  bindComments();
+}
+
+function commentsBox() { return INPERSON ? '' : `<div class="card" style="margin-top:16px"><h2>의견 <span class="small muted">요청한 회사와 주고받는 공유 의견입니다</span></h2><div id="cl" class="small muted">불러오는 중…</div><form id="cf" class="row" style="margin-top:8px"><input class="inp" style="flex:1" name="body" placeholder="의견 남기기"><button class="btn">등록</button></form></div>`; }
+async function bindComments() {
+  if (INPERSON || !$('#cl')) return;
+  const draw = async () => { const l = await sapi('/comments'); $('#cl').innerHTML = l.map((c) => `<div class="cm shared ${c.parent_id ? 'reply' : ''}"><div class="meta"><b>${esc(c.author_name)}</b>${c.author_type === 'user' ? `<span class="tag">${esc(V.company.name)}</span>` : ''}<span>${dt(c.created_at)}</span></div>${esc(c.body)}</div>`).join('') || '없음'; };
+  await draw();
+  $('#cf').addEventListener('submit', async (e) => { e.preventDefault(); const b = new FormData(e.target).get('body'); if (!b) return; await guard(() => sapi('/comments', { method: 'POST', body: { body: b } })); e.target.reset(); draw(); });
+}
+load();
+</script>
+</body>
+</html>
