@@ -3,6 +3,9 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import nodemailer from 'nodemailer';
+import zlib from 'node:zlib';
+import crypto from 'node:crypto';
+import { PAGES, HOME_FAQ } from './pages.js';
 
 const PORT = Number(process.env.PORT || 8080);
 const DATA_DIR = process.env.DATA_DIR || './data';
@@ -17,37 +20,58 @@ const LOG = path.join(DATA_DIR, 'inquiries.jsonl');
 
 // 검색·링크 미리보기용 머리 정보. 네이버·구글 소유 확인 코드는 환경변수로 넣는다
 const SITE = (process.env.SITE_URL || 'https://ieumerp.kr').replace(/\/$/, '');
-const TITLE = '이음ERP | 전기·정보통신 공사업체 ERP · 검측서류 · 공정표'; // 네이버 권장 40자 이내
-const DESC = '전기·정보통신 공사 회사가 직접 만든 공사업체 ERP. 현장관리·발주 결재·기성·세금계산서·회계부터 검측서류·예정공정표·사진대지까지.'; // 80자 이내
 const attr = (s) => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
-const HEAD = [
-  `<title>${TITLE}</title>`,
-  `<meta name="description" content="${attr(DESC)}">`,
-  '<meta name="keywords" content="전기공사 ERP,공사업체 ERP,건설 ERP,정보통신공사 프로그램,검측서류,검측요청서,예정공정표,보할공정표,사진대지,작업일보 앱,기성청구,공사 회계 프로그램">',
-  `<link rel="canonical" href="${SITE}/">`,
-  '<meta property="og:type" content="website">', '<meta property="og:site_name" content="이음ERP">', '<meta property="og:locale" content="ko_KR">',
-  `<meta property="og:title" content="${attr('공사 회사가 직접 만든 이음ERP')}">`,
-  `<meta property="og:description" content="${attr(DESC)}">`,
-  `<meta property="og:url" content="${SITE}/">`, `<meta property="og:image" content="${SITE}/og.png">`,
-  '<meta property="og:image:width" content="1200">', '<meta property="og:image:height" content="630">',
-  '<meta name="twitter:card" content="summary_large_image">',
-  process.env.NAVER_SITE_VERIFICATION ? `<meta name="naver-site-verification" content="${attr(process.env.NAVER_SITE_VERIFICATION)}">` : '',
-  process.env.GOOGLE_SITE_VERIFICATION ? `<meta name="google-site-verification" content="${attr(process.env.GOOGLE_SITE_VERIFICATION)}">` : '',
-  `<script type="application/ld+json">${JSON.stringify({
-    '@context': 'https://schema.org',
-    '@graph': [
-      { '@type': 'Organization', name: '주식회사 이음소프트', url: SITE, email: 'lee@ieumerp.kr', telephone: '+82-70-7938-5027', logo: `${SITE}/og.png` },
-      { '@type': 'SoftwareApplication', name: '이음ERP', applicationCategory: 'BusinessApplication', operatingSystem: 'Web, Android', url: SITE, description: DESC, offers: { '@type': 'Offer', price: '79000', priceCurrency: 'KRW' } },
-    ],
-  })}</script>`,
-].filter(Boolean).join('');
-const ROBOTS = `User-agent: *\nAllow: /\nDisallow: /admin/\nDisallow: /api/\nSitemap: ${SITE}/sitemap.xml\n`;
-const SITEMAP = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>${SITE}/</loc><lastmod>${new Date().toISOString().slice(0, 10)}</lastmod><changefreq>weekly</changefreq><priority>1.0</priority></url></urlset>\n`;
-const OG = fs.readFileSync(path.join('public', 'og.png'));
+const read = (f) => fs.readFileSync(path.join('public', f), 'utf8');
+const CSS = read('site.css');
+const CSS_V = crypto.createHash('sha1').update(CSS).digest('hex').slice(0, 8);
+// 머리줄·꼬리줄은 모든 페이지가 같이 쓴다 (하위 페이지에서도 메뉴가 첫 페이지 칸으로 가도록 / 를 붙인다)
+const HEADER = read('_header.html').replace(/href="#top"/, 'href="/"').replace(/href="#/g, 'href="/#');
+const FOOTER = read('_footer.html');
+const ORG = { '@type': 'Organization', '@id': `${SITE}/#org`, name: '주식회사 이음소프트', url: SITE, email: 'lee@ieumerp.kr', telephone: '+82-70-7938-5027', logo: `${SITE}/og.png` };
+const faqLd = (faq) => faq && faq.length ? { '@type': 'FAQPage', mainEntity: faq.map(([q, a]) => ({ '@type': 'Question', name: q, acceptedAnswer: { '@type': 'Answer', text: a } })) } : null;
 
-// 페이지는 시작할 때 한 번 읽어 둔다 (문의 폼은 서버로 전송되도록 공개 페이지에서 처리)
-const page = fs.readFileSync(path.join('public', 'page.html'), 'utf8');
-const html = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">${HEAD}<link rel="icon" href="data:image/png;base64,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"><style>:root{padding:0}img{max-width:100%}[hidden]{display:none!important}</style></head><body>${page}</body></html>`;
+const faqHtml = (faq) => `<div class="faq">${faq.map(([q, a]) => `<details><summary>${q}</summary><p>${a}</p></details>`).join('')}</div>`;
+function render({ path: p, title, desc, ogTitle, body, ld = [], faq }) {
+  if (faq) body = body.replace('<!--FAQ-->', faqHtml(faq));
+  const graph = [ORG, ...ld, faqLd(faq)].filter(Boolean);
+  const head = [
+    '<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">',
+    `<title>${title}</title>`,
+    `<meta name="description" content="${attr(desc)}">`,
+    `<link rel="canonical" href="${SITE}${p}">`,
+    '<meta property="og:type" content="website"><meta property="og:site_name" content="이음ERP"><meta property="og:locale" content="ko_KR">',
+    `<meta property="og:title" content="${attr(ogTitle || title)}">`, `<meta property="og:description" content="${attr(desc)}">`,
+    `<meta property="og:url" content="${SITE}${p}">`, `<meta property="og:image" content="${SITE}/og.png">`,
+    '<meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta name="twitter:card" content="summary_large_image">',
+    process.env.NAVER_SITE_VERIFICATION ? `<meta name="naver-site-verification" content="${attr(process.env.NAVER_SITE_VERIFICATION)}">` : '',
+    process.env.GOOGLE_SITE_VERIFICATION ? `<meta name="google-site-verification" content="${attr(process.env.GOOGLE_SITE_VERIFICATION)}">` : '',
+    '<link rel="icon" href="/favicon.png">',
+    '<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>',
+    '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&display=swap">',
+    `<link rel="stylesheet" href="/site.css?v=${CSS_V}">`,
+    `<script type="application/ld+json">${JSON.stringify({ '@context': 'https://schema.org', '@graph': graph }).replace(/</g, '\\u003c')}</script>`,
+  ].filter(Boolean).join('');
+  return `<!doctype html><html lang="ko"><head>${head}</head><body>${HEADER}${body}${FOOTER}</body></html>`;
+}
+
+// 첫 페이지 + 제품별 페이지 (pages.js) — 시작할 때 한 번 만들어 둔다
+const HOME = {
+  path: '/',
+  title: '이음ERP | 전기·정보통신 공사업체 ERP · 검측서류 · 공정표', // 네이버 권장 40자 이내
+  ogTitle: '공사 회사가 직접 만든 이음ERP',
+  desc: '전기·정보통신 공사 회사가 직접 만든 공사업체 ERP. 현장관리·발주 결재·기성·세금계산서·회계부터 검측서류·예정공정표·사진대지까지.', // 80자 이내
+  body: read('page.html').replace('<!--HEADER-->\n', '').replace('<!--FOOTER-->\n', ''),
+  ld: [{ '@type': 'SoftwareApplication', name: '이음ERP', applicationCategory: 'BusinessApplication', operatingSystem: 'Web, Android', url: SITE, description: '전기·정보통신 공사업체용 ERP', offers: { '@type': 'Offer', price: '79000', priceCurrency: 'KRW' }, publisher: { '@id': `${SITE}/#org` } }],
+  faq: HOME_FAQ,
+};
+const PAGE_LIST = [HOME, ...PAGES.map((pg) => ({ ...pg, body: read(`pages/${pg.file}`) }))];
+const RENDERED = new Map(PAGE_LIST.map((pg) => { const html = render(pg); return [pg.path, { html, gz: zlib.gzipSync(html) }]; }));
+const TODAY = new Date().toISOString().slice(0, 10);
+const ROBOTS = `User-agent: *\nAllow: /\nDisallow: /admin/\nDisallow: /api/\nSitemap: ${SITE}/sitemap.xml\n`;
+const SITEMAP = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${PAGE_LIST.map((pg) => `<url><loc>${SITE}${pg.path}</loc><lastmod>${TODAY}</lastmod><changefreq>weekly</changefreq><priority>${pg.path === '/' ? '1.0' : '0.8'}</priority></url>`).join('')}</urlset>\n`;
+const STATIC_TYPES = { '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp' };
+const CSS_GZ = zlib.gzipSync(CSS);
+const NOT_FOUND = render({ path: '/404', title: '없는 페이지입니다 | 이음ERP', desc: '찾는 페이지가 없습니다.', body: '<section class="sec"><div class="wrap"><h1 style="font-size:32px">찾는 페이지가 없습니다</h1><p style="margin-top:16px"><a class="btn n" href="/">첫 페이지로</a></p></div></section>' }).replace('<head>', '<head><meta name="robots" content="noindex">');
 
 const recent = new Map(); // ip -> timestamps (간단한 과다 요청 방지)
 function tooMany(ip) {
@@ -88,9 +112,25 @@ function json(res, code, obj) { res.writeHead(code, { 'content-type': 'applicati
 http.createServer((req, res) => {
   const url = new URL(req.url, 'http://x');
   if (req.method === 'POST' && url.pathname === '/api/inquiry') return handleInquiry(req, res);
+  // www·onrender 주소로 들어오면 대표 주소로 (검색에서 주소가 둘로 갈리지 않게)
+  const host = String(req.headers.host || '');
+  if ((req.method === 'GET' || req.method === 'HEAD') && (host.startsWith('www.') || host.endsWith('.onrender.com')) && SITE.startsWith('https://')) {
+    res.writeHead(301, { location: SITE + url.pathname + url.search }); return res.end();
+  }
   if (url.pathname === '/robots.txt') { res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' }); return res.end(ROBOTS); }
   if (url.pathname === '/sitemap.xml') { res.writeHead(200, { 'content-type': 'application/xml; charset=utf-8' }); return res.end(SITEMAP); }
-  if (url.pathname === '/og.png') { res.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'public, max-age=86400' }); return res.end(OG); }
+  if (url.pathname === '/site.css') {
+    const gz = /\bgzip\b/.test(req.headers['accept-encoding'] || '');
+    res.writeHead(200, { 'content-type': 'text/css; charset=utf-8', 'cache-control': 'public, max-age=31536000, immutable', vary: 'accept-encoding', ...(gz ? { 'content-encoding': 'gzip' } : {}) });
+    return res.end(gz ? CSS_GZ : CSS);
+  }
+  if (/^\/(og|favicon)\.png$/.test(url.pathname) || /^\/img\/[a-z0-9]+\.(png|jpg|webp)$/.test(url.pathname)) {
+    const f = path.join('public', url.pathname);
+    if (fs.existsSync(f)) {
+      res.writeHead(200, { 'content-type': STATIC_TYPES[path.extname(f)], 'cache-control': url.pathname.startsWith('/img/') ? 'public, max-age=31536000, immutable' : 'public, max-age=86400' });
+      return res.end(fs.readFileSync(f));
+    }
+  }
   if (url.pathname === '/health') return json(res, 200, { ok: true, smtp: !!transporter, to: TO });
   if (url.pathname === '/admin/inquiries') {
     if (!ADMIN_TOKEN || url.searchParams.get('token') !== ADMIN_TOKEN) return json(res, 403, { ok: false });
@@ -98,11 +138,13 @@ http.createServer((req, res) => {
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
     return res.end(`<!doctype html><meta charset="utf-8"><title>도입 문의 ${rows.length}건</title><style>body{font-family:sans-serif;padding:20px}table{border-collapse:collapse;font-size:13px}td,th{border:1px solid #ddd;padding:6px 8px;vertical-align:top;text-align:left}td.m{white-space:pre-wrap;max-width:420px}</style><h1>도입 문의 ${rows.length}건</h1><table><tr><th>접수</th><th>회사</th><th>담당자</th><th>연락처</th><th>이메일</th><th>제품</th><th>경로</th><th>내용</th></tr>${rows.map((r) => `<tr><td>${r.at.slice(0, 16).replace('T', ' ')}</td><td>${esc(r.company)}</td><td>${esc(r.name)}</td><td>${esc(r.phone)}</td><td>${esc(r.email)}</td><td>${esc(r.product)}</td><td>${esc(r.source || '')}${r.ref ? `<br><small>${esc(r.ref)}</small>` : ''}</td><td class="m">${esc(r.message)}</td></tr>`).join('')}</table>`);
   }
-  if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) {
-    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-cache' });
-    return res.end(html);
+  const pg = (req.method === 'GET' || req.method === 'HEAD') && RENDERED.get(url.pathname === '/index.html' ? '/' : (url.pathname.replace(/\/$/, '') || '/'));
+  if (pg) {
+    const gz = /\bgzip\b/.test(req.headers['accept-encoding'] || '');
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-cache', vary: 'accept-encoding', ...(gz ? { 'content-encoding': 'gzip' } : {}) });
+    return res.end(gz ? pg.gz : pg.html);
   }
-  res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' }); res.end('없는 페이지입니다');
+  res.writeHead(404, { 'content-type': 'text/html; charset=utf-8' }); res.end(NOT_FOUND);
 }).listen(PORT, async () => {
   console.log(`이음ERP 소개 사이트 :${PORT} (문의 → ${TO}, SMTP ${transporter ? '설정됨' : '미설정 — 파일 보관만'})`);
   // SEND_TEST_MAIL=1 로 띄우면 시작할 때 테스트 메일을 한 통 보낸다
