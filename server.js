@@ -23,6 +23,8 @@ const SITE = (process.env.SITE_URL || 'https://ieumerp.kr').replace(/\/$/, '');
 const attr = (s) => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
 const read = (f) => fs.readFileSync(path.join('public', f), 'utf8');
 const CSS = read('site.css');
+const APP_HTML = read('app.html');
+const APP_MANIFEST = read('app.webmanifest');
 const CSS_V = crypto.createHash('sha1').update(CSS).digest('hex').slice(0, 8);
 // 머리줄·꼬리줄은 모든 페이지가 같이 쓴다 (하위 페이지에서도 메뉴가 첫 페이지 칸으로 가도록 / 를 붙인다)
 const HEADER = read('_header.html').replace(/href="#top"/, 'href="/"').replace(/href="#/g, 'href="/#');
@@ -151,6 +153,9 @@ http.createServer((req, res) => {
       return req.method === 'HEAD' ? res.end() : fs.createReadStream(f).pipe(res);
     }
   }
+  // 직원 화면 웹 입구 — 앱을 못 까는 직원이 사업자등록번호로 회사를 찾아 ERP 직원 화면(/m)으로
+  if (url.pathname === '/app' || url.pathname === '/app/') { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-cache' }); return res.end(APP_HTML); }
+  if (url.pathname === '/app.webmanifest') { res.writeHead(200, { 'content-type': 'application/manifest+json; charset=utf-8', 'cache-control': 'public, max-age=86400' }); return res.end(APP_MANIFEST); }
   if (url.pathname === '/health') return json(res, 200, { ok: true, smtp: !!transporter, to: TO });
   if (url.pathname === '/admin/inquiries') {
     if (!ADMIN_TOKEN || url.searchParams.get('token') !== ADMIN_TOKEN) return json(res, 403, { ok: false });

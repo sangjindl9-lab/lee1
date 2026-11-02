@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>이음 직원 — 웹으로 들어가기</title>
+<meta name="description" content="이음 직원 앱을 설치하지 않아도 휴대폰 웹에서 회사 사업자등록번호로 들어가 급여명세서·공지·영수증·작업일보를 씁니다.">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#14273d">
+<link rel="manifest" href="/app.webmanifest">
+<link rel="icon" href="/favicon.png">
+<link rel="apple-touch-icon" href="/img/app180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="이음 직원">
+<style>
+  :root{--navy:#14273d;--ink:#17202b;--muted:#5d6b7a;--line:#d9e0e8;--paper:#f4f6f9;--yellow:#ffb800;--red:#c0392b}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100dvh;background:var(--paper);color:var(--ink);font:16px/1.55 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR","Malgun Gothic",sans-serif;display:flex;flex-direction:column}
+  header{background:var(--navy);color:#fff;padding:calc(env(safe-area-inset-top) + 28px) 24px 30px}
+  header .bar{width:44px;height:5px;background:var(--yellow);border-radius:3px;margin-bottom:16px}
+  header h1{margin:0;font-size:26px;letter-spacing:-.5px}
+  header p{margin:8px 0 0;color:#c9d6e6;font-size:15px}
+  main{flex:1;width:100%;max-width:440px;margin:0 auto;padding:24px 20px 32px}
+  label{display:block;font-weight:700;margin-bottom:8px}
+  input{width:100%;height:54px;border:1.5px solid var(--line);border-radius:10px;padding:0 14px;font-size:22px;letter-spacing:1px;background:#fff;color:var(--ink)}
+  input:focus{outline:none;border-color:var(--navy)}
+  .hint{font-size:13px;color:var(--muted);margin-top:6px}
+  button,.go{display:block;width:100%;height:52px;margin-top:16px;border:0;border-radius:10px;background:var(--navy);color:#fff;font:inherit;font-size:17px;font-weight:700;cursor:pointer;text-align:center;line-height:52px;text-decoration:none}
+  button:disabled{opacity:.55}
+  .err{margin-top:12px;color:var(--red);font-size:14px}
+  .co{margin-top:20px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:18px}
+  .co small{color:var(--muted);font-size:13px}
+  .co b{display:block;font-size:20px;margin-top:2px}
+  .link{background:none;color:var(--navy);height:auto;line-height:1.4;margin-top:14px;font-size:14px;font-weight:600;text-decoration:underline}
+  .home{margin-top:28px;font-size:14px;color:var(--muted);border-top:1px solid var(--line);padding-top:18px}
+  .home b{color:var(--ink)}
+  .home ul{margin:6px 0 0;padding-left:18px}
+  [hidden]{display:none!important}
+</style>
+</head>
+<body>
+<header><div class="bar"></div><h1>이음 직원</h1><p>앱을 설치하지 않아도 휴대폰 웹에서 그대로 씁니다.<br>급여명세서 · 공지 · 영수증 · 작업일보</p></header>
+<main>
+  <section id="find">
+    <form id="f" novalidate>
+      <label for="biz">회사 사업자등록번호</label>
+      <input id="biz" inputmode="numeric" autocomplete="off" placeholder="000-00-00000" maxlength="12">
+      <p class="hint">처음 한 번만 넣으면 다음부터는 바로 들어갑니다.</p>
+      <button id="btn" type="submit">회사 찾기</button>
+      <p id="err" class="err" role="alert" hidden></p>
+    </form>
+  </section>
+  <section id="found" hidden>
+    <div class="co"><small>우리 회사</small><b id="coName"></b></div>
+    <a id="go" class="go" href="#">로그인하러 가기</a>
+    <button type="button" class="link" id="change">다른 회사 선택</button>
+  </section>
+  <div class="home">
+    <b>홈 화면에 추가하면 앱처럼 씁니다</b>
+    <ul>
+      <li>아이폰(사파리): 아래 공유 버튼 → <b>홈 화면에 추가</b></li>
+      <li>안드로이드(크롬): 오른쪽 위 ⋮ → <b>홈 화면에 추가</b></li>
+    </ul>
+    <p style="margin-top:10px">로그인할 때 <b>자동 로그인</b>을 켜 두면 다음부터 로그인 없이 열립니다.</p>
+  </div>
+</main>
+<script>
+(function(){
+  var KEY='ieum-staff-company', LOOKUP='https://admin.ieumerp.kr/api/v1/app-lookup?bizNo=';
+  var q=new URLSearchParams(location.search), $=function(id){return document.getElementById(id);};
+  function load(){ try{ var v=JSON.parse(localStorage.getItem(KEY)||'null'); return v&&/^https:\/\/[a-z0-9.-]+$/i.test(v.url)?v:null; }catch(e){ return null; } }
+  function save(v){ try{ localStorage.setItem(KEY, JSON.stringify(v)); }catch(e){} }
+  function show(co){
+    $('find').hidden=true; $('found').hidden=false; $('coName').textContent=co.name;
+    $('go').href=co.url+'/login?next=%2Fm&co='+encodeURIComponent(co.name);
+  }
+  $('biz').addEventListener('input', function(e){ var d=e.target.value.replace(/\D/g,'').slice(0,10); e.target.value=d.length>5?d.slice(0,3)+'-'+d.slice(3,5)+'-'+d.slice(5):d.length>3?d.slice(0,3)+'-'+d.slice(3):d; });
+  $('f').addEventListener('submit', function(e){
+    e.preventDefault(); var d=$('biz').value.replace(/\D/g,''), err=$('err');
+    err.hidden=true; if(d.length!==10){ err.textContent='사업자등록번호 10자리를 입력해 주세요'; err.hidden=false; return; }
+    var b=$('btn'); b.disabled=true; b.textContent='찾는 중…';
+    fetch(LOOKUP+d).then(function(r){ return r.json().then(function(j){ if(!r.ok) throw new Error(j.message||'찾지 못했습니다'); return j; }); })
+      .then(function(co){ save(co); show(co); })
+      .catch(function(x){ err.textContent=x.message==='Failed to fetch'?'인터넷 연결을 확인해 주세요':x.message; err.hidden=false; })
+      .then(function(){ b.disabled=false; b.textContent='회사 찾기'; });
+  });
+  $('change').addEventListener('click', function(){ try{ localStorage.removeItem(KEY); }catch(e){} $('found').hidden=true; $('find').hidden=false; $('biz').value=''; $('biz').focus(); });
+  var co=load();
+  if(q.get('change')){ try{ localStorage.removeItem(KEY); }catch(e){} co=null; }
+  // 한 번 고른 회사는 바로 직원 화면으로 (자동 로그인을 켰으면 로그인도 없이 열린다)
+  if(co){ show(co); location.replace(co.url+'/m'); }
+})();
+</script>
+</body>
+</html>
