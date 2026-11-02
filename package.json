@@ -1,0 +1,29 @@
+{
+  "name": "cable-history",
+  "version": "1.0.0",
+  "description": "회로·케이블 이력 관리 시스템",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "init": "node server/init-admin.js",
+    "seed:demo": "node server/seed-demo.js",
+    "verify": "node test/verify-api.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "better-sqlite3": "^13.0.3",
+    "exceljs": "^4.4.0",
+    "express": "^5.3.0",
+    "express-session": "^1.19.0",
+    "multer": "^2.5.0",
+    "pdfjs-dist": "^4.10.38",
+    "playwright": "^1.63.0",
+    "qrcode": "^1.5.4"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
