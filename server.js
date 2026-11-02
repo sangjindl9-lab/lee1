@@ -17,8 +17,8 @@ const LOG = path.join(DATA_DIR, 'inquiries.jsonl');
 
 // 검색·링크 미리보기용 머리 정보. 네이버·구글 소유 확인 코드는 환경변수로 넣는다
 const SITE = (process.env.SITE_URL || 'https://ieumerp.kr').replace(/\/$/, '');
-const TITLE = '이음ERP — 전기·정보통신 공사업체 ERP · 검측서류 · 예정공정표 · 사진대지';
-const DESC = '전기·정보통신 공사 회사가 직접 만든 공사업체 ERP. 현장관리, 발주 전자결재, 기성청구, 세금계산서, 노무비, 회계와 검측서류 자동 작성, 예정공정표, 사진대지 프로그램.';
+const TITLE = '이음ERP | 전기·정보통신 공사업체 ERP · 검측서류 · 공정표'; // 네이버 권장 40자 이내
+const DESC = '전기·정보통신 공사 회사가 직접 만든 공사업체 ERP. 현장관리·발주 결재·기성·세금계산서·회계부터 검측서류·예정공정표·사진대지까지.'; // 80자 이내
 const attr = (s) => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
 const HEAD = [
   `<title>${TITLE}</title>`,
