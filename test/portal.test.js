@@ -227,4 +227,9 @@ test('직원 앱: 사업자번호로 회사 이름과 ERP 주소를 찾는다 (�
   assert.deepEqual(r.body, { name: c.name, url: 'https://erp.example.com' });
   assert.equal((await call('/api/v1/app-lookup?bizNo=1018117536', { auth: false })).status, 404);
   assert.equal((await call('/api/v1/app-lookup?bizNo=123', { auth: false })).status, 400);
+  // 홈페이지(ieumerp.kr/app)에서 부를 수 있고, 다른 사이트에는 허용하지 않는다
+  const ok = await fetch(base + '/api/v1/app-lookup?bizNo=2208660440', { headers: { origin: 'https://ieumerp.kr' } });
+  assert.equal(ok.headers.get('access-control-allow-origin'), 'https://ieumerp.kr');
+  const bad = await fetch(base + '/api/v1/app-lookup?bizNo=2208660440', { headers: { origin: 'https://evil.example' } });
+  assert.equal(bad.headers.get('access-control-allow-origin'), null);
 });

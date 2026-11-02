@@ -1041,7 +1041,10 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
   // 직원 앱(안드로이드 하나로 모든 고객사) — 사업자등록번호로 회사 이름과 그 회사 ERP 주소를 찾는다.
   // 공개 주소라 회사 이름·ERP 주소만 돌려주고, 같은 IP 1분 20회로 제한 (번호를 차례로 넣어 보는 것 방지)
   const lookups = new Map();
+  // 홈페이지(ieumerp.kr/app)의 '휴대폰 웹으로 직원 화면 들어가기'에서도 부른다
+  const LOOKUP_ORIGINS = new Set(['https://ieumerp.kr', 'https://www.ieumerp.kr']);
   app.get('/api/v1/app-lookup', wrap(async (req, res) => {
+    if (LOOKUP_ORIGINS.has(req.headers.origin)) res.set({ 'Access-Control-Allow-Origin': req.headers.origin, Vary: 'Origin' });
     const ip = req.ip ?? '';
     const now = Date.now();
     const l = lookups.get(ip);
