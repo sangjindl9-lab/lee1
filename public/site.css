@@ -203,3 +203,7 @@ footer.foot{background:var(--bg2);color:var(--mute);padding-block:28px 44px;font
 .ctaband .btn{background:#fff;color:var(--blue-d);border-color:#fff}
 .foot nav{display:flex;flex-wrap:wrap;gap:6px 18px;margin-bottom:12px}.foot nav a{color:var(--ink2);text-decoration:none}.foot nav a:hover{text-decoration:underline}
 .prod .more{display:inline-block;margin-top:14px;font-weight:700;color:var(--c,var(--blue));text-decoration:none;font-size:14.5px}.prod .more:hover{text-decoration:underline}
+.trybox{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr);gap:28px;align-items:start}
+@media(max-width:900px){.trybox{grid-template-columns:1fr}}
+.tryurl{font-size:28px;font-weight:800;letter-spacing:-.02em}.tryurl a{color:var(--blue-d);text-decoration:none}
+.ptable code{font-size:14px;background:var(--bg2);padding:2px 6px;border-radius:4px}
