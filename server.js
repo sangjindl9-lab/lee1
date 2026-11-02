@@ -1038,6 +1038,27 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
     res.json({ rows: rows.map((r) => ({ id: r.id, title: r.title, body: r.body, screen: r.screen, stage: stage(r), reply: r.reply, repliedAt: r.replied_at, createdAt: r.created_at, files: r.files })) });
   }));
 
+  // 직원 앱(안드로이드 하나로 모든 고객사) — 사업자등록번호로 회사 이름과 그 회사 ERP 주소를 찾는다.
+  // 공개 주소라 회사 이름·ERP 주소만 돌려주고, 같은 IP 1분 20회로 제한 (번호를 차례로 넣어 보는 것 방지)
+  const lookups = new Map();
+  app.get('/api/v1/app-lookup', wrap(async (req, res) => {
+    const ip = req.ip ?? '';
+    const now = Date.now();
+    const l = lookups.get(ip);
+    const cur = l && now - l.at < 60_000 ? { n: l.n + 1, at: l.at } : { n: 1, at: now };
+    lookups.set(ip, cur);
+    if (lookups.size > 5000) lookups.clear();
+    if (cur.n > 20) return res.status(429).json({ message: '잠시 뒤 다시 시도해 주세요' });
+    const biz = L.normBiz(req.query?.bizNo);
+    if (biz.length !== 10) return res.status(400).json({ message: '사업자등록번호 10자리를 입력해 주세요' });
+    const [c] = (await q(`select c.name, c.server_url, (select max(l.expires_at) from license l where l.customer_id = c.id) expires
+      from customer c where c.biz_reg_no = $1 order by (c.server_url is not null) desc, c.updated_at desc limit 1`, [biz])).rows;
+    if (!c || !c.server_url) return res.status(404).json({ message: '이음ERP를 쓰는 회사로 등록되지 않은 번호입니다. 회사 담당자에게 확인해 주세요' });
+    const url = String(c.server_url).trim().replace(/\/+$/, '');
+    if (!/^https:\/\/[a-z0-9.-]+$/i.test(url)) return res.status(404).json({ message: '이 회사의 ERP 주소가 아직 준비되지 않았습니다' });
+    res.set('Cache-Control', 'no-store').json({ name: c.name, url });
+  }));
+
   app.get('/healthz', (req, res) => res.json({ ok: true }));
   app.use(express.static(path.join(__dirname, 'public'), { index: 'index.html', maxAge: 0 }));
   app.use((req, res) => (req.path.startsWith('/api/') ? res.status(404).json({ message: '없는 주소입니다' }) : res.sendFile(path.join(__dirname, 'public', 'index.html'))));

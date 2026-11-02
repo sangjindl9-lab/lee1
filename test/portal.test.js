@@ -218,3 +218,13 @@ test('고객 ERP 고장·수정 요청: 설치 코드로 보내고, 판매자 �
   // 다른 회사 코드로는 안 보인다
   assert.equal((await call(`/api/v1/support?code=${code}&bizRegNos=1018117536`, { auth: false })).status, 403);
 });
+
+test('직원 앱: 사업자번호로 회사 이름과 ERP 주소를 찾는다 (로그인 없이)', async () => {
+  const c = (await call('/api/admin/customers/' + cust.id)).body;
+  await call('/api/admin/customers/' + cust.id, { method: 'PUT', json: { ...c, serverUrl: 'https://erp.example.com/' } });
+  const r = await call('/api/v1/app-lookup?bizNo=220-86-60440', { auth: false });
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body, { name: c.name, url: 'https://erp.example.com' });
+  assert.equal((await call('/api/v1/app-lookup?bizNo=1018117536', { auth: false })).status, 404);
+  assert.equal((await call('/api/v1/app-lookup?bizNo=123', { auth: false })).status, 400);
+});
