@@ -131,6 +131,9 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
 
   // 관리자 API: 로그인 쿠키 + (변경 요청은) 사용자 지정 헤더 — 다른 사이트에서 위조 요청을 보낼 수 없게
   const admin = express.Router();
+  // 새 버전이 배포되면 열어 둔 관리 화면이 알아채고 새로 고치도록 버전을 알려 준다
+  const APP_BUILD = process.env.RAILWAY_DEPLOYMENT_ID || String(Date.now());
+  admin.use((req, res, next) => { res.setHeader('x-app-build', APP_BUILD); next(); });
   admin.use(async (req, res, next) => {
     const sess = readSession(cookie(req, 'sid'));
     if (!sess || (sess.v ?? 0) !== (await auth()).ver) return res.status(401).json({ message: '로그인이 필요합니다' });

@@ -36,6 +36,9 @@ async function api(path, opts = {}) {
     body: opts.json ? JSON.stringify(opts.json) : undefined,
     credentials: 'same-origin',
   });
+  // 새 버전이 배포됐으면 화면을 새로 고쳐 새 메뉴·기능이 바로 보이게
+  const build = res.headers.get('x-app-build');
+  if (build) { if (!api.build) api.build = build; else if (api.build !== build) { location.reload(); return new Promise(() => {}); } }
   const body = await res.json().catch(() => ({}));
   if (res.status === 401 && path !== '/login') { renderLogin(); throw new Error('로그인이 필요합니다'); }
   if (!res.ok) throw new Error(body.message ?? '처리하지 못했습니다');
