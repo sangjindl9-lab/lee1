@@ -114,7 +114,9 @@ http.createServer((req, res) => {
   if (req.method === 'POST' && url.pathname === '/api/inquiry') return handleInquiry(req, res);
   // www·onrender 주소로 들어오면 대표 주소로 (검색에서 주소가 둘로 갈리지 않게)
   const host = String(req.headers.host || '');
-  if ((req.method === 'GET' || req.method === 'HEAD') && (host.startsWith('www.') || host.endsWith('.onrender.com')) && SITE.startsWith('https://')) {
+  // 대표 주소(SITE_URL)가 아닌 www·onrender·railway 주소면 대표 주소로. 대표 주소가 www 여도 돌고 돌지 않게 대표 주소 자체는 건너뛴다
+  const canon = SITE.replace(/^https?:\/\//, '');
+  if ((req.method === 'GET' || req.method === 'HEAD') && host !== canon && (host.startsWith('www.') || host === canon.replace(/^www\./, '') || host.endsWith('.onrender.com') || host.endsWith('.up.railway.app')) && SITE.startsWith('https://')) {
     res.writeHead(301, { location: SITE + url.pathname + url.search }); return res.end();
   }
   if (url.pathname === '/robots.txt') { res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' }); return res.end(ROBOTS); }
