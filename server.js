@@ -15,9 +15,39 @@ const transporter = SMTP ? nodemailer.createTransport(SMTP) : null;
 fs.mkdirSync(DATA_DIR, { recursive: true });
 const LOG = path.join(DATA_DIR, 'inquiries.jsonl');
 
+// 검색·링크 미리보기용 머리 정보. 네이버·구글 소유 확인 코드는 환경변수로 넣는다
+const SITE = (process.env.SITE_URL || 'https://ieumerp.kr').replace(/\/$/, '');
+const TITLE = '이음ERP — 전기·정보통신 공사업체 ERP · 검측서류 · 예정공정표 · 사진대지';
+const DESC = '전기·정보통신 공사 회사가 직접 만든 공사업체 ERP. 현장관리, 발주 전자결재, 기성청구, 세금계산서, 노무비, 회계와 검측서류 자동 작성, 예정공정표, 사진대지 프로그램.';
+const attr = (s) => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+const HEAD = [
+  `<title>${TITLE}</title>`,
+  `<meta name="description" content="${attr(DESC)}">`,
+  '<meta name="keywords" content="전기공사 ERP,공사업체 ERP,건설 ERP,정보통신공사 프로그램,검측서류,검측요청서,예정공정표,보할공정표,사진대지,작업일보 앱,기성청구,공사 회계 프로그램">',
+  `<link rel="canonical" href="${SITE}/">`,
+  '<meta property="og:type" content="website">', '<meta property="og:site_name" content="이음ERP">', '<meta property="og:locale" content="ko_KR">',
+  `<meta property="og:title" content="${attr('공사 회사가 직접 만든 이음ERP')}">`,
+  `<meta property="og:description" content="${attr(DESC)}">`,
+  `<meta property="og:url" content="${SITE}/">`, `<meta property="og:image" content="${SITE}/og.png">`,
+  '<meta property="og:image:width" content="1200">', '<meta property="og:image:height" content="630">',
+  '<meta name="twitter:card" content="summary_large_image">',
+  process.env.NAVER_SITE_VERIFICATION ? `<meta name="naver-site-verification" content="${attr(process.env.NAVER_SITE_VERIFICATION)}">` : '',
+  process.env.GOOGLE_SITE_VERIFICATION ? `<meta name="google-site-verification" content="${attr(process.env.GOOGLE_SITE_VERIFICATION)}">` : '',
+  `<script type="application/ld+json">${JSON.stringify({
+    '@context': 'https://schema.org',
+    '@graph': [
+      { '@type': 'Organization', name: '주식회사 이음소프트', url: SITE, email: 'lee@ieumerp.kr', logo: `${SITE}/og.png` },
+      { '@type': 'SoftwareApplication', name: '이음ERP', applicationCategory: 'BusinessApplication', operatingSystem: 'Web, Android', url: SITE, description: DESC, offers: { '@type': 'Offer', price: '79000', priceCurrency: 'KRW' } },
+    ],
+  })}</script>`,
+].filter(Boolean).join('');
+const ROBOTS = `User-agent: *\nAllow: /\nDisallow: /admin/\nDisallow: /api/\nSitemap: ${SITE}/sitemap.xml\n`;
+const SITEMAP = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>${SITE}/</loc><lastmod>${new Date().toISOString().slice(0, 10)}</lastmod><changefreq>weekly</changefreq><priority>1.0</priority></url></urlset>\n`;
+const OG = fs.readFileSync(path.join('public', 'og.png'));
+
 // 페이지는 시작할 때 한 번 읽어 둔다 (문의 폼은 서버로 전송되도록 공개 페이지에서 처리)
 const page = fs.readFileSync(path.join('public', 'page.html'), 'utf8');
-const html = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="description" content="전기·정보통신 공사 현장에서 만든 이음ERP, 검측서류 자동 작성, 예정공정표 작성 프로그램"><link rel="icon" href="data:image/png;base64,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"><style>:root{padding:0}img{max-width:100%}[hidden]{display:none!important}</style></head><body>${page}</body></html>`;
+const html = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">${HEAD}<link rel="icon" href="data:image/png;base64,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"><style>:root{padding:0}img{max-width:100%}[hidden]{display:none!important}</style></head><body>${page}</body></html>`;
 
 const recent = new Map(); // ip -> timestamps (간단한 과다 요청 방지)
 function tooMany(ip) {
@@ -34,7 +64,7 @@ async function handleInquiry(req, res) {
     let d; try { d = JSON.parse(body); } catch { return json(res, 400, { ok: false, message: '잘못된 요청입니다' }); }
     const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').toString().split(',')[0].trim();
     if (tooMany(ip)) return json(res, 429, { ok: false, message: '잠시 뒤 다시 시도해 주세요' });
-    const item = { at: new Date().toISOString(), company: clean(d.company, 100), name: clean(d.name, 50), phone: clean(d.phone, 40), email: clean(d.email, 120), product: clean(d.product, 40), message: String(d.message ?? '').trim().slice(0, 3000), ip };
+    const item = { at: new Date().toISOString(), company: clean(d.company, 100), name: clean(d.name, 50), phone: clean(d.phone, 40), email: clean(d.email, 120), product: clean(d.product, 40), source: clean(d.source, 60), ref: clean(d.ref, 300), message: String(d.message ?? '').trim().slice(0, 3000), ip };
     if (!item.company || !item.name || !item.phone) return json(res, 400, { ok: false, message: '회사명·담당자·연락처를 입력해 주세요' });
     fs.appendFileSync(LOG, JSON.stringify(item) + '\n');
     let mailed = false;
@@ -43,8 +73,8 @@ async function handleInquiry(req, res) {
         await transporter.sendMail({
           from: `"이음ERP 도입 문의" <${process.env.SMTP_USER}>`, to: TO, replyTo: item.email || undefined,
           subject: `[이음ERP 도입 문의] ${item.company} · ${item.name} · ${item.product}`,
-          text: `회사명: ${item.company}\n담당자: ${item.name}\n연락처: ${item.phone}\n이메일: ${item.email || '-'}\n관심 제품: ${item.product}\n\n문의 내용:\n${item.message || '-'}\n\n접수: ${item.at} / ${ip}`,
-          html: `<table style="font-family:sans-serif;font-size:14px;border-collapse:collapse">${[['회사명', item.company], ['담당자', item.name], ['연락처', item.phone], ['이메일', item.email || '-'], ['관심 제품', item.product]].map(([k, v]) => `<tr><th align="left" style="padding:4px 12px 4px 0;color:#555">${k}</th><td style="padding:4px 0">${esc(v)}</td></tr>`).join('')}</table><p style="white-space:pre-wrap;font-family:sans-serif;font-size:14px;border-top:1px solid #ddd;padding-top:10px">${esc(item.message) || '-'}</p><p style="color:#888;font-size:12px">접수 ${item.at} · ${esc(ip)}</p>`,
+          text: `회사명: ${item.company}\n담당자: ${item.name}\n연락처: ${item.phone}\n이메일: ${item.email || '-'}\n관심 제품: ${item.product}\n알게 된 경로: ${item.source || '-'}${item.ref ? ` (${item.ref})` : ''}\n\n문의 내용:\n${item.message || '-'}\n\n접수: ${item.at} / ${ip}`,
+          html: `<table style="font-family:sans-serif;font-size:14px;border-collapse:collapse">${[['회사명', item.company], ['담당자', item.name], ['연락처', item.phone], ['이메일', item.email || '-'], ['관심 제품', item.product], ['알게 된 경로', (item.source || '-') + (item.ref ? ` (${item.ref})` : '')]].map(([k, v]) => `<tr><th align="left" style="padding:4px 12px 4px 0;color:#555">${k}</th><td style="padding:4px 0">${esc(v)}</td></tr>`).join('')}</table><p style="white-space:pre-wrap;font-family:sans-serif;font-size:14px;border-top:1px solid #ddd;padding-top:10px">${esc(item.message) || '-'}</p><p style="color:#888;font-size:12px">접수 ${item.at} · ${esc(ip)}</p>`,
         });
         mailed = true;
       } catch (e) { console.error('메일 발송 실패:', e.message); }
@@ -58,12 +88,15 @@ function json(res, code, obj) { res.writeHead(code, { 'content-type': 'applicati
 http.createServer((req, res) => {
   const url = new URL(req.url, 'http://x');
   if (req.method === 'POST' && url.pathname === '/api/inquiry') return handleInquiry(req, res);
+  if (url.pathname === '/robots.txt') { res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' }); return res.end(ROBOTS); }
+  if (url.pathname === '/sitemap.xml') { res.writeHead(200, { 'content-type': 'application/xml; charset=utf-8' }); return res.end(SITEMAP); }
+  if (url.pathname === '/og.png') { res.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'public, max-age=86400' }); return res.end(OG); }
   if (url.pathname === '/health') return json(res, 200, { ok: true, smtp: !!transporter, to: TO });
   if (url.pathname === '/admin/inquiries') {
     if (!ADMIN_TOKEN || url.searchParams.get('token') !== ADMIN_TOKEN) return json(res, 403, { ok: false });
     const rows = fs.existsSync(LOG) ? fs.readFileSync(LOG, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)).reverse() : [];
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-    return res.end(`<!doctype html><meta charset="utf-8"><title>도입 문의 ${rows.length}건</title><style>body{font-family:sans-serif;padding:20px}table{border-collapse:collapse;font-size:13px}td,th{border:1px solid #ddd;padding:6px 8px;vertical-align:top;text-align:left}td.m{white-space:pre-wrap;max-width:420px}</style><h1>도입 문의 ${rows.length}건</h1><table><tr><th>접수</th><th>회사</th><th>담당자</th><th>연락처</th><th>이메일</th><th>제품</th><th>내용</th></tr>${rows.map((r) => `<tr><td>${r.at.slice(0, 16).replace('T', ' ')}</td><td>${esc(r.company)}</td><td>${esc(r.name)}</td><td>${esc(r.phone)}</td><td>${esc(r.email)}</td><td>${esc(r.product)}</td><td class="m">${esc(r.message)}</td></tr>`).join('')}</table>`);
+    return res.end(`<!doctype html><meta charset="utf-8"><title>도입 문의 ${rows.length}건</title><style>body{font-family:sans-serif;padding:20px}table{border-collapse:collapse;font-size:13px}td,th{border:1px solid #ddd;padding:6px 8px;vertical-align:top;text-align:left}td.m{white-space:pre-wrap;max-width:420px}</style><h1>도입 문의 ${rows.length}건</h1><table><tr><th>접수</th><th>회사</th><th>담당자</th><th>연락처</th><th>이메일</th><th>제품</th><th>경로</th><th>내용</th></tr>${rows.map((r) => `<tr><td>${r.at.slice(0, 16).replace('T', ' ')}</td><td>${esc(r.company)}</td><td>${esc(r.name)}</td><td>${esc(r.phone)}</td><td>${esc(r.email)}</td><td>${esc(r.product)}</td><td>${esc(r.source || '')}${r.ref ? `<br><small>${esc(r.ref)}</small>` : ''}</td><td class="m">${esc(r.message)}</td></tr>`).join('')}</table>`);
   }
   if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) {
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-cache' });
