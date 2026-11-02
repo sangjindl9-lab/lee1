@@ -9,7 +9,7 @@ const dt = (iso) => (iso ? new Date(iso).toLocaleString('ko-KR', { dateStyle: 's
 const today = () => new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10);
 
 const KIND = { NEW: ['신규', 'steel'], RENEW: ['연장', 'ok'], CHANGE: ['변경', ''], SUSPEND: ['사용 중지', 'seal'], RESUME: ['중지 해제', 'ok'] };
-const STATE = { ACTIVE: ['사용 중', 'ok'], EXPIRING: ['만료 임박', 'warn'], EXPIRED: ['만료', 'seal'], SUSPENDED: ['사용 중지', 'seal'], NONE: ['미발급', ''] };
+const STATE = { ACTIVE: ['사용 중', 'ok'], EXPIRING: ['만료 임박', 'warn'], EXPIRED: ['만료', 'seal'], SUSPENDED: ['사용 중지', 'seal'], NONE: ['미발급', ''], TRIAL: ['무료 체험', 'steel'], TRIAL_ENDED: ['체험 종료', 'warn'] };
 const DEPLOY = { HOSTED: '호스팅형', ONPREM: '설치형' };
 const gb = (mb) => (mb >= 1024 ? `${+(mb / 1024).toFixed(mb % 1024 ? 1 : 0)}GB` : `${mb}MB`);
 /** 데이터 사용량 표시 — 80% 이상 주의, 100% 이상 초과 */
@@ -70,7 +70,7 @@ function renderLogin() {
 
 // ── 공통 틀 ────────────────────────────────────────────────────
 function shell(active, inner) {
-  const nav = [['#/', '대시보드', 'home'], ['#/customers', '고객', 'customers'], ['#/contracts', '계약 · 전자계약', 'contracts'], ['#/billing', '과금 · 수납', 'billing'], ['#/support', '상담 · 지원', 'support'],
+  const nav = [['#/', '대시보드', 'home'], ['#/trials', '무료 체험', 'trials'], ['#/customers', '고객', 'customers'], ['#/contracts', '계약 · 전자계약', 'contracts'], ['#/billing', '과금 · 수납', 'billing'], ['#/support', '상담 · 지원', 'support'],
     ['#/licenses', '발급 대장', 'licenses'], ['#/requests', '요청 대장', 'requests'], ['#/updates', '업데이트', 'updates'], ['#/pricing', '요금제', 'pricing'], ['#/audit', '활동 기록', 'audit'], ['#/settings', '설정', 'settings']];
   $app.innerHTML = `
     <div class="shell">
@@ -94,6 +94,7 @@ async function pageHome() {
   shell('home', `
     <div class="page-head"><div><h1>대시보드</h1><p>연간 구독 라이선스 현황입니다. 만료 30일 전부터 '만료 임박'에 나타납니다.</p></div>
       <a class="btn primary" href="#/customers/new">+ 고객 등록 · 납품</a></div>
+    ${s.trialRequests + s.trials.length + s.trialEnded ? `<a class="note" href="#/trials" style="display:block;margin-bottom:16px">무료 체험 — 새 신청 <b>${s.trialRequests}</b>건 · 체험 중 <b>${s.trials.length}</b>곳${s.trials[0] ? ` (가장 빨리 끝나는 곳 ${esc(s.trials[0].name)} ${s.trials[0].current.daysLeft}일 남음)` : ''} · 체험 종료 <b>${s.trialEnded}</b>곳 →</a>` : ''}
     <div class="grid cols-4" style="margin-bottom:16px">
       <div class="stat"><div class="label">전체 고객</div><div class="value">${s.customers}</div></div>
       <div class="stat"><div class="label">사용 중</div><div class="value">${s.active}</div></div>
@@ -156,11 +157,18 @@ const pickedModules = (form, extra = '') => [...form.querySelectorAll('input[nam
 // 요금제 (홍보 사이트 요금표와 같음, VAT 별도) — 고르면 사용자 수·저장 용량·금액이 채워진다
 const PLANS = [['starter', '스타터', 5, 5, 79000], ['std', '스탠다드', 15, 20, 149000], ['pro', '프로', 30, 50, 229000]];
 const OPT_MONTHLY = { geomcheuk: 24000, gongjung: 16000 }; // 사진대지 요금은 아직 정하지 않음 — 금액에 직접 더하기
-const planSelect = () => `<label class="f wide">요금제 <span class="hint" style="display:inline">(고객 ERP의 경리·자금 기능이 요금제에 따라 켜집니다)</span><select name="plan"><option value="">직접 입력</option>${PLANS.map(([v, n, u, g, m]) => `<option value="${v}">${n} — ${u}명 · ${g}GB · 월 ${won(m)}</option>`).join('')}</select><span class="hint">고르면 사용자 수·저장 용량·연 금액(월 요금 × 12, 옵션 포함)이 채워집니다. 연 선납 2개월 할인이면 금액을 고쳐 주세요. 추가 사용자 1명 월 6,500원 · 저장 10GB 추가 월 4,000원</span></label>`;
+const planSelect = () => `<label class="f wide">요금제 <span class="hint" style="display:inline">(고객 ERP의 경리·자금 기능이 요금제에 따라 켜집니다)</span><select name="plan"><option value="">직접 입력</option><option value="trial">무료 체험 — 30일 · 모든 기능 · 0원</option>${PLANS.map(([v, n, u, g, m]) => `<option value="${v}">${n} — ${u}명 · ${g}GB · 월 ${won(m)}</option>`).join('')}</select><span class="hint">고르면 사용자 수·저장 용량·연 금액(월 요금 × 12, 옵션 포함)이 채워집니다. 연 선납 2개월 할인이면 금액을 고쳐 주세요. 추가 사용자 1명 월 6,500원 · 저장 10GB 추가 월 4,000원</span></label>`;
 function wirePlan(form) {
   const sel = form.querySelector('select[name=plan]');
   if (!sel) return;
   const fill = () => {
+    if (sel.value === 'trial') {
+      // 한 달 무료 체험: 판매 옵션까지 모두 켜고 0원, 시작일부터 30일
+      form.maxUsers.value = 10; form.storageGB.value = 5; if (form.amount) form.amount.value = 0;
+      form.querySelectorAll('input[name=opt]').forEach((x) => { x.checked = true; });
+      if (form.expiresAt) form.expiresAt.value = addDays(form.startsOn?.value || today(), 29);
+      return;
+    }
     const p = PLANS.find(([v]) => v === sel.value);
     if (!p) return;
     const [, , users, gbs, monthly] = p;
@@ -255,7 +263,7 @@ async function pageCustomer(id) {
     <div class="page-head"><div><h1>${esc(c.name)} ${badge(STATE[c.state])}</h1><p class="num">${biz(c.bizRegNo)} · ${DEPLOY[c.deployment]}</p></div>
       <div class="row">
         ${!cur ? `<button class="btn primary" data-issue="NEW">신규 라이선스 발급</button>` : suspended ? `<button class="btn primary" data-issue="RESUME">중지 해제</button>` : `
-          <button class="btn primary" data-issue="RENEW">1년 연장</button>
+          ${cur.trial ? `<button class="btn primary" data-issue="NEW" title="요금제를 골라 정식 라이선스를 발급하면 체험 때 입력한 자료를 그대로 이어서 씁니다">정식 계약으로 전환</button>` : `<button class="btn primary" data-issue="RENEW">1년 연장</button>`}
           <button class="btn" data-issue="CHANGE">사용자 수·용량 변경</button>
           <button class="btn danger" data-issue="SUSPEND">사용 중지</button>`}
         <button class="btn primary" id="claudebtn" title="이 업체만 수정·업데이트하는 Claude 작업 창을 엽니다">Claude로 수정</button>
@@ -916,11 +924,72 @@ async function pageSettings() {
 }
 
 // ── 라우팅 ─────────────────────────────────────────────────────
+// ── 무료 체험 ───────────────────────────────────────────────────
+const TSTATUS = { NEW: ['새 신청', 'warn'], STARTED: ['체험 시작', 'ok'], REJECTED: ['보류', ''] };
+async function pageTrials() {
+  loading('trials');
+  const d = await api('/trials');
+  const newOnes = d.requests.filter((r) => r.status === 'NEW');
+  const done = d.requests.filter((r) => r.status !== 'NEW');
+  const custRow = (c, ended) => `<tr class="click" data-go="#/customers/${c.id}"><td><b>${esc(c.name)}</b><div class="muted small">${esc(c.contactName ?? '')} ${esc(c.phone ?? '')}</div></td>
+    <td class="num">${esc(c.current.expiresAt)}</td><td class="r num">${ended ? `${-c.current.daysLeft}일 지남` : `${c.current.daysLeft}일 남음`}</td>
+    <td class="r num">${c.lastActiveUsers ?? '–'}명</td><td class="small muted">${c.lastSeenAt ? dt(c.lastSeenAt) : '접속 전'}</td>
+    ${ended ? `<td class="num small">${esc(c.keepUntil)}</td>` : ''}</tr>`;
+  shell('trials', `
+    <div class="page-head"><div><h1>무료 체험</h1><p>홈페이지 신청서로 들어온 회사에 <b>${d.days}일 무료 체험</b>을 열어 줍니다. 모든 기능(검측서류·예정공정표·사진대지 포함)을 쓰고, 끝나면 고객 ERP는 <b>조회 전용</b>으로 바뀝니다. 계약하면 요금제를 골라 정식 발급하면 되고 자료는 그대로 이어집니다.</p></div></div>
+    <section class="panel"><header><h2>새 신청</h2><span class="muted small">${newOnes.length}건</span></header>
+      ${newOnes.length ? `<div class="table-wrap"><table><thead><tr><th>신청일</th><th>회사</th><th>담당자 · 연락처</th><th class="r">인원</th><th>하고 싶은 말</th><th></th></tr></thead><tbody>${newOnes.map((r) => `<tr>
+        <td class="small num">${dt(r.createdAt)}</td><td><b>${esc(r.company)}</b><div class="num small muted">${biz(r.bizRegNo)}</div></td>
+        <td>${esc(r.contactName)}<div class="small muted">${esc(r.phone)} ${esc(r.email ?? '')}</div></td><td class="r num">${r.users ?? '–'}</td>
+        <td class="small" style="max-width:280px;white-space:pre-wrap">${esc(r.message ?? '')}</td>
+        <td class="r" style="white-space:nowrap"><button class="btn primary" data-start="${r.id}">체험 시작</button> <button class="btn" data-reject="${r.id}">보류</button></td></tr>`).join('')}</tbody></table></div>`
+      : '<div class="empty">새 신청이 없습니다. 신청은 홈페이지 ieumerp.kr 의 무료 체험 신청서로 들어옵니다</div>'}
+    </section>
+    <section class="panel"><header><h2>체험 중</h2><span class="muted small">${d.active.length}곳 · 끝나기 7일·3일 전에 계약 연락을 하세요</span></header>
+      ${d.active.length ? `<div class="table-wrap"><table><thead><tr><th>회사</th><th>체험 종료일</th><th class="r">남은 기간</th><th class="r">사용 인원</th><th>최근 접속</th></tr></thead><tbody>${d.active.map((c) => custRow(c, false)).join('')}</tbody></table></div>` : '<div class="empty">체험 중인 회사가 없습니다</div>'}
+    </section>
+    <section class="panel"><header><h2>체험 종료 (조회 전용)</h2><span class="muted small">${d.ended.length}곳 · 끝난 뒤 ${d.keepDays}일까지 자료를 보관합니다. 그 뒤 서버 정리는 직접 판단하세요</span></header>
+      ${d.ended.length ? `<div class="table-wrap"><table><thead><tr><th>회사</th><th>체험 종료일</th><th class="r">지난 기간</th><th class="r">사용 인원</th><th>최근 접속</th><th>보관 기한</th></tr></thead><tbody>${d.ended.map((c) => custRow(c, true)).join('')}</tbody></table></div>` : '<div class="empty">체험이 끝난 회사가 없습니다</div>'}
+    </section>
+    ${done.length ? `<section class="panel"><header><h2>처리한 신청</h2></header><div class="table-wrap"><table><thead><tr><th>신청일</th><th>회사</th><th>담당자</th><th>상태</th></tr></thead><tbody>${done.map((r) => `<tr ${r.customerId ? `class="click" data-go="#/customers/${r.customerId}"` : ''}><td class="small num">${dt(r.createdAt)}</td><td>${esc(r.company)}</td><td>${esc(r.contactName)} <span class="small muted">${esc(r.phone)}</span></td><td>${badge(TSTATUS[r.status])}</td></tr>`).join('')}</tbody></table></div></section>` : ''}`);
+  document.querySelectorAll('[data-reject]').forEach((b) => { b.onclick = async () => {
+    if (!confirm('이 신청을 보류할까요? (신청자에게 따로 연락은 가지 않습니다)')) return;
+    try { await api(`/trials/${b.dataset.reject}/reject`, { method: 'POST' }); toast('보류했습니다'); pageTrials(); } catch (e) { toast(e.message, 'error'); }
+  }; });
+  document.querySelectorAll('[data-start]').forEach((b) => { b.onclick = () => {
+    const r = newOnes.find((x) => x.id === b.dataset.start);
+    const back = document.createElement('div');
+    back.className = 'dlg-back';
+    back.innerHTML = `<form class="dlg" role="dialog" aria-modal="true" aria-label="무료 체험 시작">
+      <header><h2>무료 체험 시작 — ${esc(r.company)}</h2><button type="button" class="x" aria-label="닫기">×</button></header>
+      <div class="body"><div class="note">고객 등록 → ${d.days}일 체험 라이선스(모든 기능·옵션, 0원) → 회사 전용 서버 개설을 한 번에 합니다. 서버 개설은 몇 분 걸리고, 끝나면 고객 화면에서 납품서(접속 주소·관리자 임시 비밀번호)를 출력해 보내 주세요.</div>
+      <div class="form-grid" style="margin-top:12px">
+        <label class="f">회사 코드 *<input name="companyCode" required pattern="[A-Za-z0-9]{2,10}" value="T${esc(r.bizRegNo.slice(-5))}" /><span class="hint">영문·숫자 2~10자. 주소가 코드.ieumerp.kr 로 만들어집니다</span></label>
+        <label class="f">관리자 아이디 *<input name="adminId" required value="admin" /></label>
+        <label class="f">사용자 수<input name="maxUsers" type="number" min="1" max="30" value="${r.users && r.users <= 30 ? r.users : 10}" /></label>
+      </div></div>
+      <footer><button type="button" class="btn" data-close>취소</button><button class="btn primary">체험 시작</button></footer></form>`;
+    document.body.appendChild(back);
+    const close = () => back.remove();
+    back.querySelector('.x').onclick = close; back.querySelector('[data-close]').onclick = close;
+    back.querySelector('form').onsubmit = async (e) => {
+      e.preventDefault();
+      const f = formData(e.target);
+      const btn = e.target.querySelector('button.primary'); btn.disabled = true; btn.textContent = '서버 여는 중…';
+      try {
+        const res = await api(`/trials/${r.id}/start`, { method: 'POST', json: { companyCode: f.companyCode, adminId: f.adminId, maxUsers: Number(f.maxUsers || 10) } });
+        close(); toast(res.serverError ? `체험 라이선스는 발급했지만 서버를 열지 못했습니다: ${res.serverError} — 고객 화면에서 다시 개설하세요` : '무료 체험을 시작했습니다 — 서버 개설이 끝나면 납품서를 보내 주세요', res.serverError ? 'error' : 'ok'); location.hash = `#/customers/${res.customerId}`;
+      } catch (err) { btn.disabled = false; btn.textContent = '체험 시작'; toast(err.message, 'error'); }
+    };
+  }; });
+}
+
 async function route() {
   const h = location.hash.split('?')[0] || '#/';
   if (pasteBox && !h.startsWith('#/requests/')) { pasteBox.detach(); pasteBox = null; }
   try {
     if (h === '#/' || h === '#') await pageHome();
+    else if (h === '#/trials') await pageTrials();
     else if (h === '#/customers') await pageCustomers();
     else if (h === '#/customers/new') await pageNewCustomer();
     else if (/^#\/customers\/[^/]+\/delivery$/.test(h)) await pageDelivery(h.split('/')[2]);

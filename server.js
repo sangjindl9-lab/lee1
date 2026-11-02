@@ -22,6 +22,14 @@ const B = require('./lib/backup');
 const env = (k, d) => (process.env[k] ?? d);
 const PORT = Number(env('PORT', 8080));
 const PROD = env('NODE_ENV') === 'production';
+// 한 달 무료 체험 — 모든 기능(판매 옵션 포함)을 30일 써 보고, 원하는 회사만 계약한다
+const TRIAL = 'trial';
+const TRIAL_DAYS = 30;
+const TRIAL_USERS = 10;
+const TRIAL_STORAGE_MB = 5 * 1024;
+/** 체험이 끝난 뒤 조회 전용으로 자료를 보관하는 기간 (그 뒤 서버 정리는 판매자가 직접 판단) */
+const TRIAL_KEEP_DAYS = 30;
+const OPTION_MODULES = ['geomcheuk', 'gongjung', 'sajindaeji'];
 
 function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpoint, railwaySleep, railwayWaitMs, githubEndpoint, githubTokenEnv = env('GITHUB_TOKEN'), publicUrl = env('PUBLIC_URL', 'https://admin.ieumerp.kr'), cfToken = env('CF_API_TOKEN'), cfEndpoint, customerZone = env('CUSTOMER_DOMAIN', 'ieumerp.kr') }) {
   const publicKey = crypto.createPublicKey(privateKey);
@@ -172,7 +180,7 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
 
   /** 고객별 최신 라이선스와 상태 */
   const CUSTOMER_STATE_SQL = `
-    select c.*, l.id as lic_row_id, l.license_id, l.kind as lic_kind, l.max_users, l.storage_mb, l.modules as lic_modules, l.expires_at, l.issued_at as lic_issued_at
+    select c.*, l.id as lic_row_id, l.license_id, l.kind as lic_kind, l.max_users, l.storage_mb, l.modules as lic_modules, l.expires_at, l.issued_at as lic_issued_at, l.edition as lic_edition
     from customer c
     left join lateral (select * from license where customer_id = c.id order by issued_at desc limit 1) l on true`;
   const ymd = (d) => (d ? (d instanceof Date ? new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10) : String(d).slice(0, 10)) : null);
@@ -180,6 +188,8 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
     if (!r.license_id) return 'NONE';
     if (r.lic_kind === 'SUSPEND') return 'SUSPENDED';
     const d = L.daysUntil(ymd(r.expires_at));
+    // 한 달 무료 체험 — 끝나면 고객 ERP 는 조회 전용(자료는 그대로)으로 바뀌고, 계약하면 정식 라이선스로 이어서 쓴다
+    if (r.lic_edition === TRIAL) return d < 0 ? 'TRIAL_ENDED' : 'TRIAL';
     if (d < 0) return 'EXPIRED';
     if (d <= 30) return 'EXPIRING';
     return 'ACTIVE';
@@ -190,7 +200,7 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
     createdAt: r.created_at, lastSeenAt: r.last_seen_at, lastActiveUsers: r.last_active_users, lastAppVersion: r.last_app_version,
     stage: r.stage ?? (r.license_id ? '운영중' : '리드'),
     usedMB: r.last_used_mb, storageCheckedAt: r.last_storage_at,
-    current: r.license_id ? { licenseId: r.license_id, kind: r.lic_kind, maxUsers: r.max_users, storageMB: r.storage_mb, modules: r.lic_modules ?? [], expiresAt: ymd(r.expires_at), daysLeft: L.daysUntil(ymd(r.expires_at)), issuedAt: r.lic_issued_at } : null,
+    current: r.license_id ? { licenseId: r.license_id, kind: r.lic_kind, edition: r.lic_edition, trial: r.lic_edition === TRIAL, maxUsers: r.max_users, storageMB: r.storage_mb, modules: r.lic_modules ?? [], expiresAt: ymd(r.expires_at), daysLeft: L.daysUntil(ymd(r.expires_at)), issuedAt: r.lic_issued_at } : null,
     state: stateOf(r),
   });
   const shapeLicense = (r) => ({
@@ -210,6 +220,9 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
       expiring: rows.filter((r) => r.state === 'EXPIRING').sort((a, b) => a.current.daysLeft - b.current.daysLeft),
       expired: rows.filter((r) => r.state === 'EXPIRED'),
       suspended: count('SUSPENDED'),
+      trials: rows.filter((r) => r.state === 'TRIAL').sort((a, b) => a.current.daysLeft - b.current.daysLeft),
+      trialEnded: count('TRIAL_ENDED'),
+      trialRequests: Number((await q(`select count(*)::int n from trial_request where status = 'NEW'`)).rows[0].n),
       none: count('NONE'),
       seats: rows.filter((r) => r.state === 'ACTIVE' || r.state === 'EXPIRING').reduce((a, r) => a + r.current.maxUsers, 0),
       revenueYear: { year, total: Number(rev.total), issues: rev.n },
@@ -291,27 +304,30 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
    *   RESUME  중지 해제 (중지 전 만료일로 재발급)
    */
   admin.post('/customers/:id/licenses', wrap(async (req, res) => {
-    const c = await loadCustomer(req.params.id);
-    const b = req.body ?? {};
+    res.status(201).json(await issueLicense(req, await loadCustomer(req.params.id), req.body ?? {}));
+  }));
+  async function issueLicense(req, c, b) {
     const kind = String(b.kind ?? 'NEW');
     if (!['NEW', 'RENEW', 'CHANGE', 'SUSPEND', 'RESUME'].includes(kind)) throw bad('발급 종류가 올바르지 않습니다');
     const today = L.kstToday();
-    const last = c.license_id ? { maxUsers: c.max_users, storageMB: c.storage_mb, modules: c.lic_modules ?? [], expiresAt: ymd(c.expires_at), kind: c.lic_kind } : null;
+    const last = c.license_id ? { maxUsers: c.max_users, storageMB: c.storage_mb, modules: c.lic_modules ?? [], expiresAt: ymd(c.expires_at), kind: c.lic_kind, edition: c.lic_edition } : null;
+    const trial = b.plan === TRIAL || b.edition === TRIAL;
     if (kind !== 'NEW' && !last) throw bad('먼저 신규 라이선스를 발급해 주세요');
     const isDate = (v) => /^\d{4}-\d{2}-\d{2}$/.test(String(v ?? ''));
 
-    let maxUsers = Number(b.maxUsers ?? last?.maxUsers ?? 10);
+    let maxUsers = Number(b.maxUsers ?? last?.maxUsers ?? TRIAL_USERS);
     // 저장 용량 — 화면은 GB 로 받는다. 기본 1GB, 연장·변경 때 입력이 없으면 기존 용량 유지
-    const storageMB = b.storageGB != null && b.storageGB !== '' ? Math.round(Number(b.storageGB) * 1024) : (last?.storageMB ?? 1024);
+    const storageMB = b.storageGB != null && b.storageGB !== '' ? Math.round(Number(b.storageGB) * 1024) : (last?.storageMB ?? (trial ? TRIAL_STORAGE_MB : 1024));
     if (!Number.isInteger(storageMB) || storageMB < 256 || storageMB > 1024 * 1024) throw bad('저장 용량은 0.25GB~1024GB 사이로 입력해 주세요');
     // 고객 맞춤 모듈 — 이 고객 서버에서만 켜지는 기능. 입력이 없으면 기존 것 유지
-    const modules = b.modules != null ? [...new Set((Array.isArray(b.modules) ? b.modules : String(b.modules).split(/[,\s]+/)).map((m) => String(m).trim().toLowerCase()).filter(Boolean))] : (last?.modules ?? []);
+    let modules = b.modules != null ? [...new Set((Array.isArray(b.modules) ? b.modules : String(b.modules).split(/[,\s]+/)).map((m) => String(m).trim().toLowerCase()).filter(Boolean))] : (last?.modules ?? []);
+    if (trial) modules = [...new Set([...modules, ...OPTION_MODULES])]; // 체험은 판매 옵션까지 모두 써 본다
     if (modules.some((m) => !/^[a-z0-9][a-z0-9-]{1,39}$/.test(m) || m === 'all')) throw bad('모듈 이름은 영문 소문자·숫자·- 로 적어 주세요 (예: samwoo-cable)');
     let startsOn;
     let expiresAt;
     if (kind === 'NEW') {
       startsOn = isDate(b.startsOn) ? b.startsOn : today;
-      expiresAt = isDate(b.expiresAt) ? b.expiresAt : L.oneYearFrom(startsOn, Number(b.years ?? 1));
+      expiresAt = isDate(b.expiresAt) ? b.expiresAt : trial ? L.addDays(startsOn, TRIAL_DAYS - 1) : L.oneYearFrom(startsOn, Number(b.years ?? 1));
     } else if (kind === 'RENEW') {
       if (last.kind === 'SUSPEND') throw bad('사용 중지된 고객입니다. 먼저 중지를 해제해 주세요');
       const base = L.daysUntil(last.expiresAt) >= 0 ? L.addDays(last.expiresAt, 1) : today;
@@ -336,9 +352,10 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
     if (!Number.isInteger(maxUsers) || maxUsers < 1 || maxUsers > 10000) throw bad('사용자 수는 1~10000 사이로 입력해 주세요');
     if (kind !== 'SUSPEND' && expiresAt < today) throw bad('만료일이 오늘보다 이릅니다');
     if (kind !== 'SUSPEND' && expiresAt < startsOn) throw bad('만료일이 시작일보다 이릅니다');
-    const amount = kind === 'SUSPEND' || kind === 'RESUME' ? 0 : Math.max(0, Math.round(Number(b.amount ?? 0)) || 0);
+    const amount = kind === 'SUSPEND' || kind === 'RESUME' || trial ? 0 : Math.max(0, Math.round(Number(b.amount ?? 0)) || 0);
     // 요금제(스타터·스탠다드·프로)를 고르면 라이선스 edition 으로 — 고객 ERP 의 경리·자금 모듈이 요금제에 따라 켜진다
-    const edition = String(b.edition ?? (['starter', 'std', 'pro'].includes(String(b.plan)) ? b.plan : 'standard')).slice(0, 30);
+    // 요금제를 고르지 않은 연장·변경·중지는 지금 요금제를 그대로 둔다 (체험 연장도 체험으로)
+    const edition = String(b.edition ?? (['starter', 'std', 'pro', TRIAL].includes(String(b.plan)) ? b.plan : kind !== 'NEW' && last?.edition ? last.edition : 'standard')).slice(0, 30);
 
     const payload = {
       licenseId: crypto.randomUUID(),
@@ -360,9 +377,9 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
       [c.id, payload.licenseId, kind, maxUsers, startsOn, expiresAt, edition, amount, b.memo ? String(b.memo).slice(0, 500) : null, text, payload.issuedAt, storageMB, JSON.stringify(modules)],
     );
     const KIND = { NEW: '신규', RENEW: '연장', CHANGE: '변경', SUSPEND: '사용 중지', RESUME: '중지 해제' };
-    audit(req, 'LICENSE_ISSUE', `${KIND[kind]} 발급 ${c.name} ${maxUsers}명 ${+(storageMB / 1024).toFixed(2)}GB ~${expiresAt}${modules.length ? ` 맞춤모듈 ${modules.join(',')}` : ''}${amount ? ` ${amount.toLocaleString('ko-KR')}원` : ''}`);
-    res.status(201).json(shapeLicense({ ...row, customer_name: c.name, biz_reg_no: c.biz_reg_no }));
-  }));
+    audit(req, 'LICENSE_ISSUE', `${KIND[kind]}${edition === TRIAL ? '(무료 체험)' : ''} 발급 ${c.name} ${maxUsers}명 ${+(storageMB / 1024).toFixed(2)}GB ~${expiresAt}${modules.length ? ` 맞춤모듈 ${modules.join(',')}` : ''}${amount ? ` ${amount.toLocaleString('ko-KR')}원` : ''}`);
+    return shapeLicense({ ...row, customer_name: c.name, biz_reg_no: c.biz_reg_no });
+  }
 
   admin.get('/licenses', wrap(async (req, res) => {
     const rows = (await q(`select l.*, c.name as customer_name, c.biz_reg_no from license l join customer c on c.id = l.customer_id order by l.issued_at desc limit 2000`)).rows.map(shapeLicense);
@@ -399,6 +416,53 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
   }));
 
   // ── 고객관리: 영업 단계·계약(전자서명)·과금·상담 ──
+  // ── 무료 체험 신청 (홈페이지 ieumerp.kr 의 신청서 → /api/v1/trial) ─────────────
+  const shapeTrialReq = (r) => ({ id: r.id, company: r.company, bizRegNo: r.biz_reg_no, contactName: r.contact_name, phone: r.phone, email: r.email, users: r.users, message: r.message, status: r.status, customerId: r.customer_id, createdAt: r.created_at, handledAt: r.handled_at });
+  admin.get('/trials', wrap(async (req, res) => {
+    const requests = (await q(`select * from trial_request order by (status = 'NEW') desc, created_at desc limit 300`)).rows.map(shapeTrialReq);
+    const customers = (await q(CUSTOMER_STATE_SQL + ` where l.edition = $1 order by l.expires_at`, [TRIAL])).rows.map(shapeCustomer)
+      .map((c) => ({ ...c, keepUntil: c.state === 'TRIAL_ENDED' ? L.addDays(c.current.expiresAt, TRIAL_KEEP_DAYS) : null }));
+    res.json({ days: TRIAL_DAYS, keepDays: TRIAL_KEEP_DAYS, requests, active: customers.filter((c) => c.state === 'TRIAL'), ended: customers.filter((c) => c.state === 'TRIAL_ENDED') });
+  }));
+  const loadTrialReq = async (id) => {
+    if (!/^[0-9a-f-]{36}$/i.test(id)) throw bad('신청을 찾을 수 없습니다', 404);
+    const [r] = (await q('select * from trial_request where id = $1', [id])).rows;
+    if (!r) throw bad('신청을 찾을 수 없습니다', 404);
+    return r;
+  };
+  /** 체험 시작: 고객 등록(이미 있으면 그대로) → 30일 체험 라이선스 → 회사 전용 서버 개설 */
+  admin.post('/trials/:id/start', wrap(async (req, res) => {
+    const t = await loadTrialReq(req.params.id);
+    if (t.status !== 'NEW') throw bad('이미 처리한 신청입니다');
+    let [row] = (await q('select id from customer where biz_reg_no = $1', [t.biz_reg_no])).rows;
+    if (!row) {
+      [row] = (await q(`insert into customer(name, biz_reg_no, contact_name, phone, email, deployment, memo, activation_code, stage, lead_source)
+        values ($1,$2,$3,$4,$5,'HOSTED',$6,$7,'체험','홈페이지 무료 체험') returning id`,
+        [t.company, t.biz_reg_no, t.contact_name, t.phone, t.email, t.message, L.activationCode()])).rows;
+      audit(req, 'CUSTOMER_CREATE', `고객 등록(무료 체험 신청) ${t.company} (${t.biz_reg_no})`);
+    }
+    let c = await loadCustomer(row.id);
+    if (c.license_id && c.lic_edition !== TRIAL) throw bad('이미 정식 라이선스가 있는 회사입니다');
+    if (!c.license_id) {
+      await issueLicense(req, c, { kind: 'NEW', plan: TRIAL, maxUsers: Math.min(Math.max(Number(req.body?.maxUsers ?? t.users ?? TRIAL_USERS) || TRIAL_USERS, 1), 30), memo: '홈페이지 무료 체험' });
+      c = await loadCustomer(row.id);
+    }
+    await q(`update trial_request set status = 'STARTED', customer_id = $2, handled_at = now() where id = $1`, [t.id, c.id]);
+    audit(req, 'TRIAL_START', `무료 체험 시작 ${c.name} ~${ymd(c.expires_at)}`);
+    // 서버 개설이 안 되면(Railway 연결 전 등) 체험 라이선스는 그대로 두고, 고객 화면에서 다시 개설한다
+    let server = null, serverError = null;
+    try { server = (await loadJob(c.id)) ? shapeJob(await loadJob(c.id), c) : await startServer(req, c, req.body?.adminId || 'admin', req.body?.companyCode || `T${c.biz_reg_no.slice(-5)}`); }
+    catch (e) { serverError = e.message; }
+    res.status(202).json({ customerId: c.id, server, serverError });
+  }));
+  admin.post('/trials/:id/reject', wrap(async (req, res) => {
+    const t = await loadTrialReq(req.params.id);
+    if (t.status !== 'NEW') throw bad('이미 처리한 신청입니다');
+    await q(`update trial_request set status = 'REJECTED', handled_at = now() where id = $1`, [t.id]);
+    audit(req, 'TRIAL_REJECT', `무료 체험 신청 보류 ${t.company}`);
+    res.json({ ok: true });
+  }));
+
   require('./lib/crm')(admin, { q, audit, wrap, bad, loadCustomer });
 
   // ── 고객 서버(호스팅형) 자동 개설 ─────────────────────────────────
@@ -553,15 +617,17 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
   }));
 
   admin.post('/customers/:id/server', wrap(async (req, res) => {
-    const c = await loadCustomer(req.params.id);
+    res.status(202).json(await startServer(req, await loadCustomer(req.params.id), req.body?.adminId, req.body?.companyCode));
+  }));
+  async function startServer(req, c, adminIdIn, companyCodeIn) {
     if (c.deployment !== 'HOSTED') throw bad('호스팅형 고객만 서버를 개설할 수 있습니다');
     if (!c.license_id) throw bad('먼저 라이선스를 발급해 주세요');
     if (c.lic_kind === 'SUSPEND') throw bad('사용 중지된 고객입니다');
     if (await loadJob(c.id)) throw bad('이미 서버 개설을 진행했습니다');
     if (!(await railwayConf()).token) throw bad('먼저 설정 > Railway 연결을 마쳐 주세요');
-    const adminId = String(req.body?.adminId ?? 'admin').trim().toLowerCase();
+    const adminId = String(adminIdIn ?? 'admin').trim().toLowerCase();
     if (!/^[a-z0-9._-]{4,32}$/.test(adminId)) throw bad('관리자 아이디는 영문 소문자·숫자·._- 4~32자입니다');
-    const companyCode = String(req.body?.companyCode ?? '').trim().toUpperCase();
+    const companyCode = String(companyCodeIn ?? '').trim().toUpperCase();
     if (!/^[A-Z0-9]{2,10}$/.test(companyCode)) throw bad('회사 코드는 영문 대문자·숫자 2~10자입니다 (예: HN)');
     const slug = `erp-${companyCode.toLowerCase()}-${c.biz_reg_no.slice(-4)}`;
     const input = { companyName: c.name, bizRegNo: c.biz_reg_no, companyCode, adminId, activationCode: c.activation_code, projectName: slug };
@@ -575,8 +641,8 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
       await new Promise((r) => setTimeout(r, 500));
       j = await loadJob(c.id);
     }
-    res.status(202).json(shapeJob(j));
-  }));
+    return shapeJob(j);
+  }
 
   admin.post('/customers/:id/server/retry', wrap(async (req, res) => {
     const c = await loadCustomer(req.params.id);
@@ -1041,6 +1107,32 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
   // 직원 앱(안드로이드 하나로 모든 고객사) — 사업자등록번호로 회사 이름과 그 회사 ERP 주소를 찾는다.
   // 공개 주소라 회사 이름·ERP 주소만 돌려주고, 같은 IP 1분 20회로 제한 (번호를 차례로 넣어 보는 것 방지)
   const lookups = new Map();
+  // ── 홈페이지 무료 체험 신청서 — 판매자가 '체험 시작'을 누르면 회사 전용 서버가 열린다 ─────────────
+  const trialHits = new Map();
+  app.post('/api/v1/trial', wrap(async (req, res) => {
+    const ip = req.ip ?? '';
+    const h = trialHits.get(ip);
+    const cur = h && Date.now() - h.at < 600_000 ? { n: h.n + 1, at: h.at } : { n: 1, at: Date.now() };
+    trialHits.set(ip, cur);
+    if (trialHits.size > 5000) trialHits.clear();
+    if (cur.n > 10) throw bad('신청이 너무 많습니다. 잠시 뒤 다시 시도해 주세요', 429);
+    const b = req.body ?? {};
+    const t = (v, n) => String(v ?? '').trim().slice(0, n);
+    const company = t(b.company, 100), name = t(b.name, 50), phone = t(b.phone, 30), email = t(b.email, 120);
+    const biz = L.normBiz(b.bizRegNo);
+    if (!company || !name || !phone) throw bad('회사명·담당자·연락처를 입력해 주세요');
+    if (!L.isValidBiz(biz)) throw bad('사업자등록번호를 확인해 주세요 (10자리)');
+    const [c] = (await q(CUSTOMER_STATE_SQL + ' where c.biz_reg_no = $1', [biz])).rows;
+    if (c?.license_id && c.lic_edition !== TRIAL) throw bad('이미 이음ERP를 쓰고 있는 회사입니다. 회사 담당자에게 확인해 주세요', 409);
+    if (c?.lic_edition === TRIAL) throw bad('이미 무료 체험을 신청한 회사입니다. 기간 연장이나 계약은 070-7938-5027 로 문의해 주세요', 409);
+    const users = Number.isFinite(Number(b.users)) ? Math.min(Math.max(Math.trunc(Number(b.users)), 1), 1000) : null;
+    const [open] = (await q(`select id from trial_request where biz_reg_no = $1 and status = 'NEW'`, [biz])).rows;
+    if (open) await q(`update trial_request set company=$2, contact_name=$3, phone=$4, email=$5, users=$6, message=$7, created_at = now() where id = $1`, [open.id, company, name, phone, email || null, users, t(b.message, 2000) || null]);
+    else await q(`insert into trial_request(company, biz_reg_no, contact_name, phone, email, users, message, ip) values ($1,$2,$3,$4,$5,$6,$7,$8)`, [company, biz, name, phone, email || null, users, t(b.message, 2000) || null, ip]);
+    await q('insert into audit_log(action, summary, ip) values ($1,$2,$3)', ['TRIAL_REQUEST', `무료 체험 신청 ${company} (${biz}) ${name} ${phone}`, ip]);
+    res.status(201).json({ ok: true, days: TRIAL_DAYS });
+  }));
+
   // 홈페이지(ieumerp.kr/app)의 '휴대폰 웹으로 직원 화면 들어가기'에서도 부른다
   const LOOKUP_ORIGINS = new Set(['https://ieumerp.kr', 'https://www.ieumerp.kr']);
   app.get('/api/v1/app-lookup', wrap(async (req, res) => {

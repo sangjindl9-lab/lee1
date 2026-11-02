@@ -233,3 +233,63 @@ test('직원 앱: 사업자번호로 회사 이름과 ERP 주소를 찾는다 (�
   const bad = await fetch(base + '/api/v1/app-lookup?bizNo=2208660440', { headers: { origin: 'https://evil.example' } });
   assert.equal(bad.headers.get('access-control-allow-origin'), null);
 });
+
+/** 체크섬이 맞는 사업자번호 만들기 */
+function bizNo(prefix9) {
+  const w = [1, 3, 7, 1, 3, 7, 1, 3, 5];
+  let sum = 0;
+  for (let i = 0; i < 9; i++) sum += Number(prefix9[i]) * w[i];
+  sum += Math.floor((Number(prefix9[8]) * 5) / 10);
+  return prefix9 + ((10 - (sum % 10)) % 10);
+}
+
+test('무료 체험: 홈페이지 신청 → 판매자가 시작하면 30일 체험 라이선스(모든 옵션, 0원) → 계약 전환', async () => {
+  const no = bizNo('314861234');
+  // 잘못된 신청은 거절
+  assert.equal((await call('/api/v1/trial', { method: 'POST', auth: false, json: { company: '체험전기', bizRegNo: '123', name: '김체험', phone: '010-1111-2222' } })).status, 400);
+  assert.equal((await call('/api/v1/trial', { method: 'POST', auth: false, json: { company: '', bizRegNo: no, name: '김체험', phone: '010' } })).status, 400);
+  // 같은 회사가 두 번 신청하면 한 건으로
+  assert.equal((await call('/api/v1/trial', { method: 'POST', auth: false, json: { company: '체험전기', bizRegNo: no, name: '김체험', phone: '010-1111-2222', users: 6 } })).status, 201);
+  assert.equal((await call('/api/v1/trial', { method: 'POST', auth: false, json: { company: '체험전기㈜', bizRegNo: no, name: '김체험', phone: '010-1111-2222', message: '현장 3곳' } })).status, 201);
+  // 이미 정식으로 쓰는 회사는 신청 불가
+  assert.equal((await call('/api/v1/trial', { method: 'POST', auth: false, json: { company: 'x', bizRegNo: '2208660440', name: 'x', phone: '1' } })).status, 409);
+  // 로그인 없이 목록은 못 본다
+  assert.equal((await call('/api/admin/trials', { auth: false })).status, 401);
+  let d = (await call('/api/admin/trials')).body;
+  const r = d.requests.find((x) => x.bizRegNo === no);
+  assert.equal(r.company, '체험전기㈜');
+  assert.equal(d.requests.filter((x) => x.bizRegNo === no).length, 1);
+  assert.equal((await call('/api/admin/summary')).body.trialRequests >= 1, true);
+  // 시작 — 서버 개설은 Railway 연결이 없어 실패해도 체험 라이선스는 나간다
+  const s = await call(`/api/admin/trials/${r.id}/start`, { method: 'POST', json: { companyCode: 'TRY', adminId: 'admin', maxUsers: 6 } });
+  assert.equal(s.status, 202);
+  assert.ok(s.body.serverError);
+  const c = (await call('/api/admin/customers/' + s.body.customerId)).body;
+  assert.equal(c.state, 'TRIAL');
+  assert.equal(c.current.trial, true);
+  assert.equal(c.current.daysLeft, 30);
+  assert.deepEqual([...c.current.modules].sort(), ['geomcheuk', 'gongjung', 'sajindaeji']);
+  assert.equal(c.licenses[0].amount, 0);
+  assert.equal(c.licenses[0].maxUsers, 6);
+  const payload = L.verify(c.licenses[0].licenseText, publicKey);
+  assert.equal(payload.edition, 'trial');
+  assert.equal((await call(`/api/admin/trials/${r.id}/start`, { method: 'POST', json: {} })).status, 400); // 이미 처리
+  // 체험 중인 회사는 다시 신청하지 못하고 연락처를 안내
+  assert.equal((await call('/api/v1/trial', { method: 'POST', auth: false, json: { company: '체험전기', bizRegNo: no, name: '김', phone: '1' } })).status, 409);
+  // 사용자 수만 바꾸는 변경 발급은 체험 그대로
+  await call(`/api/admin/customers/${c.id}/licenses`, { method: 'POST', json: { kind: 'CHANGE', maxUsers: 8 } });
+  assert.equal((await call('/api/admin/customers/' + c.id)).body.state, 'TRIAL');
+  d = (await call('/api/admin/trials')).body;
+  assert.equal(d.active.some((x) => x.id === c.id), true);
+  // 계약 전환: 요금제를 골라 신규 발급 → 정식(1년)
+  await call(`/api/admin/customers/${c.id}/licenses`, { method: 'POST', json: { kind: 'NEW', plan: 'std', maxUsers: 15, amount: 1490000 } });
+  const after = (await call('/api/admin/customers/' + c.id)).body;
+  assert.equal(after.state, 'ACTIVE');
+  assert.equal(after.current.trial, false);
+  // 보류
+  const no2 = bizNo('415862345');
+  await call('/api/v1/trial', { method: 'POST', auth: false, json: { company: '보류전기', bizRegNo: no2, name: '이', phone: '010' } });
+  const r2 = (await call('/api/admin/trials')).body.requests.find((x) => x.bizRegNo === no2);
+  assert.equal((await call(`/api/admin/trials/${r2.id}/reject`, { method: 'POST' })).status, 200);
+  assert.equal((await call('/api/admin/trials')).body.requests.find((x) => x.id === r2.id).status, 'REJECTED');
+});
