@@ -67,7 +67,8 @@ function saveUploaded(file, { siteId, ownerType, ownerId, category, caption, use
     const sub = path.join(config.uploadDir, String(siteId));
     fs.mkdirSync(sub, { recursive: true });
     const hash = crypto.createHash('sha256').update(fs.readFileSync(file.path)).digest('hex');
-    fs.renameSync(file.path, path.join(sub, stored));
+    try { fs.renameSync(file.path, path.join(sub, stored)); }
+    catch (e) { if (e.code !== 'EXDEV') throw e; fs.copyFileSync(file.path, path.join(sub, stored)); fs.unlinkSync(file.path); } // 다른 디스크(/tmp) 간 이동
     const info = db.prepare(`INSERT INTO files(site_id, owner_type, owner_id, category, orig_name, mime, size, stored_name, sha256, caption, created_by)
       VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(siteId, ownerType, ownerId, category, file.originalname, MIME[ext] || 'application/octet-stream', file.size, `${siteId}/${stored}`, hash, caption || null, userId);
     return info.lastInsertRowid;
