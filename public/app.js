@@ -156,7 +156,7 @@ const pickedModules = (form, extra = '') => [...form.querySelectorAll('input[nam
 // 요금제 (홍보 사이트 요금표와 같음, VAT 별도) — 고르면 사용자 수·저장 용량·금액이 채워진다
 const PLANS = [['starter', '스타터', 5, 5, 79000], ['std', '스탠다드', 15, 20, 149000], ['pro', '프로', 30, 50, 229000]];
 const OPT_MONTHLY = { geomcheuk: 24000, gongjung: 16000 }; // 사진대지 요금은 아직 정하지 않음 — 금액에 직접 더하기
-const planSelect = () => `<label class="f wide">요금제<select name="plan"><option value="">직접 입력</option>${PLANS.map(([v, n, u, g, m]) => `<option value="${v}">${n} — ${u}명 · ${g}GB · 월 ${won(m)}</option>`).join('')}</select><span class="hint">고르면 사용자 수·저장 용량·연 금액(월 요금 × 12, 옵션 포함)이 채워집니다. 연 선납 2개월 할인이면 금액을 고쳐 주세요. 추가 사용자 1명 월 6,500원 · 저장 10GB 추가 월 4,000원</span></label>`;
+const planSelect = () => `<label class="f wide">요금제 <span class="hint" style="display:inline">(고객 ERP의 경리·자금 기능이 요금제에 따라 켜집니다)</span><select name="plan"><option value="">직접 입력</option>${PLANS.map(([v, n, u, g, m]) => `<option value="${v}">${n} — ${u}명 · ${g}GB · 월 ${won(m)}</option>`).join('')}</select><span class="hint">고르면 사용자 수·저장 용량·연 금액(월 요금 × 12, 옵션 포함)이 채워집니다. 연 선납 2개월 할인이면 금액을 고쳐 주세요. 추가 사용자 1명 월 6,500원 · 저장 10GB 추가 월 4,000원</span></label>`;
 function wirePlan(form) {
   const sel = form.querySelector('select[name=plan]');
   if (!sel) return;
@@ -230,7 +230,7 @@ async function pageNewCustomer() {
     let id;
     try {
       ({ id } = await api('/customers', { method: 'POST', json: f }));
-      await api(`/customers/${id}/licenses`, { method: 'POST', json: { kind: 'NEW', maxUsers: Number(f.maxUsers), storageGB: Number(f.storageGB || 1), modules: pickedModules(form), amount: Number(f.amount || 0), startsOn: f.startsOn, expiresAt: f.expiresAt, memo: f.licMemo || undefined } });
+      await api(`/customers/${id}/licenses`, { method: 'POST', json: { kind: 'NEW', maxUsers: Number(f.maxUsers), storageGB: Number(f.storageGB || 1), modules: pickedModules(form), amount: Number(f.amount || 0), startsOn: f.startsOn, expiresAt: f.expiresAt, memo: f.licMemo || undefined, plan: f.plan || undefined } });
       if (f.deployment === 'HOSTED' && rw.connected && f.install === 'now') {
         btn.textContent = '서버 주소 만드는 중…';
         const j = await api(`/customers/${id}/server`, { method: 'POST', json: { adminId: f.adminId, companyCode: f.companyCode } });
@@ -471,6 +471,7 @@ function issueDialog(c, kind) {
     if (f.amount) json.amount = Number(f.amount);
     if (f.startsOn) json.startsOn = f.startsOn;
     if (f.expiresAt) json.expiresAt = f.expiresAt;
+    if (f.plan) json.plan = f.plan;
     try {
       const l = await api(`/customers/${c.id}/licenses`, { method: 'POST', json });
       close();

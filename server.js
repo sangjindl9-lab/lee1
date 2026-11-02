@@ -337,7 +337,8 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
     if (kind !== 'SUSPEND' && expiresAt < today) throw bad('만료일이 오늘보다 이릅니다');
     if (kind !== 'SUSPEND' && expiresAt < startsOn) throw bad('만료일이 시작일보다 이릅니다');
     const amount = kind === 'SUSPEND' || kind === 'RESUME' ? 0 : Math.max(0, Math.round(Number(b.amount ?? 0)) || 0);
-    const edition = String(b.edition ?? 'standard').slice(0, 30);
+    // 요금제(스타터·스탠다드·프로)를 고르면 라이선스 edition 으로 — 고객 ERP 의 경리·자금 모듈이 요금제에 따라 켜진다
+    const edition = String(b.edition ?? (['starter', 'std', 'pro'].includes(String(b.plan)) ? b.plan : 'standard')).slice(0, 30);
 
     const payload = {
       licenseId: crypto.randomUUID(),
