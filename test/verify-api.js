@@ -11,7 +11,7 @@ const ROOT = path.join(__dirname, '..');
 const DATA = fs.mkdtempSync(path.join(os.tmpdir(), 'cable-verify-'));
 const PORT = 3299;
 const BASE = `http://127.0.0.1:${PORT}`;
-const ENV = { ...process.env, DATA_DIR: DATA, PORT: String(PORT), SESSION_SECRET: 'verify-secret', ADMIN_PASSWORD: 'verify-admin-1', DEMO_PASSWORD: 'verify-demo-1' };
+const ENV = { ...process.env, MONITOR_DISABLED: 'true', DATA_DIR: DATA, PORT: String(PORT), SESSION_SECRET: 'verify-secret', ADMIN_PASSWORD: 'verify-admin-1', DEMO_PASSWORD: 'verify-demo-1' };
 const results = [];
 const ok = (no, name, pass, detail = '') => { results.push({ no, name, pass, detail }); console.log(`${pass ? '통과' : '실패'} [${no}] ${name}${detail ? ' — ' + detail : ''}`); };
 
@@ -212,6 +212,85 @@ async function main() {
     pdfDetail = `측정목록 ${mp}쪽 모든 쪽 표 머리글 반복 ${headerOnEvery}, 이력카드 한글 텍스트 추출 ${cardTxt.includes('급수펌프')}, 사진대장 이미지 ${imgs}개`;
   } catch (e) { pdfDetail = '검사 오류: ' + e.message; }
   ok(12, 'PDF 한글·표 머리글 반복·사진 포함', pdfOk, pdfDetail);
+
+  // ---- 13. DWG/DXF 자동 변환 ----
+  const up2 = async (url, fields, files) => { const f = new FormData(); for (const [k, v] of Object.entries(fields)) f.append(k, v); for (const [k, p] of Object.entries(files)) f.append(k, new Blob([fs.readFileSync(p)]), path.basename(p)); return A2.req('POST', url, f); };
+  const fx = n => path.join(__dirname, 'fixtures', n);
+  const dwgRes = await up2(`/api/sites/${site}/drawings`, { drawing_no: 'CAD-DWG', title: 'DWG 자동 변환 시험', rev_no: 'A' }, { source: fx('example_2000.dwg') });
+  const dxfRes = await up2(`/api/sites/${site}/drawings`, { drawing_no: 'CAD-DXF', title: 'DXF 자동 변환 시험', rev_no: 'A' }, { source: fx('example_2000.dxf') });
+  const rvDwg = (await A2.req('GET', `/api/revisions/${dwgRes.data.revision_id}`)).data;
+  const rvDxf = (await A2.req('GET', `/api/revisions/${dxfRes.data.revision_id}`)).data;
+  const dwgPdf = await A2.req('GET', `/api/files/${rvDwg.display_file_id}`, undefined, true);
+  const dwgPdfHead = Buffer.from(await dwgPdf.arrayBuffer()).slice(0, 4).toString();
+  ok(13, 'DWG·DXF 원본만 올려도 PDF 표시본 자동 생성', rvDwg.display_type === 'pdf' && rvDxf.display_type === 'pdf' && dwgPdfHead === '%PDF' && !!rvDwg.source_file_id,
+    `DWG: ${rvDwg.conversion_note} / DXF: ${rvDxf.conversion_note}`);
+
+  // ---- 14. OTDR 해석 ----
+  const fo1b = await find('FO-01');
+  const otdr = await up2(`/api/assets/${fo1b.id}/otdr`, { direction: 'A→B' }, { file: fx('demo_ab.sor') });
+  const sorView = (await A2.req('GET', `/api/files/${otdr.data.file_id}/sor`)).data;
+  const ref = JSON.parse(fs.readFileSync(fx('demo_ab-dump.json'), 'utf8'));
+  const refEv = Object.keys(ref.KeyEvents).filter(k => k.startsWith('event')).map(k => ref.KeyEvents[k]);
+  const evMatch = refEv.length === sorView.events.length && refEv.every((e, i) => Math.abs(Number(e.distance) - sorView.events[i].distance_km) < 0.0015 && Math.abs(Number(e['splice loss']) - sorView.events[i].splice_loss_db) < 0.0015);
+  const otdrMeas = (await A2.req('GET', `/api/assets/${fo1b.id}`)).data.measurements.find(m => m.id === otdr.data.id);
+  const badSor = await up2(`/api/assets/${fo1b.id}/otdr`, {}, { file: (() => { const p = path.join(DATA, 'bad.sor'); fs.writeFileSync(p, 'not an otdr file at all, just text......'); return p; })() });
+  ok(14, 'OTDR(.sor) 해석 — 참조 결과(pyOTDR)와 이벤트 일치, 측정기록 자동 생성', evMatch && sorView.checksum.match && otdrMeas?.test_type === 'otdr' && otdrMeas.wavelength === 1310 && otdrMeas.items.length === 5 && badSor.status === 422,
+    `이벤트 ${sorView.events.length}개 거리·접속손실 일치 ${evMatch}, 체크섬 ${sorView.checksum.match ? '일치' : '불일치'}, 광섬유 길이 ${sorView.fiber_length_km.toFixed(3)} km, 측정기록 ${otdrMeas?.measured_at} 1310nm, 잘못된 파일 ${badSor.status}`);
+
+  // ---- 15. 실시간 상태 감시 ----
+  const cam = await find('CCTV-01'); const cam2 = await find('CCTV-02');
+  await A2.req('PUT', `/api/assets/${cam.id}/monitor`, { method: 'tcp', host: '127.0.0.1', port: PORT, interval_sec: 60, fail_threshold: 1 });
+  await A2.req('PUT', `/api/assets/${cam2.id}/monitor`, { method: 'tcp', host: '127.0.0.1', port: 1, interval_sec: 60, fail_threshold: 1, timeout_ms: 1000 });
+  const c1 = (await A2.req('POST', `/api/assets/${cam.id}/monitor/check`, {})).data;
+  const c2 = (await A2.req('POST', `/api/assets/${cam2.id}/monitor/check`, {})).data;
+  const nvr = await find('NVR-1');
+  const apiTok = (await A2.req('POST', `/api/sites/${site}/tokens`, { name: '검증' })).data.token;
+  const ing = async (t, body) => { const r = await fetch(BASE + '/api/ingest/status', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + t }, body: JSON.stringify(body) }); return { status: r.status, data: await r.json() }; };
+  const push1 = await ing(apiTok, { items: [{ asset: 'NVR-1', status: 'alarm', message: 'HDD 오류' }, { asset: 'CCTV-A01', status: 'ok' }] });
+  const pBad = await ing('cht_wrong', { items: [] });
+  const nvrMon = (await A2.req('GET', `/api/assets/${nvr.id}/monitor`)).data;
+  const listNow = (await A2.req('GET', `/api/sites/${site}/monitors`)).data;
+  ok(15, '실시간 상태 감시 (서버 점검·외부 수신·토큰 보호)', c1.status === '정상' && c2.status === '응답 없음' && nvrMon.monitor.status === '이상' && push1.data.results[1].ok === false && pBad.status === 401 && listNow.events.length >= 3,
+    `TCP 열린 포트 → ${c1.status}(${c1.latency}ms), 닫힌 포트 → ${c2.status}, 외부 수신 alarm → ${nvrMon.monitor.status}, 다른 현장 설비 보고 거부 ${!push1.data.results[1].ok}, 잘못된 토큰 ${pBad.status}, 상태 변화 기록 ${listNow.events.length}건`);
+
+  // ---- 16. 엑셀 광접속·측정기록 ----
+  const mkx = async (cat, rows) => {
+    const t = await A2.req('GET', `/api/sites/${site}/excel/template/${cat}`, undefined, true);
+    const w = new ExcelJS.Workbook(); await w.xlsx.load(Buffer.from(await t.arrayBuffer()));
+    const s1 = w.getWorksheet('등록양식'); const hd = s1.getRow(1).values;
+    for (const o of rows) { const r = []; for (const [k, v] of Object.entries(o)) r[hd.indexOf(k)] = v; s1.addRow(r); }
+    const f = new FormData(); f.append('category', cat); f.append('file', new Blob([await w.xlsx.writeBuffer()]), 'x.xlsx');
+    return (await A2.req('POST', `/api/sites/${site}/excel/preview`, f)).data;
+  };
+  const sp = await mkx('fiber_splice', [
+    { '케이블1 관리번호*': 'FO-01', '코어1 번호*': 3, '케이블1 끝단(A/B)*': 'B', '케이블2 관리번호*': 'FO-02', '코어2 번호*': 3, '케이블2 끝단(A/B)*': 'A', '접속함 관리번호*': 'JC-01', '트레이': '1', '슬리브': '3' },
+    { '케이블1 관리번호*': 'FO-01', '코어1 번호*': 1, '케이블1 끝단(A/B)*': 'B', '케이블2 관리번호*': 'FO-02', '코어2 번호*': 9, '케이블2 끝단(A/B)*': 'A', '접속함 관리번호*': 'JC-01' },
+    { '케이블1 관리번호*': 'FO-01', '코어1 번호*': 12, '케이블1 끝단(A/B)*': 'B', '케이블2 관리번호*': 'FO-02', '코어2 번호*': 12, '케이블2 끝단(A/B)*': 'A', '접속함 관리번호*': 'JC-01' },
+    { '케이블1 관리번호*': 'FO-99', '코어1 번호*': 1, '케이블1 끝단(A/B)*': 'X', '케이블2 관리번호*': 'FO-02', '코어2 번호*': 4, '케이블2 끝단(A/B)*': 'A', '접속함 관리번호*': 'LP-1' },
+  ]);
+  const spC = (await A2.req('POST', `/api/import/${sp.job_id}/commit`, { mode: 'valid_only' })).data;
+  const tr3 = (await A2.req('GET', `/api/assets/${fo1b.id}`)).data.cores.find(c => c.core_no === 3);
+  const ms = await mkx('measurement', [
+    { '관리번호*': 'PC-002', '시험 종류*': '절연저항', '측정일시*': '2026-11-02 09:00', '측정 조합': 'L-E', '시험전압(V)': 500, '측정값': 250, '단위': 'MΩ' },
+    { '관리번호*': 'FO-02', '시험 종류*': '광손실', '측정일시*': '2026-11-02 09:10', '코어 번호': 1, '파장(nm)': 1310, '측정값': 0.8, '단위': 'dB' },
+    { '관리번호*': 'PC-002', '시험 종류*': '절연', '측정일시*': '어제', '측정값': 'abc' },
+    { '관리번호*': 'LN-001', '시험 종류*': '절연저항', '측정일시*': '2026-11-02', '측정값': 1, '단위': 'MΩ' },
+  ]);
+  const msC = (await A2.req('POST', `/api/import/${ms.job_id}/commit`, { mode: 'valid_only' })).data;
+  const pc2m = (await A2.req('GET', `/api/assets/${(await find('PC-002')).id}`)).data.measurements.find(m => m.measured_at === '2026-11-02 09:00');
+  ok(16, '엑셀 광코어 접속·측정기록 일괄 등록 (검증·저장)', sp.error_count === 3 && spC.created === 1 && tr3.b?.text?.includes('FO-02 #3') && ms.error_count === 2 && msC.created === 2 && pc2m?.auto_result === '적합',
+    `접속 오류 ${sp.error_count}행 (${sp.rows.filter(r => r.errors.length).map(r => r.errors[0]).join(' / ')}), 저장 ${spC.created}건 → FO-01 #3 B단: ${tr3.b?.text}; 측정 오류 ${ms.error_count}행, 저장 ${msC.created}건, PC-002 판정 ${pc2m?.auto_result}`);
+
+  // ---- 17. 오프라인 재전송 중복 방지 ----
+  const refId = 'verify-' + Date.now();
+  const w1 = (await A2.req('POST', `/api/assets/${pc1.id}/worklogs`, { work_type: '점검', work_at: '2026-11-02T15:00', content: '오프라인 저장분', client_ref: refId })).data;
+  const w2 = (await A2.req('POST', `/api/assets/${pc1.id}/worklogs`, { work_type: '점검', work_at: '2026-11-02T15:00', content: '오프라인 저장분', client_ref: refId })).data;
+  const m1 = (await A2.req('POST', `/api/assets/${pc1.id}/measurements`, { test_type: 'insulation', measured_at: '2026-11-02T15:00', test_voltage: 500, unit: 'MΩ', value: 300, client_ref: refId })).data;
+  const m2 = (await A2.req('POST', `/api/assets/${pc1.id}/measurements`, { test_type: 'insulation', measured_at: '2026-11-02T15:00', test_voltage: 500, unit: 'MΩ', value: 300, client_ref: refId })).data;
+  const ff = async () => { const f = new FormData(); f.append('owner_type', 'worklog'); f.append('owner_id', w1.id); f.append('category', 'other'); f.append('client_ref', refId + '-f0'); f.append('files', new Blob(['x']), 'a.txt'); return (await A2.req('POST', '/api/files', f)).data; };
+  const f1 = await ff(), f2 = await ff();
+  ok(17, '오프라인 대기열 재전송 시 중복 저장 방지', w1.id === w2.id && w2.duplicate && m1.results[0].id === m2.results[0].id && m2.duplicate && f1.ids[0] === f2.ids[0] && f2.duplicate,
+    `작업이력 ${w1.id}=${w2.id}, 측정 ${m1.results[0].id}=${m2.results[0].id}, 첨부 ${f1.ids[0]}=${f2.ids[0]}`);
 
   await stop();
   fs.writeFileSync(path.join(ROOT, 'test', 'verify-result.json'), JSON.stringify({ at: new Date().toISOString(), data_dir: DATA, results }, null, 2));

@@ -80,6 +80,28 @@ function fileObj(p, name) {
   return { path: cp, originalname: name, size: fs.statSync(cp).size };
 }
 
+// 시연용 DXF (R12 형식): 전기실 배치 — 분전반·변압기·케이블 경로·한글 주기
+function demoDxf() {
+  const out = ['0', 'SECTION', '2', 'ENTITIES'];
+  const line = (x1, y1, x2, y2, layer = 'E-POWER') => out.push('0', 'LINE', '8', layer, '10', x1, '20', y1, '30', 0, '11', x2, '21', y2, '31', 0);
+  const rect = (x, y, w, h, layer) => { line(x, y, x + w, y, layer); line(x + w, y, x + w, y + h, layer); line(x + w, y + h, x, y + h, layer); line(x, y + h, x, y, layer); };
+  const text = (x, y, hgt, t, layer = 'E-TEXT') => out.push('0', 'TEXT', '8', layer, '10', x, '20', y, '30', 0, '40', hgt, '1', t);
+  const circle = (x, y, r, layer = 'E-EQUIP') => out.push('0', 'CIRCLE', '8', layer, '10', x, '20', y, '30', 0, '40', r);
+  rect(0, 0, 30000, 18000, 'A-WALL'); rect(200, 200, 29600, 17600, 'A-WALL');
+  text(800, 16800, 500, '전기실 배치도 (시연용 DXF)');
+  rect(2000, 9000, 2400, 6000, 'E-EQUIP'); text(2100, 8300, 350, 'MDB (수배전반)');
+  rect(7000, 9000, 1600, 3000, 'E-EQUIP'); text(7000, 8300, 350, 'LP-1');
+  rect(7000, 3000, 1600, 3000, 'E-EQUIP'); text(7000, 2300, 350, 'LP-2');
+  circle(15000, 12000, 1500); text(14000, 9800, 350, 'TR-1 500kVA');
+  line(4400, 12000, 7000, 10500); line(4400, 11000, 5500, 11000); line(5500, 11000, 5500, 4500); line(5500, 4500, 7000, 4500);
+  line(8600, 10500, 13500, 12000); line(8600, 10500, 27000, 10500); circle(27000, 10500, 400); text(25800, 9600, 300, 'P-1 급수펌프');
+  for (let x = 1000; x < 29000; x += 4000) line(x, 600, x + 2000, 600, 'E-TRAY');
+  text(1000, 900, 250, '케이블트레이 CT-1');
+  line(2000, 1600, 12000, 1600, 'DIM'); text(6200, 1750, 250, '10,000');
+  out.push('0', 'ENDSEC', '0', 'EOF');
+  return out.join('\n');
+}
+
 async function main() {
   if (db.prepare("SELECT 1 FROM sites WHERE code='DEMO-01'").get()) {
     console.log('시연 데이터가 이미 있습니다. (DEMO-01) 다시 만들려면 data 폴더를 지우고 실행하세요.');
@@ -249,6 +271,40 @@ async function main() {
     }
     db.prepare(`INSERT INTO audit_logs(user_id, site_id, action, entity, detail) VALUES (?,?,?,?,?)`).run(admin, site, 'seed', 'demo', '{"note":"시연 데이터 생성"}');
   })();
+
+  // ---- 추가 기능 시연: DXF 자동 변환 도면, OTDR 원본, 실시간 감시 ----
+  try {
+    const { convertCad } = require('./lib/cad');
+    const dxf = demoDxf();
+    const dxfPath = path.join(os.tmpdir(), 'E-102_시연.dxf'); fs.writeFileSync(dxfPath, dxf);
+    const conv = await convertCad(Buffer.from(dxf), '.dxf');
+    const pdfPath = dxfPath.replace('.dxf', '_자동변환.pdf'); fs.writeFileSync(pdfPath, conv.pdf);
+    T(() => {
+      const d = Number(db.prepare(`INSERT INTO drawings(site_id, drawing_no, title, discipline, created_by) VALUES (?,?,?,?,?)`).run(site, 'E-102', '전기실 단선 배치도 (시연·DXF 자동 변환)', '전력', admin).lastInsertRowid);
+      const rv = Number(db.prepare(`INSERT INTO drawing_revisions(drawing_id, rev_no, rev_date, reason, display_type, conversion_note, review_status, created_by) VALUES (?,?,?,?,?,?,?,?)`).run(d, 'A', '2026-09-10', 'DXF 원본만 등록 → PDF 자동 생성', 'pdf', conv.note, '검토 대기', admin).lastInsertRowid);
+      const src = saveUploaded(fileObj(dxfPath, 'E-102_시연.dxf'), { siteId: site, ownerType: 'revision', ownerId: rv, category: 'dwg_original', userId: admin });
+      const disp = saveUploaded(fileObj(pdfPath, 'E-102_시연_자동변환.pdf'), { siteId: site, ownerType: 'revision', ownerId: rv, category: 'drawing', userId: admin });
+      db.prepare('UPDATE drawing_revisions SET source_file_id=?, display_file_id=? WHERE id=?').run(src, disp, rv);
+    })();
+  } catch (e) { console.error('DXF 시연 도면 생성 실패:', e.message); }
+  try {
+    const { parseSor } = require('./lib/sor');
+    const sorPath = path.join(__dirname, '..', 'test', 'fixtures', 'sample1310_lowDR.sor');
+    if (fs.existsSync(sorPath)) {
+      const p = parseSor(fs.readFileSync(sorPath));
+      T(() => {
+        const mid = meas(ids.FO1, { test_type: 'otdr', core_id: core(ids.FO1, 1), measured_at: p.fxd.datetime.replace('T', ' ').slice(0, 16), section: 'ODF-A → ODF-B (시연용 샘플 파일)', wavelength: p.fxd.wavelength_nm, direction: 'A→B',
+          value: p.summary.total_loss_db, unit: 'dB', items: p.events.map(e => ({ name: `#${e.no} ${e.distance_km.toFixed(3)} km ${e.type}`, result: `접속손실 ${e.splice_loss_db} dB · 반사 ${e.refl_loss_db} dB` })),
+          overall: `광섬유 길이 ${p.fiber_length_km.toFixed(3)} km · 총손실 ${p.summary.total_loss_db} dB`, instrument: [p.sup.supplier, p.sup.otdr].join(' '), measurer: '이영희(시연)' });
+        const fid = saveUploaded(fileObj(sorPath, 'FO-01_core1_1310.sor'), { siteId: site, ownerType: 'measurement', ownerId: mid, category: 'report', caption: 'OTDR 원본', userId: admin });
+        db.prepare('UPDATE measurements SET source_file_id=? WHERE id=?').run(fid, mid);
+      })();
+    }
+  } catch (e) { console.error('OTDR 시연 기록 생성 실패:', e.message); }
+  // 감시: CCTV-01 은 이 서버 자신(항상 응답) / CCTV-02 는 응답 없는 시험용 주소(192.0.2.x)로 설정해 두 가지 결과를 보여줌
+  db.prepare(`INSERT INTO monitors(site_id, asset_id, method, host, port, interval_sec, fail_threshold, created_by) VALUES (?,?,?,?,?,?,?,?)`).run(site, ids.CAM1, 'tcp', '127.0.0.1', Number(process.env.PORT || 3000), 60, 1, admin);
+  db.prepare(`INSERT INTO monitors(site_id, asset_id, method, host, port, interval_sec, timeout_ms, fail_threshold, created_by) VALUES (?,?,?,?,?,?,?,?,?)`).run(site, ids.CAM2, 'tcp', '192.0.2.10', 554, 60, 2000, 1, admin);
+  db.prepare(`INSERT INTO monitors(site_id, asset_id, method, interval_sec, push_stale_sec, created_by) VALUES (?,?,?,?,?,?)`).run(site, ids.NVR, 'push', 60, 600, admin);
 
   // 다른 현장 데이터 (권한 차단 시험용)
   svc.createAsset(site2, { mgmt_no: 'CCTV-A01', category: 'cctv', name: '정문 카메라', status: '사용 중' }, admin);

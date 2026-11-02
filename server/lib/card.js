@@ -80,6 +80,7 @@ function assetCard(id) {
       WHERE m.asset_id=? ORDER BY is_latest DESC, d.drawing_no, rv.id DESC`).all(id);
   const connections = connectionsOf(id, false);
   const hasSecret = !!db.prepare('SELECT 1 FROM asset_secrets WHERE asset_id=?').get(id);
+  const monitor = db.prepare('SELECT * FROM monitors WHERE asset_id=?').get(id) || null;
 
   // 경로 요약 (CCTV: 통신·전원)
   let paths = null;
@@ -94,7 +95,7 @@ function assetCard(id) {
   if (cat.group === 'cable' && asset.category !== 'fiber_cable') {
     paths = { cable: graph.trace(graph.key('cable', id, 'A')) };
   }
-  return { asset, category_label: cat.label, details, parent, children, replacedBy, replaces, ports, cores, ends, measurements, worklogs, files, marks, connections, paths, hasSecret };
+  return { asset, category_label: cat.label, details, parent, children, replacedBy, replaces, ports, cores, ends, measurements, worklogs, files, marks, connections, paths, hasSecret, monitor };
 }
 
 module.exports = { assetCard, connectionsOf, epPeer };

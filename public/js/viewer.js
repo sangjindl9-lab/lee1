@@ -29,7 +29,7 @@ export async function viewerPage(main, revId, query) {
   }
   if (!revId) revId = drawings[0].revisions[0]?.id;
   const S = {
-    rev: null, page: 1, zoom: 1, rot: 0, doc: null, img: null, base: { w: 1, h: 1 },
+    rev: null, page: 1, zoom: 1, rot: 0, fine: 0, doc: null, img: null, base: { w: 1, h: 1 },
     marks: [], selMark: null, tool: 'select', draft: null, assets: [], linkAsset: null,
     filters: { cats: new Set(['power', 'comm', 'cctv', 'equipment']), recheckOnly: false }, renderTask: null,
   };
@@ -59,6 +59,7 @@ export async function viewerPage(main, revId, query) {
     h('div', { class: 'small muted' }, '설비 목록 (클릭: 도면 위치로 이동)'), list, linkInfo);
 
   const toolBtns = {};
+  let fineIn;
   const tool = (k, label, title) => (toolBtns[k] = h('button', { class: 'sm', title, onclick: () => setTool(k) }, label));
   const canEdit = perm('can_create');
   const tools = h('div', { class: 'v-tools' },
@@ -66,7 +67,9 @@ export async function viewerPage(main, revId, query) {
     canEdit ? [tool('point', '점', '장비 위치 점 표시'), tool('rect', '영역', '드래그로 영역 표시'), tool('polyline', '경로', '클릭으로 꺾은선, 더블클릭 또는 Enter로 완료'), tool('calib', '축척 보정', '도면의 실제 길이를 아는 두 점 클릭')] : null,
     h('span', { class: 'sep' }),
     h('button', { class: 'sm', onclick: () => setZoom(S.zoom * 1.25) }, '확대'), h('button', { class: 'sm', onclick: () => setZoom(S.zoom / 1.25) }, '축소'),
-    h('button', { class: 'sm', onclick: () => fit() }, '맞춤'), h('button', { class: 'sm', onclick: () => { S.rot = (S.rot + 90) % 360; render(); } }, '회전'),
+    h('button', { class: 'sm', onclick: () => fit() }, '맞춤'), h('button', { class: 'sm', title: '90° 회전', onclick: () => { S.rot = (S.rot + 90) % 360; render(); } }, '회전 90°'),
+    h('span', { class: 'small muted' }, '각도'),
+    (fineIn = h('input', { type: 'number', step: '0.5', min: '-45', max: '45', value: '0', title: '미세 회전 (-45° ~ 45°)', style: { width: '64px', height: '24px' }, onchange: (e) => { S.fine = Math.max(-45, Math.min(45, Number(e.target.value) || 0)); e.target.value = S.fine; applyFine(); } })),
     h('span', { class: 'sep' }),
     h('a', { class: 'btn sm', href: `#/s/${sid}/drawings` }, '도면 관리'));
   const canvas = h('canvas');
@@ -92,10 +95,19 @@ export async function viewerPage(main, revId, query) {
     renderList();
     if (S.rev.display_type === 'none' || !S.rev.display_file_id) {
       clear(stageWrap, h('div', { class: 'box', style: { margin: '20px' } },
-        h('p', null, '이 개정본에는 화면 표시용 PDF·이미지가 없습니다. DWG/DXF는 이 시스템에서 직접 표시하지 않습니다.'),
+        h('p', null, '이 개정본에는 화면 표시용 도면이 아직 없습니다.'),
+        S.rev.conversion_note ? h('p', { class: 'err' }, S.rev.conversion_note) : null,
         S.rev.source_file_id ? h('p', null, '원본: ', h('a', { href: `/api/files/${S.rev.source_file_id}` }, S.rev.source_name), ' (다운로드)') : null,
-        h('p', { class: 'small muted' }, 'CAD에서 PDF로 출력한 변환본을 같은 개정번호로 다시 등록하면 표시·연결 기능을 사용할 수 있습니다.')));
+        S.rev.source_file_id && perm('can_edit') ? h('button', { class: 'primary', onclick: async (e) => {
+          e.target.disabled = true; e.target.textContent = '변환 중… (도면 크기에 따라 수십 초)';
+          try { const r = await POST(`/api/revisions/${revId}/convert`, {}); toast(r.note); location.reload(); }
+          catch (er) { toast(er.message, true); e.target.disabled = false; e.target.textContent = 'DWG/DXF → PDF 자동 변환'; }
+        } }, 'DWG/DXF → PDF 자동 변환') : null,
+        h('p', { class: 'small muted' }, '자동 변환이 실패하거나 결과가 부정확하면 CAD에서 PDF로 출력한 파일을 표시용으로 올리세요.')));
       return;
+    }
+    if (S.rev.conversion_note) {
+      status.dataset.conv = S.rev.conversion_note;
     }
     if (S.rev.display_type === 'pdf') {
       const lib = await loadPdfjs();
@@ -137,7 +149,23 @@ export async function viewerPage(main, revId, query) {
     if (S.rot === 0) { bx = rx; by = ry; } else if (S.rot === 90) { bx = ry; by = H - rx; } else if (S.rot === 180) { bx = W - rx; by = H - ry; } else { bx = W - ry; by = rx; }
     return [bx / W, by / H];
   }
-  function evtPos(e) { const r = svg.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; }
+  // 미세 회전(CSS) 상태에서도 화면 좌표 → 회전 전 무대 좌표로 역변환
+  function evtPos(e) {
+    const r = svg.getBoundingClientRect();
+    if (!S.fine) return [e.clientX - r.left, e.clientY - r.top];
+    const [sw, sh] = stageSize();
+    const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    const a = -S.fine * Math.PI / 180; const dx = e.clientX - cx, dy = e.clientY - cy;
+    return [dx * Math.cos(a) - dy * Math.sin(a) + sw / 2, dx * Math.sin(a) + dy * Math.cos(a) + sh / 2];
+  }
+  function applyFine() {
+    stage.style.transform = S.fine ? `rotate(${S.fine}deg)` : '';
+    const [sw, sh] = stageSize(); const a = Math.abs(S.fine) * Math.PI / 180;
+    // 회전으로 튀어나온 모서리가 잘리지 않도록 여백 확보
+    const mx = Math.ceil((sw * Math.cos(a) + sh * Math.sin(a) - sw) / 2) + 20, my = Math.ceil((sw * Math.sin(a) + sh * Math.cos(a) - sh) / 2) + 20;
+    stage.style.margin = `${my}px ${mx}px`;
+    updateStatus();
+  }
 
   // ---------- 렌더링 ----------
   async function render() {
@@ -165,6 +193,7 @@ export async function viewerPage(main, revId, query) {
       ctx.drawImage(S.img, -iw / 2, -ih / 2, iw, ih); ctx.restore();
     }
     pageInfo.textContent = `${S.page} / ${pageCount()} 쪽`;
+    applyFine();
     drawOverlay();
     updateStatus();
   }
@@ -206,6 +235,9 @@ export async function viewerPage(main, revId, query) {
       const g = markGeomScreen(m);
       const grp = sv('g', {});
       const label = (x, y) => { const t = sv('text', { x: x + 8, y: y - 6, 'font-size': 11, fill: col, 'font-weight': sel ? 700 : 400, 'paint-order': 'stroke', stroke: '#fff', 'stroke-width': 3 }); t.textContent = m.mgmt_no + (m.needs_recheck ? ' (재확인)' : ''); return t; };
+      // 실시간 감시 결과가 이상·응답 없음이면 빨간 표시
+      if (g.pt && (m.live_status === '응답 없음' || m.live_status === '이상')) grp.appendChild(sv('circle', { cx: g.pt[0], cy: g.pt[1], r: 16, fill: 'none', stroke: '#b3261e', 'stroke-width': 2.5, 'stroke-dasharray': '4 2' }));
+      if (g.pt && m.live_status === '정상') grp.appendChild(sv('circle', { cx: g.pt[0], cy: g.pt[1], r: 10, fill: 'none', stroke: '#2c6e3a', 'stroke-width': 1.5 }));
       if (g.pt) {
         if (sel) grp.appendChild(sv('circle', { cx: g.pt[0], cy: g.pt[1], r: 12, fill: 'none', stroke: '#e08a00', 'stroke-width': 3 }));
         const c = sv('circle', { cx: g.pt[0], cy: g.pt[1], r: 6, fill: col, stroke: '#fff', 'stroke-width': 1.5 }); if (dash) { c.setAttribute('fill', '#fff'); c.setAttribute('stroke', col); c.setAttribute('stroke-dasharray', '3 2'); c.setAttribute('stroke-width', 2); }
@@ -308,6 +340,7 @@ export async function viewerPage(main, revId, query) {
       m.shape === 'polyline' ? h('div', { class: 'small', style: { marginTop: '4px' } }, len !== null
         ? [`도면상 추정길이 약 ${len.toFixed(1)} m`, h('span', { class: 'muted' }, ` (축척 기준선으로 계산, 현장 실측 포설길이와 다를 수 있음${asset?.details?.actual_length ? ` · 실제 포설길이 ${asset.details.actual_length} m` : ''})`)]
         : h('span', { class: 'muted' }, '이 페이지는 축척이 설정되지 않아 길이를 표시하지 않습니다.')) : null,
+      canEditMark() && m.shape === 'polyline' ? h('div', { class: 'small muted', style: { marginTop: '4px' } }, '꼭짓점 끌기: 이동 · 선분 더블클릭: 꼭짓점 추가 · 꼭짓점 오른쪽 클릭: 삭제') : null,
       canEditMark() ? h('div', { class: 'btns', style: { marginTop: '6px' } },
         m.needs_recheck ? h('button', { class: 'sm primary', onclick: async () => { await saveMark(m, { confirm: true }); toast('위치를 확정했습니다.'); } }, '위치 확인 완료') : null,
         h('button', { class: 'sm', onclick: () => relinkMark(m) }, '연결 설비 변경'),
@@ -407,15 +440,16 @@ export async function viewerPage(main, revId, query) {
     S.tool = k; S.draft = null; hideCandidates();
     Object.entries(toolBtns).forEach(([kk, b]) => b.classList.toggle('on', kk === k));
     svg.style.cursor = k === 'select' ? 'default' : 'crosshair';
-    status.dataset.hint = { select: '클릭: 선택 · 선택한 표시 드래그: 이동 · 꼭짓점 드래그: 수정 · 빈 곳 드래그: 화면 이동 · Ctrl+휠: 확대', point: '클릭한 위치에 점 표시', rect: '드래그해서 영역 표시', polyline: '클릭으로 점 추가 · 더블클릭/Enter 완료 · Esc 취소', calib: '실제 길이를 아는 두 점을 차례로 클릭' }[k];
+    status.dataset.hint = { select: '클릭: 선택 · 선택한 표시 드래그: 이동 · 꼭짓점 드래그: 수정 · 빈 곳 드래그: 화면 이동 · Ctrl+휠: 확대', point: '클릭한 위치에 점 표시', rect: '드래그해서 영역 표시', polyline: '클릭으로 점 추가 · 오른쪽 클릭 마지막 점 취소 · 더블클릭/Enter 완료 · Esc 취소', calib: '실제 길이를 아는 두 점을 차례로 클릭' }[k];
     drawOverlay(); updateStatus();
   }
   function updateStatus() {
     const sc = S.rev?.scales?.[S.page];
-    clear(status, h('span', null, `확대 ${Math.round(S.zoom * 100)}%`), h('span', null, `회전 ${S.rot}°`),
+    clear(status, h('span', null, `확대 ${Math.round(S.zoom * 100)}%`), h('span', null, `회전 ${S.rot + S.fine}°`),
       h('span', null, sc ? `축척 설정됨 (${sc.len_m} m 기준선)` : '축척 미설정'),
       h('span', null, `이 쪽 표시 ${S.marks.filter(m => m.page === S.page).length}개`),
       S.rev ? h('span', null, `${S.rev.drawing_no} Rev.${S.rev.rev_no} · ${S.rev.review_status}${S.rev.latest_id !== S.rev.id ? ' · 이전 개정본' : ''}`) : null,
+      status.dataset.conv ? h('span', { title: status.dataset.conv }, '자동 변환본 (CAD 원본 기준)') : null,
       h('span', { style: { color: '#333' } }, status.dataset.hint || ''));
   }
 
@@ -431,8 +465,8 @@ export async function viewerPage(main, revId, query) {
         const g = markGeomScreen(m);
         const verts = g.pt ? [g.pt] : (g.poly || g.line);
         const vi = verts.findIndex(p => Math.hypot(p[0] - sp[0], p[1] - sp[1]) < 8);
-        if (vi >= 0 && !g.pt) { drag = { kind: 'vertex', m, vi, start: np, orig: JSON.parse(JSON.stringify(m.geom)) }; return; }
-        if (hitTest(sp).some(x => x.id === m.id)) { drag = { kind: 'move', m, start: np, orig: JSON.parse(JSON.stringify(m.geom)), moved: false }; return; }
+        if (vi >= 0 && !g.pt) { drag = { kind: 'vertex', m, vi, start: np, orig: JSON.parse(JSON.stringify(m.geom)), sp, moved: false }; return; }
+        if (hitTest(sp).some(x => x.id === m.id)) { drag = { kind: 'move', m, start: np, orig: JSON.parse(JSON.stringify(m.geom)), moved: false, sp }; return; }
       }
       drag = { kind: 'pan', sx: e.clientX, sy: e.clientY, sl: stageWrap.scrollLeft, st: stageWrap.scrollTop, moved: false, sp };
       return;
@@ -459,7 +493,9 @@ export async function viewerPage(main, revId, query) {
       else m.geom = { pts: o.pts.map(p => [p[0] + dx, p[1] + dy]) };
       drawOverlay();
     } else if (drag.kind === 'vertex') {
-      const m = drag.m; drag.moved = true;
+      const m = drag.m;
+      if (!drag.moved && Math.hypot(sp[0] - drag.sp[0], sp[1] - drag.sp[1]) < 3) return;
+      drag.moved = true;
       if (m.shape === 'polyline') { m.geom.pts[drag.vi] = np; }
       else if (m.shape === 'rect') {
         const o = drag.orig; const corners = [[o.x, o.y], [o.x + o.w, o.y], [o.x + o.w, o.y + o.h], [o.x, o.y + o.h]];
@@ -472,12 +508,15 @@ export async function viewerPage(main, revId, query) {
   async function onUp(e) {
     if (!drag) return;
     const d = drag; drag = null;
+    // 선택된 표시를 끌지 않고 클릭만 한 경우에도 일반 클릭 선택 규칙 적용 (겹친 장비 점 우선)
+    if ((d.kind === 'move' || d.kind === 'vertex') && !d.moved) { d.m.geom = d.orig; d.kind = 'pan'; }
     if (d.kind === 'pan' && !d.moved) {
       let hits = hitTest(d.sp);
       // 장비 점을 정확히 누른 경우 점을 우선 (케이블 끝이 같은 위치에 겹치는 경우가 많음)
       const pts = hits.filter(m => m.shape === 'point');
       if (pts.length === 1 && hits.length > 1) hits = pts;
-      if (hits.length > 1) showCandidates(hits, d.sp);
+      if (hits.length === 1 && hits[0] === S.selMark) { /* 이미 선택됨 */ }
+      else if (hits.length > 1) showCandidates(hits, d.sp);
       else if (hits.length === 1) selectMark(hits[0]);
       else { S.selMark = null; drawOverlay(); renderMarkBar(); }
     }
@@ -507,7 +546,32 @@ export async function viewerPage(main, revId, query) {
       drawOverlay();
     }
   });
-  svg.addEventListener('dblclick', async () => { if (S.tool === 'polyline') await finishPolyline(); });
+  svg.addEventListener('dblclick', async (e) => {
+    if (S.tool === 'polyline') return finishPolyline();
+    // 선택한 경로의 선분을 더블클릭 → 꼭짓점 추가
+    const m = S.selMark;
+    if (S.tool !== 'select' || !m || m.shape !== 'polyline' || m.page !== S.page || !canEditMark()) return;
+    const sp = evtPos(e); const pts = markGeomScreen(m).line;
+    let best = -1, bd = 9;
+    for (let i = 0; i < pts.length - 1; i++) { const d = segDist(sp, pts[i], pts[i + 1]); if (d < bd) { bd = d; best = i; } }
+    if (best < 0) return;
+    if (pts.some(p => Math.hypot(p[0] - sp[0], p[1] - sp[1]) < 8)) return;
+    m.geom = { pts: [...m.geom.pts.slice(0, best + 1), toNorm(...sp), ...m.geom.pts.slice(best + 1)] };
+    drawOverlay(); await saveMark(m); toast('꼭짓점을 추가했습니다.');
+  });
+  // 오른쪽 클릭: 그리는 중이면 마지막 점 취소, 선택한 경로의 꼭짓점이면 삭제
+  svg.addEventListener('contextmenu', async (e) => {
+    if (S.draft && (S.draft.type === 'polyline' || S.draft.type === 'calib') && S.draft.pts.length) { e.preventDefault(); S.draft.pts.pop(); drawOverlay(); return; }
+    const m = S.selMark;
+    if (S.tool !== 'select' || !m || m.shape !== 'polyline' || m.page !== S.page || !canEditMark()) return;
+    const sp = evtPos(e); const pts = markGeomScreen(m).line;
+    const vi = pts.findIndex(p => Math.hypot(p[0] - sp[0], p[1] - sp[1]) < 8);
+    if (vi < 0) return;
+    e.preventDefault();
+    if (m.geom.pts.length <= 2) return toast('경로는 꼭짓점이 두 개 이상이어야 합니다.', true);
+    m.geom = { pts: m.geom.pts.filter((_, i) => i !== vi) };
+    drawOverlay(); await saveMark(m); toast('꼭짓점을 삭제했습니다.');
+  });
   const onKey = async (e) => {
     if (!svg.isConnected) { document.removeEventListener('keydown', onKey); return; }
     if (document.querySelector('.modal-bg')) return;

@@ -3,6 +3,7 @@ const ExcelJS = require('exceljs');
 const { db } = require('../db');
 const { CATEGORIES, DETAIL_FIELDS, STATUSES, TEST_TYPES } = require('./defs');
 const { createAsset, updateAsset, createConnection } = require('./svc');
+const EXTRA = require('./excel-extra');
 
 const COMMON_COLS = [
   ['mgmt_no', '관리번호*'], ['name', '명칭'], ['status', '상태'], ['building', '건물'], ['floor', '층'], ['room', '실'], ['zone', '구역'],
@@ -20,6 +21,7 @@ const LINK_COLS = {
 const EQUIP_EXTRA = [['category', '설비 종류코드*'], ['port_count', '포트·회로 수']];
 
 function columns(category) {
+  if (EXTRA.COLS[category]) return EXTRA.COLS[category];
   const isEquip = category === 'equipment';
   const details = isEquip ? [] : (DETAIL_FIELDS[category] || []).map(([k, l]) => ['d.' + k, l]);
   return [...(isEquip ? EQUIP_EXTRA : []), ...COMMON_COLS, ...details, ...(LINK_COLS[category] || [])];
@@ -36,6 +38,7 @@ async function template(category) {
   const help = wb.addWorksheet('작성안내');
   help.columns = [{ width: 28 }, { width: 80 }];
   help.addRow(['항목', '안내']).font = { bold: true };
+  if (EXTRA.HELP[category]) { for (const r of EXTRA.HELP[category]) help.addRow(r); return wb.xlsx.writeBuffer(); }
   help.addRow(['관리번호', '현장 내 중복 불가. 필수.']);
   help.addRow(['상태', STATUSES.join(', ')]);
   help.addRow(['날짜', 'YYYY-MM-DD 형식 (예: 2026-11-02)']);
@@ -48,7 +51,7 @@ async function template(category) {
 
 function cellText(v) {
   if (v === null || v === undefined) return '';
-  if (v instanceof Date) return v.toISOString().slice(0, 10);
+  if (v instanceof Date) { const iso = v.toISOString(); return iso.slice(11, 16) === '00:00' ? iso.slice(0, 10) : iso.slice(0, 10) + ' ' + iso.slice(11, 16); }
   if (typeof v === 'object') {
     if (v.richText) return v.richText.map(t => t.text).join('');
     if (v.text) return String(v.text);
@@ -65,7 +68,7 @@ async function parse(buffer, category) {
   const header = ws.getRow(1).values.map(cellText);
   const idx = {};
   for (const [k, l] of cols) { const i = header.indexOf(l); if (i > 0) idx[k] = i; }
-  if (!idx.mgmt_no) throw new Error('양식의 머리글이 맞지 않습니다. 이 화면에서 받은 등록 양식을 사용하세요.');
+  if (!idx[cols[0][0]]) throw new Error('양식의 머리글이 맞지 않습니다. 이 화면에서 받은 등록 양식을 사용하세요.');
   const rows = [];
   ws.eachRow((row, n) => {
     if (n === 1) return;
@@ -92,6 +95,7 @@ const portUsed = (pid, end) => db.prepare('SELECT 1 FROM connection_endpoints WH
 
 // 행 검증: 오류 사유 목록 반환
 function validate(siteId, category, rows) {
+  if (EXTRA.COLS[category]) return EXTRA.validateExtra(siteId, category, rows);
   const seen = new Map();
   return rows.map(row => {
     const errors = [];

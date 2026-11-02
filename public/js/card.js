@@ -1,5 +1,50 @@
 // 설비 이력 카드 (목록 상세 · 도면 우측 패널 · 모바일 공통)
 import { h, clear, state, GET, POST, PUT, DEL, api, toast, modal, confirmBox, formFields, fmt, nowLocal, today, resultTag, reviewTag, statusTag, catLabel, table, download } from './ui.js';
+import { showOtdr } from './otdr.js';
+
+export function liveTag(m) {
+  if (!m) return null;
+  const cls = { '정상': 'ok', '이상': 'bad', '응답 없음': 'bad', '확인 전': 'gray', '중지': 'gray' }[m.status] || 'gray';
+  return h('span', { class: 'tag ' + cls, title: `실시간 감시 · 마지막 확인 ${m.last_checked_at || '-'} · ${m.last_message || ''}` }, `실시간: ${m.status}`);
+}
+
+async function importOtdr(card, reload) {
+  const f = formFields([
+    { key: 'file', label: 'OTDR 파일 (.sor)', type: 'file', accept: '.sor', required: true, wide: true },
+    card.cores.length ? { key: 'core_id', label: '코어', type: 'select', options: [['', '케이블 전체'], ...card.cores.map(c => [c.id, `#${c.core_no} ${c.color || ''}`])] } : null,
+    { key: 'direction', label: '방향', placeholder: 'A→B' }, { key: 'section', label: '측정 구간 (비우면 파일 값)' }, { key: 'measurer', label: '측정자 (비우면 파일 값)' },
+  ].filter(Boolean));
+  let res = null;
+  const ok = await modal('OTDR 파일 가져오기', h('div', null, f.el, h('p', { class: 'small muted' }, 'Telcordia SR-4731(v1·v2) 형식을 해석해 측정일시·파장·이벤트·광섬유 길이·총손실을 측정기록으로 저장하고, 원본 파일은 성적서로 함께 보관합니다.')), {
+    buttons: [{ label: '가져오기', primary: true, action: async () => {
+      const v = f.values(); if (!v.file?.length) throw new Error('파일을 선택하세요.');
+      const fd = new FormData(); fd.append('file', v.file[0]);
+      for (const k of ['core_id', 'direction', 'section', 'measurer']) if (v[k]) fd.append(k, v[k]);
+      res = await api('POST', `/api/assets/${card.asset.id}/otdr`, fd);
+    } }],
+  });
+  if (ok && res) { toast(`OTDR 기록 저장 · 이벤트 ${res.summary.events}개 · 길이 ${res.summary.fiber_length_km?.toFixed(3) ?? '-'} km · 판정: ${res.auto_result}`); reload(); }
+}
+
+async function monitorSetup(card, reload, cur) {
+  const m = cur || {};
+  const ip = card.details?.ip || '';
+  const f = formFields([
+    { key: 'method', label: '점검 방식', type: 'select', options: [['tcp', 'TCP 포트 연결'], ['http', 'HTTP 응답'], ['push', '외부 시스템 수신 (NVR·SCADA·NMS)']], value: m.method || 'tcp' },
+    { key: 'host', label: '대상 주소 (IP·호스트)', value: m.host || ip },
+    { key: 'port', label: '포트', type: 'number', value: m.port || (card.asset.category === 'cctv' ? 554 : 80) },
+    { key: 'path', label: 'HTTP 경로', value: m.path || '/' },
+    { key: 'interval_sec', label: '점검 주기(초)', type: 'number', value: m.interval_sec || 60 },
+    { key: 'fail_threshold', label: '연속 실패 몇 회부터 응답 없음', type: 'number', value: m.fail_threshold || 2 },
+    { key: 'push_stale_sec', label: '수신 방식: 보고가 없으면 응답 없음 처리(초)', type: 'number', value: m.push_stale_sec || 300 },
+    { key: 'enabled', label: '감시 사용', type: 'checkbox', value: m.enabled !== 0 },
+  ]);
+  const ok = await modal(`실시간 상태 감시 설정 · ${card.asset.mgmt_no}`, h('div', null, f.el,
+    h('p', { class: 'small muted' }, '서버가 대상 주소에 직접 접속해 확인합니다. 클라우드 서버는 현장 내부망(사설 IP)에 접근할 수 없으므로, 내부망 장비는 현장 서버에 설치해 쓰거나 "외부 시스템 수신" 방식으로 상태를 받아야 합니다.')), {
+    buttons: [{ label: '저장', primary: true, action: () => { const v = f.values(); return PUT(`/api/assets/${card.asset.id}/monitor`, { ...v, port: v.port ? Number(v.port) : null }); } }],
+  });
+  if (ok) { toast('감시 설정을 저장했습니다.'); reload(); }
+}
 
 const CONN = () => state.meta.CONN_KINDS;
 
@@ -341,7 +386,7 @@ export async function renderCard(root, assetId, opts = {}) {
       h('div', { class: 'mgmt' }, a.mgmt_no, ' ', h('span', { class: 'muted small' }, card.category_label)),
       h('div', { class: 'small' }, a.name || '', ' '),
       h('div', { class: 'btns', style: { marginTop: '4px' } }, statusTag(a.status), a.retired ? h('span', { class: 'tag gray' }, a.replaced_by ? '교체됨' : '보관') : null,
-        cat.group === 'cable' ? resultTag(latest?.auto_result) : null, a.is_demo ? h('span', { class: 'tag warn' }, '시연용') : null)),
+        cat.group === 'cable' ? resultTag(latest?.auto_result) : null, liveTag(card.monitor), a.is_demo ? h('span', { class: 'tag warn' }, '시연용') : null)),
     h('div', { class: 'btns' },
       opts.compact ? h('a', { class: 'btn sm', href: `#/s/${a.site_id}/asset/${a.id}` }, '상세 화면') : null,
       h('button', { class: 'sm', onclick: () => download(`/api/pdf/card/${a.id}`) }, 'PDF 이력카드'),
@@ -372,6 +417,7 @@ export async function renderCard(root, assetId, opts = {}) {
       p.can_edit && !a.retired ? h('button', { onclick: async () => { if (await openAssetForm(a.category, card)) { toast('저장했습니다.'); reload(); opts.onChanged?.(); } } }, '수정') : null,
       p.can_edit && !a.retired && cat.group === 'equipment' ? h('button', { onclick: () => replaceAsset() }, '장비 교체') : null,
       p.can_edit && ['admin', 'site_manager'].includes(state.me.user.role) && ['cctv', 'switch', 'nvr'].includes(a.category) ? h('button', { onclick: () => secrets() }, '접속정보(비공개)') : null,
+      p.can_edit && ['admin', 'site_manager'].includes(state.me.user.role) && cat.group === 'equipment' ? h('button', { onclick: () => monitorSetup(card, reload, card.monitor) }, '실시간 감시 설정') : null,
       p.can_delete && !a.retired ? h('button', { class: 'danger', onclick: () => archive() }, '삭제(보관)') : null);
     return [
       kv([['관리번호', a.mgmt_no], ['설비 종류', card.category_label], ['명칭', a.name], ['상태', a.status],
@@ -380,7 +426,10 @@ export async function renderCard(root, assetId, opts = {}) {
         ['제조사·모델', [a.manufacturer, a.model].filter(Boolean).join(' / ')], ['시리얼번호', a.serial_no],
         ['설치일', a.install_date], ['시공업체', a.contractor], ['담당자', a.manager],
         ['관련 도면', [...new Set(card.marks.map(m => `${m.drawing_no} Rev.${m.rev_no}`))].join(', ')],
-        ['비고', a.notes], ['등록', `${fmt(a.created_at)} ${a.created_by_name || ''}`], ['최종 변경', `${fmt(a.updated_at)} ${a.updated_by_name || ''}`]]),
+        ['비고', a.notes], ['등록', `${fmt(a.created_at)} ${a.created_by_name || ''}`], ['최종 변경', `${fmt(a.updated_at)} ${a.updated_by_name || ''}`],
+        ['실시간 상태', card.monitor ? h('span', null, liveTag(card.monitor), ` 마지막 확인 ${card.monitor.last_checked_at || '-'}`, card.monitor.last_latency_ms != null ? ` · ${card.monitor.last_latency_ms}ms` : '', card.monitor.last_message ? ` · ${card.monitor.last_message}` : '',
+          card.monitor.method !== 'push' ? h('button', { class: 'sm', style: { marginLeft: '6px' }, onclick: async () => { try { const r = await POST(`/api/assets/${a.id}/monitor/check`, {}); toast(`점검 결과: ${r.status} · ${r.message}`); reload(); } catch (e) { toast(e.message, true); } } }, '지금 점검') : null)
+          : h('span', { class: 'muted' }, '감시 미설정 — 위 "상태"는 등록된 값이며 실제 작동 여부가 아닙니다.')]]),
       (M.DETAIL_FIELDS[a.category] || []).length ? [h('h3', null, '상세 정보'), kv((M.DETAIL_FIELDS[a.category] || []).map(([k, l]) => [l, d[k]]))] : null,
       card.children.length ? [h('h3', null, '하위 설비'), table([{ label: '관리번호', get: c => h('a', { href: `#/s/${a.site_id}/asset/${c.id}` }, c.mgmt_no) }, { label: '종류', get: c => catLabel(c.category) }, { label: '명칭', get: c => c.name }, { label: '상태', get: c => c.status }], card.children)] : null,
       btns,
@@ -485,13 +534,15 @@ export async function renderCard(root, assetId, opts = {}) {
       { label: '자동 판정', get: m => h('span', { title: m.auto_reason || '' }, resultTag(m.auto_result), h('div', { class: 'small muted' }, m.criteria_snapshot ? `${m.criteria_snapshot.name} v${m.criteria_snapshot.version}` : (m.auto_result === '판정기준 미설정' ? '' : (m.auto_reason || '').slice(0, 60)))) },
       { label: '검토', get: m => h('span', null, reviewTag(m.review_status), m.reviewer_name ? h('div', { class: 'small muted' }, m.reviewer_name) : null) },
       { label: '성적서', get: m => m.file_count ? `${m.file_count}건` : h('span', { class: 'tag warn' }, '없음') },
-      { label: '', get: m => m.superseded_by ? '' : h('div', { class: 'btns' },
+      { label: '', get: m => m.superseded_by ? (m.source_file_id ? h('button', { class: 'sm', onclick: () => showOtdr(m.source_file_id) }, 'OTDR 보기') : '') : h('div', { class: 'btns' },
+        m.source_file_id ? h('button', { class: 'sm', onclick: () => showOtdr(m.source_file_id).catch(e => toast(e.message, true)) }, 'OTDR 보기') : null,
         p.can_review ? h('button', { class: 'sm', onclick: () => reviewMeasurement(m, reload) }, '검토') : null,
         p.can_edit ? h('button', { class: 'sm', onclick: () => correctMeasurement(m, reload) }, '정정') : null,
         p.can_create ? h('label', { class: 'btn sm' }, '성적서', h('input', { type: 'file', multiple: true, class: 'hidden', onchange: async (e) => { try { await uploadFiles('measurement', m.id, 'report', e.target.files); toast('성적서를 올렸습니다.'); reload(); } catch (er) { toast(er.message, true); } } })) : null) },
     ], card.measurements.filter(m => showOld.checked || !m.superseded_by), { rowClass: m => m.superseded_by ? 'old' : '', empty: '측정 기록이 없습니다.' }));
     showOld.addEventListener('change', render); render();
-    return [h('div', { class: 'btns', style: { marginBottom: '8px' } }, p.can_create && !a.retired ? h('button', { class: 'primary', onclick: () => addMeasurement(card, reload) }, '측정 등록') : null, h('label', { class: 'small' }, showOld, ' 정정 전 기록 표시')), h('div', { style: { overflowX: 'auto' } }, wrap)];
+    return [h('div', { class: 'btns', style: { marginBottom: '8px' } }, p.can_create && !a.retired ? h('button', { class: 'primary', onclick: () => addMeasurement(card, reload) }, '측정 등록') : null,
+      p.can_create && !a.retired && a.category === 'fiber_cable' ? h('button', { onclick: () => importOtdr(card, reload) }, 'OTDR 파일(.sor) 가져오기') : null, h('label', { class: 'small' }, showOld, ' 정정 전 기록 표시')), h('div', { style: { overflowX: 'auto' } }, wrap)];
   }
 
   function logTab() {
@@ -519,7 +570,7 @@ export async function renderCard(root, assetId, opts = {}) {
       h('h3', null, `사진 (${imgs.length})`),
       imgs.length ? h('div', { class: 'thumbs' }, imgs.map(f => h('div', { class: 'thumb' }, h('a', { href: `/api/files/${f.id}?inline=1`, target: '_blank' }, h('img', { src: `/api/files/${f.id}?inline=1`, loading: 'lazy', alt: f.orig_name })), h('div', null, M.FILE_CATEGORIES[f.category], ' · ', fmt(f.created_at), f.caption ? h('div', null, f.caption) : null)))) : h('div', { class: 'muted small' }, '사진이 없습니다.'),
       h('h3', null, `문서 (${docs.length})`),
-      table([{ label: '분류', get: f => M.FILE_CATEGORIES[f.category] || f.category }, { label: '파일명', get: f => h('a', { href: `/api/files/${f.id}`, target: '_blank' }, f.orig_name) }, { label: '연결', get: f => ({ asset: '설비', measurement: '측정', worklog: '작업 이력' }[f.owner_type]) }, { label: '크기', get: f => (f.size / 1024).toFixed(0) + ' KB', cls: 'num' }, { label: '등록', get: f => `${fmt(f.created_at)} ${f.created_by_name || ''}` },
+      table([{ label: '분류', get: f => M.FILE_CATEGORIES[f.category] || f.category }, { label: '파일명', get: f => h('span', null, h('a', { href: `/api/files/${f.id}`, target: '_blank' }, f.orig_name), /\.sor$/i.test(f.orig_name) ? h('button', { class: 'sm', style: { marginLeft: '6px' }, onclick: () => showOtdr(f.id).catch(e => toast(e.message, true)) }, '해석 보기') : null) }, { label: '연결', get: f => ({ asset: '설비', measurement: '측정', worklog: '작업 이력' }[f.owner_type]) }, { label: '크기', get: f => (f.size / 1024).toFixed(0) + ' KB', cls: 'num' }, { label: '등록', get: f => `${fmt(f.created_at)} ${f.created_by_name || ''}` },
         { label: '', get: f => p.can_delete ? h('button', { class: 'sm danger', onclick: async () => { if (await confirmBox('파일을 보관 처리할까요?')) { await DEL(`/api/files/${f.id}`); reload(); } } }, '삭제') : '' }], docs),
     ].filter(Boolean);
   }

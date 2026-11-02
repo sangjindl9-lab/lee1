@@ -34,7 +34,8 @@ r.get('/sites/:sid/assets', h(async (req, res) => {
       a.manufacturer, a.model, a.serial_no, a.install_date, a.parent_id, a.retired, a.version, a.updated_at, d.data AS details,
       (SELECT COUNT(*) FROM drawing_marks m WHERE m.asset_id=a.id) AS mark_count,
       (SELECT m.auto_result FROM measurements m WHERE m.asset_id=a.id AND m.superseded_by IS NULL ORDER BY m.measured_at DESC, m.id DESC LIMIT 1) AS last_result,
-      (SELECT COUNT(*) FROM measurements m WHERE m.asset_id=a.id AND m.superseded_by IS NULL) AS meas_count
+      (SELECT COUNT(*) FROM measurements m WHERE m.asset_id=a.id AND m.superseded_by IS NULL) AS meas_count,
+      (SELECT mo.status FROM monitors mo WHERE mo.asset_id=a.id AND mo.enabled=1) AS live_status
     FROM assets a LEFT JOIN asset_details d ON d.asset_id=a.id
     WHERE ${where.join(' AND ')} ORDER BY a.category, a.mgmt_no LIMIT 2000`).all(params);
   res.json(rows.map(r => ({ ...r, details: JSON.parse(r.details || '{}') })));

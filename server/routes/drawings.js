@@ -2,7 +2,28 @@ const express = require('express');
 const { db, audit } = require('../db');
 const { requireAuth, assertSite, HttpError } = require('../auth');
 const { h, clean, assetSite } = require('../lib/svc');
-const { upload, saveUploaded, kindOf, cleanupTmp } = require('../lib/files');
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
+const { upload, saveUploaded, kindOf, cleanupTmp, absPath } = require('../lib/files');
+const { convertCad } = require('../lib/cad');
+const config = require('../config');
+
+// DWG/DXF 원본만 올린 경우 PDF 표시본 자동 생성
+async function autoConvert(req) {
+  const source = req.files?.source?.[0];
+  if (!source || req.files?.display?.[0] || req.body.no_convert === 'true') return;
+  try {
+    const ext = path.extname(source.originalname).toLowerCase();
+    const r = await convertCad(fs.readFileSync(source.path), ext);
+    const tmp = path.join(config.uploadDir, '_tmp', crypto.randomBytes(8).toString('hex') + '.pdf');
+    fs.writeFileSync(tmp, r.pdf);
+    req.files.display = [{ path: tmp, originalname: path.basename(source.originalname, ext) + '_자동변환.pdf', size: r.pdf.length }];
+    req.conversionNote = r.note;
+  } catch (e) {
+    req.conversionNote = '자동 변환 실패: ' + e.message + ' — PDF·이미지 변환본을 직접 올리세요.';
+  }
+}
 
 const r = express.Router();
 r.use(requireAuth);
@@ -31,8 +52,8 @@ function registerRevision(req, drawingId, siteId, body, files) {
   if (display && !['pdf', 'image'].includes(kindOf(display.originalname))) throw new HttpError(400, '표시용 도면은 PDF 또는 이미지(JPG·PNG)만 가능합니다. DWG는 원본 칸에 올리세요.');
   if (source && kindOf(source.originalname) !== 'cad') throw new HttpError(400, '원본 칸에는 DWG/DXF 파일을 올리세요.');
   if (db.prepare('SELECT 1 FROM drawing_revisions WHERE drawing_id=? AND rev_no=?').get(drawingId, clean(body.rev_no))) throw new HttpError(409, '같은 개정번호가 이미 있습니다.');
-  const info = db.prepare(`INSERT INTO drawing_revisions(drawing_id, rev_no, rev_date, reason, display_type, created_by) VALUES (?,?,?,?,?,?)`)
-    .run(drawingId, clean(body.rev_no), clean(body.rev_date), clean(body.reason), display ? kindOf(display.originalname) : 'none', req.user.id);
+  const info = db.prepare(`INSERT INTO drawing_revisions(drawing_id, rev_no, rev_date, reason, display_type, conversion_note, created_by) VALUES (?,?,?,?,?,?,?)`)
+    .run(drawingId, clean(body.rev_no), clean(body.rev_date), clean(body.reason), display ? kindOf(display.originalname) : 'none', req.conversionNote || null, req.user.id);
   const rid = Number(info.lastInsertRowid);
   if (display) {
     const fid = saveUploaded(display, { siteId, ownerType: 'revision', ownerId: rid, category: 'drawing', userId: req.user.id });
@@ -63,13 +84,14 @@ r.post('/sites/:sid/drawings', revUpload, h(async (req, res) => {
     const sid = Number(req.params.sid);
     assertSite(req, sid, 'create');
     const b = req.body;
+    await autoConvert(req);
     if (!clean(b.drawing_no) || !clean(b.title)) throw new HttpError(400, '도면번호와 도면명은 필수입니다.');
     if (db.prepare('SELECT 1 FROM drawings WHERE site_id=? AND drawing_no=?').get(sid, clean(b.drawing_no))) throw new HttpError(409, '같은 도면번호가 이미 있습니다. 개정본으로 등록하세요.');
     const out = db.transaction(() => {
       const info = db.prepare('INSERT INTO drawings(site_id, drawing_no, title, discipline, created_by) VALUES (?,?,?,?,?)').run(sid, clean(b.drawing_no), clean(b.title), clean(b.discipline), req.user.id);
       const rv = registerRevision(req, Number(info.lastInsertRowid), sid, b, req.files);
       audit(req, 'create', 'drawing', info.lastInsertRowid, { drawing_no: b.drawing_no, rev_no: b.rev_no }, sid);
-      return { id: Number(info.lastInsertRowid), revision_id: rv.rid };
+      return { id: Number(info.lastInsertRowid), revision_id: rv.rid, conversion_note: req.conversionNote || null };
     })();
     res.json(out);
   } catch (e) { cleanupTmp(allFiles(req)); throw e; }
@@ -89,12 +111,13 @@ r.post('/drawings/:id/revisions', revUpload, h(async (req, res) => {
   try {
     const sid = drawingSite(req.params.id);
     assertSite(req, sid, 'create');
+    await autoConvert(req);
     const out = db.transaction(() => {
       const rv = registerRevision(req, Number(req.params.id), sid, req.body, req.files);
       audit(req, 'create', 'revision', rv.rid, { drawing_id: req.params.id, rev_no: req.body.rev_no, copied: rv.copied }, sid);
       return rv;
     })();
-    res.json({ revision_id: out.rid, copied: out.copied });
+    res.json({ revision_id: out.rid, copied: out.copied, conversion_note: req.conversionNote || null });
   } catch (e) { cleanupTmp(allFiles(req)); throw e; }
 }));
 
@@ -104,7 +127,8 @@ r.get('/revisions/:id', h(async (req, res) => {
   const rv = db.prepare(`SELECT r.*, d.drawing_no, d.title, d.site_id, df.orig_name AS display_name, sf.orig_name AS source_name,
       (SELECT MAX(id) FROM drawing_revisions x WHERE x.drawing_id=r.drawing_id) AS latest_id
       FROM drawing_revisions r JOIN drawings d ON d.id=r.drawing_id LEFT JOIN files df ON df.id=r.display_file_id LEFT JOIN files sf ON sf.id=r.source_file_id WHERE r.id=?`).get(req.params.id);
-  const marks = db.prepare(`SELECT m.*, a.mgmt_no, a.name, a.category, a.status FROM drawing_marks m JOIN assets a ON a.id=m.asset_id WHERE m.revision_id=? ORDER BY m.id`).all(rv.id);
+  const marks = db.prepare(`SELECT m.*, a.mgmt_no, a.name, a.category, a.status, mo.status AS live_status, mo.last_checked_at AS live_at FROM drawing_marks m JOIN assets a ON a.id=m.asset_id
+    LEFT JOIN monitors mo ON mo.asset_id=a.id AND mo.enabled=1 WHERE m.revision_id=? ORDER BY m.id`).all(rv.id);
   res.json({ ...rv, pages: JSON.parse(rv.pages_json || '[]'), scales: JSON.parse(rv.scales_json || '{}'), marks: marks.map(m => ({ ...m, geom: JSON.parse(m.geom) })) });
 }));
 
@@ -126,6 +150,32 @@ r.put('/revisions/:id', h(async (req, res) => {
     audit(req, 'update', 'revision', rv.id, b, sid);
   }
   res.json({ ok: true });
+}));
+
+// 기존 DWG/DXF 원본만 있는 개정본의 표시본 생성(또는 재생성)
+r.post('/revisions/:id/convert', h(async (req, res) => {
+  const sid = revSite(req.params.id);
+  assertSite(req, sid, 'edit');
+  const rv = db.prepare('SELECT * FROM drawing_revisions WHERE id=?').get(req.params.id);
+  if (!rv.source_file_id) throw new HttpError(400, 'DWG/DXF 원본이 없는 개정본입니다.');
+  if (rv.display_file_id && !req.body.force) throw new HttpError(409, '이미 표시본이 있습니다. 다시 만들려면 force 를 지정하세요. (기존 표시 객체 위치가 달라질 수 있음)');
+  const src = db.prepare('SELECT * FROM files WHERE id=?').get(rv.source_file_id);
+  const ext = path.extname(src.orig_name).toLowerCase();
+  let r;
+  try { r = await convertCad(fs.readFileSync(absPath(src)), ext); }
+  catch (e) {
+    db.prepare('UPDATE drawing_revisions SET conversion_note=? WHERE id=?').run('자동 변환 실패: ' + e.message, rv.id);
+    throw new HttpError(422, '자동 변환 실패: ' + e.message);
+  }
+  const tmp = path.join(config.uploadDir, '_tmp', crypto.randomBytes(8).toString('hex') + '.pdf');
+  fs.writeFileSync(tmp, r.pdf);
+  db.transaction(() => {
+    const fid = saveUploaded({ path: tmp, originalname: path.basename(src.orig_name, ext) + '_자동변환.pdf', size: r.pdf.length }, { siteId: sid, ownerType: 'revision', ownerId: rv.id, category: 'drawing', userId: req.user.id });
+    db.prepare(`UPDATE drawing_revisions SET display_file_id=?, display_type='pdf', pages_json=NULL, conversion_note=? WHERE id=?`).run(fid, r.note, rv.id);
+    if (rv.display_file_id) db.prepare('UPDATE drawing_marks SET needs_recheck=1 WHERE revision_id=?').run(rv.id);
+    audit(req, 'convert', 'revision', rv.id, { note: r.note }, sid);
+  })();
+  res.json({ ok: true, note: r.note });
 }));
 
 // ---------- 도면 표시 객체 ----------

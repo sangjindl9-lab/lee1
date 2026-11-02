@@ -17,11 +17,13 @@ app.use((req, res, next) => {
   next();
 });
 
+app.use('/api', require('./routes/monitor').ingest); // 외부 상태 수신(토큰 인증)
 app.use('/api', require('./routes/core'));
 app.use('/api', require('./routes/assets'));
 app.use('/api', require('./routes/records'));
 app.use('/api', require('./routes/drawings'));
 app.use('/api', require('./routes/exports'));
+app.use('/api', require('./routes/monitor'));
 app.use('/api', (req, res) => res.status(404).json({ error: '없는 API 입니다.' }));
 
 // QR 진입: 로그인 → 현장 권한 확인 → 모바일 이력 카드
@@ -56,6 +58,7 @@ if (require.main === module || process.argv[1]?.endsWith('start.js')) {
   const shutdown = async () => { try { await require('./lib/pdf').closeBrowser(); } catch {} try { db.close(); } catch {} process.exit(0); };
   process.on('SIGTERM', shutdown);
   process.on('SIGINT', shutdown);
+  require('./lib/monitor').start();
   app.listen(config.port, () => console.log(`회로·케이블 이력 관리 시스템: http://localhost:${config.port}`));
 }
 module.exports = app;

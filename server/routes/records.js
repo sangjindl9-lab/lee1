@@ -6,6 +6,7 @@ const { h, clean, assetSite } = require('../lib/svc');
 const { judge } = require('../lib/judge');
 const { upload, saveUploaded, absPath, cleanupTmp } = require('../lib/files');
 const { TEST_TYPES, WORK_TYPES, FILE_CATEGORIES } = require('../lib/defs');
+const { parseSor, downsample } = require('../lib/sor');
 
 const r = express.Router();
 r.use(requireAuth);
@@ -30,12 +31,12 @@ function insertMeasurement(req, assetId, body, extra = {}) {
   };
   const j = judge(a.site_id, a.category, m);
   const info = db.prepare(`INSERT INTO measurements(site_id, asset_id, core_id, test_type, measured_at, section, combination, test_voltage, wavelength, direction,
-      value, unit, items, overall, instrument, measurer, criteria_id, criteria_snapshot, auto_result, auto_reason, raw_note, corrects_id, correction_reason, created_by)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+      value, unit, items, overall, instrument, measurer, criteria_id, criteria_snapshot, auto_result, auto_reason, raw_note, corrects_id, correction_reason, created_by, client_ref, source_file_id)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
     a.site_id, a.id, body.core_id || null, m.test_type, m.measured_at, clean(body.section), clean(body.combination), m.test_voltage, m.wavelength, m.direction,
     value, m.unit, body.items ? JSON.stringify(body.items) : null, clean(body.overall), clean(body.instrument), clean(body.measurer),
     j.criteria?.id || null, j.criteria ? JSON.stringify(j.criteria) : null, j.result, j.reason, clean(body.raw_note),
-    extra.corrects_id || null, extra.correction_reason || null, req.user.id);
+    extra.corrects_id || null, extra.correction_reason || null, req.user.id, extra.client_ref || null, extra.source_file_id || null);
   return { id: Number(info.lastInsertRowid), judge: j, site_id: a.site_id };
 }
 
@@ -43,8 +44,14 @@ r.post('/assets/:id/measurements', h(async (req, res) => {
   const sid = assetSite(req.params.id);
   assertSite(req, sid, 'create');
   const rows = Array.isArray(req.body.rows) ? req.body.rows : [req.body];
-  const out = db.transaction(() => rows.map(b => {
-    const m = insertMeasurement(req, Number(req.params.id), { ...req.body, ...b, rows: undefined });
+  // 오프라인 재전송: 같은 client_ref 로 이미 저장된 경우 기존 결과 반환
+  const ref = clean(req.body.client_ref);
+  if (ref) {
+    const prev = db.prepare('SELECT id, auto_result, auto_reason FROM measurements WHERE client_ref LIKE ? ORDER BY id').all(ref + '#%');
+    if (prev.length) return res.json({ ok: true, duplicate: true, results: prev.map(p => ({ id: p.id, auto_result: p.auto_result, auto_reason: p.auto_reason })) });
+  }
+  const out = db.transaction(() => rows.map((b, i) => {
+    const m = insertMeasurement(req, Number(req.params.id), { ...req.body, ...b, rows: undefined }, { client_ref: ref ? `${ref}#${i}` : null });
     audit(req, 'create', 'measurement', m.id, { ...b, auto_result: m.judge.result }, sid);
     return { id: m.id, auto_result: m.judge.result, auto_reason: m.judge.reason };
   }))();
@@ -171,8 +178,12 @@ r.post('/assets/:id/worklogs', h(async (req, res) => {
     const m = db.prepare('SELECT asset_id FROM measurements WHERE id=?').get(b.measurement_id);
     if (!m || m.asset_id !== id) throw new HttpError(400, '측정기록이 이 설비에 속하지 않습니다.');
   }
-  const info = db.prepare(`INSERT INTO work_logs(site_id, asset_id, work_type, work_at, content, worker, company, before_value, after_value, measurement_id, status, created_by)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).run(sid, id, b.work_type, clean(b.work_at), clean(b.content), clean(b.worker), clean(b.company), clean(b.before_value), clean(b.after_value), b.measurement_id || null, b.submit ? '검토 요청' : '작성', req.user.id);
+  if (clean(b.client_ref)) {
+    const prev = db.prepare('SELECT id FROM work_logs WHERE client_ref=?').get(clean(b.client_ref));
+    if (prev) return res.json({ id: prev.id, duplicate: true });
+  }
+  const info = db.prepare(`INSERT INTO work_logs(site_id, asset_id, work_type, work_at, content, worker, company, before_value, after_value, measurement_id, status, created_by, client_ref)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(sid, id, b.work_type, clean(b.work_at), clean(b.content), clean(b.worker), clean(b.company), clean(b.before_value), clean(b.after_value), b.measurement_id || null, b.submit ? '검토 요청' : '작성', req.user.id, clean(b.client_ref));
   audit(req, 'create', 'worklog', info.lastInsertRowid, b, sid);
   res.json({ id: info.lastInsertRowid });
 }));
@@ -228,8 +239,17 @@ r.post('/files', upload.array('files', 20), h(async (req, res) => {
     assertSite(req, sid, 'create');
     if (!FILE_CATEGORIES[category]) throw new HttpError(400, '첨부 분류가 올바르지 않습니다.');
     if (!req.files?.length) throw new HttpError(400, '파일이 없습니다.');
+    const ref = clean(req.body.client_ref);
+    if (ref) {
+      const prev = db.prepare('SELECT id FROM files WHERE client_ref LIKE ? ORDER BY id').all(ref + '#%');
+      if (prev.length) { cleanupTmp(req.files); return res.json({ ids: prev.map(p => p.id), duplicate: true }); }
+    }
     if (category.startsWith('photo')) for (const f of req.files) if (!/\.(jpe?g|png|webp|gif)$/i.test(f.originalname)) throw new HttpError(400, `사진 분류에는 이미지 파일만 올릴 수 있습니다: ${f.originalname}`);
-    const ids = req.files.map(f => saveUploaded(f, { siteId: sid, ownerType: owner_type, ownerId: Number(owner_id), category, caption, userId: req.user.id }));
+    const ids = db.transaction(() => req.files.map((f, i) => {
+      const fid = saveUploaded(f, { siteId: sid, ownerType: owner_type, ownerId: Number(owner_id), category, caption, userId: req.user.id });
+      if (ref) db.prepare('UPDATE files SET client_ref=? WHERE id=?').run(`${ref}#${i}`, fid);
+      return fid;
+    }))();
     audit(req, 'upload', 'file', ids[0], { owner_type, owner_id, category, names: req.files.map(f => f.originalname) }, sid);
     res.json({ ids });
   } catch (e) { cleanupTmp(req.files); throw e; }
@@ -256,6 +276,59 @@ r.delete('/files/:id', h(async (req, res) => {
   db.prepare('UPDATE files SET archived=1 WHERE id=?').run(f.id);
   audit(req, 'archive', 'file', f.id, { name: f.orig_name }, f.site_id);
   res.json({ ok: true });
+}));
+
+// ---------- OTDR 원본(.sor) 해석 ----------
+function sorView(p) {
+  const { trace, ...rest } = p;
+  return { ...rest, trace: trace ? { points: trace.points, step_km: trace.step_km, xy: downsample(trace) } : null };
+}
+
+r.get('/files/:id/sor', h(async (req, res) => {
+  const f = db.prepare('SELECT * FROM files WHERE id=?').get(req.params.id);
+  if (!f) throw new HttpError(404, '파일을 찾을 수 없습니다.');
+  assertSite(req, f.site_id, 'view');
+  if (!/\.sor$/i.test(f.orig_name)) throw new HttpError(400, 'SOR 파일이 아닙니다.');
+  let p;
+  try { p = parseSor(fs.readFileSync(absPath({ stored_name: f.stored_name.replace(/#c\d+$/, '') }))); }
+  catch (e) { throw new HttpError(422, 'OTDR 파일을 해석하지 못했습니다: ' + e.message + ' (원본은 그대로 보관됩니다)'); }
+  res.json({ file: { id: f.id, name: f.orig_name }, ...sorView(p) });
+}));
+
+// OTDR 파일 → 측정기록 생성 (원본 파일은 성적서로 연결)
+r.post('/assets/:id/otdr', upload.single('file'), h(async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const sid = assetSite(id);
+    assertSite(req, sid, 'create');
+    if (!req.file || !/\.sor$/i.test(req.file.originalname)) throw new HttpError(400, '.sor 파일을 올리세요.');
+    let p;
+    try { p = parseSor(fs.readFileSync(req.file.path)); }
+    catch (e) { throw new HttpError(422, 'OTDR 파일을 해석하지 못했습니다: ' + e.message + '. 해석 없이 보관하려면 첨부(시험성적서)로 올리세요.'); }
+    const b = req.body;
+    const fx = p.fxd || {}; const gen = p.gen || {}; const sup = p.sup || {};
+    const total = p.summary && p.summary.total_loss_db > 0 ? p.summary.total_loss_db : null;
+    const body = {
+      test_type: 'otdr', core_id: b.core_id || null,
+      measured_at: (fx.datetime || new Date().toISOString()).replace('T', ' ').slice(0, 16),
+      section: clean(b.section) || [gen.location_a, gen.location_b].filter(Boolean).join(' → ') || null,
+      direction: clean(b.direction), wavelength: fx.wavelength_nm || gen.wavelength_nm,
+      value: total, unit: 'dB',
+      items: (p.events || []).map(e => ({ name: `#${e.no} ${e.distance_km.toFixed(3)} km ${e.type}`, result: `접속손실 ${e.splice_loss_db} dB · 반사 ${e.refl_loss_db} dB` })),
+      overall: `광섬유 길이 ${p.fiber_length_km != null ? p.fiber_length_km.toFixed(3) + ' km' : '-'} · 총손실 ${total ?? '기록 없음'} dB · ORL ${p.summary?.orl_db ?? '-'} dB · 펄스 ${fx.pulse_width_ns?.[0] ?? '-'} ns · IOR ${fx.index ?? '-'}`,
+      instrument: [sup.supplier, sup.otdr, sup.otdr_sn && 'S/N ' + sup.otdr_sn].filter(Boolean).join(' ') || null,
+      measurer: clean(b.measurer) || gen.operator || null,
+      raw_note: p.warnings.length ? p.warnings.join(' / ') : null,
+    };
+    const out = db.transaction(() => {
+      const m = insertMeasurement(req, id, body);
+      const fid = saveUploaded(req.file, { siteId: sid, ownerType: 'measurement', ownerId: m.id, category: 'report', caption: 'OTDR 원본', userId: req.user.id });
+      db.prepare('UPDATE measurements SET source_file_id=? WHERE id=?').run(fid, m.id);
+      audit(req, 'import_otdr', 'measurement', m.id, { file: req.file.originalname, events: (p.events || []).length }, sid);
+      return { id: m.id, file_id: fid, auto_result: m.judge.result, auto_reason: m.judge.reason };
+    })();
+    res.json({ ...out, summary: { events: (p.events || []).length, fiber_length_km: p.fiber_length_km, total_loss_db: total, warnings: p.warnings } });
+  } catch (e) { cleanupTmp([req.file]); throw e; }
 }));
 
 module.exports = r;

@@ -9,7 +9,7 @@ const app = document.getElementById('app');
 const NAV = [
   ['dashboard', '현장 대시보드'], ['drawings', '도면 관리'], ['viewer', '도면 뷰어'], ['assets', '전체 설비 목록'], null,
   ['power', '전력케이블'], ['fiber', '광케이블·코어·접속'], ['lan', 'LAN·랙·포트'], ['cctv', 'CCTV'], null,
-  ['measurements', '측정·성적서'], ['worklogs', '작업·보수 이력'], ['issues', '누락·부적합·만료'], ['outputs', '출력·엑셀'], null,
+  ['live', '실시간 상태'], ['measurements', '측정·성적서'], ['worklogs', '작업·보수 이력'], ['issues', '누락·부적합·만료'], ['outputs', '출력·엑셀'], null,
   ['settings', '사용자·권한·시험기준'],
 ];
 
@@ -17,7 +17,13 @@ async function boot() {
   try {
     state.me = await api('GET', '/api/me', undefined, { noRedirect: true });
     state.meta = await GET('/api/meta');
-  } catch { state.me = null; }
+    try { localStorage.setItem('ch-session', JSON.stringify({ me: state.me, meta: state.meta })); } catch {}
+  } catch (e) {
+    state.me = null;
+    // 통신이 끊긴 경우: 마지막 로그인 정보로 화면만 열고(오프라인 모드), 저장은 단말 대기열로
+    if (e.status === 0) { try { const c = JSON.parse(localStorage.getItem('ch-session')); if (c) { state.me = c.me; state.meta = c.meta; state.offline = true; } } catch {} }
+    else { try { localStorage.removeItem('ch-session'); } catch {} }
+  }
   window.addEventListener('hashchange', route);
   route();
 }
@@ -59,6 +65,7 @@ async function route() {
       case 'lan': return await pages.lan(body, query);
       case 'cctv': return await pages.assetList(body, { category: 'cctv', query });
       case 'measurements': return await pages.measurements(body);
+      case 'live': return await pages.live(body);
       case 'worklogs': return await pages.worklogs(body);
       case 'issues': return await pages.issues(body, query);
       case 'outputs': return await pages.outputs(body);
@@ -77,7 +84,7 @@ function topbar(nav) {
     state.me.sites.length ? sel : null,
     h('div', { class: 'sp' }),
     h('div', { class: 'user' }, `${state.me.user.name} (${{ admin: '관리자', site_manager: '현장관리자', worker: '작업자', viewer: '조회자' }[state.me.user.role]})`),
-    h('button', { class: 'sm', onclick: async () => { await POST('/api/logout'); state.me = null; location.hash = '#/login'; } }, '로그아웃'));
+    h('button', { class: 'sm', onclick: async () => { await POST('/api/logout'); state.me = null; try { localStorage.removeItem('ch-session'); } catch {} location.hash = '#/login'; } }, '로그아웃'));
 }
 
 function loginPage(next) {
@@ -89,6 +96,7 @@ function loginPage(next) {
     try {
       await api('POST', '/api/login', { username: u.value, password: p.value }, { noRedirect: true });
       state.me = await GET('/api/me'); state.meta = await GET('/api/meta');
+      try { localStorage.setItem('ch-session', JSON.stringify({ me: state.me, meta: state.meta })); } catch {}
       if (next && next.startsWith('/q/')) { location.href = next; return; }
       location.hash = next && next !== 'login' ? '#' + next : '#/';
     } catch (er) { err.textContent = er.message; }

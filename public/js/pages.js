@@ -1,5 +1,5 @@
 import { h, clear, state, GET, POST, PUT, api, toast, modal, formFields, fmt, today, resultTag, reviewTag, statusTag, catLabel, perm, table, download, siteUrl } from './ui.js';
-import { renderCard, openAssetForm, showTrace, traceTree } from './card.js';
+import { renderCard, openAssetForm, showTrace, traceTree, liveTag } from './card.js';
 
 const sid = () => state.site.id;
 const link = (a, text) => h('a', { href: siteUrl('asset/' + a.id) }, text || a.mgmt_no);
@@ -40,7 +40,7 @@ export async function drawings(body) {
       { key: 'drawing_no', label: '도면번호', required: true }, { key: 'title', label: '도면명', required: true }, { key: 'discipline', label: '공종', placeholder: '전력, 통신, CCTV' },
       { key: 'rev_no', label: '개정번호', required: true, value: 'A' }, { key: 'rev_date', label: '개정일', type: 'date', value: today() }, { key: 'reason', label: '발행·변경 사유', value: '최초 발행' },
       { key: 'display', label: '표시용 도면 (PDF·JPG·PNG)', type: 'file', accept: '.pdf,.jpg,.jpeg,.png', wide: true },
-      { key: 'source', label: 'DWG/DXF 원본 (보관용, 선택)', type: 'file', accept: '.dwg,.dxf', wide: true, help: 'DWG/DXF는 원본 보관만 합니다. 화면 표시는 PDF·이미지 변환본으로 합니다.' },
+      { key: 'source', label: 'DWG/DXF 원본', type: 'file', accept: '.dwg,.dxf', wide: true, help: '표시용 도면 없이 DWG/DXF만 올리면 PDF 표시본을 자동으로 만듭니다(흑백). 변환 결과가 부정확하면 CAD에서 출력한 PDF를 함께 올리세요.' },
     ]);
     const ok = await modal('도면 등록', f.el, { size: 'wide', buttons: [{ label: '등록', primary: true, action: async () => {
       const v = f.values(); const fd = new FormData();
@@ -48,7 +48,7 @@ export async function drawings(body) {
       if (v.display[0]) fd.append('display', v.display[0]); if (v.source[0]) fd.append('source', v.source[0]);
       return api('POST', `/api/sites/${sid()}/drawings`, fd);
     } }] });
-    if (ok) { toast('도면을 등록했습니다.'); location.hash = siteUrl('viewer/' + ok.revision_id); }
+    if (ok) { toast(ok.conversion_note ? '도면을 등록했습니다. ' + ok.conversion_note : '도면을 등록했습니다.'); location.hash = siteUrl('viewer/' + ok.revision_id); }
   } }, '도면 등록') : null;
   const rows = [];
   for (const d of list) d.revisions.forEach((r, i) => rows.push({ d, r, latest: i === 0 }));
@@ -58,7 +58,8 @@ export async function drawings(body) {
       { label: '개정', get: x => h('span', null, 'Rev.' + x.r.rev_no, x.latest ? h('span', { class: 'tag info', style: { marginLeft: '4px' } }, '최신') : null) },
       { label: '개정일', get: x => x.r.rev_date }, { label: '변경 사유', get: x => x.r.reason }, { label: '등록자', get: x => x.r.created_by_name },
       { label: '표시용', get: x => x.r.display_name ? h('a', { href: `/api/files/${x.r.display_file_id}?inline=1`, target: '_blank' }, x.r.display_type.toUpperCase()) : h('span', { class: 'tag warn' }, '없음') },
-      { label: 'DWG 원본', get: x => x.r.source_name ? h('a', { href: `/api/files/${x.r.source_file_id}` }, x.r.source_name) : '' },
+      { label: 'DWG 원본', get: x => x.r.source_name ? h('span', null, h('a', { href: `/api/files/${x.r.source_file_id}` }, x.r.source_name), x.r.conversion_note ? h('div', { class: 'small ' + (x.r.conversion_note.startsWith('자동 변환 실패') ? 'err' : 'muted') }, x.r.conversion_note) : null,
+        !x.r.display_file_id && perm('can_edit') ? h('button', { class: 'sm', onclick: async (e) => { e.target.disabled = true; e.target.textContent = '변환 중…'; try { const r = await POST(`/api/revisions/${x.r.id}/convert`, {}); toast(r.note); reload(); } catch (er) { toast(er.message, true); reload(); } } }, '자동 변환') : null) : '' },
       { label: '표시 객체', get: x => h('span', null, x.r.mark_count, x.r.recheck_count ? h('span', { class: 'tag warn', style: { marginLeft: '4px' } }, `재확인 ${x.r.recheck_count}`) : null), cls: 'num' },
       { label: '검토', get: x => h('span', { class: 'tag ' + (x.r.review_status === '검토 완료' ? 'ok' : 'gray') }, x.r.review_status) },
       { label: '', get: x => h('div', { class: 'btns' },
@@ -124,7 +125,7 @@ export async function assetList(body, { category, query } = {}) {
       ...(LIST_COLS[category] || []).map(([k, l]) => ({ label: l, get: a => typeof k === 'function' ? k(a.details) : a.details[k] })),
       { label: '위치', get: a => [a.building, a.floor, a.room].filter(Boolean).join(' ') },
       category === 'cctv' || !category ? { label: '시리얼', get: a => a.serial_no } : null,
-      { label: '상태', get: a => h('span', null, statusTag(a.status), a.retired ? h('span', { class: 'tag gray', style: { marginLeft: '3px' } }, '보관') : null) },
+      { label: '상태', get: a => h('span', null, statusTag(a.status), a.retired ? h('span', { class: 'tag gray', style: { marginLeft: '3px' } }, '보관') : null, a.live_status ? h('div', { style: { marginTop: '2px' } }, liveTag({ status: a.live_status })) : null) },
       M.CATEGORIES[category]?.group === 'cable' || !category ? { label: '최근 측정', get: a => M.CATEGORIES[a.category].group === 'cable' ? resultTag(a.last_result) : '' } : null,
       { label: '도면', get: a => a.mark_count ? h('a', { href: siteUrl(`viewer?asset=${a.id}`), onclick: (e) => { e.preventDefault(); gotoDrawing(a.id); } }, `${a.mark_count}곳`) : h('span', { class: 'tag warn' }, '미연결') },
     ].filter(Boolean);
@@ -319,7 +320,7 @@ export async function issues(body, query) {
 export async function outputs(body) {
   const M = state.meta;
   const reports = [['power_list', '전력케이블 목록', '가로'], ['fiber_splice', '광코어 접속표', '가로'], ['lan_ports', 'LAN 포트 배선표', '가로'], ['cctv_ledger', 'CCTV 장비대장', '가로'], ['measurements', '시험·측정 결과 목록', '가로'], ['worklogs', '보수 이력대장', '가로'], ['photos', '작업 전후 사진대장 (2×2)', '세로'], ['qr_labels', 'QR 라벨 (전체 설비)', '세로']];
-  const tcat = h('select', null, ...[['power_cable', '전력케이블'], ['fiber_cable', '광케이블'], ['lan_cable', 'LAN케이블'], ['cctv', 'CCTV'], ['equipment', '장비 (분전반·랙·스위치 등)']].map(([k, l]) => h('option', { value: k }, l)));
+  const tcat = h('select', null, ...[['power_cable', '전력케이블'], ['fiber_cable', '광케이블'], ['lan_cable', 'LAN케이블'], ['cctv', 'CCTV'], ['equipment', '장비 (분전반·랙·스위치 등)'], ['fiber_splice', '광코어 접속'], ['measurement', '측정기록']].map(([k, l]) => h('option', { value: k }, l)));
   const file = h('input', { type: 'file', accept: '.xlsx' });
   const preview = h('div');
   async function doPreview() {
@@ -328,7 +329,7 @@ export async function outputs(body) {
     try {
       const r = await api('POST', `/api/sites/${sid()}/excel/preview`, fd);
       const mode = h('select', null, h('option', { value: 'valid_only' }, '정상 행만 저장 (오류 행 제외)'), h('option', { value: 'all_or_nothing' }, '오류가 하나라도 있으면 저장하지 않음'));
-      const dup = h('select', null, h('option', { value: 'skip' }, '이미 있는 관리번호: 건너뜀'), h('option', { value: 'update' }, '이미 있는 관리번호: 값 갱신'), h('option', { value: 'error' }, '이미 있는 관리번호: 오류로 처리'));
+      const dup = h('select', { class: ['fiber_splice', 'measurement'].includes(tcat.value) ? 'hidden' : '' }, h('option', { value: 'skip' }, '이미 있는 관리번호: 건너뜀'), h('option', { value: 'update' }, '이미 있는 관리번호: 값 갱신'), h('option', { value: 'error' }, '이미 있는 관리번호: 오류로 처리'));
       const out = h('div');
       clear(preview, h('div', { class: 'box' },
         h('div', { class: 'pagehead' }, h('b', null, `미리보기 · 전체 ${r.total}행`), h('span', { class: r.error_count ? 'tag bad' : 'tag ok' }, `오류 ${r.error_count}행`), h('span', { class: 'tag info' }, `기존 관리번호 ${r.dup_count}행`)),
@@ -443,4 +444,53 @@ export async function settings(body) {
     el.append(h('p', { class: 'small muted' }, '감사 로그는 데이터베이스 수준에서 수정·삭제가 차단되어 있습니다. 최근 500건.'),
       h('div', { class: 'tablewrap' }, table([{ label: '일시', get: r => r.at }, { label: '사용자', get: r => r.user_name }, { label: '현장', get: r => r.site_name }, { label: '작업', get: r => r.action }, { label: '대상', get: r => `${r.entity} #${r.entity_id ?? ''}` }, { label: '내용', get: r => h('span', { class: 'small' }, (r.detail || '').slice(0, 200)) }], rows)));
   }
+}
+
+// ---------- 실시간 상태 ----------
+export async function live(body) {
+  const canSet = ['admin', 'site_manager'].includes(state.me.user.role) && perm('can_edit');
+  const wrap = h('div'); const evWrap = h('div'); const stamp = h('span', { class: 'muted small' });
+  let timer;
+  async function load() {
+    if (!wrap.isConnected && timer) { clearInterval(timer); return; }
+    const d = await GET(`/api/sites/${sid()}/monitors`);
+    const cnt = s => d.monitors.filter(m => m.status === s).length;
+    stamp.textContent = `서버 시각 ${d.server_time} 기준 · 15초마다 새로 고침`;
+    clear(wrap,
+      h('div', { class: 'stats' }, ...[['정상', ''], ['이상', ' bad'], ['응답 없음', ' bad'], ['확인 전', ''], ['중지', '']].map(([s, c]) => h('div', null, h('div', { class: 'n' + (cnt(s) ? c : '') }, cnt(s)), h('div', { class: 'l' }, s)))),
+      h('div', { class: 'box flush' }, table([
+        { label: '관리번호', get: m => h('a', { href: siteUrl('asset/' + m.asset_id) }, m.mgmt_no) }, { label: '설비', get: m => `${catLabel(m.category)} ${m.name || ''}` },
+        { label: '실시간 상태', get: m => liveTag(m) }, { label: '등록 상태', get: m => statusTag(m.asset_status) },
+        { label: '방식', get: m => ({ tcp: `TCP ${m.host}:${m.port}`, http: `HTTP ${m.host}${m.port && m.port !== 80 ? ':' + m.port : ''}${m.path || ''}`, push: '외부 시스템 수신' })[m.method] },
+        { label: '마지막 확인', get: m => m.last_checked_at || '-' }, { label: '응답', get: m => m.last_latency_ms != null ? m.last_latency_ms + 'ms' : '', cls: 'num' },
+        { label: '마지막 정상', get: m => m.last_ok_at || '-' }, { label: '내용', get: m => m.last_message || '' },
+      ], d.monitors, { empty: '감시 중인 설비가 없습니다. 설비 이력 카드 > 기본정보 > "실시간 감시 설정"에서 추가하세요.' })));
+    clear(evWrap, table([{ label: '시각', get: e => e.at }, { label: '설비', get: e => e.mgmt_no }, { label: '변경', get: e => `${e.from_status || '-'} → ${e.to_status}` }, { label: '출처', get: e => e.source === 'push' ? '외부 수신' : '서버 점검' }, { label: '내용', get: e => e.message || '' }], d.events, { empty: '상태 변화 기록이 없습니다.' }));
+  }
+  const tokBox = h('div');
+  async function tokens() {
+    if (!canSet) return;
+    const list = await GET(`/api/sites/${sid()}/tokens`);
+    clear(tokBox, h('div', { class: 'btns', style: { marginBottom: '6px' } }, h('button', { onclick: async () => {
+      const f = formFields([{ key: 'name', label: '토큰 이름 (예: NVR-1 상태 전송)', required: true, wide: true }]);
+      const r = await modal('수신 토큰 발급', f.el, { size: 'narrow', buttons: [{ label: '발급', primary: true, action: () => POST(`/api/sites/${sid()}/tokens`, f.values()) }] });
+      if (r) { await modal('토큰 (한 번만 표시)', h('div', null, h('input', { type: 'text', value: r.token, style: { width: '100%' }, readonly: true }), h('p', { class: 'small muted' }, '지금 복사해 두세요. 서버에는 암호화된 값만 저장되어 다시 볼 수 없습니다.')), { size: 'narrow' }); tokens(); }
+    } }, '수신 토큰 발급')),
+      table([{ label: '이름', get: t => t.name }, { label: '앞자리', get: t => t.prefix + '…' }, { label: '마지막 사용', get: t => t.last_used_at || '-' }, { label: '상태', get: t => t.revoked ? h('span', { class: 'tag gray' }, '폐기') : h('span', { class: 'tag ok' }, '사용') },
+        { label: '', get: t => t.revoked ? '' : h('button', { class: 'sm danger', onclick: async () => { await api('DELETE', `/api/tokens/${t.id}`); tokens(); } }, '폐기') }], list, { empty: '발급한 토큰이 없습니다.' }),
+      h('pre', { class: 'small', style: { background: '#f6f7f8', border: '1px solid #d4d7db', padding: '8px', overflow: 'auto' } },
+`POST ${location.origin}/api/ingest/status
+Authorization: Bearer <토큰>
+Content-Type: application/json
+
+{ "items": [ { "asset": "CCTV-01", "status": "정상", "message": "녹화 중" },
+             { "asset": "CCTV-02", "status": "down", "message": "영상 손실" } ] }
+status 값: 정상/ok/up · 이상/alarm/fault · 응답 없음/down/offline`));
+  }
+  clear(body, h('div', { class: 'pagehead' }, h('h1', null, '실시간 상태'), stamp),
+    h('p', { class: 'small muted' }, '"실시간 상태"는 서버 점검 또는 외부 시스템 보고로 확인한 결과이고, "등록 상태"는 사람이 입력한 시공·사용 상태입니다. 확인 시각이 오래된 값은 현재 상태가 아닐 수 있습니다. 클라우드 서버는 현장 내부망 장비에 직접 접속할 수 없으므로, 내부망 장비는 현장 서버 설치 또는 외부 시스템 수신 방식을 사용하세요.'),
+    wrap, h('h2', null, '상태 변화 기록'), h('div', { class: 'box flush' }, evWrap),
+    canSet ? [h('h2', { style: { marginTop: '14px' } }, '외부 시스템 수신 (NVR·SCADA·NMS 연동)'), h('div', { class: 'box' }, tokBox)] : null);
+  await load(); await tokens();
+  timer = setInterval(load, 15000);
 }
