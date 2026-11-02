@@ -133,6 +133,24 @@ http.createServer((req, res) => {
       return res.end(fs.readFileSync(f));
     }
   }
+  // 사용 영상 — 범위 요청(Range)을 받아 원하는 지점부터 재생되게
+  const vm = url.pathname.match(/^\/video\/([a-z0-9-]+)\.(mp4|jpg)$/);
+  if (vm) {
+    const f = path.join('public', 'video', `${vm[1]}.${vm[2]}`);
+    if (fs.existsSync(f)) {
+      const size = fs.statSync(f).size; const type = vm[2] === 'mp4' ? 'video/mp4' : 'image/jpeg';
+      const head = { 'content-type': type, 'accept-ranges': 'bytes', 'cache-control': 'public, max-age=604800' };
+      const r = /bytes=(\d*)-(\d*)/.exec(req.headers.range || '');
+      if (r) {
+        let start = r[1] === '' ? size - Number(r[2]) : Number(r[1]); let end = r[1] !== '' && r[2] ? Math.min(Number(r[2]), size - 1) : size - 1;
+        if (!(start >= 0 && start <= end)) { res.writeHead(416, { 'content-range': `bytes */${size}` }); return res.end(); }
+        res.writeHead(206, { ...head, 'content-range': `bytes ${start}-${end}/${size}`, 'content-length': end - start + 1 });
+        return req.method === 'HEAD' ? res.end() : fs.createReadStream(f, { start, end }).pipe(res);
+      }
+      res.writeHead(200, { ...head, 'content-length': size });
+      return req.method === 'HEAD' ? res.end() : fs.createReadStream(f).pipe(res);
+    }
+  }
   if (url.pathname === '/health') return json(res, 200, { ok: true, smtp: !!transporter, to: TO });
   if (url.pathname === '/admin/inquiries') {
     if (!ADMIN_TOKEN || url.searchParams.get('token') !== ADMIN_TOKEN) return json(res, 403, { ok: false });
