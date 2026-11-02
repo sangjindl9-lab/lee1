@@ -211,3 +211,10 @@ footer.foot{background:var(--bg2);color:var(--mute);padding-block:28px 44px;font
 @media(max-width:900px){.trybox{grid-template-columns:1fr}}
 .tryurl{font-size:28px;font-weight:800;letter-spacing:-.02em}.tryurl a{color:var(--blue-d);text-decoration:none}
 .ptable code{font-size:14px;background:var(--bg2);padding:2px 6px;border-radius:4px}
+
+.trial-terms dl{margin:0;display:grid;gap:0;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.trial-terms dl>div{display:grid;grid-template-columns:112px 1fr;gap:12px;padding:14px 18px;border-top:1px solid var(--line)}
+.trial-terms dl>div:first-child{border-top:0}
+.trial-terms dt{font-weight:800;color:var(--blue)}
+.trial-terms dd{margin:0;color:var(--ink2)}
+@media(max-width:520px){.trial-terms dl>div{grid-template-columns:1fr;gap:2px}}

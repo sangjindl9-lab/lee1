@@ -17,6 +17,9 @@ const SMTP = process.env.SMTP_USER && process.env.SMTP_PASS
 const transporter = SMTP ? nodemailer.createTransport(SMTP) : null;
 fs.mkdirSync(DATA_DIR, { recursive: true });
 const LOG = path.join(DATA_DIR, 'inquiries.jsonl');
+const TRIAL_LOG = path.join(DATA_DIR, 'trials.jsonl');
+// 무료 체험 신청은 라이선스 발급 사이트(무료 체험 메뉴)로 넘긴다
+const PORTAL = (process.env.PORTAL_URL || 'https://admin.ieumerp.kr').replace(/\/$/, '');
 
 // 검색·링크 미리보기용 머리 정보. 네이버·구글 소유 확인 코드는 환경변수로 넣는다
 const SITE = (process.env.SITE_URL || 'https://ieumerp.kr').replace(/\/$/, '');
@@ -109,11 +112,48 @@ async function handleInquiry(req, res) {
     json(res, 200, { ok: true, mailed });
   });
 }
+// 한 달 무료 체험 신청 — 발급 사이트에 접수하고, 담당자 메일로도 알린다
+async function handleTrial(req, res) {
+  let body = '';
+  req.on('data', (c) => { body += c; if (body.length > 20_000) req.destroy(); });
+  req.on('end', async () => {
+    let d; try { d = JSON.parse(body); } catch { return json(res, 400, { ok: false, message: '잘못된 요청입니다' }); }
+    const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').toString().split(',')[0].trim();
+    if (tooMany(ip)) return json(res, 429, { ok: false, message: '잠시 뒤 다시 시도해 주세요' });
+    const item = { at: new Date().toISOString(), company: clean(d.company, 100), bizRegNo: clean(d.bizRegNo, 20).replace(/\D/g, ''), name: clean(d.name, 50), phone: clean(d.phone, 30), email: clean(d.email, 120), users: Number(d.users) > 0 ? Math.min(Math.trunc(Number(d.users)), 1000) : null, message: String(d.message ?? '').trim().slice(0, 3000), ip };
+    if (!item.company || !item.name || !item.phone) return json(res, 400, { ok: false, message: '회사명·담당자·연락처를 입력해 주세요' });
+    if (item.bizRegNo.length !== 10) return json(res, 400, { ok: false, message: '사업자등록번호 10자리를 입력해 주세요' });
+    // 발급 사이트가 사업자번호 확인·중복 신청을 가린다. 발급 사이트가 잠깐 안 되면 메일·파일로만 받는다
+    let portal = 'down';
+    try {
+      const r = await fetch(`${PORTAL}/api/v1/trial`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-forwarded-for': ip }, body: JSON.stringify({ company: item.company, bizRegNo: item.bizRegNo, name: item.name, phone: item.phone, email: item.email, users: item.users, message: item.message }), signal: AbortSignal.timeout(10_000) });
+      if (r.status === 400 || r.status === 409 || r.status === 429) { const j = await r.json().catch(() => ({})); return json(res, r.status, { ok: false, message: j.message || '신청을 받지 못했습니다' }); }
+      portal = r.ok ? 'ok' : `http ${r.status}`;
+    } catch (e) { portal = e.message; }
+    fs.appendFileSync(TRIAL_LOG, JSON.stringify({ ...item, portal }) + '\n');
+    let mailed = false;
+    if (transporter) {
+      try {
+        const rows = [['회사명', item.company], ['사업자번호', item.bizRegNo.replace(/^(\d{3})(\d{2})(\d{5})$/, '$1-$2-$3')], ['담당자', item.name], ['연락처', item.phone], ['이메일', item.email || '-'], ['사용 인원', item.users ?? '-'], ['발급 사이트 접수', portal === 'ok' ? '됨 (무료 체험 메뉴)' : `안 됨 — 직접 등록 필요 (${portal})`]];
+        await transporter.sendMail({
+          from: `"이음ERP 무료 체험" <${process.env.SMTP_USER}>`, to: TO, replyTo: item.email || undefined,
+          subject: `[이음ERP 무료 체험 신청] ${item.company} · ${item.name}`,
+          text: rows.map(([k, v]) => `${k}: ${v}`).join('\n') + `\n\n하고 싶은 말:\n${item.message || '-'}\n\n접수: ${item.at} / ${ip}`,
+          html: `<table style="font-family:sans-serif;font-size:14px;border-collapse:collapse">${rows.map(([k, v]) => `<tr><th align="left" style="padding:4px 12px 4px 0;color:#555">${k}</th><td style="padding:4px 0">${esc(v)}</td></tr>`).join('')}</table><p style="white-space:pre-wrap;font-family:sans-serif;font-size:14px;border-top:1px solid #ddd;padding-top:10px">${esc(item.message) || '-'}</p><p style="font-family:sans-serif;font-size:13px"><a href="${PORTAL}/#/trials">발급 사이트 무료 체험 메뉴에서 체험 시작</a></p>`,
+        });
+        mailed = true;
+      } catch (e) { console.error('메일 발송 실패:', e.message); }
+    }
+    console.log(`[무료 체험] ${item.company} ${item.bizRegNo} portal=${portal} mailed=${mailed}`);
+    json(res, 200, { ok: true });
+  });
+}
 function json(res, code, obj) { res.writeHead(code, { 'content-type': 'application/json; charset=utf-8' }); res.end(JSON.stringify(obj)); }
 
 http.createServer((req, res) => {
   const url = new URL(req.url, 'http://x');
   if (req.method === 'POST' && url.pathname === '/api/inquiry') return handleInquiry(req, res);
+  if (req.method === 'POST' && url.pathname === '/api/trial') return handleTrial(req, res);
   // www·onrender 주소로 들어오면 대표 주소로 (검색에서 주소가 둘로 갈리지 않게)
   const host = String(req.headers.host || '');
   // 대표 주소(SITE_URL)가 아닌 www·onrender·railway 주소면 대표 주소로. 대표 주소가 www 여도 돌고 돌지 않게 대표 주소 자체는 건너뛴다
