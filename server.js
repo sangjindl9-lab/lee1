@@ -36,7 +36,7 @@ const HEAD = [
   `<script type="application/ld+json">${JSON.stringify({
     '@context': 'https://schema.org',
     '@graph': [
-      { '@type': 'Organization', name: '주식회사 이음소프트', url: SITE, email: 'lee@ieumerp.kr', logo: `${SITE}/og.png` },
+      { '@type': 'Organization', name: '주식회사 이음소프트', url: SITE, email: 'lee@ieumerp.kr', telephone: '+82-70-7938-5027', logo: `${SITE}/og.png` },
       { '@type': 'SoftwareApplication', name: '이음ERP', applicationCategory: 'BusinessApplication', operatingSystem: 'Web, Android', url: SITE, description: DESC, offers: { '@type': 'Offer', price: '79000', priceCurrency: 'KRW' } },
     ],
   })}</script>`,
