@@ -1,0 +1,23 @@
+{
+  "name": "ieum-jindan",
+  "version": "1.0.0",
+  "description": "이음전력 진단 - 계약전력·설비 수용능력·증설 비용 검토 웹서비스",
+  "private": true,
+  "type": "module",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node --no-warnings server/index.js",
+    "test": "node --no-warnings --test test/*.test.js"
+  },
+  "engines": {
+    "node": ">=22.13"
+  },
+  "dependencies": {
+    "exceljs": "^4.4.0",
+    "express": "^4.22.3",
+    "multer": "^2.5.0",
+    "pdfkit": "^0.20.2",
+    "qrcode": "^1.5.4",
+    "sharp": "^0.35.5"
+  }
+}
