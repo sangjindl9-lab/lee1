@@ -106,6 +106,7 @@ window.addEventListener('hashchange', render);
 function nav() {
   const n = $('#nav'); n.replaceChildren();
   n.append(h('a', { href: '#/quick' }, '간편 계산'));
+  if (/Android/i.test(navigator.userAgent) && !/IeumJindanApp/.test(navigator.userAgent)) n.append(h('a', { href: 'https://github.com/sangjindl9-lab/lee1/releases/download/jindan-latest/ieum-jindan.apk' }, '앱 받기'));
   if (!ME) { n.append(h('a', { href: '#/login' }, '로그인')); return; }
   n.append(h('a', { href: '#/' }, '내 장소'));
   if (['contractor', 'reviewer'].includes(ME.role)) n.append(h('a', { href: '#/company' }, '업체'));

@@ -1,0 +1,13 @@
+{
+  "appId": "kr.ssjeonryeok.jindan",
+  "appName": "이음전력 진단",
+  "webDir": "www",
+  "server": {
+    "url": "https://jindan-production.up.railway.app",
+    "androidScheme": "https",
+    "errorPath": "offline.html"
+  },
+  "android": {
+    "appendUserAgent": "IeumJindanApp"
+  }
+}
