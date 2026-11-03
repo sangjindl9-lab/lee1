@@ -1,0 +1,12 @@
+# 현장 서버(미니PC·리눅스)에 설치: docker compose up -d  → http://서버IP:8080
+services:
+  siteview:
+    build: .
+    restart: unless-stopped
+    network_mode: host        # 같은 네트워크 장비 검색(SADP)과 RTSP 접속을 위해 호스트 네트워크 사용
+    environment:
+      PORT: 8080
+      ADMIN_PASSWORD: admin1234   # 첫 실행 시 관리자 비밀번호 (로그인 후 꼭 변경)
+      DEMO: "0"                   # 1이면 가상 NVR 4채널 자동 등록
+    volumes:
+      - ./data:/data

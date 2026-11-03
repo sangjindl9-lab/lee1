@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#14171c">
+<title>현장뷰</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<div id="login" class="login" hidden>
+  <form class="login-card" id="loginForm">
+    <div class="brand"><span class="brand-mark"></span><b>현장뷰</b></div>
+    <p class="login-sub">현장 CCTV를 어디서나</p>
+    <label>아이디<input name="username" autocomplete="username" required value="admin"></label>
+    <label>비밀번호<input name="password" type="password" autocomplete="current-password" required></label>
+    <p class="form-error" id="loginError"></p>
+    <button class="btn primary block" type="submit">로그인</button>
+    <p class="demo-hint" id="demoHint" hidden>데모 계정: admin / admin1234</p>
+  </form>
+</div>
+
+<div id="app" class="app" hidden>
+  <nav class="nav" id="nav">
+    <div class="brand nav-brand"><span class="brand-mark"></span><b>현장뷰</b></div>
+    <button data-tab="devices"><svg viewBox="0 0 24 24"><path d="M3 5h18v11H3zM8 20h8M12 16v4"/></svg><span>장비</span></button>
+    <button data-tab="live"><svg viewBox="0 0 24 24"><path d="M3 3h8v8H3zM13 3h8v8h-8zM3 13h8v8H3zM13 13h8v8h-8z"/></svg><span>실시간</span></button>
+    <button data-tab="playback"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span>재생</span></button>
+    <button data-tab="alarms"><svg viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4zM10 20a2 2 0 0 0 4 0"/></svg><span>알람</span><i class="badge" id="alarmBadge" hidden></i></button>
+    <button data-tab="more"><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg><span>더보기</span></button>
+  </nav>
+  <main class="main">
+    <section class="page" id="page-devices"></section>
+    <section class="page" id="page-live"></section>
+    <section class="page" id="page-playback"></section>
+    <section class="page" id="page-alarms"></section>
+    <section class="page" id="page-more"></section>
+  </main>
+</div>
+
+<div id="modal" class="modal" hidden><div class="sheet" id="sheet"></div></div>
+<div id="toasts" class="toasts"></div>
+<script type="module" src="/app.js"></script>
+</body>
+</html>

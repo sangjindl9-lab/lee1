@@ -1,0 +1,20 @@
+{
+  "name": "siteview",
+  "version": "1.0.0",
+  "description": "현장뷰 - Hikvision 장비(ISAPI/RTSP) 원격 감시 웹 앱",
+  "private": true,
+  "type": "module",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node --no-warnings server/index.js",
+    "demo": "DEMO=1 node --no-warnings server/index.js"
+  },
+  "engines": {
+    "node": ">=22.13"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "fast-xml-parser": "^4.5.1",
+    "http-proxy": "^1.18.1"
+  }
+}

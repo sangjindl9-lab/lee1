@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>현장뷰</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #0f1216; color: #e8ebef; font: 15px/1.5 -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif; }
+  .wrap { min-height: 100%; display: grid; place-items: center; padding: 24px 16px;
+    background: radial-gradient(900px 400px at 50% -10%, rgb(245 165 36 / .14), transparent 60%); }
+  form { width: 100%; max-width: 360px; display: grid; gap: 14px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-size: 24px; font-weight: 700; }
+  .mark { width: 28px; height: 28px; border-radius: 7px; background: repeating-linear-gradient(-45deg, #f5a524 0 5px, #1b1305 5px 10px); box-shadow: inset 0 0 0 2px #f5a524; }
+  p { margin: 0; color: #8b95a3; font-size: 14px; }
+  label { display: grid; gap: 6px; font-size: 13px; color: #8b95a3; }
+  input { height: 48px; padding: 0 12px; border-radius: 10px; border: 1px solid #2a313b; background: #171b21; color: #e8ebef; font-size: 16px; }
+  input:focus { outline: 2px solid #f5a524; outline-offset: -1px; }
+  button { height: 48px; border-radius: 10px; border: 0; background: #f5a524; color: #1b1305; font-size: 16px; font-weight: 700; }
+  button:disabled { opacity: .6; }
+  .err { color: #ff5d5d; min-height: 1.4em; }
+  .recent { display: grid; gap: 6px; }
+  .recent button { background: #171b21; color: #e8ebef; border: 1px solid #2a313b; font-weight: 500; text-align: left; padding: 0 12px; height: 42px; font-size: 14px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <form id="f">
+    <div class="brand"><span class="mark"></span>현장뷰</div>
+    <p>현장뷰 서버 주소를 입력하세요.<br>예: http://192.168.0.10:8080 또는 https://현장뷰.회사도메인</p>
+    <label>서버 주소<input id="url" inputmode="url" autocapitalize="off" autocomplete="url" placeholder="http://192.168.0.10:8080" required></label>
+    <div class="err" id="err"></div>
+    <button id="go">연결</button>
+    <div class="recent" id="recent"></div>
+  </form>
+</div>
+<script>
+  const KEY = 'siteview.server', RECENT = 'siteview.recent';
+  const get = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } };
+  const set = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
+  const params = new URLSearchParams(location.search);
+  const saved = get(KEY, '');
+  const $ = (id) => document.getElementById(id);
+
+  function normalize(v) {
+    v = v.trim().replace(/\/+$/, '');
+    if (!/^https?:\/\//i.test(v)) v = 'http://' + v;
+    return v;
+  }
+
+  async function connect(url) {
+    $('err').textContent = '';
+    $('go').disabled = true; $('go').textContent = '연결 확인 중…';
+    try {
+      const ctrl = new AbortController();
+      setTimeout(() => ctrl.abort(), 8000);
+      await fetch(url + '/api/config', { mode: 'no-cors', signal: ctrl.signal });
+      set(KEY, url);
+      set(RECENT, [url, ...get(RECENT, []).filter((u) => u !== url)].slice(0, 5));
+      location.href = url + '/';
+    } catch (e) {
+      $('err').textContent = '서버에 연결할 수 없습니다. 주소와 네트워크(같은 와이파이/포트포워딩)를 확인하세요.';
+      $('go').disabled = false; $('go').textContent = '연결';
+    }
+  }
+
+  $('url').value = saved;
+  $('recent').innerHTML = get(RECENT, []).map((u) => `<button type="button" data-u="${u.replace(/"/g, '')}">최근: ${u.replace(/</g, '')}</button>`).join('');
+  $('recent').onclick = (e) => { const b = e.target.closest('[data-u]'); if (b) connect(b.dataset.u); };
+  $('f').onsubmit = (e) => { e.preventDefault(); connect(normalize($('url').value)); };
+  if (saved && !params.has('change')) connect(saved);
+</script>
+</body>
+</html>

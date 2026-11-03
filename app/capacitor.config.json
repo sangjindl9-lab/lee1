@@ -1,0 +1,13 @@
+{
+  "appId": "kr.ssjeonryeok.siteview",
+  "appName": "현장뷰",
+  "webDir": "www",
+  "server": {
+    "cleartext": true,
+    "allowNavigation": ["*"]
+  },
+  "android": {
+    "allowMixedContent": true,
+    "appendUserAgent": "SiteViewApp"
+  }
+}
