@@ -22,6 +22,6 @@ COPY fonts ./fonts
 COPY scripts ./scripts
 COPY samples/input ./samples/input
 ENV NODE_ENV=production PORT=3000 DATA_DIR=/data DWG_ENGINE_TYPE=libredwg DWG_ENGINE_PATH=/opt/libredwg/bin/dwg2dxf
-VOLUME ["/data"]
+# 데이터 볼륨: docker run -v ./data:/data (Railway는 서비스 볼륨을 /data에 연결)
 EXPOSE 3000
 CMD ["node", "server/index.js"]
