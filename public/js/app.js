@@ -235,13 +235,22 @@ async function quoteDialog() {
 // ---------- PDF ----------
 async function pdfDialog() {
   await save(); const D = S.P.data; const o = Object.assign({ paper: 'A4', orient: 'landscape', show_detail: true, show_quote: true, show_notice: true }, D.options || {});
-  let frame = h('iframe', { style: { width: '100%', height: '68vh', border: '1px solid #ddd', borderRadius: '8px' } }); let blob = null;
-  const gen = async () => { frame.srcdoc = '<p style="font-family:sans-serif;padding:20px">제안서를 만드는 중…</p>'; try { const r = await api(`/api/proposals/${S.P.id}/pdf`, { raw: true, body: o }); blob = await r.blob(); const nf = h('iframe', { src: URL.createObjectURL(blob), style: frame.getAttribute('style') }); frame.replaceWith(nf); frame = nf; } catch (e) { frame.srcdoc = `<p style="color:#c00;padding:20px">${e.message}</p>`; } };
+  const mob = isMobile(); const fname = `${S.P.customer_name || '고객'}_CCTV설치제안서.pdf`;
+  const view = h('div', { style: { width: '100%', height: mob ? 'auto' : '68vh', minHeight: '200px', border: '1px solid #ddd', borderRadius: '8px', overflow: 'auto', background: '#e9edf1' } }); let blob = null, url = null, n = 0;
+  const msg = (t, err) => { view.innerHTML = ''; view.appendChild(h('p', { style: { padding: '20px', color: err ? '#c00' : '#555' } }, t)); };
+  const gen = async () => { const my = ++n; blob = null; msg('제안서를 만드는 중…');
+    try {
+      if (mob) { const r = await api(`/api/proposals/${S.P.id}/preview`, { body: o }); if (my !== n) return; view.innerHTML = ''; r.pages.forEach((src, k) => view.appendChild(h('div', { style: { padding: '8px' } }, h('img', { src, alt: `${k + 1}쪽`, style: { width: '100%', display: 'block', boxShadow: '0 1px 6px rgba(0,0,0,.2)', background: '#fff' } }), h('div', { class: 'small muted', style: { textAlign: 'center', marginTop: '4px' } }, `${k + 1} / ${r.pages.length}`)))); }
+      const r = await api(`/api/proposals/${S.P.id}/pdf`, { raw: true, body: o }); if (my !== n) return; blob = await r.blob(); if (url) URL.revokeObjectURL(url); url = URL.createObjectURL(blob);
+      if (!mob) { view.innerHTML = ''; view.appendChild(h('iframe', { src: url, title: '제안서 PDF', style: { width: '100%', height: '100%', border: 0, display: 'block' } })); }
+    } catch (e) { if (my === n) msg(e.message, true); } };
   const body = h('div', { style: { width: 'min(1100px, 94vw)' } }, h('div', { class: 'row', style: { flexWrap: 'wrap', marginBottom: '8px' } },
     formGrid([{ k: 'paper', label: '용지', type: 'select', options: ['A4', 'A3'] }, { k: 'orient', label: '방향', type: 'select', options: [['landscape', '가로'], ['portrait', '세로']] }], o, gen),
-    ...[['show_detail', '카메라별 안내'], ['show_quote', '견적'], ['show_notice', '안내 사항']].map(([k, l]) => h('label', { class: 'small' }, h('input', { type: 'checkbox', checked: o[k] !== false, onchange: e => { o[k] = e.target.checked; gen(); } }), ' ' + l))), frame);
+    ...[['show_detail', '카메라별 안내'], ['show_quote', '견적'], ['show_notice', '안내 사항']].map(([k, l]) => h('label', { class: 'small' }, h('input', { type: 'checkbox', checked: o[k] !== false, onchange: e => { o[k] = e.target.checked; gen(); } }), ' ' + l))), view);
   setTimeout(gen, 50);
-  await modal('제안서 PDF 미리보기', body, [{ label: '인쇄', action: () => { frame.contentWindow.print(); return false; } }, { label: 'PDF 저장', primary: true, action: () => { if (!blob) return false; const a = h('a', { href: URL.createObjectURL(blob), download: `${S.P.customer_name || '고객'}_CCTV설치제안서.pdf` }); a.click(); return false; } }], { noFocus: true });
+  const saveBtn = { label: 'PDF 저장', primary: true, action: () => { if (!blob) { toast('아직 만드는 중입니다. 잠시 후 다시 누르세요.'); return false; } const a = h('a', { href: `/api/proposals/${S.P.id}/pdf?o=${encodeURIComponent(JSON.stringify(o))}` }); document.body.appendChild(a); a.click(); a.remove(); if (mob) toast('PDF를 내려받았습니다. 인쇄는 받은 PDF를 열어 인쇄 메뉴를 쓰세요.'); return false; } };
+  const printBtn = { label: '인쇄', action: () => { const f = view.querySelector('iframe'); if (f) f.contentWindow.print(); return false; } };
+  await modal('제안서 PDF 미리보기', body, mob ? [saveBtn] : [printBtn, saveBtn], { noFocus: true });
   if (JSON.stringify(D.options) !== JSON.stringify(o)) change('출력 옵션', d => d.options = o);
 }
 async function shareDialog() {

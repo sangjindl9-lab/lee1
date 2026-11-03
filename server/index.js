@@ -154,7 +154,20 @@ async function renderFor(p, opts) {
 app.post('/api/proposals/:id/pdf', auth, wrap(async (req, res) => {
   const p = propObj(db.prepare('SELECT * FROM proposals WHERE id=?').get(req.params.id)); if (!p) return res.status(404).end();
   const buf = await renderFor(p, req.body || {});
-  res.type('pdf').setHeader('Content-Disposition', "attachment; filename*=UTF-8''" + encodeURIComponent(`${p.customer_name || '고객'}_CCTV설치제안서.pdf`)); res.send(buf);
+  res.type('pdf').setHeader('Content-Disposition', "attachment; filename=\"CCTV_proposal.pdf\"; filename*=UTF-8''" + encodeURIComponent(`${p.customer_name || '고객'}_CCTV설치제안서.pdf`)); res.send(buf);
+}));
+app.get('/api/proposals/:id/pdf', auth, wrap(async (req, res) => {
+  const p = propObj(db.prepare('SELECT * FROM proposals WHERE id=?').get(req.params.id)); if (!p) return res.status(404).end();
+  let o = {}; try { o = JSON.parse(req.query.o || '{}'); } catch { }
+  const buf = await renderFor(p, o); res.type('pdf').setHeader('Content-Disposition', "attachment; filename=\"CCTV_proposal.pdf\"; filename*=UTF-8''" + encodeURIComponent(`${p.customer_name || '고객'}_CCTV설치제안서.pdf`)); res.send(buf);
+}));
+// 휴대폰 미리보기: PDF를 쪽별 PNG 이미지로
+app.post('/api/proposals/:id/preview', auth, wrap(async (req, res) => {
+  const p = propObj(db.prepare('SELECT * FROM proposals WHERE id=?').get(req.params.id)); if (!p) return res.status(404).end();
+  const buf = await renderFor(p, req.body || {}); const dir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'pv-'));
+  try { fs.writeFileSync(path.join(dir, 'a.pdf'), buf); await run('pdftoppm', ['-png', '-r', '80', path.join(dir, 'a.pdf'), path.join(dir, 'p')]);
+    const pages = fs.readdirSync(dir).filter(f => f.endsWith('.png')).sort().map(f => 'data:image/png;base64,' + fs.readFileSync(path.join(dir, f)).toString('base64'));
+    res.json({ pages }); } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 }));
 const shared = t => t && propObj(db.prepare('SELECT * FROM proposals WHERE share_token=?').get(t));
 app.get('/api/share/:t', (req, res) => {
