@@ -89,6 +89,14 @@ export default function Cost({ p, update, exportXlsx, onPrint }) {
               ))}
             </tbody>
           </table>
+          <div className="fld"><span>단가 조정률 (일위대가 노임·자재단가에 적용)</span>
+            <div className="adj-rates">
+              {[['m', '재료비'], ['l', '노무비'], ['e', '경비']].map(([k, t]) => (
+                <label key={k} className="fld">{t} %<NumInput id={'uadj-' + k} dec={3} value={(p.unitAdj || {})[k] ?? 100} onChange={(v) => update((d) => { d.unitAdj = { m: 100, l: 100, e: 100, ...(d.unitAdj || {}), [k]: v }; })} /></label>
+              ))}
+            </div>
+          </div>
+          <label className="fld">총공사비 할인율 (%, 할인액 천원 단위 반올림)<NumInput id="disc-rate" dec={3} value={p.discountRate || 0} onChange={(v) => update((d) => { d.discountRate = v; })} /></label>
           <label className="fld">작업설·부산물 (재료비에서 공제)<NumInput id="scrap" value={p.scrap} onChange={(v) => update((d) => { d.scrap = v; })} /></label>
           <label className="fld">비율 금액 끝수 처리
             <select id="rate-round" className="cell" value={p.rateRound || 'floor'} onChange={(e) => update((d) => { d.rateRound = e.target.value; })}>

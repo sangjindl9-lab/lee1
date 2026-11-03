@@ -7,22 +7,29 @@ export const matPrice = (m) => {
   return c.length ? Math.min(...c) : 0;
 };
 
+// p.unitAdj = { m, l, e }: 공사 전체 단가 조정률(%). 노임·자재단가에 곱하고, 공구손료·경비에는 경비 조정률을 곱한다.
+export const unitAdjOf = (p) => ({ m: 100, l: 100, e: 100, ...(p.unitAdj || {}) });
 export function unitCost(p, u) {
   let m = 0, l = 0, e = 0;
+  const A = unitAdjOf(p);
+  const R = p.rateRound === 'round' ? (x) => Math.round(x + 1e-9) : fl;
+  const adjOn = A.m !== 100 || A.l !== 100 || A.e !== 100;
   const lines = u.items.map((i) => {
     let name = i.name, spec = i.spec || '', unit = i.unit || '', price = Number(i.price) || 0;
     if (i.kind === '자재') {
       const mt = p.mats.find((x) => x.id === i.ref);
       if (mt) { name = mt.name; spec = mt.spec; unit = mt.unit; price = matPrice(mt); }
+      if (adjOn) price = R(price * A.m / 100);
     } else if (i.kind === '노무') {
       const lb = p.labors.find((x) => x.id === i.ref);
       if (lb) { name = lb.name; spec = ''; unit = '인'; price = Number(lb.wage) || 0; }
-    }
-    const amt = fl((Number(i.qty) || 0) * price);
+      if (adjOn) price = R(price * A.l / 100);
+    } else if (adjOn) price = R(price * A.e / 100);
+    const amt = R((Number(i.qty) || 0) * price);
     if (i.kind === '자재') m += amt; else if (i.kind === '노무') l += amt; else e += amt;
     return { ...i, name: name || '', spec, unit, price, amt, missing: (i.kind !== '경비') && !name };
   });
-  const tool = fl(l * (Number(u.toolRate) || 0) / 100);
+  const tool = R(l * (Number(u.toolRate) || 0) / 100 * A.e / 100);
   e += tool;
   return { m: fl(m), l: fl(l), e: fl(e), tool, lines, total: fl(m) + fl(l) + fl(e) };
 }
@@ -113,8 +120,11 @@ export function costSheet(p, { factor = 1, profitAdd = 0, roundUnit } = {}) {
   const profit = v('profit', L + E + gm) + profitAdd;
   const damage = v('damage', net + gm + profit);
   const total = net + gm + profit + damage;
-  const vat = v('vat', total);
-  const raw = total + vat;
+  const dRate = Number(p.discountRate) || 0;
+  const discount = dRate > 0 ? Math.round(total * dRate / 100 / 1000) * 1000 : 0;
+  const supply = total - discount;
+  const vat = v('vat', supply);
+  const raw = supply + vat;
   const ru = Number(roundUnit ?? p.roundUnit) || 1;
   const grand = fl(raw / ru) * ru;
 
@@ -146,12 +156,14 @@ export function costSheet(p, { factor = 1, profitAdd = 0, roundUnit } = {}) {
     on('profit') && { g: '이윤', label: '이윤', amt: profit, note: `(노무비+경비+일반관리비) × ${rr('profit')}%${profitAdd ? ` ＋ 단수조정 ${profitAdd.toLocaleString()}` : ''}` },
     on('damage') && { g: '보험료', label: '공사손해보험료', amt: damage, note: `총원가 × ${rr('damage')}%` },
     { g: '총원가', label: '총공사원가', amt: total, sum: true },
+    discount ? { g: '할인', label: '할인액 (△)', amt: -discount, note: `총공사원가 × ${dRate}% (천원 단위 반올림)` } : null,
+    discount ? { g: '공급가액', label: '공급가액', amt: supply, sum: true } : null,
     on('vat') && { g: '부가세', label: '부가가치세', amt: vat, note: `총공사원가 × ${rr('vat')}%` },
     ru > 1 && raw !== grand ? { g: '절사', label: `단수정리 (${ru.toLocaleString()}원 미만)`, amt: grand - raw } : null,
     { g: '도급액', label: '총 공사금액', amt: grand, sum: true, grand: true },
   ].filter(Boolean);
 
-  return { secs, DM, DL, ME, M, L, E, net, gm, profit, total, vat, raw, grand, rows };
+  return { secs, DM, DL, ME, M, L, E, net, gm, profit, total, discount, supply, vat, raw, grand, rows };
 }
 
 // 목표금액(부가세 포함)에 맞추는 단가 조정률을 찾고, 남는 차액은 이윤에서 맞춘다.

@@ -79,6 +79,7 @@ export default function Estimate({ p, update, exportXlsx, onPrint }) {
               ))}
               <tr className="sub"><td></td><td>직접공사비 계</td><td className="r mono">{won(r.cs.DM)}</td><td className="r mono">{won(r.cs.DL)}</td><td className="r mono">{won(r.cs.ME)}</td><td className="r mono">{won(direct)}</td></tr>
               <tr><td></td><td>간접비·제경비·일반관리비·이윤</td><td colSpan={3}></td><td className="r mono">{won(r.cs.total - direct)}</td></tr>
+              {r.cs.discount > 0 && <tr><td></td><td>할인액</td><td colSpan={3}></td><td className="r mono">-{won(r.cs.discount)}</td></tr>}
               <tr><td></td><td>부가가치세</td><td colSpan={3}></td><td className="r mono">{won(r.cs.vat)}</td></tr>
               {r.amount !== r.cs.raw && <tr><td></td><td>단수조정</td><td colSpan={3}></td><td className="r mono">{won(r.amount - r.cs.raw)}</td></tr>}
               <tr className="grand"><td></td><td>합 계</td><td colSpan={3}></td><td className="r mono">{won(r.amount)}</td></tr>

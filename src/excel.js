@@ -25,6 +25,7 @@ export function buildWorkbook(p, opt = {}) {
       ...cs.secs.map((s, i) => [i + 1, s.section.name, s.m, s.l, s.e, s.sum]),
       ['', '직접공사비 계', cs.DM, cs.DL, cs.ME, cs.DM + cs.DL + cs.ME],
       ['', '제경비·일반관리비·이윤', '', '', '', cs.total - (cs.DM + cs.DL + cs.ME)],
+      ...(cs.discount ? [['', '할인액', '', '', '', -cs.discount]] : []),
       ['', '부가가치세', '', '', '', cs.vat],
       ...(e.tail ? [['', '단수조정', '', '', '', e.amount - cs.raw]] : []),
       ['', '견적 합계', '', '', '', e.amount],

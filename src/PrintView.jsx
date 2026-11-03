@@ -57,6 +57,7 @@ function EstimateDoc({ p, r }) {
           ))}
           <tr className="pr-sub"><td></td><td>직접공사비 계</td><td className="r">{won(cs.DM)}</td><td className="r">{won(cs.DL)}</td><td className="r">{won(cs.ME)}</td><td className="r">{won(direct)}</td></tr>
           <tr><td></td><td>간접비·제경비·일반관리비·이윤</td><td colSpan={3}></td><td className="r">{won(cs.total - direct)}</td></tr>
+              {cs.discount > 0 && <tr><td></td><td>할인액</td><td colSpan={3}></td><td className="r">-{won(cs.discount)}</td></tr>}
           <tr><td></td><td>부가가치세</td><td colSpan={3}></td><td className="r">{won(cs.vat)}</td></tr>
           {r.amount !== cs.raw && <tr><td></td><td>단수조정</td><td colSpan={3}></td><td className="r">{won(r.amount - cs.raw)}</td></tr>}
           <tr className="pr-total"><td></td><td>합 계</td><td colSpan={3}></td><td className="r">{won(r.amount)}</td></tr>
