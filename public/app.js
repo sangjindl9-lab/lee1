@@ -113,8 +113,27 @@ async function pageHome() {
       </section>
     </div>
     <p class="muted small">사용 중 사용자 수 합계 <span class="num">${s.seats}</span>명 · 미발급 고객 ${s.none} · 사용 중지 ${s.suspended}</p>
+    <div id="demohome"></div>
     <div id="crmhome"></div>`);
-  await crmHome();
+  await Promise.all([demoHome(), crmHome()]);
+}
+
+/** 대시보드: 체험 서버(demo.ieumerp.kr) 하루 접속자 */
+const DEMO_ROLE = { ceo: '대표', acct: '회계', gongmu: '공무', buyer: '구매', site1: '현장', tax: '세무', admin: '관리' };
+async function demoHome() {
+  const box = document.getElementById('demohome');
+  if (!box) return;
+  const d = await api('/demo-visits?days=14').catch(() => null);
+  if (!d) return;
+  const byDay = new Map(d.rows.map((r) => [r.day, r]));
+  const today = new Date(Date.now() + 9 * 3600e3);
+  const list = Array.from({ length: 14 }, (_, i) => new Date(today.getTime() - i * 864e5).toISOString().slice(0, 10)).map((day) => byDay.get(day) ?? { day, visitors: 0, logins: 0, byLogin: {} });
+  const max = Math.max(1, ...list.map((r) => r.visitors));
+  box.innerHTML = `<section class="panel" style="margin-top:16px"><header><h2>체험 서버 접속</h2><span class="muted small">demo.ieumerp.kr · 최근 14일 방문자 ${d.total.visitors}명 · 로그인 ${d.total.logins}회</span></header>
+    <div class="table-wrap"><table><thead><tr><th>날짜</th><th class="r">방문자</th><th style="width:40%"></th><th class="r">로그인</th><th class="hide-sm">많이 쓴 계정</th></tr></thead><tbody>
+    ${list.map((r) => `<tr><td class="num small">${r.day.slice(5).replace('-', '.')}</td><td class="r num">${r.visitors}</td><td><div style="height:8px;border-radius:4px;background:var(--steel,#3d5a80);opacity:.75;width:${Math.round((r.visitors / max) * 100)}%"></div></td><td class="r num">${r.logins}</td><td class="hide-sm small muted">${Object.entries(r.byLogin || {}).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k, n]) => `${DEMO_ROLE[k] ?? k} ${n}`).join(' · ')}</td></tr>`).join('')}
+    </tbody></table></div>
+    <p class="muted small" style="margin:8px 0 0">방문자는 같은 날 같은 컴퓨터·휴대폰을 한 명으로 셉니다. 체험 서버에 로그인한 경우만 셉니다.</p></section>`;
 }
 
 // ── 고객 목록 ──────────────────────────────────────────────────

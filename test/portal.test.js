@@ -293,3 +293,17 @@ test('무료 체험: 홈페이지 신청 → 판매자가 시작하면 30일 체
   assert.equal((await call(`/api/admin/trials/${r2.id}/reject`, { method: 'POST' })).status, 200);
   assert.equal((await call('/api/admin/trials')).body.requests.find((x) => x.id === r2.id).status, 'REJECTED');
 });
+
+test('체험 서버 접속 기록: 로그인마다 받아 일별 방문자·로그인 수로 보여 준다', async () => {
+  const v1 = 'a'.repeat(32), v2 = 'b'.repeat(32);
+  for (const [loginId, visitor] of [['ceo', v1], ['acct', v1], ['ceo', v2]]) {
+    assert.equal((await call('/api/v1/demo-visit', { method: 'POST', auth: false, json: { loginId, visitor } })).status, 204);
+  }
+  assert.equal((await call('/api/v1/demo-visit', { method: 'POST', auth: false, json: { loginId: 'hacker', visitor: v1 } })).status, 400);
+  assert.equal((await call('/api/v1/demo-visit', { method: 'POST', auth: false, json: { loginId: 'ceo', visitor: 'x' } })).status, 400);
+  const d = (await call('/api/admin/demo-visits?days=7')).body;
+  const today = d.rows[0];
+  assert.ok(today.visitors >= 2 && today.logins >= 3);
+  assert.ok(today.byLogin.ceo >= 2);
+  assert.equal((await call('/api/admin/demo-visits', { auth: false })).status, 401);
+});

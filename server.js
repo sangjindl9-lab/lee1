@@ -421,6 +421,19 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
   // ── 고객관리: 영업 단계·계약(전자서명)·과금·상담 ──
   // ── 무료 체험 신청 (홈페이지 ieumerp.kr 의 신청서 → /api/v1/trial) ─────────────
   const shapeTrialReq = (r) => ({ id: r.id, company: r.company, bizRegNo: r.biz_reg_no, contactName: r.contact_name, phone: r.phone, email: r.email, users: r.users, message: r.message, status: r.status, customerId: r.customer_id, createdAt: r.created_at, handledAt: r.handled_at });
+  /** 체험 서버 일별 접속 — 방문자(서로 다른 사람) 수와 로그인 수, 계정별 로그인 */
+  admin.get('/demo-visits', wrap(async (req, res) => {
+    const days = Math.min(Math.max(Number(req.query.days) || 30, 1), 180);
+    const rows = (await q(`select to_char(a.day, 'YYYY-MM-DD') as day,
+        (select count(distinct visitor) from demo_visit d where d.day = a.day)::int as visitors,
+        sum(a.n)::int as logins, json_object_agg(a.login_id, a.n) as by_login
+      from (select day, login_id, count(*)::int as n from demo_visit
+            where day > (now() at time zone 'Asia/Seoul')::date - $1::int group by day, login_id) a
+      group by a.day order by a.day desc`, [days])).rows;
+    const [tot] = (await q(`select count(distinct visitor)::int as visitors, count(*)::int as logins from demo_visit where day > (now() at time zone 'Asia/Seoul')::date - $1::int`, [days])).rows;
+    res.json({ days, rows: rows.map((r) => ({ day: r.day, visitors: r.visitors, logins: r.logins, byLogin: r.by_login })), total: tot });
+  }));
+
   admin.get('/trials', wrap(async (req, res) => {
     const requests = (await q(`select * from trial_request order by (status = 'NEW') desc, created_at desc limit 300`)).rows.map(shapeTrialReq);
     const customers = (await q(CUSTOMER_STATE_SQL + ` where l.edition = $1 order by l.expires_at`, [TRIAL])).rows.map(shapeCustomer)
@@ -1111,6 +1124,23 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
   // 공개 주소라 회사 이름·ERP 주소만 돌려주고, 같은 IP 1분 20회로 제한 (번호를 차례로 넣어 보는 것 방지)
   const lookups = new Map();
   // ── 홈페이지 무료 체험 신청서 — 판매자가 '체험 시작'을 누르면 회사 전용 서버가 열린다 ─────────────
+  // ── 체험 서버 접속 기록 (체험 서버가 로그인할 때마다 보낸다. 방문자는 IP·브라우저를 해시한 값만 받는다) ──
+  const DEMO_LOGINS = ['ceo', 'acct', 'gongmu', 'buyer', 'site1', 'tax', 'admin'];
+  const demoHits = new Map();
+  app.post('/api/v1/demo-visit', wrap(async (req, res) => {
+    const ip = req.ip ?? '';
+    const h = demoHits.get(ip);
+    const cur = h && Date.now() - h.at < 600_000 ? { n: h.n + 1, at: h.at } : { n: 1, at: Date.now() };
+    demoHits.set(ip, cur);
+    if (demoHits.size > 5000) demoHits.clear();
+    if (cur.n > 200) throw bad('잠시 뒤 다시 보내 주세요', 429);
+    const loginId = String(req.body?.loginId ?? '').trim();
+    const visitor = String(req.body?.visitor ?? '').trim();
+    if (!DEMO_LOGINS.includes(loginId) || !/^[0-9a-f]{16,64}$/.test(visitor)) throw bad('잘못된 요청입니다');
+    await q(`insert into demo_visit(day, login_id, visitor) values ((now() at time zone 'Asia/Seoul')::date, $1, $2)`, [loginId, visitor]);
+    res.status(204).end();
+  }));
+
   const trialHits = new Map();
   app.post('/api/v1/trial', wrap(async (req, res) => {
     const ip = req.ip ?? '';
