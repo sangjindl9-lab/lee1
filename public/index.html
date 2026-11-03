@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CCTV 설치 제안서</title>
+<link rel="stylesheet" href="/css/app.css">
+<script src="/shared/fov.js"></script>
+</head>
+<body>
+<div id="login" class="hidden"><form id="loginForm" class="card login">
+  <h1>CCTV 설치 제안서</h1><p class="muted">고객 상담용 설치 위치·화각 제안서를 만듭니다.</p>
+  <input name="username" placeholder="아이디" autocomplete="username" required>
+  <input name="password" type="password" placeholder="비밀번호" autocomplete="current-password" required>
+  <button class="primary" type="submit">로그인</button><div id="loginErr" class="err small"></div>
+</form></div>
+<div id="list" class="hidden">
+  <header class="top"><b>CCTV 설치 제안서</b><span class="grow"></span><span id="meName" class="small"></span>
+    <button data-act="products">카메라·품목</button><button data-act="settings">회사·안내 문구</button><button data-act="users" class="adm">직원</button><button data-act="me">내 정보</button><button data-act="logout">로그아웃</button></header>
+  <main class="wrap">
+    <div class="row" style="margin-bottom:12px"><h2>제안서</h2><input id="q" placeholder="고객명·주소 검색" style="width:220px"><span class="grow"></span><button class="primary" data-act="new">+ 새 제안서</button></div>
+    <div id="cards" class="cards"></div>
+  </main>
+</div>
+<div id="editor" class="hidden">
+  <header class="top"><button data-act="back">← 목록</button><b id="ptitle"></b><span id="saveState" class="pill ok">저장됨</span><span class="grow"></span>
+    <button data-act="info">고객 정보</button><button data-act="quote">견적</button><button data-act="share">고객 공유 링크</button><button class="primary" data-act="pdf">제안서 PDF</button></header>
+  <div class="tools" id="tools"></div>
+  <div class="main">
+    <aside class="left">
+      <section><div class="hd">도면 <span class="grow"></span><button data-act="addplan">+ 도면</button></div><div id="plans" class="list"></div></section>
+      <section><div class="hd">설치 카메라</div><div id="camlist" class="list"></div></section>
+      <section class="grow-sec"><div class="hd">카메라 선택 후 도면 클릭</div><div id="palette" class="list"></div></section>
+    </aside>
+    <div class="stage" id="stage"><svg id="svg"></svg><div id="hint" class="hint"></div></div>
+    <aside class="right" id="props"></aside>
+  </div>
+</div>
+<div id="toast" class="toast"></div>
+<script type="module" src="/js/app.js"></script>
+</body>
+</html>

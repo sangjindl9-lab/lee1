@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CCTV 설치 제안서</title>
+<link rel="stylesheet" href="/css/app.css">
+<style>
+  body { background: #f3f5f8; }
+  .sh { max-width: 1100px; margin: 0 auto; padding: 16px; }
+  .hero { background: var(--ac); color: #fff; border-radius: 12px; padding: 20px; display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+  .hero h1 { font-size: 22px; } .hero .sub { opacity: .85; font-size: 13px; margin-top: 4px; }
+  .hero img { height: 40px; background: #fff; border-radius: 6px; padding: 4px; }
+  .sec { background: #fff; border: 1px solid var(--line); border-radius: 12px; margin-top: 14px; padding: 16px; }
+  .sec h2 { font-size: 17px; color: var(--ac); margin-bottom: 10px; }
+  .planbox { width: 100%; background: #e9edf1; border-radius: 8px; overflow: hidden; }
+  .planbox svg { width: 100%; height: auto; display: block; }
+  .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+  .camgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px; }
+  .cc { border: 1px solid var(--line); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 6px; }
+  .cc .hd2 { display: flex; gap: 8px; align-items: center; font-weight: 700; font-size: 15px; }
+  .cc img { width: 100%; border-radius: 6px; max-height: 170px; object-fit: cover; }
+  .kv { display: grid; grid-template-columns: 70px 1fr; gap: 2px 8px; font-size: 13px; } .kv span:nth-child(odd) { color: var(--muted); }
+  .notice p { white-space: pre-wrap; font-size: 13px; line-height: 1.6; margin: 4px 0 10px; }
+  .legend { font-size: 12px; color: var(--muted); margin-top: 6px; }
+  @media print { .noprint { display: none !important; } .sec { break-inside: avoid; } }
+</style>
+<script src="/shared/fov.js"></script>
+</head>
+<body>
+<div class="sh" id="root"><p class="muted">불러오는 중…</p></div>
+<div id="toast" class="toast"></div>
+<script type="module" src="/js/share.js"></script>
+</body>
+</html>
