@@ -1,6 +1,7 @@
 import { api, toast, h, modal, formGrid, esc, confirmBox } from './ui.js';
 import { openEditor } from './editor.js';
 import { productManager } from './products.js';
+import { licenseBar, licenseDialog } from './license.js';
 
 const $ = id => document.getElementById(id);
 export const APP = { me: null };
@@ -16,6 +17,7 @@ $('loginForm').addEventListener('submit', async e => {
   catch (er) { $('loginErr').textContent = er.message; }
 });
 $('btnLogout').onclick = async () => { await api('/api/logout', { method: 'POST' }); location.hash = ''; show('login'); };
+$('btnLicense').onclick = () => licenseDialog();
 $('btnPw').onclick = () => { const o = {}; modal('비밀번호 변경', formGrid([{ k: 'current', label: '현재 비밀번호', type: 'password' }, { k: 'next', label: '새 비밀번호(8자 이상)', type: 'password' }], o), [{ label: '변경', primary: true, action: async () => { await api('/api/me/password', { body: o }); toast('비밀번호를 변경했습니다.'); } }]); };
 $('btnProducts').onclick = () => productManager(APP.me);
 $('showSample').onchange = () => loadProjects();
@@ -26,6 +28,7 @@ async function boot() {
   $('btnAdmin').classList.toggle('hidden', APP.me.user.role !== 'admin');
   $('btnNewProject').classList.toggle('hidden', !['admin', 'designer'].includes(APP.me.user.role));
   $('btnRestore').classList.toggle('hidden', !['admin', 'designer'].includes(APP.me.user.role));
+  licenseBar(APP.me.user.role === 'admin');
   route();
 }
 window.addEventListener('hashchange', () => APP.me && route());

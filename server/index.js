@@ -38,6 +38,8 @@ function auth(req, res, next) {
   req.user = u; next();
 }
 function admin(req, res, next) { if (req.user.role !== 'admin') return res.status(403).json({ error: '관리자 권한이 필요합니다.' }); next(); }
+// 라이선스 (체험 30일 · 만료/중지 시 보기 전용 · 사용자 수 제한)
+require('./license')(app, { product: 'design', appVersion: require('../package.json').version, getSetting, setSetting, countActiveUsers: () => db.prepare('SELECT COUNT(*) n FROM users WHERE active=1').get().n, auth, admin });
 // 프로젝트 역할: admin > designer > reviewer > viewer
 function projRole(user, pid) {
   const p = db.prepare('SELECT company_id FROM projects WHERE id=?').get(pid);
