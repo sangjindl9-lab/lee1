@@ -8,6 +8,10 @@ const S = { me: null, products: [], P: null, plan: null, sel: null, tool: 'selec
 window.S = S;
 const STATUS = ['작성 중', '제안 완료', '계약', '보류'];
 
+const isMobile = () => matchMedia('(max-width: 900px)').matches;
+function mt(v) { $('editor').dataset.mt = v; document.querySelectorAll('.mtabs button').forEach(b => b.classList.toggle('on', b.dataset.mt === v)); if (v === 'stage') setTimeout(() => { fit(); }, 20); }
+document.querySelectorAll('.mtabs button').forEach(b => b.onclick = () => mt(b.dataset.mt));
+$('editSel').onclick = () => mt('right');
 function show(id) { ['login', 'list', 'editor'].forEach(x => $(x).classList.toggle('hidden', x !== id)); }
 window.addEventListener('need-login', () => show('login'));
 $('loginForm').onsubmit = async e => { e.preventDefault(); const f = new FormData(e.target); try { await api('/api/login', { body: { username: f.get('username'), password: f.get('password') }, noAuthRedirect: true }); boot(); } catch (er) { $('loginErr').textContent = er.message; } };
@@ -26,7 +30,7 @@ async function loadList() {
   const box = $('cards'); box.innerHTML = '';
   list.filter(p => !q || [p.customer_name, p.customer_address, p.title].some(v => (v || '').includes(q))).forEach(p => box.appendChild(h('div', { class: 'pcard', onclick: () => location.hash = '#/p/' + p.id },
     h('div', { class: 'row' }, h('span', { class: 't grow' }, p.customer_name || '(고객명 없음)'), h('span', { class: 'pill st-' + p.status.slice(0, 2) }, p.status)),
-    h('div', { class: 'small' }, p.title), h('div', { class: 'small muted' }, p.customer_address || ''), h('div', { class: 'small muted' }, `카메라 ${p.cam_count}대 · ${p.staff_name || ''} · ${(p.updated_at || '').slice(0, 16)}`),
+    h('div', { class: 'small' }, p.title), h('div', { class: 'small muted' }, p.customer_address || ''), h('div', { class: 'small muted' }, [`카메라 ${p.cam_count}대`, p.staff_name, (p.updated_at || '').slice(0, 16)].filter(Boolean).join(' · ')),
     h('div', { class: 'row', style: { marginTop: '6px' } }, h('span', { class: 'grow' }), h('button', { class: 'small', onclick: async e => { e.stopPropagation(); const r = await api(`/api/proposals/${p.id}/copy`, { body: {} }); toast('사본을 만들었습니다.'); location.hash = '#/p/' + r.id; } }, '복사'), h('button', { class: 'small danger', onclick: async e => { e.stopPropagation(); if (await confirmBox(`「${p.customer_name} · ${p.title}」 제안서를 삭제합니다.`, '삭제')) { await api('/api/proposals/' + p.id, { method: 'DELETE' }); loadList(); } } }, '삭제')))));
   if (!list.length) box.appendChild(h('div', { class: 'muted' }, '아직 제안서가 없습니다. "+ 새 제안서"로 시작하세요.'));
 }
@@ -53,7 +57,7 @@ async function openProposal(id) {
   if (S.P && S.P.id !== id && S.dirty) await save();
   const p = await api('/api/proposals/' + id); S.P = p; S.P.data = Object.assign({ plans: [], cams: [], marks: [], quote: { vat: true, lines: [] }, options: {} }, p.data);
   S.plan = (S.P.data.plans[0] || {}).id || null; S.sel = null; S.undo = []; S.dirty = false; setSave();
-  show('editor'); $('ptitle').textContent = `${p.customer_name} · ${p.title}`;
+  show('editor'); mt('stage'); $('ptitle').textContent = `${p.customer_name} · ${p.title}`;
   buildTools(); refreshLeft(); renderProps(); draw(); setTimeout(fit, 30);
   if (!S.P.data.plans.length) setTimeout(() => toast('먼저 "+ 도면"으로 고객 집 평면도·배치도 사진(또는 PDF)을 올리세요.'), 300);
 }
@@ -72,25 +76,26 @@ window.addEventListener('beforeunload', e => { if (S.dirty) { save(); e.preventD
 function buildTools() {
   const t = $('tools'); t.innerHTML = '';
   const B = (k, label, title) => h('button', { class: S.tool === k ? 'on' : '', title: title || '', onclick: () => setTool(k) }, label);
-  t.append(B('select', '선택·이동'), B('cam', '카메라 추가', '왼쪽 아래 목록에서 카메라 종류를 고른 뒤 도면 클릭'), B('nvr', '녹화기'), B('monitor', '모니터'), B('route', '배선 경로', '클릭으로 점 추가, 더블클릭·Enter로 완료'), B('text', '문자'), h('span', { class: 'sep' }), B('scale', '축척 맞추기', '도면에서 길이를 아는 두 점 클릭'), h('button', { onclick: fit }, '전체 보기'), h('button', { onclick: undo, title: 'Ctrl+Z' }, '되돌리기'), h('span', { class: 'sep' }), h('span', { class: 'small muted' }, '카메라: 끌어서 이동 · 주황 점을 끌면 방향·거리 조정 · Delete 삭제'));
+  t.append(B('select', '선택·이동'), B('cam', '카메라 추가', '카메라 목록에서 카메라 종류를 고른 뒤 도면 클릭'), B('nvr', '녹화기'), B('monitor', '모니터'), B('route', '배선 경로', '클릭으로 점 추가, 더블클릭·Enter로 완료'), B('text', '문자'), h('span', { class: 'sep' }), B('scale', '축척 맞추기', '도면에서 길이를 아는 두 점 클릭'), h('button', { onclick: fit }, '전체 보기'), h('button', { onclick: undo, title: 'Ctrl+Z' }, '되돌리기'), h('span', { class: 'sep' }), h('span', { class: 'small muted' }, '카메라: 끌어서 이동 · 주황 점을 끌면 방향·거리 조정 · Delete 삭제'));
 }
 function setTool(k) { S.tool = k; S.temp = null; buildTools(); hint(); draw(); }
-function hint() { $('hint').textContent = { cam: S.toolProduct ? `「${(S.products.find(p => p.id === S.toolProduct) || {}).name}」 – 설치할 위치를 클릭하세요` : '왼쪽 목록에서 카메라 종류를 먼저 고르세요', nvr: '녹화기 위치를 클릭하세요', monitor: '모니터 위치를 클릭하세요', text: '문자를 넣을 위치를 클릭하세요', route: '배선 경로: 클릭으로 점 추가, 더블클릭 또는 Enter로 완료', scale: S.temp && S.temp.pts.length ? '두 번째 점을 클릭하세요' : '길이를 아는 두 점 중 첫 번째 점을 클릭하세요(예: 방 벽 길이, 축척 막대)' }[S.tool] || ''; }
+function hint() { $('hint').textContent = { cam: S.toolProduct ? `「${(S.products.find(p => p.id === S.toolProduct) || {}).name}」 – 설치할 위치를 클릭하세요` : '카메라 목록에서 카메라 종류를 먼저 고르세요', nvr: '녹화기 위치를 클릭하세요', monitor: '모니터 위치를 클릭하세요', text: '문자를 넣을 위치를 클릭하세요', route: '배선 경로: 클릭으로 점 추가, 더블클릭 또는 Enter로 완료', scale: S.temp && S.temp.pts.length ? '두 번째 점을 클릭하세요' : '길이를 아는 두 점 중 첫 번째 점을 클릭하세요(예: 방 벽 길이, 축척 막대)' }[S.tool] || ''; }
 function undo() { const u = S.undo.pop(); if (!u) return; S.P.data = u; markDirty(); S.sel = null; draw(); refreshLeft(); renderProps(); }
 
 function refreshLeft() {
   const pl = $('plans'); pl.innerHTML = '';
-  S.P.data.plans.forEach(p => pl.appendChild(h('div', { class: 'it' + (p.id === S.plan ? ' on' : ''), onclick: () => { S.plan = p.id; S.sel = null; draw(); refreshLeft(); renderProps(); setTimeout(fit, 10); } }, h('span', { class: 'grow' }, p.name || '도면'), PC.num(p.upm) ? null : h('span', { class: 'pill dirty', title: '축척 미설정' }, '축척'))));
+  S.P.data.plans.forEach(p => pl.appendChild(h('div', { class: 'it' + (p.id === S.plan ? ' on' : ''), onclick: () => { S.plan = p.id; S.sel = null; draw(); refreshLeft(); renderProps(); if (isMobile()) mt('stage'); setTimeout(fit, 10); } }, h('span', { class: 'grow' }, p.name || '도면'), PC.num(p.upm) ? null : h('span', { class: 'pill dirty', title: '축척 미설정' }, '축척'))));
   if (!S.P.data.plans.length) pl.appendChild(h('div', { class: 'it muted small' }, '도면 없음'));
   const cl = $('camlist'); cl.innerHTML = '';
-  PC.numbered(S.P.data).forEach(c => { const I = PC.camInfo(c, S.products); cl.appendChild(h('div', { class: 'it' + (S.sel === c.id ? ' on' : ''), onclick: () => { if (c.plan !== S.plan) { S.plan = c.plan; setTimeout(fit, 10); } S.sel = c.id; draw(); refreshLeft(); renderProps(); } }, h('span', { class: 'dot', style: { background: c.color } }, c.no), h('span', { class: 'grow' }, h('div', null, c.place || '(위치명 입력)'), h('div', { class: 'small muted' }, I.name)))); });
+  PC.numbered(S.P.data).forEach(c => { const I = PC.camInfo(c, S.products); cl.appendChild(h('div', { class: 'it' + (S.sel === c.id ? ' on' : ''), onclick: () => { if (c.plan !== S.plan) { S.plan = c.plan; setTimeout(fit, 10); } S.sel = c.id; draw(); refreshLeft(); renderProps(); if (isMobile()) mt('stage'); } }, h('span', { class: 'dot', style: { background: c.color } }, c.no), h('span', { class: 'grow' }, h('div', null, c.place || '(위치명 입력)'), h('div', { class: 'small muted' }, I.name)))); });
   const pa = $('palette'); pa.innerHTML = '';
-  S.products.filter(p => p.kind === 'camera' && p.active).forEach(p => pa.appendChild(h('div', { class: 'it' + (S.toolProduct === p.id && S.tool === 'cam' ? ' on' : ''), onclick: () => { S.toolProduct = p.id; setTool('cam'); refreshLeft(); } }, h('span', { class: 'grow' }, h('div', null, p.name), h('div', { class: 'small muted' }, `${p.data.type || ''} · 화각 ${p.data.hfov ?? '?'}° · ${p.data.range_m ?? '?'}m`)))));
+  S.products.filter(p => p.kind === 'camera' && p.active).forEach(p => pa.appendChild(h('div', { class: 'it' + (S.toolProduct === p.id && S.tool === 'cam' ? ' on' : ''), onclick: () => { S.toolProduct = p.id; setTool('cam'); refreshLeft(); if (isMobile()) mt('stage'); } }, h('span', { class: 'grow' }, h('div', null, p.name), h('div', { class: 'small muted' }, `${p.data.type || ''} · 화각 ${p.data.hfov ?? '?'}° · ${p.data.range_m ?? '?'}m`)))));
 }
 
 // ---------- 그리기 ----------
 const svg = () => $('svg');
 function draw() {
+  $('editSel').classList.toggle('hidden', !S.sel);
   const s = svg(); s.innerHTML = ''; const p = plan(); if (!p) { const t = el('text', { x: 30, y: 50, 'font-size': 16, fill: '#888' }, s); t.textContent = '도면이 없습니다. 왼쪽 "+ 도면"으로 평면도·배치도 이미지나 PDF를 올리세요.'; return; }
   const g = el('g', { transform: `matrix(${S.view.z},0,0,${S.view.z},${S.view.tx},${S.view.ty})` }, s);
   renderPlan(g, p, S.P.data, S.products, { imgUrl: pl => `/api/files/${pl.file_id}?page=${pl.page || 1}`, selected: new Set(S.sel ? [S.sel] : []), unit: 1 / S.view.z, editable: true });
@@ -105,13 +110,18 @@ function draw() {
 function handleR(c, I, p) { const upm = PC.num(p.upm); return upm && I.range ? I.range * upm : p.width * 0.12; }
 function fit() { const p = plan(); if (!p) return; const r = svg().getBoundingClientRect(); const z = Math.min(r.width / p.width, r.height / p.height) * 0.95; S.view = { z, tx: (r.width - p.width * z) / 2, ty: (r.height - p.height * z) / 2 }; draw(); }
 const toP = e => { const r = svg().getBoundingClientRect(); return [(e.clientX - r.left - S.view.tx) / S.view.z, (e.clientY - r.top - S.view.ty) / S.view.z]; };
-let drag = null;
+let drag = null; const ptrs = new Map(); let pinch = null;
+const pinchStart = () => { const [a, b] = [...ptrs.values()]; const r = svg().getBoundingClientRect(); pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), cx: (a.x + b.x) / 2 - r.left, cy: (a.y + b.y) / 2 - r.top, v: { ...S.view } }; if (drag && drag.moved && drag.before) { S.undo.push(drag.before); markDirty(); } drag = null; };
+svg().addEventListener('pointerdown', e => { ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY }); if (ptrs.size === 2) { pinchStart(); e.stopImmediatePropagation(); } }, true);
+svg().addEventListener('pointermove', e => { if (!ptrs.has(e.pointerId)) return; ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY }); if (pinch && ptrs.size === 2) { e.stopImmediatePropagation(); const [a, b] = [...ptrs.values()]; const r = svg().getBoundingClientRect(); const f = Math.hypot(a.x - b.x, a.y - b.y) / (pinch.d || 1); const cx = (a.x + b.x) / 2 - r.left, cy = (a.y + b.y) / 2 - r.top; const z = pinch.v.z * f; S.view = { z, tx: cx - (pinch.cx - pinch.v.tx) * f, ty: cy - (pinch.cy - pinch.v.ty) * f }; draw(); } }, true);
+const ptrEnd = e => { ptrs.delete(e.pointerId); if (pinch) { if (ptrs.size < 2) { pinch = null; drag = null; } e.stopImmediatePropagation(); } };
+svg().addEventListener('pointerup', ptrEnd, true); svg().addEventListener('pointercancel', ptrEnd, true);
 svg().addEventListener('wheel', e => { e.preventDefault(); const r = svg().getBoundingClientRect(); const f = e.deltaY < 0 ? 1.15 : 1 / 1.15; const cx = e.clientX - r.left, cy = e.clientY - r.top; S.view.tx = cx - (cx - S.view.tx) * f; S.view.ty = cy - (cy - S.view.ty) * f; S.view.z *= f; draw(); }, { passive: false });
 svg().addEventListener('pointerdown', e => {
   const p = plan(); if (!p) return; const pt = toP(e); const D = S.P.data;
   const hdl = e.target.getAttribute && e.target.getAttribute('data-h');
   if (hdl) { drag = { kind: 'handle', h: hdl, before: clone(D) }; svg().setPointerCapture(e.pointerId); return; }
-  if (S.tool === 'cam') { if (!S.toolProduct) { toast('왼쪽 아래 목록에서 카메라 종류를 먼저 고르세요.', true); return; } const pr = S.products.find(x => x.id === S.toolProduct); const seq = Math.max(0, ...D.cams.map(c => c.seq || 0)) + 1; const id = uuid(); change('카메라 추가', d => d.cams.push({ id, plan: p.id, seq, x: pt[0], y: pt[1], dir: 180, product_id: pr.id, place: '', show_night: pr.data.place !== '실외' })); S.sel = id; setTool('select'); draw(); refreshLeft(); renderProps(); setTimeout(() => { const f = document.querySelector('#props input'); f && f.focus(); }, 50); return; }
+  if (S.tool === 'cam') { if (!S.toolProduct) { toast('카메라 목록에서 카메라 종류를 먼저 고르세요.', true); return; } const pr = S.products.find(x => x.id === S.toolProduct); const seq = Math.max(0, ...D.cams.map(c => c.seq || 0)) + 1; const id = uuid(); change('카메라 추가', d => d.cams.push({ id, plan: p.id, seq, x: pt[0], y: pt[1], dir: 180, product_id: pr.id, place: '', show_night: pr.data.place !== '실외' })); S.sel = id; setTool('select'); draw(); refreshLeft(); renderProps(); if (isMobile()) mt('right'); else setTimeout(() => { const f = document.querySelector('#props input'); f && f.focus(); }, 50); return; }
   if (S.tool === 'nvr' || S.tool === 'monitor') { const id = uuid(); change('장비', d => d.marks.push({ id, plan: p.id, type: S.tool, x: pt[0], y: pt[1] })); S.sel = id; setTool('select'); renderProps(); return; }
   if (S.tool === 'text') { const t = prompt('표시할 문자'); if (t) { const id = uuid(); change('문자', d => d.marks.push({ id, plan: p.id, type: 'text', x: pt[0], y: pt[1], text: t })); } setTool('select'); return; }
   if (S.tool === 'route' || S.tool === 'scale') { S.temp = S.temp || { pts: [] }; S.temp.pts.push(pt); if (S.tool === 'scale' && S.temp.pts.length === 2) { const [a, b] = S.temp.pts; S.temp = null; setTool('select'); scaleDialog(a, b); return; } hint(); draw(); return; }

@@ -32,9 +32,10 @@
       <section><div class="hd">설치 카메라</div><div id="camlist" class="list"></div></section>
       <section class="grow-sec"><div class="hd">카메라 선택 후 도면 클릭</div><div id="palette" class="list"></div></section>
     </aside>
-    <div class="stage" id="stage"><svg id="svg"></svg><div id="hint" class="hint"></div></div>
+    <div class="stage" id="stage"><svg id="svg"></svg><div id="hint" class="hint"></div><button id="editSel" class="primary fab hidden">✎ 선택 항목 편집</button></div>
     <aside class="right" id="props"></aside>
   </div>
+  <nav class="mtabs"><button data-mt="stage" class="on">도면</button><button data-mt="left">카메라 목록</button><button data-mt="right">속성·정보</button></nav>
 </div>
 <div id="toast" class="toast"></div>
 <script type="module" src="/js/app.js"></script>
