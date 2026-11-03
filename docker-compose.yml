@@ -1,0 +1,10 @@
+services:
+  cctv-design:
+    build: .
+    image: cctv-design:1.0.0
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file: .env
+    volumes:
+      - ./data:/data          # DB·업로드 원본·변환 결과 (백업 대상)
