@@ -92,6 +92,12 @@ async function uploadTo(siteId, kind, opts) {
   const r = await api('POST', `/api/sites/${siteId}/files`, fd); toast('업로드 완료'); return r;
 }
 const img = (fid, w = 400) => `/api/files/${fid}?w=${w}`;
+// 촬영 버튼 + 미리 찍어둔 사진(갤러리) 선택 버튼
+function photoBtns(kind, after, { label = '촬영', cls = '', accept = 'image/*' } = {}) {
+  const go = (capture) => guard(async () => { const f = await uploadTo(sid(), kind, { capture, accept }); if (f) await after(f); });
+  return [h('button', { class: cls, onclick: go(true) }, '📷 ' + label),
+    h('button', { class: cls, onclick: go(false) }, '🖼 ' + (accept.includes('pdf') ? '사진·PDF 선택' : '사진 선택'))];
+}
 
 // ---------- 라우팅 ----------
 const routes = [];
@@ -320,8 +326,9 @@ VIEWS.devices = async (el, s) => {
   };
   el.replaceChildren(
     h('div', { class: 'row' }, h('button', { class: 'acc', onclick: guard(() => deviceEditor(s)) }, '+ 직접 입력'),
-      h('button', { onclick: guard(async () => { const f = await uploadTo(sid(), 'nameplate'); if (f) await analyze(f, 'nameplate'); }) }, '📷 명판 촬영으로 등록'),
-      h('button', { onclick: guard(async () => { const f = await uploadTo(sid(), 'nameplate'); if (f) await analyze(f, 'nameplate', null, 'planned'); }) }, '📷 추가 예정기기 명판')),
+      photoBtns('nameplate', (f) => analyze(f, 'nameplate'), { label: '명판 촬영으로 등록' })),
+    h('div', { class: 'row', style: 'margin-top:6px' }, h('span', { class: 'small muted' }, '추가 예정기기:'),
+      photoBtns('nameplate', (f) => analyze(f, 'nameplate', null, 'planned'), { label: '명판 촬영', cls: 'sm' })),
     h('p', { class: 'hint' }, '냉방능력·난방능력은 전기 소비전력이 아닙니다. 명판의 "소비전력" 또는 "정격입력"을 입력하세요. 대표값은 참고값이며 명판·실측값을 우선합니다.'),
     sec('현재 사용 중', 'current'), sec('추가 예정', 'planned'));
 };
@@ -418,7 +425,7 @@ VIEWS.panels = async (el, s) => {
     h('h2', {}, '사진'),
     h('div', { class: 'grid' }, PHOTO_SLOTS.map(([k, l]) => h('div', { class: 'slot' }, h('b', {}, l),
       k === 'panel_inside' && ME.role === 'user' ? h('span', { class: 'hint' }, '전기공사업체·검토 담당자가 안전하게 확보한 사진만 등록') :
-        h('button', { class: 'sm', onclick: guard(async () => { const f = await uploadTo(sid(), k); if (f) { if (k !== 'panel_inside') await analyze(f, k === 'meter' ? 'meter' : 'panel'); else reload(); } }) }, '📷 촬영/선택'),
+        h('div', { class: 'row' }, photoBtns(k, (f) => (k !== 'panel_inside' ? analyze(f, k === 'meter' ? 'meter' : 'panel') : reload()), { cls: 'sm' })),
       h('div', { class: 'thumbs' }, photos(k).map((f) => { const e = lastEx(f.id); return h('div', {}, h('img', { src: img(f.id, 200), onclick: () => e?.status === 'done' ? reviewExtraction({ ...e, file_id: f.id }) : window.open(`/api/files/${f.id}`) }),
         h('div', { class: 'hint' }, e ? ({ done: e.applied_at ? '확인 반영됨' : '확인 대기', not_configured: 'AI 미설정', no_consent: '동의 없음', failed: '분석 실패' }[e.status]) : '미분석'),
         !e || e.status !== 'done' ? h('button', { class: 'sm', onclick: guard(() => analyze(f, k === 'meter' ? 'meter' : 'panel')) }, '분석') : null); }))))),
@@ -452,7 +459,7 @@ VIEWS.bills = async (el, s) => {
   const c = await api('GET', `/api/sites/${sid()}/result`);
   const bills = [...s.bills].sort((a, b) => String(a.period_end).localeCompare(String(b.period_end)));
   el.replaceChildren(
-    h('div', { class: 'row' }, h('button', { class: 'acc', onclick: guard(async () => { const f = await uploadTo(sid(), 'bill', { capture: true, accept: 'image/*,application/pdf' }); if (f) await analyze(f, 'bill'); }) }, '📷 고지서 촬영·PDF'),
+    h('div', { class: 'row' }, photoBtns('bill', (f) => analyze(f, 'bill'), { label: '고지서 촬영', cls: 'acc', accept: 'image/*,application/pdf' }),
       h('button', { onclick: () => billEditor(s) }, '직접 입력')),
     h('p', { class: 'hint' }, '추출값은 원문 위치와 함께 보여주며, 확인한 값만 계산에 반영합니다. 월 사용량(kWh)은 최대수요전력(kW)으로 쓰지 않습니다. 최근 12개월을 등록하면 계절별 비교가 됩니다.'),
     h('div', { class: 'tw' }, h('table', {}, h('tr', {}, ['기간', '계약전력', '사용량', '최대수요', '청구액', '상태', ''].map((t) => h('th', {}, t))),
@@ -558,7 +565,7 @@ VIEWS.records = async (el, s) => {
   const cf = form([{ k: 'company_id', l: '상담 업체', type: 'select', opts: [['', '운영자에게 문의'], ...companies.map((x) => [x.id, x.name])] }, { k: 'phone', l: '연락처' }, { k: 'message', l: '요청 내용', type: 'textarea', wide: 1 }]);
   const shareSel = h('select', {}, companies.map((x) => h('option', { value: x.id }, x.name)));
   const costIn = h('input', { inputmode: 'numeric', placeholder: '실제 공사비(원)' }); const noteIn = h('input', { placeholder: '메모' });
-  const rec = (kind) => guard(async () => { const f = await uploadTo(sid(), kind); if (f) { await api('POST', `/api/sites/${sid()}/records`, { kind, file_id: f.id }); reload(); } });
+  const rec = (kind, label) => photoBtns(kind, async (f) => { await api('POST', `/api/sites/${sid()}/records`, { kind, file_id: f.id }); reload(); }, { label });
   el.replaceChildren(
     h('h2', {}, '현장 방문 상담 요청'), h('div', { class: 'card' }, cf, h('button', { class: 'pri', style: 'margin-top:8px', onclick: guard(async () => { const v = cf.value(); await api('POST', `/api/sites/${sid()}/consults`, v); toast('상담 요청이 접수되었습니다'); reload(); }) }, '상담 요청')),
     s.consults.map((x) => h('div', { class: 'small' }, `${x.created_at} · ${x.status} · ${x.message}`)),
@@ -566,7 +573,7 @@ VIEWS.records = async (el, s) => {
       h('div', { class: 'row' }, shareSel, h('button', { onclick: guard(async () => { if (!shareSel.value) return; await api('POST', `/api/sites/${sid()}/shares`, { company_id: Number(shareSel.value) }); reload(); }) }, '동의하고 공유')),
       s.shares.map((x) => h('div', { class: 'row small' }, `${x.company} · ${x.consent_at}`, x.revoked_at ? h('span', { class: 'badge' }, '철회됨') : h('button', { class: 'sm dan', onclick: guard(async () => { await api('DELETE', `/api/sites/${sid()}/shares/${x.id}`); reload(); }) }, '철회'))))],
     h('h2', {}, '공사 전후 사진·실제 비용'),
-    h('div', { class: 'row' }, h('button', { onclick: rec('before') }, '📷 공사 전'), h('button', { onclick: rec('after') }, '📷 공사 후')),
+    h('div', { class: 'row' }, h('b', { class: 'small' }, '공사 전'), rec('before', '촬영')), h('div', { class: 'row', style: 'margin-top:6px' }, h('b', { class: 'small' }, '공사 후'), rec('after', '촬영')),
     h('div', { class: 'thumbs', style: 'margin:8px 0' }, s.records.filter((r) => r.file_id).map((r) => h('div', {}, h('img', { src: img(r.file_id, 200) }), h('div', { class: 'hint' }, r.kind === 'before' ? '공사 전' : '공사 후')))),
     h('div', { class: 'row' }, costIn, noteIn, h('button', { onclick: guard(async () => { await api('POST', `/api/sites/${sid()}/records`, { kind: 'actual_cost', amount: Number(costIn.value.replace(/,/g, '')), note: noteIn.value }); reload(); }) }, '실제 비용 기록')),
     actual ? h('div', { class: 'card' }, h('b', {}, '실제 비용과 개략 견적 차이'), h('div', {}, `실제 ${won(actual)} / 견적 ${c.quote.totals ? won(c.quote.totals.total[0]) + ' ~ ' + won(c.quote.totals.total[1]) : '없음'}`),
