@@ -5,6 +5,7 @@ class Client {
   constructor(base) { this.base = base || process.env.BASE_URL || 'http://localhost:3000'; this.cookie = ''; }
   async req(method, url, body, opts = {}) {
     const headers = { cookie: this.cookie };
+    if (process.env.SEED_INTERNAL) headers['x-forwarded-proto'] = 'https'; // 서버 내부 샘플 생성(보안 쿠키 환경)
     let b;
     if (body instanceof FormData) b = body; else if (body !== undefined) { headers['content-type'] = 'application/json'; b = JSON.stringify(body); }
     const r = await fetch(this.base + url, { method, headers, body: b, redirect: 'manual' });

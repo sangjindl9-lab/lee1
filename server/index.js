@@ -537,7 +537,7 @@ if (require.main === module) app.listen(PORT, () => {
   console.log(`CCTV 공사 설계 프로그램 실행: http://localhost:${PORT}`);
   // SEED_SAMPLE=1: 샘플 프로젝트가 없으면 최초 1회 생성 (실제 API 경로로 저장)
   if (process.env.SEED_SAMPLE === '1' && process.env.ADMIN_PASSWORD && !db.prepare('SELECT 1 FROM projects WHERE is_sample=1').get()) {
-    process.env.BASE_URL = `http://127.0.0.1:${PORT}`;
+    process.env.BASE_URL = `http://127.0.0.1:${PORT}`; process.env.SEED_INTERNAL = '1';
     require('../scripts/seed-sample').main().then(r => console.log('[샘플] 생성 완료', r.pid)).catch(e => console.error('[샘플] 생성 실패', e.message));
   }
 });
