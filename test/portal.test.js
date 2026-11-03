@@ -268,7 +268,7 @@ test('무료 체험: 홈페이지 신청 → 판매자가 시작하면 30일 체
   assert.equal(c.state, 'TRIAL');
   assert.equal(c.current.trial, true);
   assert.equal(c.current.daysLeft, 30);
-  assert.deepEqual([...c.current.modules].sort(), ['geomcheuk', 'gongjung', 'sajindaeji']);
+  assert.deepEqual([...c.current.modules].sort(), ['chakgong', 'geomcheuk', 'gongjung', 'sajindaeji']);
   assert.equal(c.licenses[0].amount, 0);
   assert.equal(c.licenses[0].maxUsers, 6);
   const payload = L.verify(c.licenses[0].licenseText, publicKey);
