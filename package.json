@@ -1,0 +1,17 @@
+{
+  "name": "cctv-license",
+  "version": "1.0.0",
+  "private": true,
+  "description": "CCTV 공사 설계·설치 제안서 라이선스 관리 (판매자 전용)",
+  "main": "server.js",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test --test-concurrency=1 test/*.test.js"
+  },
+  "license": "UNLICENSED",
+  "dependencies": {
+    "express": "^5.1.0",
+    "pg": "^8.16.0"
+  }
+}
