@@ -24,7 +24,7 @@ export async function rfc(fn, params, referer = '/goods/inList.do') {
     method: 'POST',
     headers: { 'User-Agent': UA, 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8', 'X-Requested-With': 'XMLHttpRequest', Referer: B + referer, ...(ck ? { Cookie: ck } : {}) },
     body: new URLSearchParams({ p: JSON.stringify(ptab), fn: JSON.stringify({ ZFUNCNM: fn }) }),
-    signal: AbortSignal.timeout(30000),
+    signal: AbortSignal.timeout(15000),
   });
   if (!r.ok) throw new Error(`철도공사 사이트 응답 ${r.status}`);
   const outer = await r.json();

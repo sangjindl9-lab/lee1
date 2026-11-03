@@ -37,6 +37,14 @@ const KIND_OF = (nm, title = '') => {
 };
 
 const ymd = (s) => String(s || '').slice(0, 10);
+// 철도공사 사이트가 느릴 때 검색 전체가 기다리지 않도록: 정해진 시간 안에 안 오면 빈 결과로 먼저 응답
+// (조회는 뒤에서 계속돼 캐시에 남으므로 다음 검색부터는 바로 나옴)
+const SLOW_MS = 8000;
+function inTime(p, label) {
+  let timer;
+  const late = new Promise((resolve) => { timer = setTimeout(() => { console.log(`[unify] ${label} ${SLOW_MS / 1000}초 넘어 이번 검색에서 제외`); resolve(null); }, SLOW_MS); });
+  return Promise.race([p.finally(() => clearTimeout(timer)), late]);
+}
 const inRange = (d, from, to) => { const x = ymd(d); return x && x >= from && x <= to; };
 const apiToIso = (s) => (s ? `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}` : '');
 
@@ -114,7 +122,7 @@ export async function extBids(kind, p, { key, extLoad }) {
   // 한국철도공사 (전자조달 실시간) — 공고일 기준. 실패하면 공공데이터 파일로 대신
   let korailLive = false;
   if (!byOpeng) {
-    jobs.push(korailNotices(from, to).then((list) => { korailLive = true; list.forEach((r) => { if (r._kind === kind) rows.push(r); }); })
+    jobs.push(inTime(korailNotices(from, to), '철도공사 공고').then((list) => { if (!list) return; korailLive = true; list.forEach((r) => { if (r._kind === kind) rows.push(r); }); })
       .catch((e) => console.log(`[unify] 철도공사 실시간 실패: ${e.message}`)));
   }
   await Promise.all(jobs.splice(0));
@@ -208,9 +216,10 @@ export async function extAwards(kind, p, { key, extLoad }) {
     const until = new Date(Math.min(new Date(today), new Date(to).getTime() + 60 * 86400000)).toISOString().slice(0, 10);
     // 계약결과(확정)를 우선, 아직 계약 전인 건은 개찰결과 1순위로
     jobs.push(Promise.all([
-      korailContracts(from, until).catch((e) => { console.log(`[unify] 철도공사 계약 실패: ${e.message}`); return []; }),
-      korailOpengRows(from, to).catch((e) => { console.log(`[unify] 철도공사 개찰 실패: ${e.message}`); return []; }),
+      inTime(korailContracts(from, until).catch((e) => { console.log(`[unify] 철도공사 계약 실패: ${e.message}`); return []; }), '철도공사 계약'),
+      inTime(korailOpengRows(from, to).catch((e) => { console.log(`[unify] 철도공사 개찰 실패: ${e.message}`); return []; }), '철도공사 개찰'),
     ]).then(([cont, openg]) => {
+      cont = cont || []; openg = openg || [];
       const done = new Set();
       const g2bNo = (r) => /^R\d{2}/.test(r.bidNtceNo); // 나라장터로 발주한 건은 나라장터 자료에 이미 있음
       for (const r of cont) if (!g2bNo(r) && want(r._kind) && inRange(r.opengDt, from, to)) { rows.push(r); done.add(r.bidNtceNo); }
