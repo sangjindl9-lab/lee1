@@ -1,6 +1,7 @@
 // CCTV 설치 제안서 – 화면
 import { api, toast, h, modal, formGrid, download, confirmBox, uuid } from './ui.js';
 import { renderPlan, el } from './planview.js';
+import { licenseBar, licenseDialog } from './license.js';
 const PC = window.PropCalc;
 const $ = id => document.getElementById(id);
 const clone = o => JSON.parse(JSON.stringify(o));
@@ -21,6 +22,7 @@ async function boot() {
   $('meName').textContent = `${S.me.user.name} · ${S.me.company.name || ''}`;
   document.querySelectorAll('.adm').forEach(b => b.classList.toggle('hidden', S.me.user.role !== 'admin'));
   if (S.me.company.color) document.documentElement.style.setProperty('--ac', S.me.company.color);
+  licenseBar(S.me.user.role === 'admin');
   S.products = await api('/api/products'); route();
 }
 window.addEventListener('hashchange', () => S.me && route());
@@ -44,6 +46,7 @@ const ACT = {
   products: () => productManager(),
   settings: () => settingsDialog(),
   users: () => usersDialog(),
+  license: () => licenseDialog(),
   back: async () => { if (S.dirty) await save(); location.hash = ''; },
   info: () => { const o = { ...S.P }; modal('고객 정보', formGrid(CUST.concat([{ k: 'status', label: '진행 상태', type: 'select', options: STATUS }]), o), [{ label: '적용', primary: true, action: () => { CUST.concat([{ k: 'status' }]).forEach(f => S.P[f.k] = o[f.k]); markDirty(); $('ptitle').textContent = `${S.P.customer_name} · ${S.P.title}`; renderProps(); } }]); },
   quote: () => quoteDialog(),

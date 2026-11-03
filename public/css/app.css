@@ -78,3 +78,4 @@ h1, h2, h3 { margin: 0; } h2 { font-size: 18px; }
   .grid { display: block; overflow-x: auto; white-space: nowrap; }
 }
 @media (min-width: 901px) { .fab { display: none !important; } }
+@media (max-width: 900px) { #licBar { bottom: 50px !important; } }

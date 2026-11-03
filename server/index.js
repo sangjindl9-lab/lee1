@@ -61,6 +61,8 @@ if (!db.prepare('SELECT COUNT(*) n FROM products').get().n) require('./seed-prod
 // ----- 인증 -----
 function auth(req, res, next) { const u = req.session.uid && db.prepare('SELECT id,username,name,phone,role,active FROM users WHERE id=?').get(req.session.uid); if (!u || !u.active) return res.status(401).json({ error: '로그인이 필요합니다.' }); req.user = u; next(); }
 const admin = (req, res, next) => req.user.role === 'admin' ? next() : res.status(403).json({ error: '관리자만 가능합니다.' });
+// 라이선스 (체험 30일 · 만료/중지 시 보기 전용 · 사용자 수 제한)
+require('./license')(app, { product: 'proposal', appVersion: require('../package.json').version, getSetting, setSetting, countActiveUsers: () => db.prepare('SELECT COUNT(*) n FROM users WHERE active=1').get().n, auth, admin });
 const fails = new Map();
 app.post('/api/login', (req, res) => {
   const { username, password } = req.body || {}; const k = username + req.ip; const f = fails.get(k) || 0;
