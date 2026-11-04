@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>이음전력 진단</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .badge { @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium; }
+    .status-SUFFICIENT { background:#d1fae5; color:#065f46; }
+    .status-CONTRACT_INCREASE_REVIEW { background:#fef3c7; color:#92400e; }
+    .status-WIRING_BREAKER_REVIEW { background:#ffedd5; color:#9a3412; }
+    .status-BOTH_REVIEW { background:#fee2e2; color:#991b1b; }
+    .status-INSUFFICIENT_INFO { background:#f1f5f9; color:#334155; }
+    .status-EXPERT_REQUIRED { background:#f3e8ff; color:#6b21a8; }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-900 min-h-screen">
+  <header class="border-b bg-white">
+    <div class="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
+      <div class="font-bold text-teal-800 flex items-center gap-2">
+        <span class="w-8 h-8 rounded-lg bg-teal-700 text-white flex items-center justify-center text-sm">이</span>
+        이음전력 진단
+      </div>
+      <span class="text-xs text-slate-500">데모 · 계산 엔진 독립</span>
+    </div>
+  </header>
+
+  <main class="max-w-5xl mx-auto px-4 py-6 space-y-6">
+    <section class="text-center space-y-2">
+      <h1 class="text-2xl font-bold">전력 부족·증설·설비 개선 검토</h1>
+      <p class="text-sm text-slate-600">계약전력 · 예상 사용전력 · 설비 수용능력을 구분합니다. 로그인 없이 바로 테스트하세요.</p>
+    </section>
+
+    <div class="grid gap-6 lg:grid-cols-2">
+      <!-- 입력 -->
+      <div class="space-y-4">
+        <div class="bg-white rounded-xl border p-4 space-y-3 shadow-sm">
+          <h2 class="font-semibold">계약·공급 정보</h2>
+          <div>
+            <label class="block text-sm font-medium mb-1">계약전력 (kW) — 모르면 비움</label>
+            <input id="contractKw" type="number" step="0.1" value="5" class="w-full border rounded-lg px-3 py-2 text-sm" />
+          </div>
+          <div class="flex gap-4 text-sm">
+            <label class="flex items-center gap-2"><input type="radio" name="kepco" value="1" checked /> 한전 직접 계약</label>
+            <label class="flex items-center gap-2"><input type="radio" name="kepco" value="0" /> 건물 관리비 납부</label>
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-sm font-medium mb-1">전압 (V)</label>
+              <select id="voltage" class="w-full border rounded-lg px-3 py-2 text-sm">
+                <option value="220">220</option>
+                <option value="380">380</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-sm font-medium mb-1">상</label>
+              <select id="phase" class="w-full border rounded-lg px-3 py-2 text-sm">
+                <option value="SINGLE">단상</option>
+                <option value="THREE">삼상</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <label class="block text-sm font-medium mb-1">주차단기 (A) — 모르면 비움</label>
+            <input id="mainBreaker" type="number" value="30" class="w-full border rounded-lg px-3 py-2 text-sm" />
+          </div>
+        </div>
+
+        <div class="bg-white rounded-xl border p-4 space-y-3 shadow-sm">
+          <h2 class="font-semibold">기기 목록</h2>
+          <ul id="deviceList" class="space-y-2 text-sm"></ul>
+          <div class="grid grid-cols-2 gap-2">
+            <input id="newName" placeholder="기기명" class="border rounded-lg px-3 py-2 text-sm" />
+            <input id="newPower" type="number" placeholder="소비전력 W" class="border rounded-lg px-3 py-2 text-sm" />
+          </div>
+          <div class="flex gap-2">
+            <select id="newStatus" class="border rounded-lg px-2 py-2 text-sm">
+              <option value="CURRENT">현재</option>
+              <option value="PLANNED" selected>추가예정</option>
+            </select>
+            <button onclick="addDevice()" class="bg-slate-100 hover:bg-slate-200 rounded-lg px-4 py-2 text-sm">추가</button>
+          </div>
+          <div class="flex flex-wrap gap-1 pt-1">
+            <button onclick="addSample('에어컨',1800)" class="text-xs border rounded px-2 py-1">에어컨 1.8kW</button>
+            <button onclick="addSample('인덕션',3300)" class="text-xs border rounded px-2 py-1">인덕션 3.3kW</button>
+            <button onclick="addSample('전기온수기',3000)" class="text-xs border rounded px-2 py-1">온수기 3kW</button>
+            <button onclick="addSample('전기차충전기',7000)" class="text-xs border rounded px-2 py-1">EV 7kW</button>
+            <button onclick="addSample('튀김기',4000)" class="text-xs border rounded px-2 py-1">튀김기 4kW</button>
+            <button onclick="addSample('냉장고',150)" class="text-xs border rounded px-2 py-1">냉장고</button>
+          </div>
+        </div>
+
+        <button onclick="runDiagnosis()" class="w-full bg-teal-700 hover:bg-teal-800 text-white rounded-lg py-3 font-medium">진단 실행</button>
+      </div>
+
+      <!-- 결과 -->
+      <div id="resultArea" class="space-y-4">
+        <div class="bg-white rounded-xl border p-8 text-center text-slate-500 text-sm shadow-sm">
+          왼쪽에서 정보를 입력하고 「진단 실행」을 누르세요.
+        </div>
+      </div>
+    </div>
+
+    <section class="bg-white rounded-xl border p-4 text-xs text-slate-600 space-y-1 shadow-sm">
+      <p><strong>핵심 구분</strong></p>
+      <p>· <b>계약전력</b>: 한전 또는 건물 관리주체와 계약·배정된 전력</p>
+      <p>· <b>예상 사용전력</b>: 기기와 동시 사용 조건으로 계산한 전력 (월간 kWh ≠ 순간 kW)</p>
+      <p>· <b>설비 수용능력</b>: 인입선·간선·분전반·차단기·분기회로가 감당할 수 있는 범위</p>
+      <p class="pt-1">사진 분석은 보조 기능입니다. 사진만으로 실제 부하·전선 허용전류·누전·접지·법적 적합성을 확정하지 않습니다.</p>
+      <p>“안전 인증”, “검사 합격” 표현을 사용하지 않습니다. 한전 최종 산정 전 결과입니다.</p>
+      <p>계산 엔진 버전: 1.0.0-2026-11 (AI 비관여, 순수 규칙 기반)</p>
+    </section>
+  </main>
+
+  <script>
+    const RESULT_LABEL = {
+      SUFFICIENT: "입력 조건상 여유 있음",
+      CONTRACT_INCREASE_REVIEW: "계약전력 증설 검토",
+      WIRING_BREAKER_REVIEW: "배선·차단기·회로 개선 검토",
+      BOTH_REVIEW: "계약전력 및 설비 개선 동시 검토",
+      INSUFFICIENT_INFO: "정보 부족으로 판단 보류",
+      EXPERT_REQUIRED: "현장 전문가 확인 필요",
+    };
+
+    let devices = [
+      { name: "에어컨", powerW: 1800, qty: 1, status: "CURRENT" },
+      { name: "냉장고", powerW: 150, qty: 1, status: "CURRENT" },
+      { name: "인덕션", powerW: 3300, qty: 1, status: "PLANNED" },
+    ];
+
+    function renderDevices() {
+      const ul = document.getElementById("deviceList");
+      ul.innerHTML = devices.map((d, i) => `
+        <li class="flex justify-between items-center bg-slate-50 rounded-lg px-3 py-2">
+          <span>
+            <span class="inline-block text-xs rounded-full px-2 py-0.5 mr-1 ${d.status==='CURRENT'?'bg-slate-200':'bg-teal-100 text-teal-800'}">${d.status==='CURRENT'?'현재':'추가'}</span>
+            ${d.name} · ${d.powerW}W × ${d.qty}
+          </span>
+          <button onclick="removeDevice(${i})" class="text-red-600 text-xs">삭제</button>
+        </li>
+      `).join("");
+    }
+
+    function addDevice() {
+      const name = document.getElementById("newName").value.trim();
+      const power = parseFloat(document.getElementById("newPower").value);
+      const status = document.getElementById("newStatus").value;
+      if (!name || !power || power <= 0) return alert("기기명과 소비전력(W)을 입력하세요.");
+      devices.push({ name, powerW: power, qty: 1, status });
+      document.getElementById("newName").value = "";
+      document.getElementById("newPower").value = "";
+      renderDevices();
+    }
+
+    function addSample(name, powerW) {
+      devices.push({ name, powerW, qty: 1, status: "PLANNED" });
+      renderDevices();
+    }
+
+    function removeDevice(i) {
+      devices.splice(i, 1);
+      renderDevices();
+    }
+
+    function calcCurrent(powerW, voltage, pf, phase) {
+      if (phase === "THREE") return powerW / (Math.sqrt(3) * voltage * pf);
+      return powerW / (voltage * pf);
+    }
+
+    function runDiagnosis() {
+      const contractKwRaw = document.getElementById("contractKw").value;
+      const contractKw = contractKwRaw === "" ? null : parseFloat(contractKwRaw);
+      const isDirect = document.querySelector('input[name="kepco"]:checked').value === "1";
+      const voltage = parseInt(document.getElementById("voltage").value, 10);
+      const phase = document.getElementById("phase").value;
+      const mainARaw = document.getElementById("mainBreaker").value;
+      const mainA = mainARaw === "" ? null : parseFloat(mainARaw);
+
+      if (devices.length === 0) {
+        showResult({ status: "INSUFFICIENT_INFO", missing: ["사용 기기"] });
+        return;
+      }
+
+      const pf = 0.9;
+      const currentDevs = devices.filter(d => d.status === "CURRENT");
+      const allDevs = devices;
+
+      function scenarioPower(list, factor) {
+        return list.reduce((s, d) => s + d.powerW * d.qty * factor, 0);
+      }
+
+      const scenarios = [
+        { name: "현재 일반 사용", powerW: scenarioPower(currentDevs, 0.7) },
+        { name: "현재 최대 동시", powerW: scenarioPower(currentDevs, 0.95) },
+        { name: "추가 후 일반", powerW: scenarioPower(allDevs, 0.7) },
+        { name: "추가 후 최대 동시", powerW: scenarioPower(allDevs, 0.95) },
+        { name: "시간대 분산", powerW: scenarioPower(allDevs, 0.55) },
+      ].map(s => ({
+        ...s,
+        powerKw: Math.round(s.powerW / 100) / 10,
+        currentA: Math.round(calcCurrent(s.powerW, voltage, pf, phase) * 10) / 10,
+      }));
+
+      const currentPeakKw = scenarios[1].powerKw;
+      const plannedPeakKw = scenarios[3].powerKw;
+      const technicalNeedKw = Math.round(plannedPeakKw * 1.1 * 10) / 10;
+
+      const estCurrent = calcCurrent(plannedPeakKw * 1000, voltage, pf, phase);
+      const mainUtil = mainA && mainA > 0 ? estCurrent / mainA : null;
+      const mainOverloaded = mainUtil != null && mainUtil > 0.9;
+      const circuitOverload = mainOverloaded; // 간편모드: 주차단기 기준
+
+      let missing = [];
+      if (isDirect && contractKw == null) missing.push("계약전력");
+      if (mainA == null) missing.push("주차단기 정격");
+
+      let status = "SUFFICIENT";
+      if (devices.length === 0 || (isDirect && contractKw == null && plannedPeakKw > 0)) {
+        status = "INSUFFICIENT_INFO";
+      } else if (!isDirect && contractKw == null) {
+        status = "EXPERT_REQUIRED";
+      } else {
+        const needContract = contractKw != null && plannedPeakKw > contractKw * 0.95;
+        const needWiring = circuitOverload;
+        if (needContract && needWiring) status = "BOTH_REVIEW";
+        else if (needContract) status = "CONTRACT_INCREASE_REVIEW";
+        else if (needWiring) status = "WIRING_BREAKER_REVIEW";
+      }
+
+      let additional = null;
+      if (contractKw != null && technicalNeedKw > contractKw) {
+        additional = Math.ceil((technicalNeedKw - contractKw) * 10) / 10;
+      }
+
+      // 한전 예시 (확인 필요)
+      let kepco = null;
+      if (additional != null && additional > 0) {
+        const perKw = 121000; // 예시
+        kepco = {
+          amount: Math.round(additional * perKw),
+          note: "공개된 과거 단가 참고 예시입니다. 실제는 한전 약관·거리·공급방식·시점에 따라 다르며, 한전 최종 산정 전입니다. 「한전 확인 필요」",
+        };
+      }
+
+      const warnings = [];
+      if (mainOverloaded) warnings.push("주차단기 예상 부하율 90% 초과. 차단기만 교체하지 말고 간선·상위 설비와 함께 검토하세요.");
+      if (!isDirect) warnings.push("건물 관리 전기입니다. 관리주체 배정용량 확인 절차로 진행하세요. 한전 직접 증설과 다릅니다.");
+
+      const next = [];
+      if (status === "SUFFICIENT") next.push("현재 입력 조건에서는 여유 있는 것으로 보입니다. 실제 동시 사용 패턴을 확인하세요.");
+      if (status === "CONTRACT_INCREASE_REVIEW" || status === "BOTH_REVIEW") {
+        next.push(isDirect ? "한전 계약전력 증설 가능 여부 및 표준시설부담금을 확인하세요." : "건물 관리주체에 배정 용량 증설 가능 여부를 문의하세요.");
+      }
+      if (status === "WIRING_BREAKER_REVIEW" || status === "BOTH_REVIEW") next.push("분전반·간선·분기회로에 대한 현장 전문가 검토를 권장합니다.");
+      if (status === "INSUFFICIENT_INFO" || status === "EXPERT_REQUIRED") next.push("부족한 정보를 보완하거나 현장 계측·전문가 확인 후 다시 진단하세요.");
+      next.push("기동전류가 큰 모터·에어컨 등은 정상 운전전력과 별도로 검토하세요.");
+      next.push("이 결과는 입력 조건에 따른 기술적 검토이며, 한전 약관상 최종 계약전력 결정값이나 법적 적합성을 확정하지 않습니다.");
+
+      showResult({
+        status, currentPeakKw, plannedPeakKw, technicalNeedKw, contractKw, additional,
+        scenarios, mainA, estCurrent: Math.round(estCurrent*10)/10, mainUtil: mainUtil != null ? Math.round(mainUtil*1000)/10 : null,
+        warnings, missing, next, kepco, isDirect
+      });
+    }
+
+    function showResult(r) {
+      const el = document.getElementById("resultArea");
+      if (r.status === "INSUFFICIENT_INFO" && !r.scenarios) {
+        el.innerHTML = `<div class="bg-white rounded-xl border p-5 shadow-sm"><span class="status-INSUFFICIENT_INFO inline-block rounded-full px-2.5 py-0.5 text-xs font-medium">정보 부족으로 판단 보류</span><p class="mt-2 text-sm">기기를 추가해 주세요.</p></div>`;
+        return;
+      }
+
+      el.innerHTML = `
+        <div class="bg-white rounded-xl border p-5 space-y-3 shadow-sm">
+          <div class="flex justify-between items-start">
+            <h2 class="font-semibold text-lg">진단 결과</h2>
+            <span class="status-${r.status} inline-block rounded-full px-2.5 py-0.5 text-xs font-medium">${RESULT_LABEL[r.status]}</span>
+          </div>
+          <div class="grid grid-cols-2 gap-3 text-sm">
+            <div class="bg-slate-50 rounded-lg p-3"><div class="text-xs text-slate-500">현재 계약전력</div><div class="font-semibold text-lg">${r.contractKw != null ? r.contractKw + " kW" : "미입력"}</div></div>
+            <div class="bg-slate-50 rounded-lg p-3"><div class="text-xs text-slate-500">추가 후 예상 최대 동시</div><div class="font-semibold text-lg">${r.plannedPeakKw} kW</div></div>
+            <div class="bg-slate-50 rounded-lg p-3"><div class="text-xs text-slate-500">현재 예상 최대 동시</div><div class="font-semibold">${r.currentPeakKw} kW</div></div>
+            <div class="bg-slate-50 rounded-lg p-3"><div class="text-xs text-slate-500">기술적 필요용량 (여유 1.1)</div><div class="font-semibold">${r.technicalNeedKw} kW</div></div>
+          </div>
+          ${r.additional != null ? `<p class="text-sm text-amber-800 bg-amber-50 rounded-lg px-3 py-2">추가 증설 검토량(기술): 약 ${r.additional} kW<br><span class="text-xs">기술적 검토값입니다. 한전 약관상 계약전력 결정값과 다를 수 있습니다.</span></p>` : ""}
+          <div class="text-sm">
+            <p class="font-medium">주차단기 검토</p>
+            <p class="text-slate-600">${r.mainA == null ? "주차단기 정보가 없어 설비 수용능력 판정을 보류합니다." : (r.mainUtil > 90 ? "주차단기 여유 부족 가능성. 차단기 단독 교체 권고 금지." : "주차단기 입력 조건상 여유 있음 (추정).")}</p>
+            ${r.mainA != null ? `<p class="text-xs text-slate-500">예상 전류 ${r.estCurrent} A / 설정 ${r.mainA} A ${r.mainUtil != null ? "(부하율 약 " + r.mainUtil + "%)" : ""}</p>` : ""}
+          </div>
+        </div>
+
+        <div class="bg-white rounded-xl border p-4 shadow-sm">
+          <h3 class="font-semibold text-sm mb-2">시나리오별 예상 전력</h3>
+          <table class="w-full text-sm">
+            <thead><tr class="text-left text-slate-500 text-xs"><th class="py-1">시나리오</th><th>전력</th><th>전류(추정)</th></tr></thead>
+            <tbody>
+              ${r.scenarios.map(s => `<tr class="border-t"><td class="py-1.5">${s.name}</td><td>${s.powerKw} kW</td><td>${s.currentA} A</td></tr>`).join("")}
+            </tbody>
+          </table>
+        </div>
+
+        ${r.kepco ? `<div class="bg-white rounded-xl border p-4 shadow-sm">
+          <h3 class="font-semibold text-sm">한전 예상 납부금 (예시)</h3>
+          <p class="text-lg font-semibold">${r.kepco.amount.toLocaleString()} 원</p>
+          <p class="text-xs text-amber-700 bg-amber-50 rounded px-2 py-1 mt-1">${r.kepco.note}</p>
+        </div>` : ""}
+
+        ${r.warnings.length ? `<div class="bg-white rounded-xl border p-4 shadow-sm"><h3 class="font-semibold text-sm text-amber-800">주의 사항</h3><ul class="text-sm list-disc pl-4 mt-1 space-y-1">${r.warnings.map(w => `<li>${w}</li>`).join("")}</ul></div>` : ""}
+
+        ${r.missing.length ? `<div class="bg-white rounded-xl border p-4 shadow-sm"><h3 class="font-semibold text-sm">부족한 정보</h3><p class="text-sm text-slate-600">${r.missing.join(", ")}</p></div>` : ""}
+
+        <div class="bg-white rounded-xl border p-4 shadow-sm">
+          <h3 class="font-semibold text-sm">다음으로 확인할 것</h3>
+          <ul class="text-sm list-disc pl-4 mt-1 space-y-1">${r.next.map(a => `<li>${a}</li>`).join("")}</ul>
+        </div>
+
+        <div class="bg-slate-50 rounded-xl border p-4 text-xs text-slate-600 space-y-1">
+          <p>· 계약전력 / 예상 사용전력 / 설비 수용능력을 구분했습니다.</p>
+          <p>· “승압”은 계약전력 증설, 공급전압 변경, 단·삼상 변경, 간선·분전반 개선을 각각 구분해야 합니다.</p>
+          <p>· 분기차단기 합을 주차단기·계약전력으로 계산하지 않았습니다.</p>
+          <p>· 냉방능력·모터 출력과 전기 입력전력을 혼동하지 않도록 소비전력(W)만 사용합니다.</p>
+        </div>
+      `;
+    }
+
+    renderDevices();
+  </script>
+</body>
+</html>

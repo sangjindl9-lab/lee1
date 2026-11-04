@@ -1,0 +1,50 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --primary: #0f766e;
+}
+
+body {
+  @apply bg-slate-50 text-slate-900 antialiased;
+}
+
+.card {
+  @apply bg-white rounded-xl border border-slate-200 shadow-sm;
+}
+
+.btn {
+  @apply inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50;
+}
+
+.btn-primary {
+  @apply btn bg-teal-700 text-white hover:bg-teal-800 focus:ring-teal-600;
+}
+
+.btn-secondary {
+  @apply btn bg-slate-100 text-slate-800 hover:bg-slate-200 focus:ring-slate-400;
+}
+
+.btn-danger {
+  @apply btn bg-red-700 text-white hover:bg-red-800 focus:ring-red-600;
+}
+
+.input {
+  @apply w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-teal-600 focus:outline-none focus:ring-1 focus:ring-teal-600;
+}
+
+.label {
+  @apply block text-sm font-medium text-slate-700 mb-1;
+}
+
+.badge {
+  @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium;
+}
+
+.status-SUFFICIENT { @apply bg-emerald-100 text-emerald-800; }
+.status-CONTRACT_INCREASE_REVIEW { @apply bg-amber-100 text-amber-900; }
+.status-WIRING_BREAKER_REVIEW { @apply bg-orange-100 text-orange-900; }
+.status-BOTH_REVIEW { @apply bg-red-100 text-red-900; }
+.status-INSUFFICIENT_INFO { @apply bg-slate-100 text-slate-700; }
+.status-EXPERT_REQUIRED { @apply bg-purple-100 text-purple-900; }
