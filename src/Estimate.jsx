@@ -1,14 +1,15 @@
 import { useMemo, useState } from 'react';
-import { costSheet, fitToTarget, won, hangulAmount } from './calc.js';
+import { costSheet, won, hangulAmount } from './calc.js';
+import { contractFit } from './Cost.jsx';
 import { NumInput, TextInput } from './ui.jsx';
 
+// 견적서는 원가계산서 결과를 그대로 쓴다(목표금액 맞추기가 켜져 있으면 그 결과). 끝자리 정리만 따로 한다.
 export function estimateCalc(p) {
-  const e = p.estimate;
-  let factor = (Number(e.rate) || 100) / 100, profitAdd = 0;
-  if (Number(e.target) > 0) ({ factor, profitAdd } = fitToTarget(p, Number(e.target)));
+  const f = contractFit(p);
+  const factor = f ? f.factor : 1, profitAdd = f ? f.profitAdd : 0;
   const cs = costSheet(p, { factor, profitAdd, roundUnit: 1 });
-  const tail = Number(e.tail) || 1;
-  const amount = Number(e.target) > 0 ? Number(e.target) : Math.floor(cs.raw / tail) * tail;
+  const tail = Number(p.estimate.tail) || 1;
+  const amount = Math.floor(cs.raw / tail) * tail;
   return { factor, profitAdd, cs, amount };
 }
 
@@ -28,18 +29,16 @@ export default function Estimate({ p, update, exportXlsx, onPrint }) {
         <label className="fld">수신<TextInput id="e-to" value={e.to} onChange={(v) => up({ to: v })} /></label>
         <label className="fld">견적일<input id="e-date" type="date" className="cell" value={date} onChange={(ev) => up({ date: ev.target.value })} /></label>
         <label className="fld">유효기간 (일)<NumInput id="e-valid" value={e.validDays} onChange={(v) => up({ validDays: v })} /></label>
-        <h3>공사비 조정</h3>
-        <label className="fld">단가 조정률 (%)<NumInput id="e-rate" dec={3} value={e.rate} onChange={(v) => up({ rate: v, target: 0 })} disabled={Number(e.target) > 0} /></label>
-        <label className="fld">또는 목표 견적금액 (부가세 포함)<NumInput id="e-target" value={e.target} onChange={(v) => up({ target: v })} placeholder="입력하면 조정률을 자동 계산" /></label>
-        {Number(e.target) > 0 && <button className="btn sm ghost" onClick={() => up({ target: 0 })}>목표금액 해제</button>}
+        <h3>금액</h3>
         <label className="fld">끝자리 정리
-          <select id="e-tail" className="cell" value={e.tail} onChange={(ev) => up({ tail: Number(ev.target.value) })} disabled={Number(e.target) > 0}>
+          <select id="e-tail" className="cell" value={e.tail} onChange={(ev) => up({ tail: Number(ev.target.value) })}>
             {[1, 1000, 10000, 100000, 1000000].map((u) => <option key={u} value={u}>{u === 1 ? '정리 안 함' : `${u.toLocaleString()}원 미만 버림`}</option>)}
           </select>
         </label>
+        <p className="muted small">단가 조정·할인·목표금액은 원가계산서 탭의 ‘금액 조정’에서 정하고, 견적서는 그 결과를 그대로 씁니다.</p>
         <dl className="kv">
           <dt>설계금액</dt><dd className="mono">{won(design)}</dd>
-          <dt>적용 조정률</dt><dd className="mono">{(r.factor * 100).toFixed(3)}%</dd>
+          <dt>목표금액 맞추기</dt><dd className="mono">{r.factor !== 1 || r.profitAdd ? `적용 (${(r.factor * 100).toFixed(3)}%)` : '사용 안 함'}</dd>
           <dt>견적금액</dt><dd className="mono strong">{won(r.amount)}</dd>
           <dt>설계 대비</dt><dd className="mono">{design ? ((r.amount / design) * 100).toFixed(2) : 0}%</dd>
         </dl>

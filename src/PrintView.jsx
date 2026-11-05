@@ -194,8 +194,7 @@ export function PrintDialog({ p, initial, onClose, onPrint }) {
         <span>원가계산서·집계표·내역서 기준</span>
         <div className="seg full">
           <button className={basis === 'design' ? 'on' : ''} onClick={() => setBasis('design')}>설계금액</button>
-          <button className={basis === 'contract' ? 'on' : ''} disabled={!hasContract} onClick={() => setBasis('contract')} title={hasContract ? '' : '원가계산서 탭에서 낙찰률·계약금액을 먼저 정하세요'}>계약금액</button>
-          <button className={basis === 'est' ? 'on' : ''} onClick={() => setBasis('est')}>견적금액</button>
+          <button className={basis === 'contract' ? 'on' : ''} disabled={!hasContract} onClick={() => setBasis('contract')} title={hasContract ? '' : '원가계산서 탭의 금액 조정에서 목표금액 맞추기를 먼저 정하세요'}>목표금액 적용</button>
         </div>
       </div>
       <div className="row-between">

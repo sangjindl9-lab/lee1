@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { itemRow, won, unitCost, matPrice, sectionTotals, costSheet, splitTotal } from './calc.js';
+import { itemRow, won, unitCost, matPrice, sectionTotals, splitTotal } from './calc.js';
 import { uid } from './seed.js';
 import { NumInput, TextInput, Modal, PasteBox, num } from './ui.jsx';
 import StdLibrary, { planStdUnits } from './StdLibrary.jsx';
@@ -37,117 +37,10 @@ function Picker({ p, kind, onPick, onClose }) {
   );
 }
 
-function AdjustPanel({ p, update, sec, checked, toast, onClose }) {
-  const [scope, setScope] = useState(checked.length ? 'sel' : 'sec');
-  const [rate, setRate] = useState({ m: 100, l: 100, e: 100 });
-  const [target, setTarget] = useState(0);
-  const cs = useMemo(() => costSheet(p), [p]);
-
-  const targets = () => {
-    if (scope === 'sel') return sec.items.filter((x) => checked.includes(x.id)).map((x) => [sec.id, x.id]);
-    const ss = scope === 'sec' ? [sec] : p.sections;
-    return ss.flatMap((s) => s.items.map((x) => [s.id, x.id]));
-  };
-  const tgt = targets();
-  const tset = new Set(tgt.map((t) => t[1]));
-  const sumOf = (pp) => pp.sections.reduce((a, s) => a + s.items.filter((x) => tset.has(x.id)).reduce((b, x) => b + itemRow(pp, x).amt, 0), 0);
-  const curSum = sumOf(p);
-  const scopeLabel = { sel: `선택한 ${checked.length}개 행`, sec: `‘${sec.name}’ 공종`, all: '전체 공종' }[scope];
-  const each = (d, fn) => d.sections.forEach((s) => s.items.forEach((x) => { if (tset.has(x.id)) fn(x); }));
-
-  const applyRate = () => {
-    if (!tgt.length) return toast('조정할 행이 없습니다. 대상을 확인하세요.');
-    update((d) => each(d, (x) => { x.adj = { m: num(rate.m), l: num(rate.l), e: num(rate.e) }; delete x.fix; }));
-    toast(`${scopeLabel}에 재료비 ${num(rate.m)}%, 노무비 ${num(rate.l)}%, 경비 ${num(rate.e)}%를 적용했습니다.`);
-  };
-  const fitTarget = () => {
-    const T = Math.floor(num(target));
-    if (!tgt.length) return toast('조정할 행이 없습니다. 대상을 확인하세요.');
-    if (!(T > 0)) return toast('목표 금액을 입력하세요.');
-    const draft = structuredClone(p);
-    each(draft, (x) => { delete x.fix; delete x.adj; });
-    const base = sumOf(draft);
-    if (!(base > 0)) return toast('대상 행의 금액이 0원이라 비율로 맞출 수 없습니다.');
-    let lo = 0, hi = Math.max(2, (T / base) * 2);
-    const setK = (k) => each(draft, (x) => { x.adj = { m: k * 100, l: k * 100, e: k * 100 }; });
-    for (let i = 0; i < 50; i++) { const mid = (lo + hi) / 2; setK(mid); if (sumOf(draft) <= T) lo = mid; else hi = mid; }
-    const k = Math.round(lo * 1e8) / 1e8;
-    setK(k);
-    let rest = T - sumOf(draft);
-    let pick = null, best = -1;
-    each(draft, (x) => { const r = itemRow(draft, x); if (r.amt > best) { best = r.amt; pick = x.id; } });
-    update((d) => {
-      each(d, (x) => { delete x.fix; x.adj = { m: k * 100, l: k * 100, e: k * 100 }; });
-      if (rest && pick) {
-        each(d, (x) => {
-          if (x.id !== pick) return;
-          const r = itemRow(d, x);
-          const comp = ['m', 'l', 'e'].sort((a, b) => r['a' + b] - r['a' + a])[0];
-          x.fix = { [comp]: r['a' + comp] + rest };
-        });
-      }
-    });
-    toast(`${scopeLabel}을 ${won(T)}원에 맞췄습니다 (조정률 ${(k * 100).toFixed(4)}%${rest ? `, 끝수 ${won(rest)}원은 가장 큰 행에 반영` : ''}).`);
-  };
-  const reset = () => {
-    update((d) => each(d, (x) => { delete x.adj; delete x.fix; }));
-    toast(`${scopeLabel}의 요율·금액 조정을 모두 해제했습니다.`);
-  };
-  const upRate = (key, patch) => update((d) => Object.assign(d.rates.find((r) => r.key === key), patch));
-
-  return (
-    <div className="adj-panel">
-      <div className="row-between">
-        <h3>요율·금액 조정</h3>
-        <button className="btn sm ghost" onClick={onClose}>닫기</button>
-      </div>
-      <div className="adj-grid">
-        <section>
-          <div className="seg full">
-            {[['sel', `선택 행 ${checked.length}`], ['sec', '현재 공종'], ['all', '전체']].map(([k, t]) => (
-              <button key={k} className={scope === k ? 'on' : ''} onClick={() => setScope(k)} disabled={k === 'sel' && !checked.length}>{t}</button>
-            ))}
-          </div>
-          <p className="muted small">대상: {scopeLabel} · 현재 직접공사비 <b className="mono">{won(curSum)}</b>원</p>
-          <div className="adj-rates">
-            {[['m', '재료비'], ['l', '노무비'], ['e', '경비']].map(([k, t]) => (
-              <label key={k} className="fld">{t} 단가 (%)<NumInput id={'adj-' + k} dec={4} value={rate[k]} onChange={(v) => setRate((r) => ({ ...r, [k]: v }))} /></label>
-            ))}
-          </div>
-          <div className="grp">
-            <button className="btn sm primary" onClick={applyRate}>요율 적용</button>
-            <button className="btn sm ghost" onClick={reset}>조정 해제</button>
-          </div>
-          <label className="fld adj-target">목표 금액 (대상 직접공사비)
-            <span className="grp"><NumInput id="adj-target" value={target} onChange={setTarget} placeholder="예: 45,000,000" /><button className="btn sm" onClick={fitTarget}>금액 맞추기</button></span>
-          </label>
-          <p className="muted small">요율은 단가에 곱하고 원 미만은 버립니다. 금액 맞추기는 같은 비율을 곱한 뒤 남는 끝수를 가장 큰 행에 넣습니다. 행마다 금액 칸을 눌러 직접 고칠 수도 있습니다.</p>
-        </section>
-        <section>
-          <div className="row-between"><b className="small">원가 제비율</b><span className="small muted">총 공사금액 <b className="mono total-inline">{won(cs.grand)}</b>원</span></div>
-          <div className="rates-wrap"><table className="rates">
-            <tbody>
-              {p.rates.map((r) => (
-                <tr key={r.key} className={r.on ? '' : 'off'}>
-                  <td><input type="checkbox" id={'nrate-' + r.key} checked={r.on} onChange={(e) => upRate(r.key, { on: e.target.checked })} /></td>
-                  <td><label htmlFor={'nrate-' + r.key}>{r.label}</label></td>
-                  <td className="w-rate"><NumInput dec={4} value={r.rate} onChange={(v) => upRate(r.key, { rate: v })} aria-label={r.label + ' 요율'} /></td>
-                  <td className="pct">%</td>
-                </tr>
-              ))}
-            </tbody>
-          </table></div>
-        </section>
-      </div>
-    </div>
-  );
-}
-
 export default function Naeyeok({ p, update, clip, setClip, toast }) {
   const [secId, setSecId] = useState(p.sections[0]?.id);
   const [checked, setChecked] = useState([]);
   const [modal, setModal] = useState(null);
-  const [adjOpen, setAdjOpen] = useState(false);
   const sec = p.sections.find((s) => s.id === secId) || p.sections[0];
   const totals = useMemo(() => sectionTotals(p), [p]);
   const grandDirect = totals.reduce((a, s) => a + s.sum, 0);
@@ -233,7 +126,6 @@ export default function Naeyeok({ p, update, clip, setClip, toast }) {
             <button className="btn sm" onClick={() => setModal('mat')}>＋ 자재</button>
             <button className="btn sm" onClick={() => upSec((s) => s.items.push(newItem()))}>＋ 직접입력</button>
             <button className="btn sm" onClick={() => setModal('paste')}>엑셀 붙여넣기</button>
-            <button className={'btn sm' + (adjOpen ? ' primary' : '')} onClick={() => setAdjOpen(!adjOpen)}>요율·금액 조정</button>
           </div>
           <div className="grp">
             <button className="btn sm" onClick={() => doCopy(false)}>복사</button>
@@ -244,8 +136,6 @@ export default function Naeyeok({ p, update, clip, setClip, toast }) {
             <button className="btn sm ghost danger" onClick={doDelete} disabled={!sel.length}>삭제</button>
           </div>
         </div>
-
-        {adjOpen && <AdjustPanel p={p} update={update} sec={sec} checked={checked} toast={toast} onClose={() => setAdjOpen(false)} />}
 
         <div className="tbl-wrap">
           <table className="grid naeyeok">
@@ -302,7 +192,7 @@ export default function Naeyeok({ p, update, clip, setClip, toast }) {
             </tfoot>
           </table>
         </div>
-        <p className="muted small">금액 칸을 눌러 원하는 금액을 넣으면 그 금액으로 고정됩니다(색 표시). 수량을 바꾸면 고정이 풀리고, 행 끝 ↺로 조정을 해제할 수 있습니다. 일위대가·자재와 연결된 행은 품명 옆 ‘수정’으로 연결을 끊고 단가를 직접 고칩니다.</p>
+        <p className="muted small">금액 칸을 눌러 원하는 금액을 넣으면 그 금액으로 고정됩니다(색 표시). 공사 전체 단가 조정·할인·목표금액은 원가계산서 탭의 ‘금액 조정’에서 합니다. 수량을 바꾸면 고정이 풀리고, 행 끝 ↺로 조정을 해제할 수 있습니다. 일위대가·자재와 연결된 행은 품명 옆 ‘수정’으로 연결을 끊고 단가를 직접 고칩니다.</p>
       </section>
 
       {(modal === 'unit' || modal === 'mat') && (

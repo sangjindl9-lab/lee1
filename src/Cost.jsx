@@ -33,7 +33,7 @@ export default function Cost({ p, update, exportXlsx, onPrint }) {
         </div>
         <div className="tbl-wrap">
           <table className="grid costsheet">
-            <thead><tr><th className="w-g">비목</th><th>구분</th><th className="w-price">설계금액</th>{ct && <th className="w-price">계약금액</th>}<th>산출근거</th></tr></thead>
+            <thead><tr><th className="w-g">비목</th><th>구분</th><th className="w-price">설계금액</th>{ct && <th className="w-price">목표금액 적용</th>}<th>산출근거</th></tr></thead>
             <tbody>
               {cs.rows.map((r, i) => {
                 const r2 = ct?.rows.find((x) => x.g === r.g && x.label === r.label);
@@ -55,14 +55,23 @@ export default function Cost({ p, update, exportXlsx, onPrint }) {
 
       <aside className="cost-side">
         <section className="panel">
-          <h3>계약금액 맞추기</h3>
+          <h3>금액 조정</h3>
+          <div className="fld"><span>단가 조정률 (일위대가 노임·자재단가에 적용)</span>
+            <div className="adj-rates">
+              {[['m', '재료비'], ['l', '노무비'], ['e', '경비']].map(([k, t]) => (
+                <label key={k} className="fld">{t} %<NumInput id={'uadj-' + k} dec={3} value={(p.unitAdj || {})[k] ?? 100} onChange={(v) => update((d) => { d.unitAdj = { m: 100, l: 100, e: 100, ...(d.unitAdj || {}), [k]: v }; })} /></label>
+              ))}
+            </div>
+          </div>
+          <label className="fld">총공사비 할인율 (%, 할인액 천원 단위 반올림)<NumInput id="disc-rate" dec={3} value={p.discountRate || 0} onChange={(v) => update((d) => { d.discountRate = v; })} /></label>
+          <h4 className="sub-h">목표금액 맞추기</h4>
           <div className="seg full">
-            {[['none', '사용 안 함'], ['rate', '낙찰률'], ['target', '계약금액']].map(([k, t]) => (
+            {[['none', '사용 안 함'], ['rate', '낙찰률'], ['target', '목표금액']].map(([k, t]) => (
               <button key={k} className={c.mode === k ? 'on' : ''} onClick={() => update((d) => { d.contract = { ...c, mode: k }; })}>{t}</button>
             ))}
           </div>
           {c.mode === 'rate' && <label className="fld">낙찰률 (%)<NumInput id="bid-rate" dec={3} value={c.bidRate} onChange={(v) => update((d) => { d.contract = { ...c, bidRate: v }; })} /></label>}
-          {c.mode === 'target' && <label className="fld">계약금액 (부가세 포함)<NumInput id="ct-target" value={c.target} onChange={(v) => update((d) => { d.contract = { ...c, target: v }; })} /></label>}
+          {c.mode === 'target' && <label className="fld">목표금액 (부가세 포함, 계약·견적)<NumInput id="ct-target" value={c.target} onChange={(v) => update((d) => { d.contract = { ...c, target: v }; })} /></label>}
           {fit && (
             <dl className="kv">
               <dt>설계금액</dt><dd className="mono">{won(fit.design)}</dd>
@@ -72,7 +81,7 @@ export default function Cost({ p, update, exportXlsx, onPrint }) {
               <dt>계약 합계</dt><dd className={'mono ' + (ct.grand === fit.target ? 'ok' : 'warn')}>{won(ct.grand)} {ct.grand === fit.target ? '일치' : `차이 ${won(fit.target - ct.grand)}`}</dd>
             </dl>
           )}
-          <p className="muted small">자재·노무·경비 단가에 같은 비율을 곱하고(원 미만 절사), 남는 차액은 이윤에서 자동으로 맞춥니다.</p>
+          <p className="muted small">단가 조정률·할인율은 설계금액에 반영됩니다. 목표금액 맞추기는 설계금액에서 출발해 단가에 같은 비율을 곱하고 남는 차액을 이윤에서 맞추며, 계약내역서·견적서에 쓰입니다.</p>
         </section>
 
         <section className="panel">
@@ -89,14 +98,6 @@ export default function Cost({ p, update, exportXlsx, onPrint }) {
               ))}
             </tbody>
           </table>
-          <div className="fld"><span>단가 조정률 (일위대가 노임·자재단가에 적용)</span>
-            <div className="adj-rates">
-              {[['m', '재료비'], ['l', '노무비'], ['e', '경비']].map(([k, t]) => (
-                <label key={k} className="fld">{t} %<NumInput id={'uadj-' + k} dec={3} value={(p.unitAdj || {})[k] ?? 100} onChange={(v) => update((d) => { d.unitAdj = { m: 100, l: 100, e: 100, ...(d.unitAdj || {}), [k]: v }; })} /></label>
-              ))}
-            </div>
-          </div>
-          <label className="fld">총공사비 할인율 (%, 할인액 천원 단위 반올림)<NumInput id="disc-rate" dec={3} value={p.discountRate || 0} onChange={(v) => update((d) => { d.discountRate = v; })} /></label>
           <label className="fld">작업설·부산물 (재료비에서 공제)<NumInput id="scrap" value={p.scrap} onChange={(v) => update((d) => { d.scrap = v; })} /></label>
           <label className="fld">비율 금액 끝수 처리
             <select id="rate-round" className="cell" value={p.rateRound || 'floor'} onChange={(e) => update((d) => { d.rateRound = e.target.value; })}>
