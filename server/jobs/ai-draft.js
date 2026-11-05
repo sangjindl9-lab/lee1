@@ -55,7 +55,7 @@ export async function drawingImages(file, analysis) {
     clean: encodePng(g.data, g.w, g.h),
     annotated: annotate(g.data, g.w, g.h, analysis || {}, byView, toPx),
     regions, k,
-    regionText: describeRegions(analysis || {}, byView, k, toPx),
+    regionText: describeRegions(analysis || {}, byView, 1, toPx),
   };
 }
 
@@ -81,7 +81,7 @@ export async function aiDraftFile(c, file, { userId } = {}) {
     for (const [id, e] of Object.entries(ex)) sc.data.parts[id] = { ...(sc.data.parts[id] || {}), explode: e };
     await c.query('UPDATE scenes SET data=$2 WHERE model_id=$1 AND version=1', [m.id, sc.data]);
   }
-  const aiInfo = { status: 'created', modelId: m.id, product: spec.product, overall: spec.overall, parts: result.parts.length, outlineParts: spec.parts.filter((p) => p.shape === 'intersect' || p.shape === 'extrude').length, viewRoles: spec.viewRoles, drawingScale: spec.drawingScale, ignored: spec.ignored || [], assumptions: spec.assumptions || [], usage, at: new Date().toISOString() };
+  const aiInfo = { status: 'created', modelId: m.id, product: spec.product, overall: spec.overall, parts: result.parts.length, outlineParts: spec.parts.filter((p) => ['intersect', 'extrude', 'revolve', 'hull'].includes(p.shape)).length, viewRoles: spec.viewRoles, drawingScale: spec.drawingScale, ignored: spec.ignored || [], assumptions: spec.assumptions || [], usage, at: new Date().toISOString() };
   await c.query("UPDATE files SET status='converted', analysis = jsonb_set(coalesce(analysis,'{}'::jsonb), '{aiDraft}', $2::jsonb) WHERE id=$1", [file.id, JSON.stringify(aiInfo)]);
   await audit(c, { companyId: file.company_id, userId, action: 'model.aidraft', target: m.id,
     meta: { fileId: file.id, product: spec.product, parts: result.parts.length, model: usage.model, input_tokens: usage.input_tokens, output_tokens: usage.output_tokens, ms: usage.ms } });

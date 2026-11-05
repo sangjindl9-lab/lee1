@@ -37,7 +37,9 @@ export const TOOL = {
           type: 'object', required: ['name', 'shape'],
           properties: {
             name: { type: 'string', description: '부품 이름 (한국어)' },
-            shape: { type: 'string', enum: ['intersect', 'extrude', 'box', 'shell', 'cylinder'], description: 'intersect=도면 윤곽 2~3개(정면·측면·평면)를 각 방향으로 밀어 교차 — 곡면·복잡한 외형을 도면 그대로 재현(권장). extrude=도면 윤곽 1개를 두께만큼 밀기(판·플랜지·브래킷). box=직육면체, shell=속 빈 상자(한 면 열림), cylinder=원기둥(핀·볼트·축)' },
+            shape: { type: 'string', enum: ['intersect', 'extrude', 'revolve', 'hull', 'box', 'shell', 'cylinder'], description: 'intersect=도면 윤곽 2~3개(정면·측면·평면)를 각 방향으로 밀어 교차 — 곡면·복잡한 외형을 도면 그대로(권장). extrude=도면 윤곽 1개를 두께만큼 밀기(판·플랜지·브래킷). revolve=윤곽을 축 중심으로 한 바퀴 돌린 회전체 — 투광등 몸통·렌즈·반사갓·노즐·축·부시처럼 둥근 제품(측면/정면 윤곽의 축 한쪽 절반만 쓰임). hull=윤곽 교차 결과의 볼록 껍질 — 돔·볼록 렌즈. box=직육면체, shell=속 빈 상자(한 면 열림), cylinder=원기둥(핀·볼트)' },
+            axis: { type: 'string', enum: ['x', 'y', 'z'], description: 'revolve: 회전축 방향(윤곽이 그려진 뷰의 평면 안에 있어야 함. 정면/후면 윤곽이면 x 또는 z, 측면 윤곽이면 y 또는 z, 평면 윤곽이면 x 또는 y). cylinder: 축 방향' },
+            axisCenter: { ...XYZ, description: 'revolve: 회전축이 지나는 점 (mm). 생략하면 윤곽 가운데·제품 가운데' },
             profiles: { type: 'array', minItems: 1, maxItems: 3, description: 'intersect/extrude: 쓸 윤곽 번호 (그림의 S/F/C 라벨, 예 "V1S1", "V3F2"). intersect 는 서로 다른 방향의 뷰(정면+측면, 정면+평면 등)에서 1개씩', items: { type: 'string' } },
             from: { type: 'number', description: 'extrude: 밀기 시작 좌표(윤곽 뷰의 법선 축: 정면/후면 윤곽이면 Y, 평면/저면이면 Z, 측면이면 X). 생략하면 전체 범위' },
             to: { type: 'number', description: 'extrude: 밀기 끝 좌표' },
@@ -48,7 +50,6 @@ export const TOOL = {
             open: { type: 'string', enum: ['front', 'back', 'top', 'bottom', 'left', 'right', 'none'], description: 'shell: 열린 면' },
             diameter: { type: 'number', description: 'cylinder: 지름' },
             length: { type: 'number', description: 'cylinder: 길이' },
-            axis: { type: 'string', enum: ['x', 'y', 'z'], description: 'cylinder: 축 방향' },
             material: { type: 'string', enum: MATERIALS },
             color: { type: 'string', description: '#RRGGBB (선택)' },
             holes: {
@@ -73,9 +74,12 @@ export const SYSTEM = `너는 산업용 도면(금형·분전반·기계·판금
 목표는 '보여주기'다. 정밀 설계가 아니라, 도면에 적힌 치수대로 보이는 형상을 만든다.
 규칙:
 - 좌표계: 원점 = 제품 전체의 왼쪽·앞·아래 모서리. X = 정면도에서 오른쪽(폭), Y = 뒤쪽(깊이), Z = 위(높이). 단위 mm.
-- 가장 중요: 형상은 도면 윤곽을 그대로 써라. 두 번째 그림에 뷰 번호(V1…)와 윤곽 번호(S=외형, F=안쪽 영역, C=원)가 적혀 있고, 그 윤곽의 실제 좌표로 3D 를 만든다.
+- 가장 중요: 형상은 도면 윤곽을 그대로 써라. 두 번째 그림에 뷰 번호(V1…)와 윤곽 번호(S=전체 실루엣, F=안쪽 영역, R=조각을 합친 원형 영역, C=원)가 적혀 있고, 그 윤곽의 실제 좌표로 3D 를 만든다. S 는 그 뷰의 모든 선(브래킷·요크·바이저까지)을 감싼 외형이므로, 본체만 원하면 F 나 R 을 써라.
   · 본체·하우징·외함·몸통 등 가장 큰 부품은 반드시 intersect 로 만든다: 정면 외형(S) + 측면 외형(S) (+ 평면 외형). 둥근 외형·테이퍼·돔이 도면대로 나온다. box 로 대신하지 말 것.
   · 판·플랜지·브래킷·프레임 → extrude 에 그 뷰의 윤곽(안쪽 영역 F 포함) + from/to 로 두께 위치.
+  · 정면에서 원으로 보이는 부품(투광등 몸통·렌즈·팬·모터) → intersect 에 정면의 원형 영역(R 이 있으면 R, 없으면 F 조각 전부) + 측면 윤곽(본체 부분의 F 또는 S). 같은 뷰 조각은 합쳐지고 다른 뷰와 교차해 둥근 몸통이 된다.
+  · 회전 대칭인 부품을 단면으로 그린 경우(축·노즐·부시·반사갓 단면) → revolve 에 축을 포함하는 뷰의 윤곽 + axis(그 뷰 평면 안의 축) + axisCenter. 윤곽의 축 한쪽 절반이 돌아가며 매끈한 곡면이 된다. 정면에서 원으로 보이는 부품은 거의 revolve 다.
+  · 돔·볼록 유리처럼 볼록한 부품 → hull (intersect 와 같이 윤곽 2~3개).
   · 윤곽 번호가 없는 부품(요크·브래킷·바이저·볼트·단자 등)은 box/shell/cylinder 로 치수·위치를 적어 추가한다. 큰 부품은 빠뜨리지 말 것.
 - viewRoles 로 그림마다 역할을 정한다. 'Rear view', 'Bottom view' 글자가 있으면 그대로, 없으면 배치(3각법)로 판단. 구성도·결선도·상세도는 other.
 - 배율은 scaleRef 로 준다: 도면 치수 하나(예 전체 폭 539)와 그 치수가 재는 윤곽(예 V2S1 의 width). CAD 실치수 도면이면 drawingScale 1.
@@ -95,7 +99,7 @@ export async function interpretDrawing({ image, images, mediaType = 'image/png',
   const ctx = contextText(analysis, fileName, regionText);
   const imgs = images || [image];
   const body = {
-    model: cfg.model, max_tokens: 8000, system: SYSTEM,
+    model: cfg.model, max_tokens: 16000, system: SYSTEM,
     // 최신 모델은 도구 강제(tool_choice: tool)를 지원하지 않아 auto + 지시문으로 호출하게 한다
     tools: [TOOL], tool_choice: { type: 'auto' },
     messages: [{ role: 'user', content: [
@@ -120,15 +124,18 @@ export async function interpretDrawing({ image, images, mediaType = 'image/png',
     const txt = (j.content || []).filter((c) => c.type === 'text').map((c) => c.text).join('\n');
     const m = /\{[\s\S]*\}/.exec(txt); try { tool = m ? { input: JSON.parse(m[0]) } : null; } catch { tool = null; }
   }
-  if (!tool?.input?.parts?.length) throw Object.assign(new Error('AI 가 부품 목록을 돌려주지 않았습니다'), { status: 502 });
+  if (!tool?.input?.parts?.length) {
+    const why = (j.content || []).filter((c) => c.type === 'text').map((c) => c.text).join(' ').slice(0, 300);
+    throw Object.assign(new Error('AI 가 부품 목록을 돌려주지 않았습니다' + (j.stop_reason ? ` (${j.stop_reason})` : '') + (why ? ': ' + why : '')), { status: 502 });
+  }
   return { spec: tool.input, usage: { ...j.usage, model: j.model || cfg.model, ms: Date.now() - t0 } };
 }
 
 function contextText(a, fileName, regionText) {
   const L = [`파일: ${fileName || ''}`, `형식: ${a?.format || ''}`];
-  if (a?.views?.some((v) => v.raster)) L.push('이 도면은 스캔·이미지라 외형(S)만 있다. 제품 전체 외형은 각 뷰의 S 를 intersect 한 부품으로 반드시 만들고, 요크·브래킷 같은 돌출부만 box/cylinder 로 덧붙여라.');
+  if (a?.views?.some((v) => v.raster)) L.push('이 도면은 스캔·이미지다. S 는 요크·바이저·브래킷까지 뭉친 실루엣이므로 본체에 쓰지 말 것. 본체는 정면의 원형 영역(R, 없으면 F 조각들) + 측면의 본체 부분(F 또는 S) 을 intersect 로 만들고, 바이저·요크·브래킷은 각각 별도 부품(해당 뷰의 F 를 extrude 하거나 box)으로 나눠라.');
   if (a?.scaleRequired) L.push('주의: 이 도면은 용지(종이/이미지) 좌표라 아래 윤곽 크기는 실제 치수가 아니다. 반드시 scaleRef 로 (도면 치수 숫자, 그 치수가 재는 윤곽, width/height/diameter) 를 지정하라. box/cylinder 의 치수·위치는 실제 mm 로 적는다.');
-  if (regionText) L.push('뷰·윤곽 목록 (그림 2 의 번호, 크기는 배율 적용 전 그림 단위):', regionText);
+  if (regionText) L.push('뷰·윤곽 목록 (그림 2 의 번호, 크기는 배율 적용 전 그림 단위 — CAD 는 실치수, 용지 도면은 용지 mm):', regionText);
   if (a?.unit) L.push(`도면 단위: ${a.unit}`);
   if (a?.image?.mmPerPx) L.push(`그림 1픽셀 = 실제 ${a.image.mmPerPx} mm (CAD 원본 좌표에서 그린 그림)`);
   if (a?.scaleRequired && a?.autoDraft?.scale?.scale) L.push(`용지 축척 추정: 1:${a.autoDraft.scale.scale} (${a.autoDraft.scale.why})`);
@@ -186,7 +193,8 @@ function cylSolid(W, len, dia, axis) {
  */
 export function makeFrame(spec, ctx) {
   const views = Object.fromEntries((ctx?.analysis?.views || []).map((v) => [v.id, v]));
-  const roles = { ...autoRoles(ctx?.analysis), ...(spec.viewRoles || {}) };
+  const given = Object.fromEntries(Object.entries(spec.viewRoles || {}).filter(([id]) => views[id]));
+  const roles = Object.values(given).some((r) => r && r !== 'other') ? given : autoRoles(ctx?.analysis);
   let k = num(spec.drawingScale, ctx?.k || 1) || 1;
   const ref = spec.scaleRef, rg = ref && ctx?.regions?.find((r) => r.id === ref.region);
   if (rg && num(ref.dimension) > 0) {
@@ -244,8 +252,8 @@ function autoRoles(a) {
 }
 /** 평면 윤곽(2D) → 법선축 방향 [from,to] 구간의 기둥 */
 function prism(W, pts, axis, from, to) {
-  const L = to - from; if (!(L > 0) || pts.length < 3) return null;
-  const cs = new W.CrossSection([pts], 'EvenOdd');
+  const L = to - from; if (!(L > 0) || (Array.isArray(pts) && pts.length < 3)) return null;
+  const cs = Array.isArray(pts) ? new W.CrossSection([pts], 'EvenOdd') : pts;
   if (axis === 'y') return cs.extrude(L).rotate([90, 0, 0]).translate([0, to, 0]);
   if (axis === 'z') return cs.extrude(L).translate([0, 0, from]);
   return cs.extrude(L).transform([0, 1, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, from, 0, 0, 1]);
@@ -253,29 +261,76 @@ function prism(W, pts, axis, from, to) {
 function outlineSolid(W, p, frame, regions) {
   const ids = p.profiles || [];
   const full = { x: [-frame.D * 0.5, frame.W + frame.D * 0.5], y: [-frame.D * 0.5, frame.D * 1.5], z: [-frame.H * 0.5, frame.H * 1.5] };
-  const solids = [];
+  // 같은 뷰의 윤곽(조각난 원 등)은 합치고, 다른 뷰끼리는 교차 (extrude 는 모두 합침)
+  const byView = new Map();   // 뷰 → 2D 단면들
   for (const id of ids) {
     const r = regions?.[id]; if (!r) continue;
     const m = frame.mapOf(r.view); if (!m) continue;
-    const pts = r.pts.map(m.to3);
+    if (!byView.has(r.view)) byView.set(r.view, { m, css: [] });
+    byView.get(r.view).css.push(new W.CrossSection([r.pts.map(m.to3)], 'EvenOdd'));
+  }
+  const solids = [];
+  for (const { m, css } of byView.values()) {
+    let cs = css.reduce((u, x) => (u ? u.add(x) : x), null);
+    if (css.length > 1) {   // 조각난 영역(보강대로 나뉜 원 등): 작은 틈을 닫아 한 덩어리로
+      const b = cs.bounds(), d = Math.max(b.max[0] - b.min[0], b.max[1] - b.min[1]) * 0.06;
+      cs = cs.offset(d, 'Round').offset(-d, 'Round');
+      // 조각을 합친 모양이 거의 볼록(원·타원)이면 볼록 껍질로 매끈하게
+      const h = cs.hull(), hb = h.bounds(), hw = hb.max[0] - hb.min[0], hh = hb.max[1] - hb.min[1];
+      const round = Math.abs(hw - hh) < Math.max(hw, hh) * 0.1 && h.area() > Math.PI * (hw / 2) * (hh / 2) * 0.9;
+      if (h.area() < cs.area() * 1.2 || (round && cs.area() > h.area() * 0.6)) cs = h;
+    }
     const rng = p.shape === 'extrude' && Number.isFinite(+p.from) && Number.isFinite(+p.to) ? [Math.min(+p.from, +p.to), Math.max(+p.from, +p.to)] : full[m.axis];
-    // 같은 뷰 안의 다른 윤곽으로 구멍을 내지는 않는다(AI 가 holes 로 지정)
-    const s = prism(W, pts, m.axis, rng[0], rng[1]);
+    const s = prism(W, cs, m.axis, rng[0], rng[1]);
     if (s && s.volume() > 1e-6) solids.push(s);
   }
+  if (p.shape === 'extrude' && solids.length > 1) return solids.reduce((u, x) => W.Manifold.union(u, x));
   if (!solids.length) return null;
   let s = solids[0];
-  for (let i = 1; i < solids.length; i++) s = p.shape === 'extrude' ? W.Manifold.union(s, solids[i]) : s.intersect(solids[i]);
-  return s;
+  for (let i = 1; i < solids.length; i++) s = s.intersect(solids[i]);
+  return p.shape === 'hull' ? s.hull() : s;
+}
+/** 윤곽을 평면 안의 축으로 한 바퀴 돌린 회전체 (축 한쪽 절반만 사용) */
+function revolveSolid(W, p, frame, regions) {
+  // 윤곽 여러 개(십자 보강대로 나뉜 렌즈 조각 등)는 합쳐서 한 단면으로
+  const rs = (p.profiles || []).map((id) => regions?.[id]).filter(Boolean);
+  const r = rs[0]; if (!r) return null;
+  const m = frame.mapOf(r.view); if (!m) return null;
+  const plane = { y: ['x', 'z'], z: ['x', 'y'], x: ['y', 'z'] }[m.axis];   // 뷰 평면의 두 축 (윤곽 좌표 [p,q] 순서)
+  // 축이 뷰를 바라보는 방향(정면 원에 y축)이면 회전이 아니라 그 윤곽을 깊이 방향으로 민 것 = 원기둥. 그렇게 만든다
+  if (p.axis === m.axis) {
+    const full = { x: [-frame.D * 0.5, frame.W + frame.D * 0.5], y: [-frame.D * 0.5, frame.D * 1.5], z: [-frame.H * 0.5, frame.H * 1.5] }[m.axis];
+    const rng = Number.isFinite(+p.from) && Number.isFinite(+p.to) ? [Math.min(+p.from, +p.to), Math.max(+p.from, +p.to)] : full;
+    return rs.filter((x) => x.view === r.view).map((x) => prism(W, x.pts.map(m.to3), m.axis, rng[0], rng[1])).filter((x) => x && x.volume() > 1e-6).reduce((u, x) => (u ? W.Manifold.union(u, x) : x), null);
+  }
+  const ax = plane.includes(p.axis) ? p.axis : plane[1];
+  const ai = plane.indexOf(ax), ri = 1 - ai;                               // 축 방향 좌표 / 반지름 방향 좌표
+  const polys = rs.filter((x) => x.view === r.view).map((x) => x.pts.map(m.to3));
+  const pts = polys.flat();
+  const c = (p.axisCenter || []).map((v) => num(v));
+  const a0 = Number.isFinite(c[ 'xyz'.indexOf(plane[ri]) ]) && p.axisCenter ? c['xyz'.indexOf(plane[ri])] : (Math.min(...pts.map((q) => q[ri])) + Math.max(...pts.map((q) => q[ri]))) / 2;
+  const csOf = (sign) => polys.map((pl) => new W.CrossSection([pl.map((q) => [sign * (q[ri] - a0), q[ai]])], 'EvenOdd')).reduce((u, x) => (u ? u.add(x) : x), null);
+  let s = W.Manifold.revolve(csOf(1), 96);                                  // z 축 중심, x<0 은 잘림
+  if (!(s.volume() > 1e-6)) s = W.Manifold.revolve(csOf(-1), 96);
+  if (ax === 'x') s = s.rotate([0, 90, 0]); else if (ax === 'y') s = s.rotate([-90, 0, 0]);
+  // 축이 지나는 점: 평면 안 좌표 a0, 법선 방향은 axisCenter 또는 제품 가운데
+  const ni = 'xyz'.indexOf(m.axis);
+  const nc = p.axisCenter && Number.isFinite(c[ni]) ? c[ni] : { x: frame.W / 2, y: frame.D / 2, z: frame.H / 2 }[m.axis];
+  const t = [0, 0, 0]; t['xyz'.indexOf(plane[ri])] = a0; t[ni] = nc;
+  return s.translate(t);
 }
 
 /** 부품 하나 → Manifold (월드 좌표) */
 export function partSolid(W, p, big, frame, regions) {
   const [x, y, z] = (p.position || [0, 0, 0]).map((v) => num(v));
   let s;
-  if (p.shape === 'intersect' || p.shape === 'extrude') {
+  if (p.shape === 'intersect' || p.shape === 'extrude' || p.shape === 'hull') {
     if (!frame) return null;
     s = outlineSolid(W, p, frame, regions);
+    if (!s) return null;
+  } else if (p.shape === 'revolve') {
+    if (!frame) return null;
+    s = revolveSolid(W, p, frame, regions);
     if (!s) return null;
   } else if (p.shape === 'cylinder') {
     const len = num(p.length), dia = num(p.diameter);
@@ -330,7 +385,7 @@ export async function buildFromSpec(spec, name, ctx = null) {
   const used = new Map();
   const plist = [...spec.parts];
   // 스캔·이미지 도면(안쪽 영역 정보 없음)에서 AI 가 윤곽을 쓰지 않았으면, 정면·측면·평면 외형 교차(도면 그대로의 외형)를 맨 앞에 넣는다
-  if (frame && regions && ctx?.analysis?.views?.some((v) => v.raster) && !plist.some((p) => p.shape === 'intersect' || p.shape === 'extrude')) {
+  if (frame && regions && ctx?.analysis?.views?.some((v) => v.raster) && !plist.some((p) => ['intersect', 'extrude', 'revolve', 'hull'].includes(p.shape))) {
     const sils = Object.entries(frame.roles).filter(([, r]) => r && r !== 'other').map(([id]) => `${id}S1`).filter((id) => regions[id]);
     if (sils.length >= 2) plist.unshift({ name: '외형 (도면 윤곽)', shape: 'intersect', profiles: sils, material: plist[0]?.material || 'painted', explode: 'none', _auto: true });
   }
@@ -359,7 +414,7 @@ export async function buildFromSpec(spec, name, ctx = null) {
         ...(spec.assumptions || []).slice(0, 12).map((a) => ({ what: String(a).slice(0, 200), source: 'ai', label: 'AI가 추정한 형상' })),
         { what: '곡면·세부 형상(단순화)', source: 'unbuildable', label: '생성할 수 없는 형상' },
       ],
-      ai: { product: spec.product, overall: spec.overall, views: spec.views, viewRoles: spec.viewRoles, drawingScale: spec.drawingScale, ignored: spec.ignored, assumptions: spec.assumptions, outlineParts: spec.parts.filter((p) => p.shape === 'intersect' || p.shape === 'extrude').length },
+      ai: { product: spec.product, overall: spec.overall, views: spec.views, viewRoles: spec.viewRoles, drawingScale: spec.drawingScale, ignored: spec.ignored, assumptions: spec.assumptions, outlineParts: spec.parts.filter((p) => ['intersect', 'extrude', 'revolve', 'hull'].includes(p.shape)).length },
     },
   };
 }

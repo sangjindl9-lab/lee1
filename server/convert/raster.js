@@ -156,7 +156,18 @@ export function traceDrawing(img, mmPx) {
     const bb = polyBox(pts);
     profiles.push({ id, layer: 'SCAN', source: 'RASTER', role: 'outer', parent: null, area: +Math.abs(polyArea(pts)).toFixed(3), bbox: bb, points: pts });
     // 이 외형 안의 빈 영역
-    const circles = [], holePolys = [];
+    const circles = [], holePolys = [], faces = [];
+    // 안쪽 닫힌 영역(면): 선으로 둘러싸인 빈 영역 중 외형의 1% 이상 — AI 가 원형 렌즈·틀 같은 부품 윤곽으로 고를 수 있게 (벡터 도면의 faces 와 같은 역할)
+    for (const e of E.comps) {
+      if (e.n < c.n * 0.01 || faces.length >= 24) continue;
+      if (S.lab[e.px[0]] !== c.id && S.lab[((e.y0 + e.y1) >> 1) * nx + ((e.x0 + e.x1) >> 1)] !== c.id) continue;
+      if (e.px.some((i) => nearOut[i])) continue;
+      const ring = traceComp(e, nx); if (!ring) continue;
+      const cx = (e.x0 + e.x1 + 1) / 2, cy = (e.y0 + e.y1 + 1) / 2, grow = stroke / 2 + gap;
+      const fp = rdp(ring.map(([x, y]) => { const dx = x - cx, dy = y - cy, l = Math.hypot(dx, dy) || 1; return P([x + (dx / l) * grow, y + (dy / l) * grow]); }), mmPx);
+      if (fp.length >= 3) faces.push({ pts: fp, bbox: polyBox(fp), area: +Math.abs(polyArea(fp)).toFixed(3), material: true });
+    }
+    faces.sort((a, b) => b.area - a.area);
     for (const e of E.comps) {
       if (e.n > c.n * 0.35 || e.n < (1.2 / mmPx) ** 2) continue;
       const ci = ((e.y0 + e.y1) >> 1) * nx + ((e.x0 + e.x1) >> 1);
@@ -189,7 +200,7 @@ export function traceDrawing(img, mmPx) {
       profiles.push({ id: hid, layer: 'SCAN', source: 'RASTER', role: 'hole', parent: id, area: +Math.abs(polyArea(hp)).toFixed(3), bbox: polyBox(hp), ...(round ? { diameter: +d.toFixed(3) } : {}), points: hp });
       if (round) circles.push({ c: P([cx, cy]), d: +d.toFixed(3) }); else holePolys.push(hp);
     }
-    views.push({ id: `V${k + 1}`, box: bb, cbox: bb, silhouettes: [{ pts, exact: false }], circles, holePolys, border: false, raster: true });
+    views.push({ id: `V${k + 1}`, box: bb, cbox: bb, silhouettes: [{ pts, exact: false }], circles, holePolys, faces, border: false, raster: true });
   });
   views.forEach((v, i) => { v.id = `V${i + 1}`; });
   const diag = Math.hypot(nx, ny) * mmPx;
