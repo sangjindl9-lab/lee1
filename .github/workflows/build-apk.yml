@@ -3,6 +3,8 @@ on:
   workflow_dispatch:
   push:
     branches: [main, master, eum-safe]
+permissions:
+  contents: write
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -23,3 +25,8 @@ jobs:
         with:
           name: EUM-SAFE-install-APK
           path: app/build/outputs/apk/debug/app-debug.apk
+      - name: Commit APK to branch
+        run: |
+          mkdir -p apk && cp app/build/outputs/apk/debug/app-debug.apk apk/EUM_SAFE_1.0.apk
+          git config user.name "github-actions" && git config user.email "actions@github.com"
+          git add -f apk/EUM_SAFE_1.0.apk && git commit -m "Add built APK [skip ci]" && git push
