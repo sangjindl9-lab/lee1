@@ -18,9 +18,20 @@ export function dwgJsonToDxf(json) {
   const entities = [], blocks = {};
   for (const b of bh.values()) if (b !== model && !paper.has(H(b.handle))) blocks[b.name] = { name: b.name, position: P(b.base_pt), entities: [] };
   let skipped = 0;
+  // 구형 2D 폴리선(POLYLINE_2D): 꼭짓점(VERTEX_2D)이 폴리선을 소유자로 따로 저장된다
+  // 핸들이 겹치는 파일이 있어(블록 복사 등) 소유자 핸들 대신 저장 순서(폴리선 → 꼭짓점들 → SEQEND)로 묶는다
+  const verts = new Map();
+  for (let i = 0; i < objs.length; i++) {
+    if (objs[i].entity !== 'POLYLINE_2D') continue;
+    const out = [];
+    for (let k = i + 1; k < objs.length && objs[k].entity === 'VERTEX_2D'; k++) if (objs[k].point) out.push(objs[k]);
+    if (out.length) verts.set(objs[i], out);
+  }
   for (const o of objs) {
-    if (!o.entity) continue;
-    const e = conv(o, { layerName, byH, ltypes });
+    if (!o.entity || o.entity === 'VERTEX_2D' || o.entity === 'SEQEND') continue;
+    const e = o.entity === 'POLYLINE_2D'
+      ? (() => { const vs = verts.get(o) || []; return vs.length > 1 ? { layer: layerName(o), type: 'LWPOLYLINE', shape: !!(o.flag & 1), vertices: vs.map((v) => ({ x: v.point[0], y: v.point[1], ...(v.bulge ? { bulge: v.bulge } : {}) })) } : null; })()
+      : conv(o, { layerName, byH, ltypes });
     if (!e || !sane(e)) { skipped++; continue; }
     const owner = H(o.ownerhandle);
     const ob = bh.get(owner);
