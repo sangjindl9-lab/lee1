@@ -5,7 +5,8 @@ import fs from 'node:fs/promises';
 import fss from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { analyzeDxf } from './dxf.js';
+import { analyzeDxf, analyzeParsed } from './dxf.js';
+import { dwgJsonToDxf } from './dwgjson.js';
 
 const run = promisify(execFile);
 export const DWG2DXF = process.env.DWG2DXF_PATH || '/opt/libredwg/bin/dwg2dxf';
@@ -22,10 +23,23 @@ export async function analyzeDwg(file) {
     try { const r = await run(DWG2DXF, ['-y', '-o', out, file], { timeout: 180000, maxBuffer: 1 << 26 }); log = r.stderr; }
     catch (e) { log = String(e.stderr || e.message); } // 경고만 있어도 비정상 종료할 수 있어 결과 파일로 판단
     const st = await fs.stat(out).catch(() => null);
-    if (!st?.size) throw new Error(`DWG 를 변환하지 못했습니다 (AutoCAD ${VER[code] || code} 형식). DXF 로 저장해 올려 주세요. ${log.slice(-200)}`);
-    const a = analyzeDxf(await fs.readFile(out), 'DWG');
+    let a = null;
+    if (st?.size) { try { a = analyzeDxf(await fs.readFile(out), 'DWG'); } catch { a = null; } }
+    // dwg2dxf 가 도중에 멈춰(세그폴트 등) DXF 가 잘린 경우: 같은 엔진의 JSON 읽기(dwgread)로 다시 시도
+    if (!a) {
+      const js = path.join(dir, 'out.json');
+      const DWGREAD = path.join(path.dirname(DWG2DXF), 'dwgread');
+      try { await run(DWGREAD, ['-O', 'JSON', '-o', js, file], { timeout: 240000, maxBuffer: 1 << 26 }); } catch { /* 결과 파일로 판단 */ }
+      const raw = await fs.readFile(js, 'utf8').catch(() => '');
+      let j = null; try { j = JSON.parse(raw); } catch { j = null; }
+      if (!j) throw new Error(`DWG 를 변환하지 못했습니다 (AutoCAD ${VER[code] || code} 형식). DXF 로 저장해 올려 주세요. ${log.slice(-200)}`);
+      const d = dwgJsonToDxf(j);
+      a = analyzeParsed(d, d.layerLT, 'DWG');
+      a.converter = 'LibreDWG dwgread(JSON) 0.13';
+      a.warnings.unshift('DWG→DXF 변환이 중간에 멈춰 JSON 읽기로 대신 분석했습니다. 일부 객체가 빠졌을 수 있습니다.');
+    }
     a.version = `${code} (AutoCAD ${VER[code] || '알 수 없음'})`;
-    a.converter = 'LibreDWG dwg2dxf 0.13';
+    a.converter ||= 'LibreDWG dwg2dxf 0.13';
     // 재질·연관치수 등 형상과 무관한 경고는 제외하고, 도면 객체(entity) 경고와 읽기 오류만 알린다
     const warns = (log.match(/(?:Class entity[^\n]*|ERROR[^\n]*)/g) || []).length;
     if (warns) a.warnings.unshift(`DWG 변환 중 도면 객체 경고 ${warns}건 — 일부 객체(WIPEOUT 등)가 빠졌을 수 있습니다.`);

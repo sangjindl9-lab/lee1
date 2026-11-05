@@ -36,6 +36,11 @@ export function analyzeDxf(buf, format = 'DXF') {
   const text = decode(buf);
   const layerLT = layerLineTypes(text);
   try { dxf = new DxfParser().parseSync(text); } catch (e) { throw new Error(`${format} 를 해석하지 못했습니다: ` + e.message); }
+  return analyzeParsed(dxf, layerLT, format);
+}
+
+/** dxf-parser 형식 객체 분석 (DXF 파일 또는 DWG→JSON 변환 결과 공통) */
+export function analyzeParsed(dxf, layerLT = {}, format = 'DXF') {
   const code = dxf.header?.$INSUNITS ?? 0;
   const [unitName, scale] = UNITS[code] || ['기타', 1];
   const ents = dxf.entities || [];
