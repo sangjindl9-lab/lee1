@@ -23,6 +23,5 @@ COPY package.json ./
 COPY server ./server
 COPY shared ./shared
 COPY samples ./samples
-VOLUME ["/data"]
 EXPOSE 8080
 CMD ["node", "server/index.js"]
