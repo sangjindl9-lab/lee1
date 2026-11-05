@@ -21,7 +21,7 @@ export function dwgJsonToDxf(json) {
   for (const o of objs) {
     if (!o.entity) continue;
     const e = conv(o, { layerName, byH, ltypes });
-    if (!e) { skipped++; continue; }
+    if (!e || !sane(e)) { skipped++; continue; }
     const owner = H(o.ownerhandle);
     const ob = bh.get(owner);
     if (!ob || ob === model) { if (!paper.has(owner)) entities.push(e); }
@@ -29,6 +29,17 @@ export function dwgJsonToDxf(json) {
   }
   const ver = json.HEADER?.ACADVER || json.FILEHEADER?.version || null;
   return { header: { $INSUNITS: json.HEADER?.INSUNITS ?? 0, $ACADVER: ver }, tables: { layer: { layers } }, entities, blocks, layerLT, skipped };
+}
+
+// 손상·미해석 객체의 터무니없는 좌표(1e+249 등)는 도면 범위를 망가뜨리므로 버린다
+const LIM = 1e8;
+const ok = (v) => v == null || (Number.isFinite(v) && Math.abs(v) < LIM);
+const okP = (p) => !p || (ok(p.x) && ok(p.y));
+function sane(e) {
+  if (![e.center, e.position, e.startPoint, e.middleOfText].every(okP)) return false;
+  if (e.vertices && !e.vertices.every((v) => okP(v) && (v.bulge == null || (Number.isFinite(v.bulge) && Math.abs(v.bulge) < 1e3)))) return false;
+  if (e.radius != null && !(ok(e.radius) && e.radius > 0)) return false;
+  return ok(e.xScale) && ok(e.yScale) && ok(e.rotation);
 }
 
 function conv(o, { layerName, byH, ltypes }) {
