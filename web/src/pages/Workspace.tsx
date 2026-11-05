@@ -17,6 +17,7 @@ import ExplodePanel from '../components/panels/Explode';
 import VideoPanel from '../components/panels/Video';
 import SharePanel from '../components/panels/Share';
 import ProjectInfo from '../components/panels/ProjectInfo';
+import ReviewBanner from '../components/ReviewBanner';
 
 type Tab = 'project' | 'upload' | 'convert' | 'explode' | 'video' | 'share';
 const TABS: [Tab, string][] = [['project', t('nav.project')], ['upload', t('nav.upload')], ['convert', t('nav.convert')], ['explode', t('nav.explode')], ['video', t('nav.video')], ['share', t('nav.share')]];
@@ -116,6 +117,7 @@ export default function Workspace({ projectId, me }: { projectId: string; me: Me
             <>
               <Viewer key={modelId} url={`/api/models/${modelId}/glb`} zUp={zUp} />
               <ViewerToolbar container={viewerBox} />
+              {model && (model as any).review_status && (model as any).review_status !== 'n/a' && <ReviewBanner canWrite={canWrite} />}
               {model && <div className="pointer-events-none absolute bottom-2 left-2 rounded bg-panel/80 px-2 py-1 text-[11px] text-mute backdrop-blur">
                 {model.name} · {model.stats.partCount}개 부품 · {model.stats.size?.map((x: number) => x.toFixed(0)).join('×')} {model.stats.unit}</div>}
             </>

@@ -93,3 +93,50 @@ test('H-3. 회전(/Rotate 270) PDF → 용지 가로·세로 바뀜 반영, 윤�
   assert.ok(Math.abs(pw / ph - a.page.width / a.page.height) < 0.01, `미리보기 ${pw}×${ph}`);
   assert.equal(a.profiles.filter((p) => p.role === 'hole' && p.parent === outer.id).length, 6);
 });
+
+test('R. STEP 없이 3면도 → 투상도 자동 인식 → 결합 3D 초안(체적 정답 비교) → 검토 승인', async () => {
+  for (const [file, scale] of [['three_view_block.dxf', undefined], ['three_view_block_1to2.pdf', 2]]) {
+    const up = await upload(A, proj.id, file);
+    const j = await waitJob(A, up.data.job.id);
+    assert.equal(j.status, 'done', j.error);
+    const a = (await A.get(`/api/files/${up.data.file.id}`)).data.analysis;
+    assert.equal(a.groups.length, 2, `${file}: 물체 2개`);
+    const g1 = a.groups.find((g) => g.side);
+    const role = (id) => a.views.find((v) => v.id === id);
+    assert.ok(g1.top && g1.side && g1.topPos === 'above' && g1.sidePos === 'right', '3각법 정면·평면·우측면');
+    assert.ok(role(g1.front).silhouettes[0].exact, '닫힌 윤곽은 정확한 좌표 사용');
+    if (scale) {
+      const no = await A.post(`/api/files/${up.data.file.id}/reconstruct`, {});
+      assert.equal(no.status, 400); assert.match(no.data.error, /축척/);
+    }
+    const r = await A.post(`/api/files/${up.data.file.id}/reconstruct`, scale ? { scale } : {});
+    assert.equal(r.status, 201, JSON.stringify(r.data));
+    const m = (await A.get(`/api/models/${r.data.modelId}`)).data.model;
+    assert.equal(m.method, 'views-reconstruct');
+    assert.equal(m.review_status, 'pending');
+    assert.ok(m.provenance.items.some((i) => i.source === 'ai'), 'AI 추정 구분');
+    const vols = m.parts.map((p) => p.volume).sort((x, y) => y - x);
+    assert.equal(vols.length, 2);
+    assert.ok(Math.abs(vols[0] - 185717) / 185717 < 0.003, `계단 블록 체적 ${vols[0]}`);
+    assert.ok(Math.abs(vols[1] - 28274) / 28274 < 0.01, `원통 체적 ${vols[1]}`);
+    assert.ok(m.parts.every((p) => p.extras?.estimated), '부품마다 추정 표시');
+    // 타사 차단
+    assert.equal((await B.post(`/api/files/${up.data.file.id}/reconstruct`, {})).status, 404);
+    assert.equal((await B.post(`/api/models/${m.id}/review`, { decision: 'approved' })).status, 404);
+    // 승인
+    const ok = await A.post(`/api/models/${m.id}/review`, { decision: 'approved', note: '외형 확인' });
+    assert.equal(ok.data.review_status, 'approved');
+  }
+  // 사용자 지정 그룹: 측면도 제외하고 정면+평면만으로도 생성
+  const up = await upload(A, proj.id, 'three_view_block.dxf', { name: 'tv2.dxf' });
+  await waitJob(A, up.data.job.id);
+  const a = (await A.get(`/api/files/${up.data.file.id}`)).data.analysis;
+  const g = a.groups.find((x) => x.side);
+  const r = await A.post(`/api/files/${up.data.file.id}/reconstruct`, { groups: [{ ...g, side: null, sidePos: null }] });
+  assert.equal(r.status, 201);
+  const vol = (await A.get(`/api/models/${r.data.modelId}`)).data.model.parts[0].volume;
+  assert.ok(Math.abs(vol - 185717) / 185717 < 0.003, '이 형상은 정면+평면만으로 결정됨');
+  // 일반 모델은 검토 대상 아님
+  const plain = await A.post(`/api/files/${up.data.file.id}/extrude`, { thickness: 5 });
+  assert.equal((await A.post(`/api/models/${plain.data.modelId}/review`, { decision: 'approved' })).status, 404);
+});

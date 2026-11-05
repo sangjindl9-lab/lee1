@@ -39,7 +39,7 @@ r.get('/projects/:id', async (req, res) => {
     const { rows: [p] } = await c.query('SELECT * FROM projects WHERE id=$1', [req.params.id]);
     if (!p) return null;
     const files = (await c.query('SELECT id,original_name,ext,size,version,status,error,created_at,(analysis IS NOT NULL) AS has_analysis FROM files WHERE project_id=$1 ORDER BY created_at DESC', [p.id])).rows;
-    const models = (await c.query('SELECT id,name,method,source_file_id,source_file_version,stats,created_at FROM models WHERE project_id=$1 ORDER BY created_at DESC', [p.id])).rows;
+    const models = (await c.query('SELECT id,name,method,source_file_id,source_file_version,stats,review_status,created_at FROM models WHERE project_id=$1 ORDER BY created_at DESC', [p.id])).rows;
     const jobs = (await c.query("SELECT id,type,status,progress,message,error,payload,result,attempts,created_at FROM jobs WHERE payload->>'projectId'=$1 ORDER BY created_at DESC LIMIT 30", [p.id])).rows;
     return { project: p, files, models, jobs };
   });
@@ -139,6 +139,16 @@ r.post('/uploads/:id/complete', write, async (req, res) => {
 r.get('/files/:id', async (req, res) => {
   const f = await req.db(async (c) => (await c.query('SELECT id,project_id,original_name,ext,size,sha256,version,status,analysis,error,created_at FROM files WHERE id=$1', [req.params.id])).rows[0]);
   f ? res.json(f) : nf(res, '파일');
+});
+
+// 재분석: 분석 엔진이 개선된 뒤 기존 파일을 다시 분석 (원본은 그대로)
+r.post('/files/:id/reanalyze', write, async (req, res) => {
+  const job = await req.db(async (c) => {
+    const { rows: [f] } = await c.query("UPDATE files SET status='uploaded' WHERE id=$1 AND ext = ANY($2) RETURNING *", [req.params.id, ['dxf', 'dwg', 'pdf']]);
+    if (!f) return null;
+    return enqueue(c, { companyId: f.company_id, type: 'convert', payload: { fileId: f.id, projectId: f.project_id }, userId: req.user.id });
+  });
+  job ? res.status(201).json(job) : res.status(404).json({ error: '재분석할 2D 도면을 찾을 수 없습니다' });
 });
 
 // 원본 다운로드: 회사 내부 관리자·작성자만, 감사 로그 기록

@@ -1,6 +1,7 @@
 // 2D 도면(DXF·DWG·PDF) 공통: 선분 연결 → 닫힌 윤곽 → 외곽/구멍/도곽 판정 → 돌출 3D
 import * as THREE from 'three';
 import { writeGlb, summarize } from './gltf-writer.js';
+import { detectViews } from './views.js';
 
 const MAX_LOOPS = 3000;
 
@@ -25,7 +26,7 @@ export function chainLoops(segs, tol = 1e-3) {
     }
     if (closed) { idx.forEach((k) => used.add(k)); chain.pop(); loops.push({ layer: segs[i].layer, source: 'CHAIN', pts: chain, segs: idx.length }); }
   }
-  return { loops, usedSegs: used.size };
+  return { loops, usedSegs: used.size, used };
 }
 
 /**
@@ -53,10 +54,31 @@ export function buildProfiles(loops, open, scale, page, tol = 1e-3) {
   // 도곽(도면 테두리·표제란 틀) 판정: 용지의 85% 이상을 덮는 고리
   const isFrame = (l) => page && (l.bb[1][0] - l.bb[0][0]) >= page.w * 0.85 && (l.bb[1][1] - l.bb[0][1]) >= page.h * 0.85;
   const frames = new Set(kept.filter(isFrame).map((l) => l.id));
+  // 용지 정보가 없는 CAD(DXF·DWG): 다른 모든 형상을 크게 둘러싸는 가장 큰 직사각형을 도곽으로 본다
+  if (!page && kept.length > 1) {
+    const L = kept[0], bbA = (L.bb[1][0] - L.bb[0][0]) * (L.bb[1][1] - L.bb[0][1]);
+    const rest = kept.slice(1).filter((l) => l.bb[0][0] >= L.bb[0][0] && l.bb[1][0] <= L.bb[1][0] && l.bb[0][1] >= L.bb[0][1] && l.bb[1][1] <= L.bb[1][1]);
+    if (L.area / bbA > 0.98 && rest.length === kept.length - 1) {
+      const u = [[Math.min(...rest.map((l) => l.bb[0][0])), Math.min(...rest.map((l) => l.bb[0][1]))], [Math.max(...rest.map((l) => l.bb[1][0])), Math.max(...rest.map((l) => l.bb[1][1]))]];
+      if ((u[1][0] - u[0][0]) * (u[1][1] - u[0][1]) < bbA * 0.5) frames.add(L.id);
+    }
+  }
+  // 상세도·투상도 여러 개를 감싼 사각 틀: 직사각형이면서, 자식 중 자기 자식을 가진 고리가 2개 이상
+  const kids = new Map();
+  for (const l of kept) if (l.parent) kids.set(l.parent, [...(kids.get(l.parent) || []), l]);
+  const allBox = kept.length ? [[Math.min(...kept.map((l) => l.bb[0][0])), Math.min(...kept.map((l) => l.bb[0][1]))], [Math.max(...kept.map((l) => l.bb[1][0])), Math.max(...kept.map((l) => l.bb[1][1]))]] : null;
+  const allA = allBox ? (allBox[1][0] - allBox[0][0]) * (allBox[1][1] - allBox[0][1]) : 0;
+  for (const l of kept) {
+    if (frames.has(l.id) || l.pts.length > 8) continue;
+    if ((l.bb[1][0] - l.bb[0][0]) * (l.bb[1][1] - l.bb[0][1]) < allA * 0.1) continue;
+    const bbA = (l.bb[1][0] - l.bb[0][0]) * (l.bb[1][1] - l.bb[0][1]);
+    const nested = (kids.get(l.id) || []).filter((c) => kids.has(c.id)).length;
+    if (l.area / bbA > 0.98 && nested >= 2) frames.add(l.id);
+  }
   // 도곽 안쪽 고리는 도곽을 부모로 보지 않는다
   for (const l of kept) while (l.parent && frames.has(l.parent)) l.parent = byId[l.parent].parent;
   // 굵은 선을 얇은 사각형으로 그린 것(폭 0.6mm 미만, 길쭉함)은 형상이 아닌 '선'으로 분류
-  const isLine = (l) => { const w = (l.bb[1][0] - l.bb[0][0]) * scale, h = (l.bb[1][1] - l.bb[0][1]) * scale; return Math.min(w, h) < 0.6 && Math.max(w, h) > 8 * Math.min(w, h); };
+  const isLine = (l) => { const w = (l.bb[1][0] - l.bb[0][0]) * scale, h = (l.bb[1][1] - l.bb[0][1]) * scale; const lo = Math.min(w, h), hi = Math.max(w, h); return (lo < 0.6 && hi > 8 * lo) || (lo < 1.5 && hi > 25 * lo); };
   const lines = new Set(kept.filter((l) => !frames.has(l.id) && isLine(l)).map((l) => l.id));
   for (const l of kept) while (l.parent && lines.has(l.parent)) l.parent = byId[l.parent].parent;
   const depth = (l) => (l.parent ? 1 + depth(byId[l.parent]) : 0);
@@ -67,7 +89,9 @@ export function buildProfiles(loops, open, scale, page, tol = 1e-3) {
     ...(l.circle ? { diameter: +(l.circle.r * 2 * scale).toFixed(3) } : roundDia(l, scale)),
     points: simplify(l.pts).map(([x, y]) => [+(x * scale).toFixed(4), +(y * scale).toFixed(4)]),
   }));
-  return { profiles, openChains: open.length - ch.usedSegs, truncated: all.length > MAX_LOOPS };
+  const segs = open.filter((_, i) => !ch.used.has(i)).slice(0, 60000).map((s) => s.pts.map(([x, y]) => [x * scale, y * scale]));
+  const { views, groups } = detectViews(profiles, segs);
+  return { profiles, openChains: open.length - ch.usedSegs, truncated: all.length > MAX_LOOPS, views, groups };
 }
 
 /** 치수값이 가장 큰 외곽의 가로/세로와 일치하는지 */
@@ -133,24 +157,5 @@ function roundDia(l, scale) {
 }
 const httpErr = (m) => Object.assign(new Error(m), { status: 400 });
 
-export function arcPts(c, r, s, e, n) {
-  const pts = [];
-  const full = Math.abs(e - s - Math.PI * 2) < 1e-9;
-  for (let i = 0; i < (full ? n : n + 1); i++) { const a = s + ((e - s) * i) / n; pts.push([c.x + r * Math.cos(a), c.y + r * Math.sin(a)]); }
-  return pts;
-}
-export const area = (p) => p.reduce((s, a, i) => { const b = p[(i + 1) % p.length]; return s + a[0] * b[1] - b[0] * a[1]; }, 0) / 2;
-export function inside([x, y], poly) {
-  let c = false;
-  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-    const [xi, yi] = poly[i], [xj, yj] = poly[j];
-    if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) c = !c;
-  }
-  return c;
-}
-export function bbox(p) {
-  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-  for (const [x, y] of p) { if (x < x0) x0 = x; if (y < y0) y0 = y; if (x > x1) x1 = x; if (y > y1) y1 = y; }
-  return [[x0, y0], [x1, y1]];
-}
-function simplify(p) { return p.filter((q, i) => i === 0 || Math.hypot(q[0] - p[i - 1][0], q[1] - p[i - 1][1]) > 1e-6); }
+export { arcPts, area, inside, bbox } from './profiles-geom.js';
+import { area, inside, bbox, simplify } from './profiles-geom.js';

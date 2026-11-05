@@ -85,6 +85,12 @@ CREATE TABLE IF NOT EXISTS models (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
+-- AI 추정 형상 검토·승인 (n/a: 검토 불필요, pending: 검토 대기, approved/rejected)
+ALTER TABLE models ADD COLUMN IF NOT EXISTS review_status text NOT NULL DEFAULT 'n/a';
+ALTER TABLE models ADD COLUMN IF NOT EXISTS review_note text;
+ALTER TABLE models ADD COLUMN IF NOT EXISTS reviewed_by uuid REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE models ADD COLUMN IF NOT EXISTS reviewed_at timestamptz;
+
 -- 프로젝트 저장: 분해 설정·재질·카메라·애니메이션 (버전 누적)
 CREATE TABLE IF NOT EXISTS scenes (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

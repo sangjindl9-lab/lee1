@@ -20,6 +20,9 @@
 | GET | /files/:id/original | 원본 다운로드(관리자·사용자, 감사 기록) |
 | POST | /files/:id/extrude | DXF·DWG·PDF → 3D `{thickness (필수), scale (PDF 필수, 1:N 의 N), profiles?, perProfile?, name?}` |
 | GET | /files/:id/preview | PDF 1쪽 미리보기 PNG |
+| POST | /files/:id/reconstruct | 투상도 결합 3D 초안 `{scale (PDF 필수), groups?: [{front, top, side, topPos, sidePos}]}` → 검토 대기 모델 |
+| POST | /files/:id/reanalyze | 2D 도면 다시 분석 |
+| POST | /models/:id/review | AI 추정 모델 검토 `{decision: approved|rejected, note}` |
 | GET | /jobs/:id · POST /jobs/:id/retry | 작업 상태 / 실패 작업 재시도 |
 
 ## 모델·장면·영상

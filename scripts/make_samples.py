@@ -171,3 +171,67 @@ img = Image.new("L", (1240, 877), 255); d = ImageDraw.Draw(img)
 d.rectangle([200, 300, 800, 660], outline=0, width=4); d.ellipse([460, 440, 540, 520], outline=0, width=4)
 img.save(os.path.join(OUT, "scanned_drawing.pdf"), resolution=150)
 print("pdf samples written")
+
+# ── 7) 3면도(3각법) — 계단 블록(관통 구멍 Ø20) + 원통, 정답 체적이 알려진 시험 도면 ──
+#  계단 블록: 바닥 100×60×20 + 왼쪽 위 40×60×30, 구멍 Ø20 (x=70,y=30) 관통 → 체적 185,717 mm³
+#  원통: Ø30 × 높이 40, 중심 (145,30) → 체적 28,274 mm³
+def three_view(dxf_path, pdf_path):
+    import math
+    F = (40, 40)     # 정면도 원점 (x, z)
+    T = (40, 120)    # 평면도 원점 (x, y) — 정면도 위 (3각법)
+    S = (220, 40)    # 우측면도 원점 (y, z) — 정면도 오른쪽
+    shapes = []      # (kind, pts / (cx,cy,r), dashed)
+    def poly(pts, o): shapes.append(("poly", [(o[0] + x, o[1] + y) for x, y in pts], False))
+    def line(a, b, o, dashed=False): shapes.append(("line", [(o[0] + a[0], o[1] + a[1]), (o[0] + b[0], o[1] + b[1])], dashed))
+    def circ(cx, cy, r, o): shapes.append(("circle", (o[0] + cx, o[1] + cy, r), False))
+    # 정면도 (x,z)
+    poly([(0, 0), (100, 0), (100, 20), (40, 20), (40, 50), (0, 50)], F)
+    line((60, 0), (60, 20), F, True); line((80, 0), (80, 20), F, True)          # 구멍 숨은선
+    poly([(130, 0), (160, 0), (160, 40), (130, 40)], F)
+    # 평면도 (x,y)
+    poly([(0, 0), (100, 0), (100, 60), (0, 60)], T); line((40, 0), (40, 60), T)
+    circ(70, 30, 10, T)
+    circ(145, 30, 15, T)
+    # 우측면도 (y,z)
+    poly([(0, 0), (60, 0), (60, 50), (0, 50)], S); line((0, 20), (60, 20), S)
+    line((20, 0), (20, 20), S, True); line((40, 0), (40, 20), S, True)
+    # DXF
+    doc = ezdxf.new("R2010"); doc.units = ezdxf.units.MM; doc.header["$INSUNITS"] = 4
+    msp = doc.modelspace(); doc.layers.add("HIDDEN", color=1, linetype="DASHED") if "DASHED" in doc.linetypes else doc.layers.add("HIDDEN", color=1)
+    for k, g, dashed in shapes:
+        at = {"layer": "HIDDEN" if dashed else "0"}
+        if k == "poly": msp.add_lwpolyline(g, close=True, dxfattribs=at)
+        elif k == "line": msp.add_line(*g, dxfattribs=at)
+        else: msp.add_circle((g[0], g[1]), g[2], dxfattribs=at)
+    msp.add_lwpolyline([(0, 0), (420, 0), (420, 297), (0, 297)], close=True)          # 도곽
+    msp.add_text("SCALE 1:1  STEP BLOCK + PIN", dxfattribs={"height": 4}).set_placement((300, 10))
+    doc.saveas(dxf_path)
+    # PDF (A3 가로, 1:2 축척으로 출력)
+    MM = 72 / 25.4; k = 0.5
+    P = lambda x, y: (x * k * MM + 20 * MM, y * k * MM + 30 * MM)
+    ops = ["0 0 0 RG 0.8 w"]
+    W, H = 420 * MM, 297 * MM
+    ops.append(f"{10*MM:.2f} {10*MM:.2f} {W-20*MM:.2f} {H-20*MM:.2f} re S")
+    for kind, g, dashed in shapes:
+        ops.append("[3 2] 0 d" if dashed else "[] 0 d")
+        if kind == "poly":
+            pts = [P(*p) for p in g]; ops.append(" ".join([f"{pts[0][0]:.3f} {pts[0][1]:.3f} m"] + [f"{x:.3f} {y:.3f} l" for x, y in pts[1:]]) + " h S")
+        elif kind == "line":
+            a, b = P(*g[0]), P(*g[1]); ops.append(f"{a[0]:.3f} {a[1]:.3f} m {b[0]:.3f} {b[1]:.3f} l S")
+        else:
+            cx, cy = P(g[0], g[1]); r = g[2] * k * MM; c = 0.5523 * r
+            ops.append(f"{cx+r:.3f} {cy:.3f} m {cx+r:.3f} {cy+c:.3f} {cx+c:.3f} {cy+r:.3f} {cx:.3f} {cy+r:.3f} c {cx-c:.3f} {cy+r:.3f} {cx-r:.3f} {cy+c:.3f} {cx-r:.3f} {cy:.3f} c "
+                       f"{cx-r:.3f} {cy-c:.3f} {cx-c:.3f} {cy-r:.3f} {cx:.3f} {cy-r:.3f} c {cx+c:.3f} {cy-r:.3f} {cx+r:.3f} {cy-c:.3f} {cx+r:.3f} {cy:.3f} c h S")
+    ops.append("[] 0 d BT /F1 10 Tf 300 30 Td (SCALE 1:2  STEP BLOCK + PIN) Tj ET")
+    content = "\n".join(ops).encode()
+    objs = [b"<< /Type /Catalog /Pages 2 0 R >>", b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {W:.2f} {H:.2f}] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>".encode(),
+            b"<< /Length %d >>\nstream\n" % len(content) + content + b"\nendstream", b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"]
+    out = b"%PDF-1.4\n"; offs = []
+    for i, o in enumerate(objs): offs.append(len(out)); out += f"{i+1} 0 obj\n".encode() + o + b"\nendobj\n"
+    x = len(out)
+    out += f"xref\n0 {len(objs)+1}\n0000000000 65535 f \n".encode() + b"".join(f"{o:010d} 00000 n \n".encode() for o in offs)
+    out += f"trailer << /Size {len(objs)+1} /Root 1 0 R >>\nstartxref\n{x}\n%%EOF\n".encode()
+    open(pdf_path, "wb").write(out)
+three_view(os.path.join(OUT, "three_view_block.dxf"), os.path.join(OUT, "three_view_block_1to2.pdf"))
+print("three-view samples written")

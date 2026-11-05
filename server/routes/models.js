@@ -7,6 +7,7 @@ import { requireRole } from '../auth.js';
 import { config } from '../config.js';
 import * as storage from '../storage.js';
 import { extrudeDxf } from '../convert/dxf.js';
+import { reconstructViews } from '../convert/reconstruct.js';
 import { createModel, previewKey } from '../jobs/convert-job.js';
 import { DRAWING_EXTS } from '../convert/index.js';
 import { enqueue } from '../jobs/queue.js';
@@ -74,6 +75,36 @@ r.post('/files/:id/extrude', write, async (req, res) => {
     return { code: 201, body: { modelId: m.id, stats: result.stats, provenance: result.provenance } };
   });
   res.status(out.code).json(out.body);
+});
+
+// 2D 도면 투상도(정면·평면·측면) 결합 → AI 추정 3D 초안 (검토 대기 상태로 생성)
+r.post('/files/:id/reconstruct', write, async (req, res) => {
+  const out = await req.db(async (c) => {
+    const { rows: [f] } = await c.query('SELECT * FROM files WHERE id=$1', [req.params.id]);
+    if (!f) return { code: 404, body: { error: '파일을 찾을 수 없습니다' } };
+    if (!DRAWING_EXTS.includes(f.ext) || !f.analysis) return { code: 400, body: { error: '분석이 끝난 2D 도면(DXF·DWG·PDF)만 가능합니다' } };
+    const name = (req.body?.name || f.original_name.replace(/\.[^.]+$/, '')).slice(0, 120);
+    const result = await reconstructViews(f.analysis, req.body || {}, name);
+    const m = await createModel(c, { file: f, result, glb: Buffer.from(result.glb), name: `${name} (3D 초안)` });
+    await c.query("UPDATE models SET review_status='pending' WHERE id=$1", [m.id]);
+    await audit(c, { companyId: f.company_id, userId: req.user.id, action: 'model.reconstruct', target: m.id, meta: { fileId: f.id, groups: result.report, scale: req.body?.scale ?? null } });
+    return { code: 201, body: { modelId: m.id, stats: result.stats, report: result.report, provenance: result.provenance } };
+  });
+  res.status(out.code).json(out.body);
+});
+
+// AI 추정 형상 검토: 승인 / 반려
+r.post('/models/:id/review', write, async (req, res) => {
+  const { decision, note = '' } = req.body || {};
+  if (!['approved', 'rejected'].includes(decision)) return res.status(400).json({ error: 'decision 은 approved 또는 rejected' });
+  const m = await req.db(async (c) => {
+    const { rows: [m] } = await c.query(
+      "UPDATE models SET review_status=$2, review_note=$3, reviewed_by=$4, reviewed_at=now() WHERE id=$1 AND review_status <> 'n/a' RETURNING id,review_status,review_note,reviewed_at",
+      [req.params.id, decision, String(note).slice(0, 1000), req.user.id]);
+    if (m) await audit(c, { companyId: req.user.companyId, userId: req.user.id, action: `model.review.${decision}`, target: m.id, meta: { note } });
+    return m;
+  });
+  m ? res.json(m) : res.status(404).json({ error: '검토 대상 모델이 아닙니다' });
 });
 
 r.get('/files/:id/preview', async (req, res) => {

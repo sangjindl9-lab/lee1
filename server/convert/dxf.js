@@ -56,13 +56,13 @@ export function analyzeDxf(buf, format = 'DXF') {
   };
   for (const e of ents) visit(e, I, 0);
 
-  const { profiles, openChains, truncated } = buildProfiles(loops, open, scale);
+  const { profiles, openChains, truncated, views, groups } = buildProfiles(loops, open, scale);
   return {
     format, is3D: false, version: dxf.header?.$ACADVER || null,
     unit: unitName, unitCode: code, unitScaleToMm: scale,
     coordinateSystem: 'WCS 2D (XY 평면)', scaleNote: '모형공간 1:1 기준. 도면 축척(배치) 인식은 미지원',
     layers: Object.keys(dxf.tables?.layer?.layers || {}),
-    entityCounts: counts, profiles, dimensions: checkDims(dims.filter((d) => d.value != null), profiles), texts: texts.slice(0, 200),
+    entityCounts: counts, profiles, views, groups, dimensions: checkDims(dims.filter((d) => d.value != null), profiles), texts: texts.slice(0, 200),
     openChains, convertible: profiles.some((p) => p.role === 'outer'),
     needsUserInput: ['thickness'],
     warnings: [

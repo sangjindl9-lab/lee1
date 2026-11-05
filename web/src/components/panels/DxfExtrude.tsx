@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../../api';
+import { useGroups, ViewsOverlay, GroupsEditor } from './ViewsPanel';
 
 // 2D 도면(DXF·DWG·PDF) 분석 결과를 보여주고, 두께(PDF 는 축척도)를 입력받아 돌출 3D 생성
 export default function DxfExtrude({ fileId, onClose, onCreated }: { fileId: string; onClose: () => void; onCreated: (modelId: string) => void }) {
   const [f, setF] = useState<any>(null);
+  const [mode, setMode] = useState<'views' | 'extrude'>('extrude');
   const [th, setTh] = useState('');
   const [sc, setSc] = useState('');
   const [sel, setSel] = useState<Set<string>>(new Set());
@@ -18,9 +20,11 @@ export default function DxfExtrude({ fileId, onClose, onCreated }: { fileId: str
       // 상세도처럼 외곽이 많은 도면은 자동 선택하지 않는다
       setSel(new Set((a.sheet || outers.length > 20 ? [] : a.format === 'PDF' ? outers.slice(0, 1) : outers).map((p: any) => p.id)));
       if (a.scaleHint) setSc(String(a.scaleHint));
+      if (a.groups?.length) setMode('views');
     });
   }, [fileId]);
   const a = f?.analysis;
+  const G = useGroups(a);
   const pdf = a?.format === 'PDF';
   const k = pdf ? Number(sc) || 0 : 1;
   const view = useMemo(() => {
@@ -38,6 +42,18 @@ export default function DxfExtrude({ fileId, onClose, onCreated }: { fileId: str
   const sizeOf = (p: any) => [(p.bbox[1][0] - p.bbox[0][0]) * k, (p.bbox[1][1] - p.bbox[0][1]) * k];
   const nums: number[] = a?.numbers || [];
   const matchNum = (v: number) => nums.some((n) => Math.abs(n - v) <= Math.max(0.05, v * 0.003));
+  async function makeViews() {
+    setErr(''); setBusy(true);
+    try { const r = await api(`/files/${fileId}/reconstruct`, { body: { groups: G.groups, ...(pdf ? { scale: Number(sc) } : {}) } }); onCreated(r.modelId); }
+    catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+  }
+  async function reanalyze() {
+    setBusy(true);
+    try { const j = await api(`/files/${fileId}/reanalyze`, { method: 'POST' });
+      for (let i = 0; i < 120; i++) { await new Promise((r) => setTimeout(r, 1000)); const s2 = await api(`/jobs/${j.id}`); if (s2.status === 'done' || s2.status === 'failed') break; }
+      const x = await api(`/files/${fileId}`); setF(x); if (x.analysis.groups?.length) setMode('views');
+    } finally { setBusy(false); }
+  }
   async function make() {
     setErr(''); setBusy(true);
     try { const r = await api(`/files/${fileId}/extrude`, { body: { thickness: Number(th), profiles: [...sel], ...(pdf ? { scale: Number(sc) } : {}) } }); onCreated(r.modelId); }
@@ -54,7 +70,8 @@ export default function DxfExtrude({ fileId, onClose, onCreated }: { fileId: str
               {view && <svg viewBox={view.vb} className="h-[380px] w-full" data-testid="drawing-view">
                 {pdf && a.hasPreview && <image href={`/api/files/${fileId}/preview`} x={0} y={-a.page.height} width={a.page.width} height={a.page.height} opacity={0.35} preserveAspectRatio="none" />}
                 {pdf && <rect x={0} y={-a.page.height} width={a.page.width} height={a.page.height} fill="none" stroke="var(--line)" strokeWidth={view.sw} />}
-                {a.profiles.map((p: any) => {
+                {mode === 'views' && a.views && <ViewsOverlay a={a} roleOf={G.roleOf} sw={view.sw} />}
+                {mode === 'extrude' && a.profiles.map((p: any) => {
                   const isSel = sel.has(p.id) || (p.role === 'hole' && sel.has(p.parent));
                   if (p.role === 'line') return <polygon key={p.id} points={p.points.map(([x, y]: number[]) => `${x},${-y}`).join(' ')} fill="none" stroke="var(--mute)" strokeWidth={view.sw * 0.6} opacity={0.5} />;
                   const stroke = p.role === 'frame' ? (isSel ? 'var(--accent)' : 'var(--mute)') : p.role === 'outer' ? (isSel ? 'var(--accent)' : 'var(--mute)') : 'var(--ok)';
@@ -74,6 +91,29 @@ export default function DxfExtrude({ fileId, onClose, onCreated }: { fileId: str
               </div>
             </div>
             <div className="space-y-3 p-4 text-sm">
+              <div className="grid grid-cols-2 gap-1 rounded-lg border border-line p-1" data-testid="mode-tabs">
+                <button className={`btn h-8 justify-center ${mode === 'views' ? 'btn-on' : 'btn-ghost'}`} onClick={() => setMode('views')}>투상도 결합 3D <span className="text-ai">(AI 추정)</span></button>
+                <button className={`btn h-8 justify-center ${mode === 'extrude' ? 'btn-on' : 'btn-ghost'}`} onClick={() => setMode('extrude')}>단일 윤곽 돌출</button>
+              </div>
+              {mode === 'views' && (<>
+                <p className="text-xs text-mute">정면·평면·측면도의 외형을 서로 교차해 입체 초안을 만듭니다. STEP 원본이 없어도 되며, 결과는 <b className="text-ai">AI 추정 형상</b>으로 표시되고 검토·승인이 필요합니다. 숨은 내부·오목 형상은 반영되지 않습니다.</p>
+                {!a.views ? <div className="space-y-2 rounded border border-warn/40 bg-warn/10 p-2 text-xs text-warn">이 파일은 투상도 인식 기능 이전에 분석되었습니다.
+                  <button className="btn h-7 w-full justify-center" disabled={busy} onClick={reanalyze}>{busy ? '다시 분석 중…' : '다시 분석'}</button></div>
+                  : <GroupsEditor a={a} groups={G.groups} set={G.set} add={G.add} remove={G.remove} />}
+                {pdf && <label className="block space-y-1"><span className="label">축척 1 : N — 필수 입력</span>
+                  <div className="flex items-center gap-2"><span className="num shrink-0">1 :</span><input className="input num" type="number" min={0.001} step="any" value={sc} onChange={(e) => setSc(e.target.value)} placeholder="도면 표제란의 축척" data-testid="scale-views" /></div>
+                  {a.scaleHint ? <div className="text-[11px] text-ai">도면 글자에서 "1:{a.scaleHint}" 를 읽었습니다 — 확인 후 사용하세요.</div> : <div className="text-[11px] text-mute">축척 표기가 "NONE"·없음이면 도면 치수 숫자와 비교해 정하세요.</div>}</label>}
+                <div className="rounded-md border border-line bg-panel2 p-2 text-xs">
+                  <div className="mb-1 font-medium">생성 결과 형상 근거</div>
+                  <div><span className="text-ok">■</span> 원본 도면에서 확인: 각 투상도 외형</div>
+                  {pdf && <div><span className="text-warn">■</span> 사용자 입력으로 확정: 축척 1:{sc || '?'}</div>}
+                  <div><span className="text-ai">■</span> AI 추정: 투상도 짝짓기·깊이 방향·관통 구멍</div>
+                  <div><span className="text-bad">■</span> 생성 불가: 숨은 내부·오목부·곡면 세부</div>
+                </div>
+                {err && <div className="text-xs text-bad">{err}</div>}
+                <button className="btn btn-accent h-9 w-full justify-center" disabled={busy || !G.groups.length || (pdf && !(Number(sc) > 0))} onClick={makeViews} data-testid="views-go">{busy ? '생성 중…' : '3D 초안 생성 (AI 추정)'}</button>
+              </>)}
+              {mode === 'extrude' && (<>
               <div className="grid grid-cols-2 gap-2 text-xs">
                 <Info k="형식" v={`${a.format}${a.version ? ` ${a.version}` : ''}`} />
                 <Info k="단위" v={a.unit} />
@@ -112,6 +152,7 @@ export default function DxfExtrude({ fileId, onClose, onCreated }: { fileId: str
               </div>
               {err && <div className="text-xs text-bad">{err}</div>}
               <button className="btn btn-accent h-9 w-full justify-center" disabled={!ready || busy} onClick={make} data-testid="extrude-go">{busy ? '생성 중…' : '3D 모델 생성'}</button>
+              </>)}
             </div>
           </div>
         )}

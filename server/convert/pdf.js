@@ -32,7 +32,7 @@ export async function analyzePdf(file) {
     const g = parseSvg(svg, H);
     const imgList = (await run('pdfimages', ['-list', '-f', '1', '-l', '1', file], { timeout: 30000 }).catch(() => ({ stdout: '' }))).stdout;
     g.images = Math.max(g.images, imgList.split('\n').slice(2).filter((l) => l.trim()).length);
-    const { profiles, openChains, truncated } = buildProfiles(g.loops, g.open, PT2MM, { w: W, h: H }, 0.05);
+    const { profiles, openChains, truncated, views, groups } = buildProfiles(g.loops, g.open, PT2MM, { w: W, h: H }, 0.05);
     const texts = text.split(/\r?\n/).map((s) => s.trim().replace(/\s{2,}/g, ' ')).filter(Boolean).slice(0, 200);
     const m = /(?:SCALE|S|축척)\s*[:=]?\s*1\s*[:/]\s*(\d+(?:\.\d+)?)/i.exec(text) || /\b1\s*:\s*(\d+(?:\.\d+)?)\b/.exec(text);
     const numbers = [...new Set((text.match(/(?<![\d.])\d+(?:\.\d+)?(?![\d.])/g) || []).map(Number).filter((n) => n >= 1 && n < 100000))].slice(0, 300);
@@ -48,7 +48,7 @@ export async function analyzePdf(file) {
         sheet,
         pdfType: vector ? 'vector' : g.images ? 'scanned' : 'empty',
         layers: [], entityCounts: { 실선: g.strokes, 점선: g.dashed, 채움: g.filled, 이미지: g.images },
-        profiles, dimensions: [], texts, numbers, openChains,
+        profiles, views, groups, dimensions: [], texts, numbers, openChains,
         convertible: vector && outer.length > 0,
         needsUserInput: ['scale', 'thickness'],
         hasPreview: !!preview,
