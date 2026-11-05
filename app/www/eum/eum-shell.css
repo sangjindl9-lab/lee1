@@ -1,0 +1,205 @@
+/* 이음한글 앱 화면 — 편집기 위에 얹는 모바일 껍데기 */
+:root {
+  --eum-blue: #2468e8;
+  --eum-blue-press: #1b54c4;
+  --eum-ink: #1b2430;
+  --eum-sub: #6b7684;
+  --eum-line: #e3e7ed;
+  --eum-bg: #f4f6f9;
+  --eum-bar-h: 48px;
+}
+
+/* 상단 바 + 편집기를 세로로 쌓는다 */
+html, body { overscroll-behavior: none; }
+body { display: flex; flex-direction: column; }
+#studio-root { flex: 1 1 auto; min-height: 0; height: auto !important; }
+
+#eum-bar {
+  flex: 0 0 auto;
+  height: var(--eum-bar-h);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 4px;
+  padding-top: env(safe-area-inset-top);
+  background: #fff;
+  border-bottom: 1px solid var(--eum-line);
+  color: var(--eum-ink);
+  font: 15px/1.2 system-ui, -apple-system, "Pretendard", "Noto Sans KR", sans-serif;
+  z-index: 50;
+}
+#eum-bar button {
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  height: 40px;
+  border-radius: 8px;
+  white-space: nowrap;
+  flex: 0 0 auto;
+  -webkit-tap-highlight-color: transparent;
+}
+#eum-bar button:active { background: #eef1f5; }
+#eum-bar .eum-ic { width: 40px; font-size: 22px; line-height: 1; }
+#eum-bar .eum-txt { padding: 0 12px; font-weight: 600; }
+#eum-bar .eum-primary { color: #fff; background: var(--eum-blue); height: 34px; margin: 0 2px; }
+#eum-bar .eum-primary:active { background: var(--eum-blue-press); }
+#eum-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  padding: 0 4px;
+}
+html.eum-view .eum-edit-only { display: none; }
+
+/* 보기 모드: 편집 도구를 모두 감추고 문서만 보여 준다 */
+html.eum-view #menu-bar,
+html.eum-view #icon-toolbar,
+html.eum-view #style-bar { display: none !important; }
+
+/* 좁은 화면에서는 눈금자·아이콘 도구 상자를 빼고 메뉴 + 서식 줄만 둔다(문서 영역 확보) */
+@media (max-width: 767px) {
+  html.eum-edit #icon-toolbar { display: none !important; }
+  #h-ruler, #v-ruler, #ruler-corner { display: none !important; }
+  #editor-area { grid-template-columns: 0 minmax(0, 1fr) !important; grid-template-rows: 0 minmax(0, 1fr) !important; }
+}
+html.eum-view #h-ruler,
+html.eum-view #v-ruler,
+html.eum-view #ruler-corner { display: none !important; }
+html.eum-view #editor-area { grid-template-columns: 0 minmax(0, 1fr) !important; grid-template-rows: 0 minmax(0, 1fr) !important; }
+
+/* 눈금자를 감춰도 문서 영역은 제자리(2행 2열)에 둔다. 확대/축소는 두 손가락 동작을 앱이 직접 처리한다 */
+#scroll-container { grid-column: 2; grid-row: 2; touch-action: pan-x pan-y !important; }
+
+/* 앱에서 쓸 수 없는 메뉴(새 창 미리보기 인쇄) */
+[data-cmd="file:print"] { display: none !important; }
+
+/* ── 홈 ── */
+#eum-home {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  overflow-y: auto;
+  background: var(--eum-bg);
+  color: var(--eum-ink);
+  font: 15px/1.45 system-ui, -apple-system, "Pretendard", "Noto Sans KR", sans-serif;
+  padding: calc(env(safe-area-inset-top) + 28px) 20px 32px;
+}
+#eum-home[hidden], #eum-menu[hidden], #eum-about[hidden] { display: none; }
+.eum-home-head h1 { margin: 0; font-size: 26px; font-weight: 800; letter-spacing: -0.02em; color: var(--eum-blue); }
+.eum-home-head p { margin: 4px 0 0; color: var(--eum-sub); font-size: 14px; }
+.eum-home-acts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 22px 0 28px; }
+.eum-act {
+  height: 52px;
+  border-radius: 12px;
+  border: 1px solid var(--eum-line);
+  background: #fff;
+  color: var(--eum-ink);
+  font: inherit;
+  font-weight: 700;
+}
+.eum-act:active { background: #eef1f5; }
+.eum-act-primary { background: var(--eum-blue); border-color: var(--eum-blue); color: #fff; }
+.eum-act-primary:active { background: var(--eum-blue-press); }
+#eum-home h2 { margin: 0 0 8px; font-size: 13px; font-weight: 700; color: var(--eum-sub); }
+#eum-recents { background: #fff; border: 1px solid var(--eum-line); border-radius: 12px; overflow: hidden; }
+.eum-row { display: flex; align-items: stretch; width: 100%; border: 0; border-bottom: 1px solid var(--eum-line); background: #fff; }
+.eum-row:last-child { border-bottom: 0; }
+.eum-row-open, button.eum-row {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 44px 1fr;
+  grid-template-rows: auto auto;
+  column-gap: 12px;
+  align-items: center;
+  padding: 12px 14px;
+  border: 0;
+  background: none;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+}
+button.eum-row { border-bottom: 1px solid var(--eum-line); }
+.eum-row-open:active, button.eum-row:active { background: #f1f4f8; }
+.eum-ext {
+  grid-row: 1 / 3;
+  height: 44px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 800;
+  color: #fff;
+  background: #8a94a3;
+}
+.eum-ext-hwp { background: #2f7de1; }
+.eum-ext-hwpx { background: #1f9d8a; }
+.eum-current .eum-ext { background: var(--eum-ink); }
+.eum-row-main { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.eum-row-sub { color: var(--eum-sub); font-size: 12px; }
+.eum-row-del { flex: 0 0 44px; border: 0; background: none; color: #a3acb9; font-size: 14px; }
+.eum-empty { margin: 0; padding: 28px 16px; text-align: center; color: var(--eum-sub); white-space: pre-line; font-size: 14px; }
+
+/* ── 더보기 메뉴 ── */
+#eum-menu { position: fixed; inset: 0; z-index: 950; background: rgba(15, 23, 42, 0.25); }
+.eum-menu-sheet {
+  position: absolute;
+  top: calc(env(safe-area-inset-top) + 44px);
+  right: 8px;
+  min-width: 200px;
+  padding: 6px 0;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.22);
+}
+.eum-menu-sheet button {
+  display: block;
+  width: 100%;
+  height: 46px;
+  padding: 0 18px;
+  border: 0;
+  background: none;
+  text-align: left;
+  color: var(--eum-ink);
+  font: 15px system-ui, -apple-system, "Pretendard", "Noto Sans KR", sans-serif;
+}
+.eum-menu-sheet button:active { background: #f1f4f8; }
+
+/* ── 정보 창 ── */
+#eum-about { position: fixed; inset: 0; z-index: 960; display: grid; place-items: center; background: rgba(15, 23, 42, 0.35); padding: 24px; }
+.eum-about-card { width: 100%; max-width: 340px; background: #fff; border-radius: 16px; padding: 22px 20px 18px; color: var(--eum-ink); font: 14px/1.5 system-ui, sans-serif; }
+.eum-about-card h2 { margin: 0 0 6px; font-size: 19px; color: var(--eum-blue); }
+.eum-about-card p { margin: 0 0 10px; }
+.eum-about-card .eum-small { color: var(--eum-sub); font-size: 12px; white-space: pre-line; }
+.eum-about-card .eum-act { width: 100%; height: 44px; margin-top: 6px; }
+
+/* ── 알림 ── */
+#eum-toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(env(safe-area-inset-bottom) + 56px);
+  transform: translateX(-50%);
+  max-width: 86vw;
+  padding: 10px 16px;
+  border-radius: 10px;
+  background: rgba(27, 36, 48, 0.92);
+  color: #fff;
+  font: 14px/1.4 system-ui, sans-serif;
+  z-index: 990;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s;
+}
+#eum-toast.show { opacity: 1; }
+
+/* ── 인쇄: 인쇄용 쪽만 내보낸다 ── */
+#eum-print-root { display: none; }
+@media print {
+  body > *:not(#eum-print-root) { display: none !important; }
+  #eum-print-root { display: block !important; }
+  html, body { height: auto !important; overflow: visible !important; background: #fff !important; display: block !important; }
+}
