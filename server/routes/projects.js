@@ -5,7 +5,7 @@ import { tenant, audit } from '../db/index.js';
 import { requireRole } from '../auth.js';
 import { config } from '../config.js';
 import * as storage from '../storage.js';
-import { EXTS, sniff } from '../convert/index.js';
+import { EXTS, DRAWING_EXTS, sniff } from '../convert/index.js';
 import { enqueue } from '../jobs/queue.js';
 
 const r = Router();
@@ -144,7 +144,7 @@ r.get('/files/:id', async (req, res) => {
 // 재분석: 분석 엔진이 개선된 뒤 기존 파일을 다시 분석 (원본은 그대로)
 r.post('/files/:id/reanalyze', write, async (req, res) => {
   const job = await req.db(async (c) => {
-    const { rows: [f] } = await c.query("UPDATE files SET status='uploaded' WHERE id=$1 AND ext = ANY($2) RETURNING *", [req.params.id, ['dxf', 'dwg', 'pdf']]);
+    const { rows: [f] } = await c.query("UPDATE files SET status='uploaded' WHERE id=$1 AND ext = ANY($2) RETURNING *", [req.params.id, DRAWING_EXTS]);
     if (!f) return null;
     return enqueue(c, { companyId: f.company_id, type: 'convert', payload: { fileId: f.id, projectId: f.project_id }, userId: req.user.id });
   });

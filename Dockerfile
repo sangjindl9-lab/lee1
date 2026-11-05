@@ -20,8 +20,9 @@ ENV NODE_ENV=production \
     PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
     DATA_DIR=/data \
     PORT=8080
-# FFmpeg(H.264 인코딩), Poppler(PDF 도면 분석), 한글 폰트(영상 자막), 헤드리스 Chromium(렌더 워커)
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg poppler-utils poppler-data fonts-noto-cjk ca-certificates \
+# FFmpeg(H.264 인코딩·이미지 도면 읽기), Poppler(PDF 도면 분석), 한글 폰트(영상 자막), 헤드리스 Chromium(렌더 워커)
+# Tesseract OCR(스캔·이미지 도면의 축척·두께·치수 글자 읽기, 한국어+영어)
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg poppler-utils poppler-data fonts-noto-cjk ca-certificates tesseract-ocr tesseract-ocr-eng tesseract-ocr-kor \
  && rm -rf /var/lib/apt/lists/*
 COPY --from=libredwg /opt/libredwg /opt/libredwg
 ENV LD_LIBRARY_PATH=/opt/libredwg/lib DWG2DXF_PATH=/opt/libredwg/bin/dwg2dxf

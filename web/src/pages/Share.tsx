@@ -3,7 +3,7 @@ import { useWS, steps } from '../store';
 import Viewer from '../components/Viewer';
 import ViewerToolbar from '../components/ViewerToolbar';
 import Timeline from '../components/Timeline';
-import { Logo } from '../components/Brand';
+import { BrandMark, brandStyle } from '../components/Brand';
 
 export default function SharePage({ token }: { token: string }) {
   const [d, setD] = useState<any>(null);
@@ -52,15 +52,18 @@ export default function SharePage({ token }: { token: string }) {
   const pcfg = sel ? scene?.parts?.[sel] : null;
   const label = (p: any) => scene?.parts?.[p.id]?.label || p.name;
   return (
-    <div className="grid h-full grid-rows-[auto_1fr_auto] overflow-hidden" data-testid="share-page">
-      <header className="flex h-12 items-center gap-2 border-b border-line bg-panel px-3">
-        <Logo size={20} />
-        <div className="min-w-0"><div className="truncate text-sm font-semibold">{d.title}</div><div className="truncate text-[11px] text-mute">{d.company.name} · 3D 디지털 쇼룸</div></div>
-        <button className="btn ml-auto" onClick={() => setListOpen(!listOpen)} data-testid="parts-toggle">부품 {d.model.parts.length}</button>
+    <div className="grid h-full grid-rows-[auto_1fr_auto] overflow-hidden" data-testid="share-page" style={brandStyle(d.company.brand?.color)}>
+      <header className="flex h-12 items-center gap-3 border-b border-line bg-panel px-3" style={{ borderBottomColor: d.company.brand?.color || undefined }}>
+        {d.company.slug ? <a className="min-w-0 shrink-0 sm:shrink" href={`/c/${d.company.slug}`} title="이 회사의 다른 제품 보기"><BrandMark brand={d.company.brand} name={d.company.name} compact /></a> : <div className="shrink-0 sm:shrink"><BrandMark brand={d.company.brand} name={d.company.name} compact /></div>}
+        <div className="hidden h-6 w-px shrink-0 bg-line sm:block" />
+        <div className="min-w-0 flex-1"><div className="truncate text-sm font-semibold" data-testid="share-title">{d.title}</div><div className="truncate text-[11px] text-mute">{d.company.brand?.tagline || '3D 디지털 쇼룸'}</div></div>
+        <button className="btn ml-auto shrink-0" onClick={() => setListOpen(!listOpen)} data-testid="parts-toggle">부품 {d.model.parts.length}</button>
       </header>
       <div className="relative min-h-0" ref={box}>
         <Viewer url={`/api/public/shares/${token}/model.glb`} headers={pass ? { 'x-share-pass': pass } : undefined} zUp={d.model.stats?.upAxis !== 'Y'} gizmo={false} />
         <ViewerToolbar container={box} simple />
+        {d.model.provenance?.reference && <div className="pointer-events-none absolute bottom-2 right-2 z-10 rounded-md border border-ai/60 bg-panel/90 px-2 py-1 text-[11px] font-semibold text-ai backdrop-blur" data-testid="reference-badge"
+          title="2D 도면에서 자동으로 만든 형상입니다. 실제 제품과 다를 수 있습니다.">참고용 AI 3D 시각화{d.model.review_status === 'approved' ? ' · 검토 완료' : ''}</div>}
         {listOpen && (
           <div className="absolute bottom-2 right-2 top-14 z-10 w-64 overflow-auto rounded-lg border border-line bg-panel/95 p-1.5 backdrop-blur">
             {d.model.parts.map((p: any) => (
@@ -85,6 +88,11 @@ export default function SharePage({ token }: { token: string }) {
           <button className="btn h-7 px-2 text-xs" onClick={() => useWS.getState().set({ e: 0, mode: 'manual', playing: false })}>조립</button>
         </div>}
         <Timeline compact />
+        {(d.company.brand?.phone || d.company.brand?.website || d.company.slug) && <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-mute">
+          {d.company.slug && <a className="text-accent" href={`/c/${d.company.slug}`}>{d.company.name} 제품 전체 보기 →</a>}
+          {d.company.brand?.phone && <a href={`tel:${d.company.brand.phone}`}>☎ {d.company.brand.phone}</a>}
+          {d.company.brand?.website && <a href={d.company.brand.website} target="_blank" rel="noreferrer">{d.company.brand.website.replace(/^https?:\/\//, '')}</a>}
+        </div>}
       </footer>
     </div>
   );

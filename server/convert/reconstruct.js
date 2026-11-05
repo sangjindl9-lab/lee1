@@ -48,10 +48,10 @@ export async function reconstructViews(analysis, input, name) {
     const silOf = (V, map, ex, axis) => V ? W.Manifold.union(V.silhouettes.map((s) => ex(s.pts.map(map),
       V.circles.filter((c) => !c.hidden && inside(c.c, s.pts)).map((c) => ({ p: map(c.c), r: (c.d * k) / 2 }))
         .filter((c) => !fuRef.some((u) => iou0(u.bb[0][axis], u.bb[1][axis], c.p[axis === 0 ? 0 : 1] - c.r, c.p[axis === 0 ? 0 : 1] + c.r) >= 0.8))
-        .map((c) => circle(c.p, c.r))))) : null;
+        .map((c) => circle(c.p, c.r)).concat((V.holePolys || []).filter((h) => inside(h[0], s.pts)).map((h) => h.map(map)))))) : null;
     // 부품 단위(정면도): 닫힌 윤곽이 있으면 윤곽 단위, 없으면 선으로 나뉜 영역 단위
     const outline = input?.mode === 'outline';
-    const unitsOf = (V, map) => {
+    const unitsOf = (V, map, isFront = false) => {
       const faces = outline ? [] : (V.faces || []).filter((f) => f.material);
       const byLoop = new Map((V.loops || []).map((l) => [l.id, l]));
       const units = [];
@@ -65,10 +65,15 @@ export async function reconstructViews(analysis, input, name) {
         if (f.area >= silA * 0.02 || slim) units.push({ key: 'f' + units.length, pts: f.pts.map(map) });
       }
       if (!units.length) for (const s of V.silhouettes) units.push({ key: 's' + units.length, pts: s.pts.map(map) });
+      // 스캔·이미지 도면: 선으로 나뉜 면 정보가 없으므로, 평면·측면도의 안쪽 구멍(원·장공)을 영역으로 넣어 holesIn 이 구멍으로 판단하게 한다
+      if (V.raster && !isFront) {
+        for (const c of V.circles || []) units.push({ key: 'h' + units.length, pts: circle(map(c.c), (c.d * k) / 2) });
+        for (const h of V.holePolys || []) units.push({ key: 'h' + units.length, pts: h.map(map) });
+      }
       for (const u of units) u.bb = bbox(u.pts);
       return units;
     };
-    const fu = unitsOf(F, mapF), tu = T ? unitsOf(T, mapT) : [], su = S ? unitsOf(S, mapS) : [];
+    const fu = unitsOf(F, mapF, true), tu = T ? unitsOf(T, mapT) : [], su = S ? unitsOf(S, mapS) : [];
     fuRef = fu;
     const silT = silOf(T, mapT, exT, 0), silS = silOf(S, mapS, exS, 1);
     const inBox = (a, b) => a[0][0] >= b[0][0] && a[1][0] <= b[1][0] && a[0][1] >= b[0][1] && a[1][1] <= b[1][1];
@@ -138,7 +143,7 @@ export async function reconstructViews(analysis, input, name) {
       children.push({
         name: `${name}_${g.id}_${pin ? '핀' : 'P'}${n}`, meshes: [meshOf(solid, AI_COLOR)], children: [],
         extras: { group: g.id, views: { front: F.id, top: T?.id || null, side: S?.id || null }, estimated: true, ...(list[0].layer ? { layer: list[0].layer } : {}),
-          provenance: { silhouette: 'drawing', correspondence: 'ai', depth: pin ? (list[0].hint ? 'drawing-hint' : 'ai') : 'ai', shape: pin ? 'ai-cylinder' : undefined, scale: analysis.scaleRequired ? 'user' : undefined } },
+          provenance: { silhouette: 'drawing', correspondence: 'ai', depth: pin ? (list[0].hint ? 'drawing-hint' : 'ai') : 'ai', shape: pin ? 'ai-cylinder' : undefined, scale: analysis.scaleRequired ? (input?.sources?.scale || 'user') : undefined } },
       });
     }
     report.push({ group: g.id, front: F.id, top: T?.id || null, side: S?.id || null, parts: n, pins, size: [Wd, D, H].map((x) => +x.toFixed(1)) });
@@ -151,17 +156,26 @@ export async function reconstructViews(analysis, input, name) {
     stats: { ...summarize(parts), upAxis: 'Z', unit: 'mm' },
     report,
     provenance: {
-      geometry: 'estimated', review: 'pending',
-      note: '투상도 실루엣을 교차해 만든 AI 추정 형상입니다. 숨은 내부·오목 형상은 반영되지 않습니다. 검토 후 승인하세요.',
+      geometry: 'estimated', review: 'pending', reference: true,
+      note: '참고용 AI 3D 시각화 — 투상도 실루엣을 교차해 만든 추정 형상입니다. 숨은 내부·오목 형상은 반영되지 않습니다. 검토 후 승인하세요.',
       items: [
         { what: '각 투상도 외형 윤곽', source: 'drawing', label: '원본 도면에서 확인된 형상' },
-        ...(analysis.scaleRequired ? [{ what: `축척 1:${k}`, source: 'user', label: '사용자 입력으로 확정된 형상' }] : []),
+        ...(analysis.scaleRequired ? [scaleItem(k, input?.sources?.scale)] : []),
+        ...(analysis.raster ? [{ what: '스캔·이미지에서 따낸 외형 (픽셀 정밀도)', source: 'ai', label: 'AI가 추정한 형상' }] : []),
         { what: '투상도 짝짓기·깊이 방향·관통 구멍', source: 'ai', label: 'AI가 추정한 형상' },
         { what: '숨은 내부 형상·오목부·곡면 세부', source: 'unbuildable', label: '생성할 수 없는 형상' },
       ],
       ai: report,
     },
   };
+}
+
+/** 축척 근거 표시: user(사용자 입력) · drawing(도면 표기에서 읽음) · ai(치수 숫자와 비교해 추정) · default(근거 없음, 1:1 가정) */
+export function scaleItem(k, src = 'user') {
+  if (src === 'drawing') return { what: `축척 1:${k} (도면 표기에서 읽음)`, source: 'drawing', label: '원본 도면에서 확인된 형상' };
+  if (src === 'ai') return { what: `축척 1:${k} (도면 치수 숫자와 비교해 추정)`, source: 'ai', label: 'AI가 추정한 형상' };
+  if (src === 'default') return { what: `축척 1:${k} (근거 없음 — 기본값)`, source: 'ai', label: 'AI가 추정한 형상' };
+  return { what: `축척 1:${k}`, source: 'user', label: '사용자 입력으로 확정된 형상' };
 }
 
 /** 두 형상이 실제로 겹치거나 맞닿는지 (경계상자 기준) */

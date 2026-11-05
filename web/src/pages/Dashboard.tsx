@@ -5,12 +5,14 @@ import { t } from '../i18n';
 import { Wordmark } from '../components/Brand';
 import ThemeToggle from '../components/ThemeToggle';
 import type { Me } from '../App';
+import BrandSettings from '../components/BrandSettings';
 
 const INDUSTRIES = ['mold', 'machine', 'electric', 'building', 'product'] as const;
 
 export default function Dashboard({ me, onLogout }: { me: Me; onLogout: () => void }) {
   const [list, setList] = useState<any[] | null>(null);
   const [open, setOpen] = useState(false);
+  const [brand, setBrand] = useState(false);
   const [f, setF] = useState({ name: '', industry: 'machine', description: '' });
   const [err, setErr] = useState('');
   const load = () => api('/projects').then(setList);
@@ -26,6 +28,7 @@ export default function Dashboard({ me, onLogout }: { me: Me; onLogout: () => vo
         <span className="chip ml-2">{me.company.name}</span>
         <div className="ml-auto flex items-center gap-1">
           <span className="hidden text-sm text-mute sm:inline">{me.user.name} · {me.user.role === 'admin' ? '관리자' : me.user.role === 'viewer' ? '보기 전용' : '사용자'}</span>
+          <button className="btn" onClick={() => setBrand(true)} data-testid="brand-open">브랜드·쇼룸</button>
           <ThemeToggle />
           <button className="btn btn-ghost" onClick={async () => { await api('/auth/logout', { method: 'POST' }); onLogout(); navigate('/login'); }}>로그아웃</button>
         </div>
@@ -41,7 +44,7 @@ export default function Dashboard({ me, onLogout }: { me: Me; onLogout: () => vo
         {list === null ? <div className="mt-8 text-mute">불러오는 중…</div> : list.length === 0 ? (
           <div className="mt-8 rounded-xl border border-dashed border-line p-10 text-center">
             <div className="text-lg font-semibold">첫 프로젝트를 만들어 보세요</div>
-            <p className="mt-1 text-sm text-mute">산업 분야를 고르고 STEP·DXF·STL·GLB 파일을 올리면 3D 쇼룸이 만들어집니다.</p>
+            <p className="mt-1 text-sm text-mute">산업 분야를 고르고 2D 도면(PDF·DWG·DXF·스캔·사진)이나 3D 파일(STEP·STL·GLB)을 올리면 바로 3D 쇼룸이 만들어집니다.</p>
             {me.user.role !== 'viewer' && <button className="btn btn-accent mt-4" onClick={() => setOpen(true)}>＋ 새 프로젝트</button>}
           </div>
         ) : (
@@ -57,6 +60,7 @@ export default function Dashboard({ me, onLogout }: { me: Me; onLogout: () => vo
           </div>
         )}
       </main>
+      {brand && <BrandSettings onClose={() => setBrand(false)} canEdit={me.user.role === 'admin'} />}
       {open && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4" onClick={() => setOpen(false)}>
           <form onSubmit={create} onClick={(e) => e.stopPropagation()} className="w-full max-w-md space-y-4 rounded-xl border border-line bg-panel p-5">

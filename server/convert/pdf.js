@@ -7,6 +7,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { buildProfiles } from './profiles.js';
+import { analyzeRaster } from './raster.js';
 
 const run = promisify(execFile);
 const PT2MM = 25.4 / 72;
@@ -32,6 +33,13 @@ export async function analyzePdf(file) {
     const g = parseSvg(svg, H);
     const imgList = (await run('pdfimages', ['-list', '-f', '1', '-l', '1', file], { timeout: 30000 }).catch(() => ({ stdout: '' }))).stdout;
     g.images = Math.max(g.images, imgList.split('\n').slice(2).filter((l) => l.trim()).length);
+    // 스캔(이미지) PDF: 픽셀에서 외형을 따내는 래스터 분석으로 전환
+    if (g.strokes === 0 && g.images > 0) {
+      const r = await analyzeRaster(file, 'pdf');
+      r.analysis.pages = pages;
+      if (pages > 1) r.analysis.warnings.push(`전체 ${pages}쪽 중 1쪽만 분석했습니다.`);
+      return { analysis: r.analysis, preview: preview || r.preview };
+    }
     const { profiles, openChains, truncated, views, groups } = buildProfiles(g.loops, g.open, PT2MM, { w: W, h: H }, 0.05);
     const texts = text.split(/\r?\n/).map((s) => s.trim().replace(/\s{2,}/g, ' ')).filter(Boolean).slice(0, 200);
     const m = /(?:SCALE|S|축척)\s*[:=]?\s*1\s*[:/]\s*(\d+(?:\.\d+)?)/i.exec(text) || /\b1\s*:\s*(\d+(?:\.\d+)?)\b/.exec(text);
@@ -58,8 +66,8 @@ export async function analyzePdf(file) {
           ...(pages > 1 ? [`전체 ${pages}쪽 중 1쪽만 분석했습니다.`] : []),
           ...(g.dashed ? [`점선 ${g.dashed}개(중심선·숨은선)와 채움 도형 ${g.filled}개(화살표 등)는 윤곽에서 제외했습니다.`] : []),
           ...(truncated ? ['닫힌 윤곽이 너무 많아 큰 순서로 3000개만 표시합니다.'] : []),
-          'PDF 는 용지 좌표이므로 축척(1:N)을 확인·입력해야 실제 치수가 됩니다. 정면·측면 등 여러 투상도의 자동 결합은 3단계입니다.',
-          '2D 도면에는 두께(깊이) 정보가 없으므로 두께를 직접 입력해야 3D 생성이 됩니다.',
+          'PDF 는 용지 좌표이므로 축척(1:N)이 필요합니다. 도면 글자·치수 숫자로 자동 추정한 값을 확인하세요.',
+          '2D 도면에는 두께(깊이) 정보가 없습니다. 투상도가 하나뿐이면 두께를 추정해 참고용 3D 를 만듭니다.',
         ],
       },
       preview,

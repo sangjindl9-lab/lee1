@@ -1,5 +1,6 @@
 import { useWS } from '../store';
 import { viewerBridge } from './Viewer';
+import { BACKGROUNDS, TEMPLATE_ORDER } from '../engine/stage';
 
 const VIEW_BTNS: [string, string][] = [['iso', '등각'], ['front', '정면'], ['back', '후면'], ['left', '좌측'], ['right', '우측'], ['top', '상부'], ['bottom', '하부']];
 
@@ -22,6 +23,10 @@ export default function ViewerToolbar({ container, simple = false }: { container
           const c = viewerBridge.gl?.domElement; if (!c) return;
           const a = document.createElement('a'); a.href = c.toDataURL('image/png'); a.download = `eum3d-${Date.now()}.png`; a.click();
         }, '현재 화면 이미지 저장')}
+        <select className="input h-7 py-0 pl-2 pr-6 text-xs" style={{ width: "auto", maxWidth: "11rem" }} title="쇼룸 템플릿 (배경·조명·바닥)" data-testid="template-select"
+          value={s.scene?.background || 'studio'} onChange={(e) => s.patchScene((sc: any) => { sc.background = e.target.value; })}>
+          {TEMPLATE_ORDER.map((k) => <option key={k} value={k}>{BACKGROUNDS[k].label}</option>)}
+        </select>
         {T(false, '⛶', () => { const el = container.current; if (!el) return; document.fullscreenElement ? document.exitFullscreen() : el.requestFullscreen?.(); }, '전체 화면')}
       </div>
       {s.section.on && (

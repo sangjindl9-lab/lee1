@@ -31,9 +31,9 @@ async function run() {
   const s3 = new THREE.Scene();
   s3.add(model.root);
   const technical = scene.viewMode === 'technical';
-  const stage = setupStage(s3, renderer, scene.background || 'studio', model.size, technical);
+  const stage = setupStage(s3, renderer, scene.background === 'transparent' ? 'white' : scene.background || 'studio', model.size, technical);
   const ebox = explodedBox(model, scene, stepCount(scene));
-  placeFloor(stage, model.box.min.y);
+  placeFloor(stage, model.box.min.y, model.box.getCenter(new THREE.Vector3()));
   const cam = new THREE.PerspectiveCamera(scene.camera?.fov || 35, W / H, 1, 1e6);
   let target: THREE.Vector3;
   if (scene.camera?.position) {
@@ -63,7 +63,7 @@ async function run() {
     cam.lookAt(target);
     renderer.render(s3, cam);
     g.drawImage(renderer.domElement, 0, 0);
-    const dark = (scene.background || 'studio') === 'dark' || scene.background === 'factory';
+    const dark = stage.dark;
     if (title) {
       g.font = `700 ${Math.round(44 * fontScale)}px "Noto Sans KR", "Noto Sans CJK KR", "Malgun Gothic", sans-serif`;
       g.fillStyle = dark ? 'rgba(255,255,255,0.92)' : 'rgba(20,22,25,0.9)';

@@ -61,17 +61,29 @@ test('H. 벡터 PDF(1:2) → 도곽 구분·축척 표기 인식 → 축척 없�
   assert.ok(Math.abs(m.parts[0].volume - expect) / expect < 0.005, `체적 ${m.parts[0].volume} ≈ ${expect.toFixed(0)}`);
 });
 
-test('H-2. 스캔 PDF → 업로드·미리보기는 되고 3D 생성은 거부(안내)', async () => {
+test('H-2. 스캔 PDF → 래스터 분석(외형·구멍) → 업로드 즉시 자동 3D 초안(참고용·검토 대기)', async () => {
   const up = await upload(A, proj.id, 'scanned_drawing.pdf');
   const j = await waitJob(A, up.data.job.id);
   assert.equal(j.status, 'done', j.error);
   const a = (await A.get(`/api/files/${up.data.file.id}`)).data.analysis;
   assert.equal(a.pdfType, 'scanned');
-  assert.equal(a.convertible, false);
+  assert.ok(a.raster?.dpi > 0, '래스터 분석');
+  assert.equal(a.convertible, true);
   assert.match(a.warnings[0], /스캔/);
+  const outer = a.profiles.find((p) => p.role === 'outer');
+  // 이미지: 600×360px 사각형(150dpi) = 101.6×61 용지 mm, 원 Ø80px = 13.5mm
+  assert.ok(Math.abs(outer.bbox[1][0] - outer.bbox[0][0] - 101.6) < 1.5, `가로 ${outer.bbox[1][0] - outer.bbox[0][0]}`);
+  const hole = a.profiles.find((p) => p.role === 'hole' && p.parent === outer.id);
+  assert.ok(hole?.diameter && Math.abs(hole.diameter - 13.5) < 0.8, `구멍 ${hole?.diameter}`);
   assert.equal((await A.get(`/api/files/${up.data.file.id}/preview`)).status, 200);
+  assert.equal(a.autoDraft.status, 'created');
+  assert.equal(a.autoDraft.scale.source, 'default', '축척 근거 없음 → 기본값 표시');
+  const m = (await A.get(`/api/models/${a.autoDraft.modelId}`)).data.model;
+  assert.equal(m.review_status, 'pending');
+  assert.equal(m.provenance.reference, true, '참고용 AI 3D 시각화 표시');
+  // 사용자가 값을 확정해 다시 만들 수 있다
   const r = await A.post(`/api/files/${up.data.file.id}/extrude`, { thickness: 5, scale: 1 });
-  assert.equal(r.status, 400);
+  assert.equal(r.status, 201, JSON.stringify(r.data));
 });
 
 test('H-3. 회전(/Rotate 270) PDF → 용지 가로·세로 바뀜 반영, 윤곽이 용지 안·미리보기와 같은 좌표', async () => {

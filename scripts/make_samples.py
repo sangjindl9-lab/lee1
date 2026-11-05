@@ -308,3 +308,29 @@ def panel_drawing(path):
     doc.saveas(path)
 panel_drawing(os.path.join(OUT, "panel_3view.dxf"))
 print("mold/panel drawings written")
+# ── 10) 스캔·사진 도면 (래스터) — 벡터 도면을 150dpi 로 찍고 잡음·흐림·JPEG 손실을 넣어 실제 스캔본처럼 ──
+#  three_view_block_scan.png / .jpg / _scan.pdf : 3면도(1:2), 정답은 7) 과 같음
+#  bracket_plate_scan.jpg : 1:2 브라켓 판(200×120, 구멍 Ø9×6, 표기 't=6')
+import subprocess, random
+from PIL import ImageFilter
+def scanify(pdf, out_png, dpi=150, seed=1):
+    base = out_png[:-4]
+    subprocess.run(["pdftoppm", "-gray", "-r", str(dpi), "-singlefile", "-png", pdf, base], check=True)
+    im = Image.open(base + ".png").convert("L").filter(ImageFilter.GaussianBlur(0.6))
+    rnd = random.Random(seed); px = im.load(); w, h = im.size
+    for _ in range(w * h // 60):                       # 점 잡음(먼지)
+        x, y = rnd.randrange(w), rnd.randrange(h); px[x, y] = rnd.choice((0, 90, 255))
+    im = im.point(lambda v: max(0, min(255, int(v * 0.92 + 14))))  # 종이 바탕(약간 회색)
+    im.save(out_png)
+    return im
+im = scanify(os.path.join(OUT, "three_view_block_1to2.pdf"), os.path.join(OUT, "three_view_block_scan.png"))
+im.save(os.path.join(OUT, "three_view_block_scan.jpg"), quality=70)
+im.save(os.path.join(OUT, "three_view_block_scan.pdf"), resolution=150)
+bp = scanify(os.path.join(OUT, "bracket_plate_1to2.pdf"), os.path.join(OUT, "_bp.png"), seed=2)
+d = ImageDraw.Draw(bp)
+try:
+    from PIL import ImageFont; f = ImageFont.load_default(size=28)
+except Exception: f = None
+d.text((900, 780), "t=6", fill=0, font=f)
+bp.save(os.path.join(OUT, "bracket_plate_scan.jpg"), quality=75); os.remove(os.path.join(OUT, "_bp.png"))
+print("raster samples written")

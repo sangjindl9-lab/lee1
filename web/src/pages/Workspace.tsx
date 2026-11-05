@@ -6,12 +6,12 @@ import { useWS } from '../store';
 import type { Me } from '../App';
 import { Logo } from '../components/Brand';
 import ThemeToggle from '../components/ThemeToggle';
-import Viewer from '../components/Viewer';
+import Viewer, { captureThumb } from '../components/Viewer';
 import ViewerToolbar from '../components/ViewerToolbar';
 import PartTree from '../components/PartTree';
 import PartProps from '../components/PartProps';
 import Timeline from '../components/Timeline';
-import UploadPanel from '../components/panels/Upload';
+import UploadPanel, { DRAWING } from '../components/panels/Upload';
 import DxfExtrude from '../components/panels/DxfExtrude';
 import ExplodePanel from '../components/panels/Explode';
 import VideoPanel from '../components/panels/Video';
@@ -44,9 +44,11 @@ export default function Workspace({ projectId, me }: { projectId: string; me: Me
   useEffect(() => {
     if (!busy) return;
     const h = setInterval(async () => {
-      const prev = data?.models?.length || 0;
+      const prev = new Set((data?.models || []).map((m: any) => m.id));
       const d = await load();
-      if (d && d.models.length > prev && !modelId) setModelId(d.models[0].id);
+      // 새로 만들어진 모델(2D 도면 자동 초안 포함)은 바로 연다
+      const fresh = d?.models.find((m: any) => !prev.has(m.id));
+      if (fresh && !useWS.getState().dirty) { setModelId(fresh.id); setTab('explode'); }
     }, 2000);
     return () => clearInterval(h);
   }, [busy, load, data, modelId]);
@@ -54,9 +56,18 @@ export default function Workspace({ projectId, me }: { projectId: string; me: Me
   useEffect(() => {
     if (!modelId) return;
     history.replaceState(null, '', `/app/p/${projectId}?m=${modelId}`);
-    api(`/models/${modelId}`).then((d) => useWS.getState().load(d.model, d.scene.data, d.scene.version));
+    let timer: any;
+    api(`/models/${modelId}`).then((d) => {
+      useWS.getState().load(d.model, d.scene.data, d.scene.version);
+      // 썸네일이 없으면 처음 화면이 그려진 뒤 한 번 찍어 둔다 (고객사 쇼룸 목록용)
+      if (!d.model.has_thumb && canWrite) timer = setTimeout(() => {
+        if (useWS.getState().model?.id !== modelId) return;
+        const img = captureThumb(); if (img) api(`/models/${modelId}/thumbnail`, { method: 'PUT', body: { image: img } }).catch(() => {});
+      }, 3000);
+    });
     api(`/models/${modelId}/scenes`).then(setVersions);
-  }, [modelId, projectId]);
+    return () => clearTimeout(timer);
+  }, [modelId, projectId, canWrite]);
 
   const save = useCallback(async () => {
     const st = useWS.getState();
@@ -78,7 +89,7 @@ export default function Workspace({ projectId, me }: { projectId: string; me: Me
   if (err) return <div className="p-8 text-bad">{err} <button className="btn ml-2" onClick={() => navigate('/app')}>목록으로</button></div>;
   if (!data) return <div className="grid h-full place-items-center text-mute">불러오는 중…</div>;
   const zUp = model ? model.stats?.upAxis !== 'Y' : true;
-  const pendingDxf = data.files.filter((f: any) => ['dxf', 'dwg', 'pdf'].includes(f.ext) && f.has_analysis);
+  const pendingDxf = data.files.filter((f: any) => DRAWING.includes(f.ext) && f.has_analysis);
 
   return (
     <div className="grid h-full grid-rows-[auto_1fr_auto] overflow-hidden">
@@ -124,7 +135,7 @@ export default function Workspace({ projectId, me }: { projectId: string; me: Me
           ) : (
             <div className="grid h-full place-items-center p-6 text-center">
               <div><div className="text-lg font-semibold">{data.models.length ? '모델 불러오는 중…' : '3D 모델이 아직 없습니다'}</div>
-                <div className="mt-1 text-sm text-mute">{busy ? '파일을 분석·변환하고 있습니다…' : '오른쪽 [파일 업로드]에서 STEP·STL·GLB·DXF·DWG·PDF 를 올리세요.'}</div></div>
+                <div className="mt-1 text-sm text-mute">{busy ? '파일을 분석·변환하고 있습니다…' : '오른쪽 [파일 업로드]에 2D 도면(PDF·DWG·DXF·스캔·사진)이나 3D 파일을 올리면 바로 3D 쇼룸이 만들어집니다.'}</div></div>
             </div>
           )}
         </main>
@@ -136,10 +147,10 @@ export default function Workspace({ projectId, me }: { projectId: string; me: Me
           {tab === 'convert' && (
             <div className="space-y-3 p-3">
               <div className="panel-title">3D 변환</div>
-              <p className="text-xs text-mute">STEP·IGES·STL·GLB 는 업로드 즉시 자동 변환됩니다(원본 B-Rep·부품 구조 보존, AI 재생성 없음). DXF·DWG 는 두께, PDF 는 축척과 두께를 입력해야 3D 가 됩니다(스캔 PDF 는 3단계).</p>
+              <p className="text-xs text-mute">STEP·IGES·STL·GLB 는 원본 형상 그대로 변환됩니다. 2D 도면(DXF·DWG·PDF·스캔본·이미지)은 올리는 즉시 <b className="text-ai">참고용 AI 3D 초안</b>이 만들어집니다 — 투상도가 3개면 결합, 1개면 두께를 추정해 돌출. 축척·두께가 틀리면 아래에서 고쳐 다시 만드세요.</p>
               {pendingDxf.map((f: any) => (
                 <div key={f.id} className="flex items-center gap-2 rounded border border-line p-2 text-xs"><span className="chip uppercase">{f.ext}</span><span className="truncate">{f.original_name} v{f.version}</span>
-                  {canWrite && <button className="btn btn-on ml-auto h-6 px-2 text-xs" onClick={() => setDxf(f.id)}>3D 생성</button>}</div>
+                  {canWrite && <button className="btn btn-on ml-auto h-6 px-2 text-xs" onClick={() => setDxf(f.id)}>{f.status === 'converted' ? '다시 만들기' : '3D 생성'}</button>}</div>
               ))}
               <ProjectInfo project={data.project} versions={versions} />
             </div>

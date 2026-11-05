@@ -10,6 +10,7 @@ import authRoutes from './routes/auth.js';
 import projectRoutes from './routes/projects.js';
 import modelRoutes from './routes/models.js';
 import publicRoutes from './routes/public.js';
+import companyRoutes from './routes/company.js';
 
 const WEB = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'web', 'dist');
 
@@ -21,7 +22,7 @@ export function createApp() {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'same-origin');
     // 공유 쇼룸(/s/)만 iframe 삽입 허용
-    if (!req.path.startsWith('/s/')) res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+    if (!req.path.startsWith('/s/') && !req.path.startsWith('/c/')) res.setHeader('X-Frame-Options', 'SAMEORIGIN');
     next();
   });
   app.use(cookieParser());
@@ -34,6 +35,7 @@ export function createApp() {
   app.use('/api', requireAuth, (req, res, next) => { req.db = (fn) => tenant(req.user.companyId, fn); next(); });
   app.use('/api', projectRoutes);
   app.use('/api', modelRoutes);
+  app.use('/api', companyRoutes);
   app.use('/api', (req, res) => res.status(404).json({ error: 'API 없음' }));
 
   if (fs.existsSync(WEB)) {

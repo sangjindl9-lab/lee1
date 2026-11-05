@@ -15,8 +15,8 @@ export default function ReviewBanner({ canWrite }: { canWrite: boolean }) {
   }
   const tone = st === 'approved' ? 'border-ok/50 text-ok' : st === 'rejected' ? 'border-bad/50 text-bad' : 'border-ai/60 text-ai';
   return (
-    <div className={`absolute left-1/2 top-14 z-10 w-[min(34rem,calc(100%-1rem))] -translate-x-1/2 rounded-lg border bg-panel/95 p-3 text-xs shadow-lg backdrop-blur ${tone}`} data-testid="review-banner" data-status={st}>
-      <div className="font-semibold">{st === 'pending' ? 'AI 추정 형상 — 검토 필요' : st === 'approved' ? '검토 승인된 추정 형상' : '반려된 추정 형상'}</div>
+    <div className={`absolute bottom-10 left-1/2 z-10 w-[min(34rem,calc(100%-1rem))] -translate-x-1/2 rounded-lg border bg-panel/95 p-3 text-xs shadow-lg backdrop-blur ${tone}`} data-testid="review-banner" data-status={st}>
+      <div className="font-semibold">{st === 'pending' ? '참고용 AI 3D 시각화 — 검토 필요' : st === 'approved' ? '검토 승인된 참고용 AI 3D 시각화' : '반려된 추정 형상'}</div>
       <p className="mt-1 text-mute">{model.provenance?.note}</p>
       {model.review_note && st !== 'pending' && <p className="mt-1 text-ink">메모: {model.review_note}</p>}
       {st === 'pending' && canWrite && (

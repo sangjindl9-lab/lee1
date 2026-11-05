@@ -7,18 +7,20 @@ import Dashboard from './pages/Dashboard';
 const Workspace = lazy(() => import('./pages/Workspace'));
 const SharePage = lazy(() => import('./pages/Share'));
 const RenderPage = lazy(() => import('./pages/Render'));
+const CompanyShowroom = lazy(() => import('./pages/CompanyShowroom'));
 
 export interface Me { user: { id: string; email: string; name: string; role: string }; company: { id: string; name: string; brand: any } }
 
 export default function App() {
   const path = usePath();
   const [me, setMe] = useState<Me | null | undefined>(undefined);
-  const isPublic = path.startsWith('/s/') || path === '/render';
+  const isPublic = path.startsWith('/s/') || path.startsWith('/c/') || path === '/render';
   useEffect(() => { if (!isPublic) api<Me>('/auth/me').then(setMe).catch(() => setMe(null)); }, [isPublic, path === '/login']);
 
   const fallback = <div className="grid h-full place-items-center text-sm text-mute">불러오는 중…</div>;
   if (path === '/render') return <Suspense fallback={null}><RenderPage /></Suspense>;
   if (path.startsWith('/s/')) return <Suspense fallback={fallback}><SharePage token={path.slice(3)} /></Suspense>;
+  if (path.startsWith('/c/')) return <Suspense fallback={fallback}><CompanyShowroom slug={decodeURIComponent(path.slice(3))} /></Suspense>;
   if (me === undefined) return fallback;
   if (!me || path === '/login' || path === '/signup') {
     return <Auth mode={path === '/signup' ? 'signup' : 'login'} onDone={(m) => { setMe(m); navigate('/app'); }} />;

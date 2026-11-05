@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { writeGlb, summarize } from './gltf-writer.js';
 import { detectViews } from './views.js';
+import { scaleItem } from './reconstruct.js';
 
 const MAX_LOOPS = 3000;
 
@@ -128,20 +129,26 @@ export async function extrude2d(analysis, input, name) {
       name: outers.length === 1 ? name : `${name}_${i + 1}`,
       meshes: [{ positions: g.attributes.position.array, normals: g.attributes.normal.array, color: [0.55, 0.58, 0.62], metallic: 0.7, roughness: 0.35 }],
       extras: { profileId: o.id, holes: holes.map((h) => h.id), thickness: depth, ...(analysis.scaleRequired ? { scale: k } : {}),
-        provenance: { outline: 'drawing', thickness: 'user', ...(analysis.scaleRequired ? { scale: 'user' } : {}) } },
+        provenance: { outline: analysis.raster ? 'ai' : 'drawing', thickness: input.sources?.thickness || 'user', ...(analysis.scaleRequired ? { scale: input.sources?.scale || 'user' } : {}) } },
       children: [],
     };
   });
   const { glb, parts } = await writeGlb({ name, children }, { unit: 'mm' });
+  const src = input.sources || {};
+  const estimated = src.thickness === 'ai' || src.thickness === 'default' || ['ai', 'default'].includes(src.scale) || !!analysis.raster;
+  const thItem = src.thickness === 'drawing' ? { what: `두께 ${t} mm (Z) — 도면 표기에서 읽음`, source: 'drawing', label: '원본 도면에서 확인된 형상' }
+    : src.thickness === 'ai' ? { what: `두께 ${t} mm (Z) — 도면에 없어 외형 크기로 추정`, source: 'ai', label: 'AI가 추정한 형상' }
+    : { what: `두께 ${t} mm (Z)`, source: 'user', label: '사용자 입력으로 확정된 형상' };
   return {
     glb, parts, method: `${analysis.format.toLowerCase()}-extrude`,
     stats: { ...summarize(parts), upAxis: 'Z', unit: 'mm' },
     provenance: {
-      geometry: 'mixed',
+      geometry: estimated ? 'estimated' : 'mixed',
+      ...(estimated ? { review: 'pending', reference: true, note: '참고용 AI 3D 시각화 — 2D 도면에 없는 값(두께·축척)을 추정해 만든 형상입니다. 값을 확인하고 필요하면 [3D 변환]에서 고쳐 다시 만드세요.' } : {}),
       items: [
-        { what: `외곽·구멍 윤곽 (XY)${analysis.format !== 'DXF' ? ` — ${analysis.format}` : ''}`, source: 'drawing', label: '원본 도면에서 확인된 형상' },
-        ...(analysis.scaleRequired ? [{ what: `축척 1:${k}`, source: 'user', label: '사용자 입력으로 확정된 형상' }] : []),
-        { what: `두께 ${t} mm (Z)`, source: 'user', label: '사용자 입력으로 확정된 형상' },
+        { what: `외곽·구멍 윤곽 (XY)${analysis.format !== 'DXF' ? ` — ${analysis.format}` : ''}`, source: analysis.raster ? 'ai' : 'drawing', label: analysis.raster ? 'AI가 추정한 형상 (스캔·이미지에서 따낸 윤곽)' : '원본 도면에서 확인된 형상' },
+        ...(analysis.scaleRequired ? [scaleItem(k, src.scale)] : []),
+        thItem,
         ...(analysis.openChains > 0 ? [{ what: `열린 선분 ${analysis.openChains}개`, source: 'unbuildable', label: '생성할 수 없는 형상 (닫히지 않음)' }] : []),
       ],
       ai: [],

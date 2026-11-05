@@ -3,7 +3,7 @@ import { api, fmtBytes, fmtDate } from '../../api';
 import { useWS, duration } from '../../store';
 import { CLIP_LABEL } from '../Timeline';
 import { viewerBridge } from '../Viewer';
-import { BACKGROUNDS } from '../../engine/stage';
+import { BACKGROUNDS, TEMPLATE_ORDER } from '../../engine/stage';
 
 const QUAL = [['hd', 'HD 1280×720'], ['fhd', 'Full HD 1920×1080'], ['qhd', 'QHD 2560×1440'], ['4k', '4K 3840×2160']];
 
@@ -55,7 +55,7 @@ export default function VideoPanel({ modelId, jobs, onSave, canWrite, refresh }:
       <div className="grid grid-cols-2 gap-2">
         <label className="space-y-1"><span className="label">배경</span>
           <select className="input" value={scene.background || 'studio'} disabled={!canWrite} onChange={(e) => useWS.getState().patchScene((s) => { s.background = e.target.value; })}>
-            {Object.entries(BACKGROUNDS).map(([k, b]) => <option key={k} value={k}>{b.label}</option>)}</select></label>
+            {TEMPLATE_ORDER.filter((k) => k !== 'transparent').map((k) => <option key={k} value={k}>{BACKGROUNDS[k].label}</option>)}</select></label>
         <label className="space-y-1"><span className="label">모드</span>
           <select className="input" value={scene.viewMode || 'showroom'} disabled={!canWrite} onChange={(e) => useWS.getState().patchScene((s) => { s.viewMode = e.target.value; })}>
             <option value="showroom">홍보 쇼룸 (재질·조명)</option><option value="technical">기술 검토 (그리드·평조명)</option></select></label>

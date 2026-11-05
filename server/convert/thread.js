@@ -5,10 +5,11 @@ import { convertFile } from './index.js';
 
 parentPort.on('message', async ({ id, ext, path, name }) => {
   try {
-    const r = await convertFile({ ext, buf: ['dwg', 'pdf'].includes(ext) ? null : fs.readFileSync(path), name, path });
+    const r = await convertFile({ ext, buf: ['dwg', 'pdf', 'jpg', 'jpeg', 'png', 'tif', 'tiff'].includes(ext) ? null : fs.readFileSync(path), name, path });
     const glb = r.glb ? Buffer.from(r.glb) : null;
     const preview = r.preview ? Buffer.from(r.preview) : null;
     delete r.glb; delete r.preview;
+    if (r.draft) delete r.draft.glb;
     parentPort.postMessage({ id, ok: true, result: r, glb, preview });
   } catch (e) {
     parentPort.postMessage({ id, ok: false, error: e.message || String(e) });

@@ -19,14 +19,18 @@ export default function DxfExtrude({ fileId, onClose, onCreated }: { fileId: str
       const outers = a.profiles.filter((p: any) => p.role === 'outer');
       // PDF 는 표제란 같은 사각형도 외곽으로 잡히므로 가장 큰 외곽 하나만 기본 선택
       // 상세도처럼 외곽이 많은 도면은 자동 선택하지 않는다
-      setSel(new Set((a.sheet || outers.length > 20 ? [] : a.format === 'PDF' ? outers.slice(0, 1) : outers).map((p: any) => p.id)));
-      if (a.scaleHint) setSc(String(a.scaleHint));
-      if (a.groups?.length) setMode('views');
+      const ad = a.autoDraft;
+      setSel(new Set(ad?.profiles?.length ? ad.profiles : (a.sheet || outers.length > 20 ? [] : a.scaleRequired ? outers.slice(0, 1) : outers).map((p: any) => p.id)));
+      // 자동 초안에서 쓴 추정값을 미리 채워 두고, 사용자가 확인·수정한다
+      if (ad?.scale?.scale && ad.scale.source !== 'none') setSc(String(ad.scale.scale)); else if (a.scaleHint) setSc(String(a.scaleHint));
+      if (ad?.thickness?.thickness) setTh(String(ad.thickness.thickness));
+      if (ad?.kind === 'views' || (!ad && a.groups?.length)) setMode('views');
     });
   }, [fileId]);
   const a = f?.analysis;
   const G = useGroups(a);
-  const pdf = a?.format === 'PDF';
+  const pdf = !!a?.scaleRequired; // PDF·스캔·이미지: 용지 좌표 → 축척 필요
+  const ad = a?.autoDraft;
   const k = pdf ? Number(sc) || 0 : 1;
   const view = useMemo(() => {
     if (!a) return null;
@@ -92,6 +96,13 @@ export default function DxfExtrude({ fileId, onClose, onCreated }: { fileId: str
               </div>
             </div>
             <div className="space-y-3 p-4 text-sm">
+              {ad?.status === 'created' && <div className="rounded-md border border-ai/50 bg-ai/10 p-2 text-xs" data-testid="autodraft-note">
+                <div className="font-medium text-ai">업로드 때 자동으로 참고용 3D 초안을 만들었습니다</div>
+                <div className="mt-0.5 text-mute">{ad.kind === 'views' ? `투상도 결합 ${ad.groups}개 물체` : `외곽 ${ad.profiles?.length}개 돌출`}
+                  {ad.scale?.source && ad.scale.source !== 'none' && <> · 축척 1:{ad.scale.scale} ({ad.scale.why})</>}
+                  {ad.thickness && <> · 두께 {ad.thickness.thickness}mm ({ad.thickness.why})</>}</div>
+                <div className="mt-0.5 text-mute">값이 다르면 아래에서 고쳐 다시 만드세요. 원래 초안은 그대로 남습니다.</div></div>}
+              {ad && ad.status !== 'created' && <div className="rounded-md border border-warn/40 bg-warn/10 p-2 text-xs text-warn">자동 3D 초안을 만들지 못했습니다: {ad.reason}</div>}
               <div className="grid grid-cols-2 gap-1 rounded-lg border border-line p-1" data-testid="mode-tabs">
                 <button className={`btn h-8 justify-center ${mode === 'views' ? 'btn-on' : 'btn-ghost'}`} onClick={() => setMode('views')}>투상도 결합 3D <span className="text-ai">(AI 추정)</span></button>
                 <button className={`btn h-8 justify-center ${mode === 'extrude' ? 'btn-on' : 'btn-ghost'}`} onClick={() => setMode('extrude')}>단일 윤곽 돌출</button>
@@ -123,7 +134,7 @@ export default function DxfExtrude({ fileId, onClose, onCreated }: { fileId: str
               <div className="grid grid-cols-2 gap-2 text-xs">
                 <Info k="형식" v={`${a.format}${a.version ? ` ${a.version}` : ''}`} />
                 <Info k="단위" v={a.unit} />
-                {pdf && <Info k="PDF 종류" v={a.pdfType === 'vector' ? '벡터 도면' : a.pdfType === 'scanned' ? '스캔(이미지)' : '내용 없음'} />}
+                {pdf && <Info k="도면 종류" v={a.format === 'IMAGE' ? `이미지 ${a.raster?.width}×${a.raster?.height}px` : a.pdfType === 'vector' ? '벡터 도면' : a.pdfType === 'scanned' ? '스캔(이미지)' : '내용 없음'} />}
                 {pdf && <Info k="용지" v={`${a.page.width.toFixed(0)}×${a.page.height.toFixed(0)} mm · ${a.pages}쪽`} />}
                 <Info k="닫힌 윤곽" v={`외곽 ${a.profiles.filter((p: any) => p.role === 'outer').length} · 구멍 ${a.profiles.filter((p: any) => p.role === 'hole').length}`} />
                 <Info k="열린 선분" v={String(a.openChains)} />
@@ -154,7 +165,7 @@ export default function DxfExtrude({ fileId, onClose, onCreated }: { fileId: str
                 <div><span className="text-ok">■</span> 원본 도면에서 확인: 외곽·구멍 윤곽</div>
                 {pdf && <div><span className="text-warn">■</span> 사용자 입력으로 확정: 축척 1:{sc || '?'}</div>}
                 <div><span className="text-warn">■</span> 사용자 입력으로 확정: 두께 {th || '?'} mm</div>
-                <div><span className="text-ai">■</span> AI 추정: 없음 (AI 형상 재구성은 3단계)</div>
+                <div><span className="text-ai">■</span> AI 추정: {a.raster ? '스캔·이미지에서 따낸 윤곽' : '없음 (입력값으로 확정)'}</div>
               </div>
               {err && <div className="text-xs text-bad">{err}</div>}
               <button className="btn btn-accent h-9 w-full justify-center" disabled={!ready || busy} onClick={make} data-testid="extrude-go">{busy ? '생성 중…' : '3D 모델 생성'}</button>

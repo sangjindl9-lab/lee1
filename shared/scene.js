@@ -46,13 +46,16 @@ export function suggestExplode(parts) {
   return out;
 }
 
-export function defaultScene(parts, name) {
+// 프로젝트 업종 → 기본 쇼룸 템플릿 (web/src/engine/stage.ts INDUSTRY_TEMPLATE 과 같게)
+export const INDUSTRY_TEMPLATE = { mold: 'mold', machine: 'machine', electric: 'electronics', building: 'building', product: 'gallery' };
+
+export function defaultScene(parts, name, industry) {
   const ex = suggestExplode(parts);
   return {
     v: SCENE_VERSION,
     title: name,
     viewMode: 'showroom',
-    background: 'studio',
+    background: INDUSTRY_TEMPLATE[industry] || 'studio',
     parts: Object.fromEntries(parts.map((p) => [p.id, { explode: ex[p.id] }])),
     explode: { factor: 1, stepDuration: 1 },
     camera: null,

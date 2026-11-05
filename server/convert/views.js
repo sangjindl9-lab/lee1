@@ -271,11 +271,11 @@ function insidePoly([x, y], poly) {
   return c;
 }
 
-function erode(a, nx, ny, r) { let b = a; for (let k = 0; k < r; k++) { const o = new Uint8Array(b.length); for (let y = 1; y < ny - 1; y++) for (let x = 1; x < nx - 1; x++) { const i = y * nx + x; o[i] = b[i] && b[i - 1] && b[i + 1] && b[i - nx] && b[i + nx] ? 1 : 0; } b = o; } return b; }
-function dilate(a, nx, ny, r) { let b = a; for (let k = 0; k < r; k++) { const o = new Uint8Array(b.length); for (let y = 1; y < ny - 1; y++) for (let x = 1; x < nx - 1; x++) { const i = y * nx + x; o[i] = b[i] || b[i - 1] || b[i + 1] || b[i - nx] || b[i + nx] ? 1 : 0; } b = o; } return b; }
+export function erode(a, nx, ny, r) { let b = a; for (let k = 0; k < r; k++) { const o = new Uint8Array(b.length); for (let y = 1; y < ny - 1; y++) for (let x = 1; x < nx - 1; x++) { const i = y * nx + x; o[i] = b[i] && b[i - 1] && b[i + 1] && b[i - nx] && b[i + nx] ? 1 : 0; } b = o; } return b; }
+export function dilate(a, nx, ny, r) { let b = a; for (let k = 0; k < r; k++) { const o = new Uint8Array(b.length); for (let y = 1; y < ny - 1; y++) for (let x = 1; x < nx - 1; x++) { const i = y * nx + x; o[i] = b[i] || b[i - 1] || b[i + 1] || b[i - nx] || b[i + nx] ? 1 : 0; } b = o; } return b; }
 
 /** 마칭 스퀘어로 성분 경계를 따라 가장 긴 고리(외곽) 반환 — 격자 꼭짓점 좌표 */
-function traceOuter(mask, nx, ny) {
+export function traceOuter(mask, nx, ny) {
   const at = (x, y) => (x >= 0 && y >= 0 && x < nx && y < ny ? mask[y * nx + x] : 0);
   const edges = new Map(); // 시작점 → 끝점 (칸 경계 위 방향성 선분, 채운 영역이 왼쪽)
   const add = (a, b) => edges.set(a[0] + ',' + a[1], b);
@@ -296,7 +296,7 @@ function traceOuter(mask, nx, ny) {
   return best;
 }
 
-function rdp(pts, eps) {
+export function rdp(pts, eps) {
   if (pts.length < 4) return pts;
   // 닫힌 고리: 가장 먼 두 점으로 나눠 각각 단순화
   let far = 0, fd = 0;

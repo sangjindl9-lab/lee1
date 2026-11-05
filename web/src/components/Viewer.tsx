@@ -8,6 +8,23 @@ import { useWS, steps } from '../store';
 
 /** 외부(UI)에서 카메라 상태를 읽기 위한 연결 */
 export const viewerBridge: { camera?: THREE.Camera; target?: THREE.Vector3; gl?: THREE.WebGLRenderer; scene?: THREE.Scene } = {};
+// 자동 화면 검사(테스트)용
+(globalThis as any).__eumViewer = viewerBridge;
+
+/** 현재 3D 화면 → 썸네일 JPEG(가로 640px) data URL */
+export function captureThumb(): string | null {
+  const c = viewerBridge.gl?.domElement; if (!c || !c.width) return null;
+  const w = 640, h = Math.round((640 * 3) / 4);
+  const o = document.createElement('canvas'); o.width = w; o.height = h;
+  const g = o.getContext('2d')!;
+  // 가운데를 4:3 으로 잘라 채움
+  const sr = c.width / c.height, tr = w / h;
+  // 가장자리(방향 표시 등)를 빼고 가운데 82% 만
+  const sw = (sr > tr ? c.height * tr : c.width) * 0.82, sh = (sr > tr ? c.height : c.width / tr) * 0.82;
+  g.fillStyle = '#ffffff'; g.fillRect(0, 0, w, h);
+  g.drawImage(c, (c.width - sw) / 2, (c.height - sh) / 2, sw, sh, 0, 0, w, h);
+  return o.toDataURL('image/jpeg', 0.85);
+}
 
 export default function Viewer({ url, zUp, headers, interactive = true, gizmo = true, onLoaded }:
   { url: string; zUp: boolean; headers?: Record<string, string>; interactive?: boolean; gizmo?: boolean; onLoaded?: (m: LoadedModel) => void }) {
@@ -50,7 +67,7 @@ function Scene3D({ model, interactive }: { model: LoadedModel; interactive: bool
   // 조명·바닥
   useEffect(() => {
     const st = setupStage(scene, gl, bg, model.size, technical);
-    placeFloor(st, model.box.min.y);
+    placeFloor(st, model.box.min.y, model.box.getCenter(new THREE.Vector3()));
     return () => st.dispose();
   }, [bg, technical, model, scene, gl]);
 

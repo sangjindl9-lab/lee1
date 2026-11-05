@@ -1,9 +1,10 @@
-# EUM 3D STUDIO PRO
+# EUM 3D SHOWROOM PRO (이음 3D 쇼룸 프로)
 
 AI 기반 CAD·PDF 3D 변환, 산업용 디지털 쇼룸 및 조립·분해 시뮬레이션 플랫폼 — **1단계 MVP**
 
-CAD 파일(STEP·IGES·STL·GLB·DXF·DWG·PDF)을 올리면 3D 모델과 부품 트리가 만들어지고, 분해도·조립 애니메이션을 편집해
-**MP4 동영상**과 **공유 URL(QR)** 로 내보냅니다.
+**2D 도면만 올려도 바로 3D 쇼룸** — DXF·DWG·PDF·스캔 PDF·JPG·PNG·TIFF 도면을 올리면 투상도(정면·평면·측면)를 자동 인식해
+**참고용 AI 3D 초안**을 만들고, 고객사 브랜드가 입혀진 **공유 URL(QR)** 과 **고객사 쇼룸(/c/주소)** 으로 바로 보여 줍니다.
+STEP·IGES·STL·GLB 3D 원본은 형상 그대로 변환하며, 분해도·조립 애니메이션을 편집해 **MP4 동영상**으로 내보냅니다.
 
 | 문서 | 내용 |
 | --- | --- |
@@ -18,7 +19,7 @@ npm ci
 npm run build                     # 웹 빌드 → web/dist
 DATABASE_URL=postgres://postgres@localhost:5432/eum3d npm start   # http://localhost:8080
 ```
-필요: Node 22, PostgreSQL 14+, FFmpeg, Poppler, LibreDWG(`dwg2dxf`), Chromium(`npx playwright-core install chromium`).
+필요: Node 22, PostgreSQL 14+, FFmpeg, Poppler, Tesseract OCR(`tesseract-ocr-kor` 권장, 없어도 동작), LibreDWG(`dwg2dxf`), Chromium(`npx playwright-core install chromium`).
 
 ## 테스트
 ```bash

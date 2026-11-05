@@ -24,10 +24,10 @@ const sceneOf = async (c, modelId) =>
 
 r.get('/models/:id', async (req, res) => {
   const d = await req.db(async (c) => {
-    const { rows: [m] } = await c.query(`SELECT m.*, f.original_name AS source_name, f.ext AS source_ext
+    const { rows: [m] } = await c.query(`SELECT m.*, (m.thumb_key IS NOT NULL) AS has_thumb, f.original_name AS source_name, f.ext AS source_ext
       FROM models m JOIN files f ON f.id=m.source_file_id WHERE m.id=$1`, [req.params.id]);
     if (!m) return null;
-    return { model: { ...m, glb_key: undefined }, scene: await sceneOf(c, m.id) };
+    return { model: { ...m, glb_key: undefined, thumb_key: undefined }, scene: await sceneOf(c, m.id) };
   });
   d ? res.json(d) : nf(res, '모델');
 });
@@ -107,6 +107,29 @@ r.post('/models/:id/review', write, async (req, res) => {
   m ? res.json(m) : res.status(404).json({ error: '검토 대상 모델이 아닙니다' });
 });
 
+// 모델 썸네일: 화면에서 찍은 PNG (고객사 쇼룸 목록·대시보드 카드용)
+r.put('/models/:id/thumbnail', write, async (req, res) => {
+  const m = /^data:image\/(png|jpeg);base64,([A-Za-z0-9+/=]+)$/.exec(String(req.body?.image || ''));
+  if (!m) return res.status(400).json({ error: 'PNG/JPEG data URL 이 필요합니다' });
+  const buf = Buffer.from(m[2], 'base64');
+  if (buf.length > 1.5 * 1024 * 1024) return res.status(413).json({ error: '썸네일이 너무 큽니다 (1.5MB 이하)' });
+  const ok = await req.db(async (c) => {
+    const { rows: [x] } = await c.query('SELECT id,company_id FROM models WHERE id=$1', [req.params.id]);
+    if (!x) return false;
+    const key = storage.keyFor(x.company_id, 'thumbs', `${x.id}.${m[1] === 'png' ? 'png' : 'jpg'}`);
+    await storage.put(x.company_id, key, buf);
+    await c.query('UPDATE models SET thumb_key=$2 WHERE id=$1', [x.id, key]);
+    return true;
+  });
+  ok ? res.json({ ok: true }) : nf(res, '모델');
+});
+r.get('/models/:id/thumbnail', async (req, res) => {
+  const m = await req.db(async (c) => (await c.query('SELECT company_id,thumb_key FROM models WHERE id=$1', [req.params.id])).rows[0]);
+  if (!m?.thumb_key) return nf(res, '썸네일');
+  res.type(m.thumb_key.endsWith('.png') ? 'png' : 'jpeg');
+  storage.stream(m.company_id, m.thumb_key).pipe(res);
+});
+
 r.get('/files/:id/preview', async (req, res) => {
   const f = await req.db(async (c) => (await c.query('SELECT id,company_id FROM files WHERE id=$1', [req.params.id])).rows[0]);
   if (!f) return nf(res, '파일');
@@ -167,7 +190,7 @@ const newToken = () => crypto.randomBytes(12).toString('base64url');
 const shareOut = (req, s) => ({ ...s, password_hash: undefined, has_password: !!s.password_hash, url: `${baseUrl(req)}/s/${s.token}` });
 
 r.post('/models/:id/shares', write, async (req, res) => {
-  const { title = '', password, expiresAt } = req.body || {};
+  const { title = '', password, expiresAt, listed = true } = req.body || {};
   if (password && String(password).length < 4) return res.status(400).json({ error: '비밀번호는 4자 이상' });
   const exp = expiresAt ? new Date(expiresAt) : null;
   if (exp && (isNaN(exp) || exp < new Date())) return res.status(400).json({ error: '만료일이 올바르지 않습니다' });
@@ -175,9 +198,9 @@ r.post('/models/:id/shares', write, async (req, res) => {
     const { rows: [m] } = await c.query('SELECT id,project_id,name FROM models WHERE id=$1', [req.params.id]);
     if (!m) return null;
     const { rows: [s] } = await c.query(
-      `INSERT INTO share_links (company_id,project_id,model_id,token,title,password_hash,expires_at,created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-      [req.user.companyId, m.project_id, m.id, newToken(), title || m.name, password ? await bcrypt.hash(String(password), 10) : null, exp, req.user.id]);
+      `INSERT INTO share_links (company_id,project_id,model_id,token,title,password_hash,expires_at,created_by,listed)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+      [req.user.companyId, m.project_id, m.id, newToken(), title || m.name, password ? await bcrypt.hash(String(password), 10) : null, exp, req.user.id, !!listed]);
     await audit(c, { companyId: req.user.companyId, userId: req.user.id, action: 'share.create', target: s.id, meta: { modelId: m.id, password: !!password, expiresAt: exp } });
     return s;
   });
@@ -190,13 +213,14 @@ r.get('/projects/:id/shares', async (req, res) => {
 });
 
 r.patch('/shares/:id', write, async (req, res) => {
-  const { revoke, password, expiresAt, title } = req.body || {};
+  const { revoke, password, expiresAt, title, listed } = req.body || {};
   const s = await req.db(async (c) => {
     const sets = [], vals = [req.params.id];
     if (revoke) sets.push('revoked_at=now()');
     if (password !== undefined) { vals.push(password ? await bcrypt.hash(String(password), 10) : null); sets.push(`password_hash=$${vals.length}`); }
     if (expiresAt !== undefined) { vals.push(expiresAt ? new Date(expiresAt) : null); sets.push(`expires_at=$${vals.length}`); }
     if (title !== undefined) { vals.push(String(title)); sets.push(`title=$${vals.length}`); }
+    if (listed !== undefined) { vals.push(!!listed); sets.push(`listed=$${vals.length}`); }
     if (!sets.length) return 'noop';
     const { rows: [s] } = await c.query(`UPDATE share_links SET ${sets.join(',')} WHERE id=$1 RETURNING *`, vals);
     if (s) await audit(c, { companyId: req.user.companyId, userId: req.user.id, action: revoke ? 'share.revoke' : 'share.update', target: s.id });

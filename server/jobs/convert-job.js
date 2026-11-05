@@ -13,8 +13,9 @@ export async function createModel(c, { file, result, glb, name }) {
   const key = storage.keyFor(file.company_id, 'models', `${m.id}.glb`);
   await storage.put(file.company_id, key, glb);
   await c.query('UPDATE models SET glb_key=$2 WHERE id=$1', [m.id, key]);
+  const { rows: [p] } = await c.query('SELECT industry FROM projects WHERE id=$1', [file.project_id]);
   await c.query('INSERT INTO scenes (company_id,model_id,version,data) VALUES ($1,$2,1,$3)',
-    [file.company_id, m.id, defaultScene(result.parts, name)]);
+    [file.company_id, m.id, defaultScene(result.parts, name, p?.industry)]);
   return { ...m, glb_key: key };
 }
 
@@ -42,6 +43,16 @@ export async function processConvert(job) {
   if (preview) await storage.put(file.company_id, previewKey(file), preview);
   return tenant(job.company_id, async (c) => {
     if (result.analysisOnly) {
+      // 2D 도면: 자동 3D 초안이 만들어졌으면 '참고용 AI 3D 시각화'(검토 대기) 모델로 저장 → 바로 쇼룸에서 보임
+      if (result.draft && glb) {
+        const m = await createModel(c, { file, result: result.draft, glb, name: `${name} (3D 초안)` });
+        await c.query("UPDATE models SET review_status='pending' WHERE id=$1", [m.id]);
+        result.analysis.autoDraft.modelId = m.id;
+        await c.query("UPDATE files SET status='converted', analysis=$2, error=NULL WHERE id=$1", [file.id, result.analysis]);
+        await audit(c, { companyId: file.company_id, userId: job.created_by, action: 'model.autodraft', target: m.id,
+          meta: { fileId: file.id, method: result.draft.method, kind: result.analysis.autoDraft.kind, scale: result.analysis.autoDraft.scale, thickness: result.analysis.autoDraft.thickness } });
+        return { fileId: file.id, analysisOnly: true, modelId: m.id, autoDraft: true };
+      }
       await c.query("UPDATE files SET status='analyzed', analysis=$2, error=NULL WHERE id=$1", [file.id, result.analysis]);
       return { fileId: file.id, analysisOnly: true };
     }
