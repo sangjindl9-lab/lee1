@@ -1,0 +1,30 @@
+# 온프레미스(고객사 내부망) 설치용. 외부 인터넷 없이 3D 조회·분해도·MP4 렌더가 동작합니다.
+#   cp .env.example .env  (JWT_SECRET, POSTGRES_PASSWORD 변경)
+#   docker compose up -d   →  http://서버주소:8080
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: eum3d
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U postgres"], interval: 5s, retries: 20 }
+  app:
+    build: .
+    image: eum3d-studio:latest
+    restart: unless-stopped
+    depends_on: { db: { condition: service_healthy } }
+    environment:
+      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-change-me}@db:5432/eum3d
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET 을 .env 에 지정하세요}
+      PUBLIC_URL: ${PUBLIC_URL:-}
+      DATA_DIR: /data
+    ports: ["8080:8080"]
+    volumes: [appdata:/data]
+  # 렌더 전용 워커를 GPU/고성능 장비에 분리할 때 (같은 DB·저장소 공유 필요)
+  # render-worker:
+  #   image: eum3d-studio:latest
+  #   environment: { DATABASE_URL: ..., JWT_SECRET: ..., DATA_DIR: /data, INTERNAL_URL: "http://app:8080" }
+  #   volumes: [appdata:/data]
+volumes: { pgdata: {}, appdata: {} }

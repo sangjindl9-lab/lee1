@@ -1,0 +1,44 @@
+{
+  "name": "eum3d-studio",
+  "version": "0.1.0",
+  "private": true,
+  "description": "EUM 3D STUDIO PRO – CAD·PDF 3D 변환, 산업용 디지털 쇼룸, 분해·조립 시뮬레이션",
+  "type": "module",
+  "license": "UNLICENSED",
+  "scripts": {
+    "dev:web": "vite --config web/vite.config.ts",
+    "build": "vite build --config web/vite.config.ts",
+    "start": "node --env-file-if-exists=.env server/index.js",
+    "migrate": "node server/db/migrate.js",
+    "test": "node --test --test-concurrency=1 tests/*.test.js",
+    "test:ui": "node tests/ui/run-ui.js"
+  },
+  "dependencies": {
+    "@gltf-transform/core": "^4.5.1",
+    "bcryptjs": "^3.0.3",
+    "cookie-parser": "^1.4.7",
+    "dxf-parser": "^1.1.2",
+    "express": "^5.3.0",
+    "jsonwebtoken": "^9.0.3",
+    "occt-import-js": "^0.0.23",
+    "pg": "^8.23.1",
+    "playwright-core": "^1.63.0",
+    "qrcode": "^1.5.4",
+    "three": "^0.169.0"
+  },
+  "devDependencies": {
+    "@react-three/drei": "^9.122.0",
+    "@react-three/fiber": "^8.18.0",
+    "@tailwindcss/vite": "^4.3.4",
+    "@types/react": "^18.3.31",
+    "@types/react-dom": "^18.3.7",
+    "@types/three": "^0.169.0",
+    "@vitejs/plugin-react": "^4.7.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "tailwindcss": "^4.3.4",
+    "typescript": "^5.9.3",
+    "vite": "^5.4.21",
+    "zustand": "^4.5.7"
+  }
+}

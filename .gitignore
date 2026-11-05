@@ -1,0 +1,7 @@
+node_modules/
+web/dist/
+data/
+scratch/
+.env
+*.log
+test-results/
