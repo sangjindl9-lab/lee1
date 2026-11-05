@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { matPrice, won } from './calc.js';
+import { matPrice, won, unitAdjOf, adjPrice } from './calc.js';
 import { uid } from './seed.js';
 import { NumInput, TextInput, PasteBox, num } from './ui.jsx';
 import { WAGES_2026H2 } from './stdlib.js';
@@ -25,6 +25,7 @@ export default function Prices({ p, update, toast }) {
     setPct(0);
   };
 
+  const UA = unitAdjOf(p);
   const mats = p.mats.filter((m) => (m.code + m.name + m.spec).toLowerCase().includes(q.toLowerCase()));
 
   return (
@@ -53,7 +54,7 @@ export default function Prices({ p, update, toast }) {
           </div>
           <div className="tbl-wrap">
             <table className="grid">
-              <thead><tr><th className="w-code">코드</th><th className="w-name">품명</th><th className="w-spec">규격</th><th className="w-unit">단위</th><th className="w-price">조달청</th><th className="w-price">물가정보</th><th className="w-price">거래가격</th><th className="w-price">지정단가</th><th className="w-price">적용단가</th><th className="w-x"></th></tr></thead>
+              <thead><tr><th className="w-code">코드</th><th className="w-name">품명</th><th className="w-spec">규격</th><th className="w-unit">단위</th><th className="w-price">조달청</th><th className="w-price">물가정보</th><th className="w-price">거래가격</th><th className="w-price">지정단가</th><th className="w-price">적용단가</th>{UA.m !== 100 && <th className="w-price">조정단가 ({UA.m}%)</th>}<th className="w-x"></th></tr></thead>
               <tbody>
                 {mats.map((m) => {
                   const ap = matPrice(m);
@@ -66,6 +67,7 @@ export default function Prices({ p, update, toast }) {
                       {['p1', 'p2', 'p3'].map((k) => <td key={k} className={!m.applied && m[k] > 0 && m[k] === ap ? 'pick' : ''}><NumInput value={m[k]} onChange={(v) => upMat(m.id, { [k]: v })} aria-label={k} /></td>)}
                       <td><NumInput value={m.applied} onChange={(v) => upMat(m.id, { applied: v })} placeholder="최저가" aria-label="지정단가" /></td>
                       <td className="r mono strong">{won(ap)}</td>
+                      {UA.m !== 100 && <td className="r mono strong adj">{won(adjPrice(p, 'm', ap))}</td>}
                       <td className="w-x"><button className="x-btn" aria-label="자재 삭제" onClick={() => { if (used(m.id)) return toast('일위대가나 내역서에서 사용 중인 자재는 삭제할 수 없습니다.'); update((d) => { d.mats = d.mats.filter((x) => x.id !== m.id); }); }}>×</button></td>
                     </tr>
                   );
@@ -90,12 +92,13 @@ export default function Prices({ p, update, toast }) {
               toast(`2026 하반기 시중노임 적용: ${changed}개 직종 갱신, ${added}개 직종 추가`); }}>2026 하반기 시중노임 적용</button></div></div>
           <div className="tbl-wrap narrow">
             <table className="grid">
-              <thead><tr><th className="w-name">직종</th><th className="w-price">일 노임 (원/인)</th><th className="w-x"></th></tr></thead>
+              <thead><tr><th className="w-name">직종</th><th className="w-price">일 노임 (원/인)</th>{UA.l !== 100 && <th className="w-price">조정 노임 ({UA.l}%)</th>}<th className="w-x"></th></tr></thead>
               <tbody>
                 {p.labors.map((l) => (
                   <tr key={l.id}>
                     <td className="w-name"><TextInput value={l.name} onChange={(v) => upLab(l.id, { name: v })} placeholder="직종명" aria-label="직종" /></td>
                     <td><NumInput value={l.wage} onChange={(v) => upLab(l.id, { wage: v })} aria-label="노임" /></td>
+                    {UA.l !== 100 && <td className="r mono strong adj">{won(adjPrice(p, 'l', Number(l.wage) || 0))}</td>}
                     <td className="w-x"><button className="x-btn" aria-label="직종 삭제" onClick={() => { if (used(l.id)) return toast('일위대가에서 사용 중인 직종은 삭제할 수 없습니다.'); update((d) => { d.labors = d.labors.filter((x) => x.id !== l.id); }); }}>×</button></td>
                   </tr>
                 ))}

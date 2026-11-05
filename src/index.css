@@ -356,3 +356,6 @@ td.adj { color: var(--accent); }
 .sub-h { font-size: 13px; margin: 14px 0 8px; padding-top: 12px; border-top: 1px solid var(--line-2); }
 
 .total small { font-size: 11px; color: var(--ink-2); }
+
+.adj-sub { display: block; text-align: right; font-size: 11px; color: var(--accent); padding-right: 6px; }
+th + th.w-price { }

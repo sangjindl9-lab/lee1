@@ -175,7 +175,7 @@ export default function Naeyeok({ p, update, clip, setClip, toast }) {
                       return [
                         (linked || r.fixed[k] || adjK)
                           ? <td key={k + 'u'} className={'r mono' + (adjK ? ' adj' : '')} title={adjK ? `단가 ${Number(it.adj[k]).toFixed(2)}% 적용` : ''}>{won(u)}</td>
-                          : <td key={k + 'u'}><NumInput value={it[k]} onChange={(v) => upItem(it.id, { [k]: v, fix: dropFix(it.fix, k) })} aria-label={label + ' 단가'} /></td>,
+                          : <td key={k + 'u'}><NumInput value={it[k]} onChange={(v) => upItem(it.id, { [k]: v, fix: dropFix(it.fix, k) })} aria-label={label + ' 단가'} />{u !== (Number(it[k]) || 0) && <span className="adj-sub mono" title="공사 단가 조정률 적용 단가">→ {won(u)}</span>}</td>,
                         <td key={k + 'a'} className={r.fixed[k] ? 'fixed' : ''}><NumInput value={a} onChange={(v) => setAmt(it, k, v, a)} aria-label={label + ' 금액'} title="금액을 직접 입력하면 이 값으로 고정됩니다" /></td>,
                       ];
                     })}

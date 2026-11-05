@@ -44,9 +44,17 @@ export function itemInfo(p, it) {
   if (it.src === 'mat') {
     const mt = p.mats.find((x) => x.id === it.ref);
     if (!mt) return { name: '(삭제된 자재)', spec: '', unit: '', m: 0, l: 0, e: 0, link: '' };
-    return { name: mt.name, spec: mt.spec, unit: mt.unit, m: matPrice(mt), l: 0, e: 0, link: mt.code || '자재' };
+    return { name: mt.name, spec: mt.spec, unit: mt.unit, m: adjPrice(p, 'm', matPrice(mt)), l: 0, e: 0, link: mt.code || '자재' };
   }
-  return { name: it.name, spec: it.spec, unit: it.unit, m: Number(it.m) || 0, l: Number(it.l) || 0, e: Number(it.e) || 0, link: '' };
+  return { name: it.name, spec: it.spec, unit: it.unit, m: adjPrice(p, 'm', Number(it.m) || 0), l: adjPrice(p, 'l', Number(it.l) || 0), e: adjPrice(p, 'e', Number(it.e) || 0), link: '' };
+}
+
+// 공사 단가 조정률을 한 단가에 적용 (조정률 100%면 그대로)
+export function adjPrice(p, k, price) {
+  const r = unitAdjOf(p)[k];
+  if (r === 100) return price;
+  const R = p.rateRound === 'round' ? (x) => Math.round(x + 1e-9) : fl;
+  return R(price * r / 100);
 }
 
 // factor: 단가 조정률(1 = 100%). 단가는 원 미만 절사.
