@@ -52,7 +52,7 @@ test('AI-2. 허용 → AI 로 부품별 3D (커버·몸체·볼트, 분해 방�
   assert.equal(imgs.length, 2, '도면 그림 + 윤곽 번호 그림');
   assert.equal(Buffer.from(imgs[0].source.data, 'base64').subarray(1, 4).toString(), 'PNG', 'DXF 를 그림으로 그려 보냄');
   const txt = content.filter((c) => c.type === 'text').map((c) => c.text).join('\n');
-  assert.match(txt, /V1S1 외형/, '윤곽 목록을 보냄');
+  assert.match(txt, /V1S1 전체 실루엣/, '윤곽 목록을 보냄');
   const d = (await A.get(`/api/models/${j.result.modelId}`)).data;
   assert.equal(d.model.method, 'ai-drawing');
   assert.equal(d.model.review_status, 'pending');
