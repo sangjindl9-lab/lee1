@@ -46,7 +46,7 @@ test('AI-2. 허용 → AI 로 부품별 3D (커버·몸체·볼트, 분해 방�
   assert.equal(j.result.aiDraft, true, '업로드 즉시 AI 해석');
   const call = calls.at(-1);
   assert.equal(call.headers['x-api-key'], 'sk-test');
-  assert.equal(call.body.tool_choice.name, 'build_showroom_model');
+  assert.equal(call.body.tools[0].name, 'build_showroom_model');
   const content = call.body.messages[0].content;
   assert.equal(content[0].type, 'image'); assert.equal(Buffer.from(content[0].source.data, 'base64').subarray(1, 4).toString(), 'PNG', 'DXF 를 그림으로 그려 보냄');
   assert.match(content[1].text, /투상도/);

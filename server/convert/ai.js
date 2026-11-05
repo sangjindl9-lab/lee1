@@ -81,7 +81,8 @@ export async function interpretDrawing({ image, mediaType = 'image/png', analysi
   const ctx = contextText(analysis, fileName);
   const body = {
     model: cfg.model, max_tokens: 8000, system: SYSTEM,
-    tools: [TOOL], tool_choice: { type: 'tool', name: TOOL.name },
+    // 최신 모델은 도구 강제(tool_choice: tool)를 지원하지 않아 auto + 지시문으로 호출하게 한다
+    tools: [TOOL], tool_choice: { type: 'auto' },
     messages: [{ role: 'user', content: [
       { type: 'image', source: { type: 'base64', media_type: mediaType, data: image.toString('base64') } },
       { type: 'text', text: ctx },
@@ -99,7 +100,11 @@ export async function interpretDrawing({ image, mediaType = 'image/png', analysi
     const msg = j?.error?.message || res.statusText;
     throw Object.assign(new Error(`AI 해석 실패 (${res.status}): ${msg}`), { status: res.status === 401 ? 400 : 502 });
   }
-  const tool = (j.content || []).find((c) => c.type === 'tool_use' && c.name === TOOL.name);
+  let tool = (j.content || []).find((c) => c.type === 'tool_use' && c.name === TOOL.name);
+  if (!tool) { // 도구 대신 글로 JSON 을 준 경우
+    const txt = (j.content || []).filter((c) => c.type === 'text').map((c) => c.text).join('\n');
+    const m = /\{[\s\S]*\}/.exec(txt); try { tool = m ? { input: JSON.parse(m[0]) } : null; } catch { tool = null; }
+  }
   if (!tool?.input?.parts?.length) throw Object.assign(new Error('AI 가 부품 목록을 돌려주지 않았습니다'), { status: 502 });
   return { spec: tool.input, usage: { ...j.usage, model: j.model || cfg.model, ms: Date.now() - t0 } };
 }
