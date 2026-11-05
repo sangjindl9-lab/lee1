@@ -86,15 +86,36 @@
     const params = { files: [handle] };
     if (launchConsumer) launchConsumer(params); else pendingLaunch = params;
   }
+  let sheetLoaded;
+  const sheetReady = new Promise((resolve) => { sheetLoaded = resolve; }); // 엑셀 화면 코드가 실린 뒤
+  const isExcel = (name) => /\.(xlsx|xlsm)$/i.test(name);
+  /** 엑셀이면 엑셀 화면으로 보내고 true. 한글 문서면 false. */
+  function routeExcel(uri, name) {
+    if (/\.xls$/i.test(name)) {
+      toast('구형 xls 파일은 엑셀에서 xlsx로 저장한 뒤 열어 주세요.');
+      return true;
+    }
+    if (!isExcel(name)) return false;
+    sheetReady.then(() => window.EumSheet.open(uri, name)).then((ok) => { if (ok) hideHome(); });
+    return true;
+  }
   function openUri(uri, name) {
+    if (routeExcel(uri, name)) return;
+    if (!leaveSheet()) return;
     remember(uri, name);
     openHandle(makeHandle(uri, name));
+  }
+  /** 한글 문서로 넘어가기 전에, 저장 안 한 엑셀이 있으면 물어본다. */
+  function leaveSheet() {
+    const sh = window.EumSheet;
+    return !sh || !sh.isOpen() || !sh.isDirty() || confirm('저장하지 않은 엑셀 변경 내용이 있습니다. 버리고 계속할까요?');
   }
 
   if (native) {
     window.showOpenFilePicker = async () => {
       const r = await native.pickOpen();
       if (!r || !r.uri) throw abort();
+      if (routeExcel(r.uri, r.name) || !leaveSheet()) throw abort();
       remember(r.uri, r.name);
       return [makeHandle(r.uri, r.name)];
     };
@@ -193,16 +214,17 @@
   function renderHome() {
     const list = $('eum-recents');
     list.textContent = '';
-    if (docOpened) {
+    const sheetOpen = window.EumSheet && window.EumSheet.isOpen();
+    if (docOpened || sheetOpen) {
       const cur = el('button', 'eum-row eum-current');
-      cur.append(el('span', 'eum-ext', '열림'), el('span', 'eum-row-main', fileName()), el('span', 'eum-row-sub', '편집 중인 문서로 돌아가기'));
+      cur.append(el('span', 'eum-ext', '열림'), el('span', 'eum-row-main', sheetOpen ? window.EumSheet.name() : fileName()), el('span', 'eum-row-sub', '열어 둔 문서로 돌아가기'));
       cur.onclick = hideHome;
       list.append(cur);
     }
     const items = recents();
     if (!items.length) {
       list.append(el('p', 'eum-empty', native
-        ? '최근에 연 문서가 없습니다.\n「문서 열기」로 hwp · hwpx 파일을 선택하세요.'
+        ? '최근에 연 문서가 없습니다.\n「문서 열기」로 한글(hwp · hwpx) 또는 엑셀(xlsx) 파일을 선택하세요.'
         : '「문서 열기」로 hwp · hwpx 파일을 선택하세요.'));
       return;
     }
@@ -286,6 +308,7 @@
     if (!$('eum-about').hidden) { $('eum-about').hidden = true; return; }
     if (!$('eum-menu').hidden) { closeMenu(); return; }
     if (!$('eum-home').hidden) { if (native) native.exit(); return; }
+    if (window.EumSheet && window.EumSheet.back()) return;
     if (document.querySelector('.dialog-overlay, .modal-overlay, .menu-item.open, dialog[open]')) {
       (document.activeElement || document.body).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
       return;
@@ -321,12 +344,12 @@
 
     const home = el('div'); home.id = 'eum-home';
     const head = el('div', 'eum-home-head');
-    head.append(el('h1', null, '이음한글'), el('p', null, '한글 문서(hwp · hwpx) 보기 · 편집'));
+    head.append(el('h1', null, '이음한글'), el('p', null, '한글(hwp · hwpx) · 엑셀(xlsx) 보기 · 편집'));
     const acts = el('div', 'eum-home-acts');
     const bOpen = el('button', 'eum-act eum-act-primary', '문서 열기');
     bOpen.onclick = () => { armed = true; wantEditOnLoad = false; run('file:open'); };
     const bNew = el('button', 'eum-act', '새 문서');
-    bNew.onclick = () => { armed = true; wantEditOnLoad = true; run('file:new-doc'); };
+    bNew.onclick = () => { if (!leaveSheet()) return; armed = true; wantEditOnLoad = true; run('file:new-doc'); };
     acts.append(bOpen, bNew);
     const sec = el('h2', null, '최근 문서');
     const list = el('div'); list.id = 'eum-recents';
@@ -337,8 +360,8 @@
     const card = el('div', 'eum-about-card');
     card.append(
       el('h2', null, '이음한글'),
-      el('p', null, 'hwp · hwpx 문서를 열고, 고치고, 같은 형식으로 저장합니다.'),
-      el('p', 'eum-small', '문서 엔진: rhwp v0.8.7 (MIT License, © Edward Kim)\n글꼴: Pretendard · Noto · 나눔 · 고운 등 공개 글꼴 (SIL OFL 외)'),
+      el('p', null, 'hwp · hwpx · xlsx 문서를 열고, 고치고, 같은 형식으로 저장합니다.'),
+      el('p', 'eum-small', '문서 엔진: rhwp v0.8.7 (MIT License, © Edward Kim)\n엑셀: ExcelJS · fast-formula-parser (MIT), SSF (Apache-2.0)\n글꼴: Pretendard · Noto · 나눔 · 고운 등 공개 글꼴 (SIL OFL 외)'),
     );
     const ok = el('button', 'eum-act eum-act-primary', '확인'); ok.onclick = () => { about.hidden = true; };
     card.append(ok);
@@ -347,6 +370,14 @@
 
     renderHome();
     setMode('view');
+
+    if (native) {
+      window.EumShell = { native, toast, remember, el, blobToB64, b64ToBytes, showHome };
+      const sheetJs = document.createElement('script');
+      sheetJs.src = 'eum/eum-sheet.js';
+      sheetJs.onload = sheetLoaded;
+      document.head.append(sheetJs);
+    }
 
     new MutationObserver((muts) => {
       for (const m of muts) for (const n of m.addedNodes) if (n.id === 'rhwp-print-surface' && native) hookPrintFrame(n);
@@ -376,6 +407,7 @@
       // 편집기가 시작하면서 스스로 만드는 빈 문서는 홈을 닫지 않는다.
       if (reason !== 'document-initialized' || !armed) return;
       docOpened = true;
+      if (window.EumSheet) window.EumSheet.close();
       hideHome();
       setTimeout(() => { setMode(wantEditOnLoad ? 'edit' : 'view'); wantEditOnLoad = false; refreshBar(); }, 0);
     };

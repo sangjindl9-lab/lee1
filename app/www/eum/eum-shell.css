@@ -203,3 +203,58 @@ button.eum-row { border-bottom: 1px solid var(--eum-line); }
   #eum-print-root { display: block !important; }
   html, body { height: auto !important; overflow: visible !important; background: #fff !important; display: block !important; }
 }
+
+/* ── 엑셀 화면 ── */
+.eum-ext-xlsx, .eum-ext-xlsm { background: #1d8f4e; }
+#eum-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 800;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  color: var(--eum-ink);
+  font: 13px/1.3 system-ui, -apple-system, "Pretendard", "Noto Sans KR", sans-serif;
+}
+#eum-sheet[hidden], #eum-smenu[hidden] { display: none; }
+.eum-sbar {
+  flex: 0 0 auto;
+  height: var(--eum-bar-h);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 4px;
+  border-bottom: 1px solid var(--eum-line);
+  font-size: 15px;
+}
+.eum-sbar button { border: 0; background: none; color: inherit; font: inherit; height: 40px; border-radius: 8px; white-space: nowrap; flex: 0 0 auto; }
+.eum-sbar button:active { background: #eef1f5; }
+.eum-sbar .eum-ic { width: 40px; font-size: 22px; line-height: 1; }
+.eum-sbar .eum-txt { padding: 0 12px; font-weight: 600; }
+.eum-sbar .eum-primary { color: #fff; background: #1d8f4e; height: 34px; margin: 0 2px; }
+.eum-stitle { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; padding: 0 4px; }
+#eum-sheet:not(.eum-sheet-edit) .eum-sedit { display: none; }
+
+.eum-fx { flex: 0 0 auto; display: flex; align-items: center; height: 40px; border-bottom: 1px solid var(--eum-line); background: #fafbfc; }
+.eum-fx-addr { flex: 0 0 52px; text-align: center; font-weight: 700; color: var(--eum-sub); border-right: 1px solid var(--eum-line); }
+.eum-fx input { flex: 1 1 auto; min-width: 0; height: 100%; border: 0; padding: 0 10px; background: none; font: 15px system-ui, sans-serif; color: inherit; outline: none; }
+.eum-sheet-edit .eum-fx input { background: #fff; }
+.eum-fx-ok { flex: 0 0 44px; height: 100%; border: 0; background: #1d8f4e; color: #fff; font-size: 18px; }
+
+.eum-grid { flex: 1 1 auto; min-height: 0; overflow: auto; background: #f4f6f9; touch-action: pan-x pan-y; overscroll-behavior: contain; }
+.eum-grid table { border-collapse: collapse; table-layout: fixed; background: #fff; }
+.eum-grid th, .eum-grid td { border: 1px solid #dfe3e8; height: 22px; padding: 1px 4px; overflow: hidden; }
+.eum-grid td { white-space: nowrap; vertical-align: bottom; font-size: 11pt; }
+.eum-grid th { background: #eef1f5; color: var(--eum-sub); font-weight: 600; font-size: 11px; text-align: center; position: sticky; z-index: 1; }
+.eum-grid thead th { top: 0; z-index: 2; }
+.eum-grid tbody th { left: 0; }
+.eum-grid thead th:first-child { left: 0; z-index: 3; }
+.eum-grid td.sel { outline: 2px solid #1d8f4e; outline-offset: -2px; }
+
+.eum-tabs { flex: 0 0 auto; display: flex; overflow-x: auto; height: 40px; border-top: 1px solid var(--eum-line); background: #eef1f5; padding-bottom: env(safe-area-inset-bottom); }
+.eum-tabs button { flex: 0 0 auto; border: 0; border-right: 1px solid var(--eum-line); background: none; padding: 0 16px; font: inherit; color: var(--eum-sub); }
+.eum-tabs button.on { background: #fff; color: #1d8f4e; font-weight: 700; box-shadow: inset 0 -3px 0 #1d8f4e; }
+
+.eum-sheet-loading { display: none; position: absolute; inset: var(--eum-bar-h) 0 0 0; place-items: center; background: #fff; color: var(--eum-sub); font-size: 15px; }
+#eum-sheet.eum-loading .eum-sheet-loading { display: grid; }
+#eum-smenu { position: fixed; inset: 0; z-index: 950; background: rgba(15, 23, 42, 0.25); }

@@ -22,7 +22,7 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- 파일 관리자·메신저에서 hwp/hwpx 파일을 눌렀을 때 "이음한글"로 열기 -->
+            <!-- 파일 관리자·메신저에서 hwp/hwpx/xlsx 파일을 눌렀을 때 "이음한글"로 열기 -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -35,6 +35,8 @@
                 <data android:mimeType="application/vnd.hancom.hwpx" />
                 <data android:mimeType="application/haansofthwpx" />
                 <data android:mimeType="application/hwp+zip" />
+                <data android:mimeType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
+                <data android:mimeType="application/vnd.ms-excel.sheet.macroEnabled.12" />
             </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
@@ -48,6 +50,9 @@
                 <data android:pathPattern=".*\\.hwpx" />
                 <data android:pathPattern=".*\\.HWP" />
                 <data android:pathPattern=".*\\.HWPX" />
+                <data android:pathPattern=".*\\.xlsx" />
+                <data android:pathPattern=".*\\.xlsm" />
+                <data android:pathPattern=".*\\.XLSX" />
                 <data android:pathPattern=".*\\..*\\.hwp" />
                 <data android:pathPattern=".*\\..*\\.hwpx" />
             </intent-filter>
