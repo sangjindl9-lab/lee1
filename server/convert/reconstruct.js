@@ -33,8 +33,13 @@ export async function reconstructViews(analysis, input, name) {
     const fx0 = F.box[0][0], fz0 = F.box[0][1];
     // 투상선 공유 좌표 (3각법: 각 뷰에서 정면도에 가까운 쪽이 물체의 앞면)
     const mapF = ([u, v]) => [(u - fx0) * k, (v - fz0) * k];
-    const mapT = T && (g.topPos === 'below' ? ([u, v]) => [(u - fx0) * k, (T.box[1][1] - v) * k] : ([u, v]) => [(u - fx0) * k, (v - T.box[0][1]) * k]);
-    const mapS = S && (g.sidePos === 'left' ? ([u, v]) => [(S.box[1][0] - u) * k, (v - fz0) * k] : ([u, v]) => [(u - S.box[0][0]) * k, (v - fz0) * k]);
+    // 실제 도면은 투상선 정렬이 어긋나게 그려지기도 한다(측면도를 조금 내려 그림 등).
+    // 크기가 거의 같은데(4% 이내) 위치만 어긋났으면 정면도에 맞춰 옮긴다. 크기가 다르면(일부만 보이는 뷰) 투상선 위치를 그대로 쓴다.
+    const same = (a, b) => Math.abs(a - b) <= Math.max(a, b) * 0.04;
+    const tx = T && same(T.box[1][0] - T.box[0][0], F.box[1][0] - F.box[0][0]) ? T.box[0][0] - fx0 : 0;
+    const sz = S && same(S.box[1][1] - S.box[0][1], F.box[1][1] - F.box[0][1]) ? S.box[0][1] - fz0 : 0;
+    const mapT = T && (g.topPos === 'below' ? ([u, v]) => [(u - fx0 - tx) * k, (T.box[1][1] - v) * k] : ([u, v]) => [(u - fx0 - tx) * k, (v - T.box[0][1]) * k]);
+    const mapS = S && (g.sidePos === 'left' ? ([u, v]) => [(S.box[1][0] - u) * k, (v - fz0 - sz) * k] : ([u, v]) => [(u - S.box[0][0]) * k, (v - fz0 - sz) * k]);
     const Wd = (F.box[1][0] - F.box[0][0]) * k, H = (F.box[1][1] - F.box[0][1]) * k;
     const D = Math.max(T ? (T.box[1][1] - T.box[0][1]) * k : 0, S ? (S.box[1][0] - S.box[0][0]) * k : 0);
     const m = Math.max(Wd, H, D) * 0.05;

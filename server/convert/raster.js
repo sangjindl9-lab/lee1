@@ -335,7 +335,7 @@ async function probeSize(file) {
   } catch { return null; }
 }
 /** OCR: Tesseract 가 있으면 영어(+한국어 데이터가 있으면 한국어)로 흩어진 글자 모드 인식 */
-async function readText(img) {
+export async function readText(img) {
   const bin = process.env.TESSERACT_PATH || 'tesseract';
   for (const lang of ['kor+eng', 'eng']) {
     try {

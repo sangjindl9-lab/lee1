@@ -16,6 +16,7 @@ function measured(a) {
   const outers = (a.profiles || []).filter((p) => p.role === 'outer').sort((x, y) => y.area - x.area).slice(0, 12);
   for (const p of outers) L.push(p.bbox[1][0] - p.bbox[0][0], p.bbox[1][1] - p.bbox[0][1]);
   for (const p of (a.profiles || []).filter((q) => q.role === 'hole' && q.diameter).slice(0, 40)) L.push(p.diameter);
+  for (const d of a.dimLines || []) L.push(d); // 치수선 길이 × 축척 = 치수 숫자 (가장 확실한 근거)
   return L.filter((x) => x > 0.5);
 }
 
@@ -73,15 +74,40 @@ export function estimateThickness(a, outers, k) {
 /**
  * @returns {Promise<{result, draft} | {skipped:string}>}
  */
+/**
+ * 자동 초안에 쓸 물체(투상도 그룹): 가장 완전한(뷰가 많은·큰) 그룹 + 그와 같은 투상 줄에 놓인 그룹.
+ * 한 장에 함께 그린 구성도·결선도·부품 상세 같은 다른 그림은 줄이 맞지 않아 빠진다 (화면에서 추가 가능).
+ */
+export function mainGroups(groups, views) {
+  const ok = groups.filter((g) => views[g.front] && (views[g.top] || views[g.side]));
+  if (ok.length < 2) return ok;
+  const n = (g) => (g.top ? 1 : 0) + (g.side ? 1 : 0);
+  const area = (v) => (v.box[1][0] - v.box[0][0]) * (v.box[1][1] - v.box[0][1]);
+  const main = [...ok].sort((x, y) => n(y) - n(x) || area(views[y.front]) - area(views[x.front]))[0];
+  const F = views[main.front];
+  const rowOverlap = (a, b) => { const i = Math.min(a.box[1][1], b.box[1][1]) - Math.max(a.box[0][1], b.box[0][1]); return i > 0 ? i / Math.min(a.box[1][1] - a.box[0][1], b.box[1][1] - b.box[0][1]) : 0; };
+  // 같은 줄: 정면도끼리 세로 구간이 겹치고 바닥선이 거의 같음
+  const tol = (F.box[1][1] - F.box[0][1]) * 0.08;
+  return ok.filter((g) => g === main || (rowOverlap(views[g.front], F) > 0.5 && Math.abs(views[g.front].box[0][1] - F.box[0][1]) < tol));
+}
+
 export async function autoDraft(a, name) {
   const sc = estimateScale(a);
   const scaleSrc = sc.source === 'none' ? undefined : sc.source;
   const views = Object.fromEntries((a.views || []).map((v) => [v.id, v]));
-  const usable = (a.groups || []).filter((g) => views[g.front] && (views[g.top] || views[g.side]));
+  const usable = mainGroups(a.groups || [], views);
   if (usable.length) {
     try {
-      const result = await reconstructViews(a, { scale: sc.scale, sources: { scale: scaleSrc } }, name);
-      return { result, draft: { kind: 'views', scale: sc, groups: usable.length } };
+      let result = await reconstructViews(a, { scale: sc.scale, groups: usable, sources: { scale: scaleSrc } }, name);
+      // 부품별 분할 결과가 외형을 다 채우지 못하면(내부 칸막이·노크아웃이 많은 외함 등) 외형 한 덩어리가 더 정확하다
+      const whole = await reconstructViews(a, { scale: sc.scale, groups: usable, mode: 'outline', sources: { scale: scaleSrc } }, name).catch(() => null);
+      if (whole) {
+        const fits = result.stats.size.every((v, i) => Math.abs(v - whole.stats.size[i]) <= Math.max(whole.stats.size[i] * 0.06, 1));
+        const vol = (r) => r.parts.reduce((t, p) => t + (p.volume || 0), 0);
+        if (!fits || vol(result) < vol(whole) * 0.5) { result = whole; result.provenance = { ...result.provenance, note: result.provenance.note + ' 부품별로 나누면 외형이 채워지지 않아 외형 한 덩어리로 만들었습니다.' }; }
+      }
+      const skipped = (a.groups || []).length - usable.length;
+      return { result, draft: { kind: 'views', scale: sc, groups: usable.length, ...(skipped > 0 ? { skippedGroups: skipped } : {}) } };
     } catch (e) { if (!(e.status === 400)) throw e; /* 교차 결과가 비면 돌출로 */ }
   }
   const outers = (a.profiles || []).filter((p) => p.role === 'outer' && !p.parent).sort((x, y) => y.area - x.area);

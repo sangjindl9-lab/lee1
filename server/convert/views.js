@@ -73,7 +73,10 @@ export function detectViews(profiles, segs, hints = []) {
 
   // 3) 정렬 관계 → 그룹
   const tol = Math.max(diag * 0.006, 0.3);
-  const groups = groupViews(views.filter((v) => !v.border), tol, blockers);
+  // 투상도 자신의 외형선(긴 모서리)은 칸막이가 아니다 — 뷰 상자 안에 들어가는 선은 뺀다
+  const inView = (p) => views.some((v) => p[0] >= v.box[0][0] - tol * 2 && p[0] <= v.box[1][0] + tol * 2 && p[1] >= v.box[0][1] - tol * 2 && p[1] <= v.box[1][1] + tol * 2);
+  const walls = blockers.filter(([a, b]) => !(inView(a) && inView(b)));
+  const groups = groupViews(views.filter((v) => !v.border), tol, walls);
   return { views, groups };
 }
 

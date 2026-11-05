@@ -7,7 +7,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { buildProfiles } from './profiles.js';
-import { analyzeRaster } from './raster.js';
+import { analyzeRaster, readText } from './raster.js';
 
 const run = promisify(execFile);
 const PT2MM = 25.4 / 72;
@@ -22,7 +22,7 @@ export async function analyzePdf(file) {
     const [pw, ph] = (/Page size:\s+([\d.]+) x ([\d.]+)/.exec(info) || [0, 595, 842]).slice(1).map(Number);
     await run('pdftocairo', ['-svg', '-nocenter', '-noshrink', '-origpagesizes', '-f', '1', '-l', '1', file, path.join(dir, 'p.svg')], { timeout: 120000, maxBuffer: 1 << 28 });
     const svg = await fs.readFile(path.join(dir, 'p.svg'), 'utf8');
-    const text = (await run('pdftotext', ['-f', '1', '-l', '1', '-layout', file, '-'], { timeout: 60000, maxBuffer: 1 << 26 }).catch(() => ({ stdout: '' }))).stdout;
+    let text = (await run('pdftotext', ['-f', '1', '-l', '1', '-layout', file, '-'], { timeout: 60000, maxBuffer: 1 << 26 }).catch(() => ({ stdout: '' }))).stdout;
     await run('pdftoppm', ['-png', '-r', '60', '-f', '1', '-l', '1', '-singlefile', file, path.join(dir, 'prev')], { timeout: 60000 }).catch(() => {});
     const preview = await fs.readFile(path.join(dir, 'prev.png')).catch(() => null);
 
@@ -41,6 +41,13 @@ export async function analyzePdf(file) {
       return { analysis: r.analysis, preview: preview || r.preview };
     }
     const { profiles, openChains, truncated, views, groups } = buildProfiles(g.loops, g.open, PT2MM, { w: W, h: H }, 0.05);
+    // AutoCAD SHX 글꼴처럼 글자가 선으로 그려진 PDF 는 글자 층이 비어 있다 → 그림으로 찍어 OCR
+    let ocr = null;
+    if (!/\d/.test(text) && g.strokes > 0) {
+      await run('pdftoppm', ['-gray', '-r', '200', '-f', '1', '-l', '1', '-singlefile', file, path.join(dir, 'ocr')], { timeout: 120000 }).catch(() => {});
+      const o = await readText(path.join(dir, 'ocr.pgm')).catch(() => ({ text: '', engine: null }));
+      if (o.text) { text = o.text; ocr = o.engine; }
+    }
     const texts = text.split(/\r?\n/).map((s) => s.trim().replace(/\s{2,}/g, ' ')).filter(Boolean).slice(0, 200);
     const m = /(?:SCALE|S|축척)\s*[:=]?\s*1\s*[:/]\s*(\d+(?:\.\d+)?)/i.exec(text) || /\b1\s*:\s*(\d+(?:\.\d+)?)\b/.exec(text);
     const numbers = [...new Set((text.match(/(?<![\d.])\d+(?:\.\d+)?(?![\d.])/g) || []).map(Number).filter((n) => n >= 1 && n < 100000))].slice(0, 300);
@@ -57,6 +64,9 @@ export async function analyzePdf(file) {
         pdfType: vector ? 'vector' : g.images ? 'scanned' : 'empty',
         layers: [], entityCounts: { 실선: g.strokes, 점선: g.dashed, 채움: g.filled, 이미지: g.images },
         profiles, views, groups, dimensions: [], texts, numbers, openChains,
+        // 화살표로 찾은 치수선 길이(용지 mm) — 치수 숫자와 비교해 축척을 추정
+        dimLines: g.dims.map((d) => +(d.len * PT2MM).toFixed(2)).filter((x) => x > 1).slice(0, 300),
+        ...(ocr ? { ocr } : {}),
         convertible: vector && outer.length > 0,
         needsUserInput: ['scale', 'thickness'],
         hasPreview: !!preview,
@@ -77,7 +87,7 @@ export async function analyzePdf(file) {
 
 /** Cairo SVG → 실선 경로를 닫힌 고리/열린 선분으로 (y 를 위쪽 양수로 뒤집음, 단위 pt) */
 export function parseSvg(svg, pageH) {
-  const loops = [], open = [];
+  const loops = [], open = [], arrows = [];
   let strokes = 0, dashed = 0, filled = 0, images = 0;
   const stack = [[1, 0, 0, 1, 0, 0]];
   let skip = 0; // defs/symbol/clipPath 안쪽 깊이
@@ -94,13 +104,32 @@ export function parseSvg(svg, pageH) {
     if (tag === 'image') { images++; continue; }
     if (tag !== 'path') continue;
     const stroke = A('stroke'), fill = A('fill');
-    if (!stroke || stroke === 'none') { if (fill && fill !== 'none') filled++; continue; }
+    const M = mul(stack[stack.length - 1], parseTransform(A('transform')));
+    const toPage = ([x, y]) => { const X = M[0] * x + M[2] * y + M[4], Y = M[1] * x + M[3] * y + M[5]; return [X, pageH - Y]; };
+    // 작게 채운 도형 = 치수선 화살표 (AutoCAD 출력 PDF 는 선 굵기·색이 모두 같아 화살표로 치수선을 구분한다)
+    if (fill && fill !== 'none') {
+      const subs = parsePath(A('d') || '');
+      const pts = subs.flatMap((sp) => sp.pts.map(toPage));
+      if (pts.length >= 3 && pts.length <= 8) {
+        const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+        const bb = [[Math.min(...xs), Math.min(...ys)], [Math.max(...xs), Math.max(...ys)]];
+        if (Math.max(bb[1][0] - bb[0][0], bb[1][1] - bb[0][1]) < 14) {
+          // 화살 방향: 무게중심에서 가장 먼 꼭짓점(끝) ← 나머지의 중점
+          const u = pts.filter((p, i) => pts.findIndex((q) => Math.hypot(p[0] - q[0], p[1] - q[1]) < 0.05) === i); // 겹친 꼭짓점 제거
+          const c = [u.reduce((t, p) => t + p[0], 0) / u.length, u.reduce((t, p) => t + p[1], 0) / u.length];
+          const tip = u.reduce((m, p) => (Math.hypot(p[0] - c[0], p[1] - c[1]) > Math.hypot(m[0] - c[0], m[1] - c[1]) ? p : m), u[0]);
+          const ax = [tip[0] - c[0], tip[1] - c[1]], al = Math.hypot(...ax) || 1;
+          arrows.push({ bb, pts, tip, axis: [ax[0] / al, ax[1] / al] }); filled++; continue;
+        }
+      }
+      if (!stroke || stroke === 'none') { filled++; continue; }
+    }
+    if (!stroke || stroke === 'none') continue;
     const da = A('stroke-dasharray');
     if (da && da !== 'none') { dashed++; continue; }
     strokes++;
-    const M = mul(stack[stack.length - 1], parseTransform(A('transform')));
     for (const sp of parsePath(A('d') || '')) {
-      const pts = sp.pts.map(([x, y]) => { const X = M[0] * x + M[2] * y + M[4], Y = M[1] * x + M[3] * y + M[5]; return [X, pageH - Y]; });
+      const pts = sp.pts.map(toPage);
       if (pts.length < 2) continue;
       const f = pts[0], l = pts[pts.length - 1];
       const closed = sp.closed || (pts.length > 2 && Math.hypot(f[0] - l[0], f[1] - l[1]) < 0.05);
@@ -108,7 +137,55 @@ export function parseSvg(svg, pageH) {
       else for (let i = 0; i < pts.length - 1; i++) open.push({ layer: 'PDF', a: pts[i], b: pts[i + 1], pts: [pts[i], pts[i + 1]] });
     }
   }
-  return { loops, open, strokes, dashed, filled, images };
+  const dim = stripDimensions(open, arrows);
+  return { loops, open: dim.open, dims: dim.dims, strokes, dashed, filled, images };
+}
+
+/**
+ * 치수선·치수 보조선 제거: 화살표에 닿는 직선 = 치수선, 치수선 끝(화살표)을 지나며 수직인 직선 = 보조선.
+ * 남겨 두면 외형선과 함께 닫힌 영역을 만들어 투상도 외형이 치수까지 부풀어 오른다.
+ * @returns {open: 남은 선분, dims: [{a,b,len}] 치수선(용지 pt) — 축척 추정에 쓴다}
+ */
+export function stripDimensions(open, arrows) {
+  if (!arrows.length) return { open, dims: [] };
+  const near = (p, bb, e) => p[0] >= bb[0][0] - e && p[0] <= bb[1][0] + e && p[1] >= bb[0][1] - e && p[1] <= bb[1][1] + e;
+  const len = (s) => Math.hypot(s.b[0] - s.a[0], s.b[1] - s.a[1]);
+  const dir = (s) => { const l = len(s) || 1; return [(s.b[0] - s.a[0]) / l, (s.b[1] - s.a[1]) / l]; };
+  const segDist = (p, s) => {
+    const [dx, dy] = [s.b[0] - s.a[0], s.b[1] - s.a[1]], l2 = dx * dx + dy * dy || 1;
+    const t = Math.max(0, Math.min(1, ((p[0] - s.a[0]) * dx + (p[1] - s.a[1]) * dy) / l2));
+    return Math.hypot(p[0] - s.a[0] - t * dx, p[1] - s.a[1] - t * dy);
+  };
+  const isDim = new Uint8Array(open.length);
+  const dims = [];
+  open.forEach((s, i) => {
+    if (len(s) < 2) return;
+    // 화살표에 닿고 화살 방향과 나란한 선만 치수선 (화살 끝을 지나는 보조선은 수직이라 제외)
+    const d = dir(s);
+    const par = (a) => !a.axis || Math.abs(d[0] * a.axis[1] - d[1] * a.axis[0]) < 0.12;
+    if (arrows.some((a) => par(a) && (near(s.a, a.bb, 0.6) || near(s.b, a.bb, 0.6)))) { isDim[i] = 1; dims.push(s); }
+  });
+  // 치수선과 일직선으로 이어진 조각(글자 자리에서 끊긴 치수선)
+  for (let pass = 0; pass < 2; pass++) open.forEach((s, i) => {
+    if (isDim[i] || len(s) < 1) return;
+    const d = dir(s);
+    for (const m of dims) {
+      const e = dir(m);
+      if (Math.abs(d[0] * e[1] - d[1] * e[0]) > 0.01) continue;
+      const off = Math.abs((s.a[0] - m.a[0]) * e[1] - (s.a[1] - m.a[1]) * e[0]); // 치수선 연장선까지 거리
+      if (off < 0.3 && Math.min(segDist(s.a, m), segDist(s.b, m)) < 0.3) { isDim[i] = 1; dims.push(s); break; }
+    }
+  });
+  // 보조선: 화살표 끝(또는 치수선 끝)을 지나고 치수선에 수직
+  const tips = [...arrows.filter((a) => a.tip).map((a) => ({ p: a.tip, e: a.axis })), ...dims.flatMap((m) => [{ p: m.a, e: dir(m) }, { p: m.b, e: dir(m) }])];
+  open.forEach((s, i) => {
+    if (isDim[i]) return;
+    const d = dir(s);
+    for (const t of tips) if (Math.abs(d[0] * t.e[0] + d[1] * t.e[1]) < 0.06 && segDist(t.p, s) < 1.2) { isDim[i] = 2; break; }
+  });
+  // 치수 길이 = 양 끝 화살표 끝 사이 (치수선은 화살표 밑동에서 끝나는 경우가 많다)
+  const tipAt = (p) => arrows.find((a) => a.tip && near(p, a.bb, 0.6))?.tip || p;
+  return { open: open.filter((_, i) => !isDim[i]), dims: dims.map((s) => { const a = tipAt(s.a), b = tipAt(s.b); return { a, b, len: Math.hypot(b[0] - a[0], b[1] - a[1]) }; }) };
 }
 
 function parseTransform(t) {
