@@ -354,3 +354,5 @@ td.adj { color: var(--accent); }
   .pr-hangul { font-size: 10pt; margin-top: 2mm; }
 }
 .sub-h { font-size: 13px; margin: 14px 0 8px; padding-top: 12px; border-top: 1px solid var(--line-2); }
+
+.total small { font-size: 11px; color: var(--ink-2); }

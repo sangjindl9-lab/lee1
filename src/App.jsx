@@ -194,6 +194,7 @@ export default function App() {
   if (!projects) return <div className="loading">공사 목록을 불러오는 중…</div>;
 
   const cs = p ? costSheet(p) : null;
+  const fit = p ? contractFit(p) : null;
 
   return (
     <div className="app">
@@ -208,8 +209,9 @@ export default function App() {
           </select>
         </div>
         <div className="total">
-          <span>총 공사금액</span>
-          <b className="mono">{cs ? won(cs.grand) : '—'}</b>
+          <span>{fit ? (p.contract.mode === 'rate' ? `낙찰률 ${p.contract.bidRate}% 적용 금액` : '목표금액 적용 금액') : '총 공사금액'}</span>
+          <b className="mono">{fit ? won(fit.target) : cs ? won(cs.grand) : '—'}</b>
+          {fit && <small className="mono">설계금액 {won(cs.grand)}</small>}
         </div>
         <button className="btn sm print-btn" onClick={() => openPrint()} disabled={!p}>출력</button>
         <span className={'save ' + (saveState === '저장 실패' ? 'bad' : '')}>{saveState || (mode === 'cloud' ? '내 계정에 저장' : '이 브라우저에 저장')}</span>
