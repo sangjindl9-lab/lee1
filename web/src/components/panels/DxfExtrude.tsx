@@ -3,6 +3,8 @@ import { api } from '../../api';
 import { useGroups, ViewsOverlay, GroupsEditor } from './ViewsPanel';
 
 // 2D 도면(DXF·DWG·PDF) 분석 결과를 보여주고, 두께(PDF 는 축척도)를 입력받아 돌출 3D 생성
+const AI_LABEL: Record<string, string> = { claude: 'Claude', openai: 'GPT', both: 'Claude+GPT' };
+
 export default function DxfExtrude({ fileId, onClose, onCreated }: { fileId: string; onClose: () => void; onCreated: (modelId: string) => void }) {
   const [f, setF] = useState<any>(null);
   const [mode, setMode] = useState<'views' | 'extrude'>('extrude');
@@ -14,9 +16,9 @@ export default function DxfExtrude({ fileId, onClose, onCreated }: { fileId: str
   const [busy, setBusy] = useState(false);
   const [ai, setAi] = useState<any>(null);
   useEffect(() => { api('/ai/status').then(setAi).catch(() => {}); }, []);
-  async function makeAi() {
+  async function makeAi(provider?: string) {
     setErr(''); setBusy(true);
-    try { const r = await api(`/files/${fileId}/ai-draft`, { method: 'POST' }); onCreated(r.modelId); }
+    try { const r = await api(`/files/${fileId}/ai-draft`, { method: 'POST', body: provider ? { provider } : {} }); onCreated(r.modelId); }
     catch (e: any) { setErr(e.message); } finally { setBusy(false); }
   }
   useEffect(() => {
@@ -106,8 +108,12 @@ export default function DxfExtrude({ fileId, onClose, onCreated }: { fileId: str
               <div className="rounded-md border border-ai/50 bg-ai/10 p-2 text-xs" data-testid="ai-box">
                 <div className="flex items-center gap-2"><b className="text-ai">AI 도면 해석</b>
                   {ai && <span className="text-mute">이번 달 {ai.used}/{ai.limit}장</span>}
-                  <button className="btn btn-accent ml-auto h-7 px-3" disabled={busy || !ai?.ok} onClick={makeAi} data-testid="ai-go">{busy ? 'AI 해석 중… (30초~1분)' : 'AI로 부품별 3D 만들기'}</button></div>
-                {a.aiDraft?.status === 'created' && <div className="mt-1 text-mute">AI 결과: {a.aiDraft.product} · 부품 {a.aiDraft.parts}개{a.aiDraft.ignored?.length ? ` · 제외: ${a.aiDraft.ignored.join(', ')}` : ''}</div>}
+                  <button className="btn btn-accent ml-auto h-7 px-3" disabled={busy || !ai?.ok} onClick={() => makeAi()} data-testid="ai-go">{busy ? 'AI 해석 중… (30초~1분)' : `AI로 부품별 3D 만들기${ai?.provider ? ` (${AI_LABEL[ai.provider] || ai.provider})` : ''}`}</button></div>
+                {ai?.ok && (ai.providers?.length || 0) > 1 && <div className="mt-1 flex flex-wrap items-center gap-1 text-[11px] text-mute">다른 AI 로:
+                  {ai.providers.filter((p: string) => p !== ai.provider).map((p: string) => <button key={p} className="btn h-6 px-2 text-[11px]" disabled={busy} onClick={() => makeAi(p)} data-testid={`ai-go-${p}`}>{AI_LABEL[p] || p}</button>)}
+                  {ai.provider !== 'both' && <button className="btn h-6 px-2 text-[11px]" disabled={busy} onClick={() => makeAi('both')} data-testid="ai-go-both">둘 다 비교 (2회 호출)</button>}</div>}
+                {a.aiDraft?.status === 'created' && <div className="mt-1 text-mute">AI 결과{a.aiDraft.provider ? `(${AI_LABEL[a.aiDraft.provider] || a.aiDraft.provider})` : ''}: {a.aiDraft.product} · 부품 {a.aiDraft.parts}개{a.aiDraft.ignored?.length ? ` · 제외: ${a.aiDraft.ignored.join(', ')}` : ''}</div>}
+                {a.aiDraft?.compare?.length > 1 && <div className="mt-1 text-mute">비교: {a.aiDraft.compare.map((r: any) => `${AI_LABEL[r.provider] || r.provider} ${r.error ? '실패' : `부품 ${r.parts}개(윤곽 ${r.outlineParts})`}`).join(' · ')} — 점수 높은 쪽을 먼저 열었고, 둘 다 모델 목록에 있습니다</div>}
                 {a.aiDraft?.status === 'failed' && <div className="mt-1 text-bad">AI 해석 실패: {a.aiDraft.reason}</div>}
                 {ai && !ai.allowed && <div className="mt-1 text-mute">관리자가 [브랜드·쇼룸]에서 'AI 도면 해석 사용'을 켜야 합니다.</div>}
                 {ai && ai.allowed && !ai.key && <div className="mt-1 text-warn">서버에 AI 키가 아직 설정되지 않았습니다.</div>}

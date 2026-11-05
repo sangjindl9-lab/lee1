@@ -6,12 +6,35 @@ import manifoldInit from 'manifold-3d';
 import { writeGlb, summarize } from './gltf-writer.js';
 import { meshOf } from './reconstruct.js';
 
-export const aiConfig = () => ({
-  apiKey: process.env.ANTHROPIC_API_KEY || '',
-  model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-5-5',
-  baseUrl: (process.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com').replace(/\/$/, ''),
-});
-export const aiAvailable = () => !!aiConfig().apiKey;
+/** 쓸 수 있는 AI 제공자. 같은 도면 그림·윤곽 목록을 주고 같은 JSON 명세를 받는다 — 형상은 이 프로그램이 만들므로 모델만 바꿔 끼운다. */
+export const PROVIDERS = {
+  claude: { label: 'Claude', vendor: 'Anthropic' },
+  openai: { label: 'GPT', vendor: 'OpenAI' },
+};
+export const aiConfig = () => {
+  const claude = {
+    apiKey: process.env.ANTHROPIC_API_KEY || '',
+    model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-5-5',
+    baseUrl: (process.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com').replace(/\/$/, ''),
+  };
+  const openai = {
+    apiKey: process.env.OPENAI_API_KEY || '',
+    model: process.env.OPENAI_MODEL || 'gpt-6.1-sol',
+    baseUrl: (process.env.OPENAI_BASE_URL || 'https://api.openai.com').replace(/\/$/, ''),
+  };
+  const def = PROVIDERS[process.env.AI_PROVIDER] && (process.env.AI_PROVIDER === 'claude' ? claude : openai).apiKey ? process.env.AI_PROVIDER : claude.apiKey ? 'claude' : openai.apiKey ? 'openai' : '';
+  return { ...claude, claude, openai, default: def };   // 최상위 apiKey/model 은 Claude (기존 호환)
+};
+/** 키가 있는 제공자 목록 (예 ['claude','openai']) */
+export const aiProviders = () => { const c = aiConfig(); return Object.keys(PROVIDERS).filter((p) => c[p].apiKey); };
+export const aiAvailable = () => aiProviders().length > 0;
+/** 요청한 제공자 이름을 실제 호출 목록으로: 'both'/'all' → 키 있는 전부, 없으면 기본 */
+export function resolveProviders(provider) {
+  const avail = aiProviders();
+  if (provider === 'both' || provider === 'all') return avail;
+  if (PROVIDERS[provider]) return avail.includes(provider) ? [provider] : [];
+  const d = aiConfig().default; return d ? [d] : [];
+}
 
 const MATERIALS = ['steel', 'painted', 'stainless', 'aluminum', 'plastic', 'rubber', 'glass', 'copper', 'wood'];
 const XYZ = { type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3 };
@@ -93,17 +116,21 @@ export const SYSTEM = `너는 산업용 도면(금형·분전반·기계·판금
 반드시 build_showroom_model 도구 한 번으로 답한다.`;
 
 /** 도면 그림 + 프로그램이 읽은 정보로 AI 해석 요청 */
-export async function interpretDrawing({ image, images, mediaType = 'image/png', analysis, fileName, regionText }) {
-  const cfg = aiConfig();
-  if (!cfg.apiKey) throw Object.assign(new Error('AI 키(ANTHROPIC_API_KEY)가 서버에 설정되어 있지 않습니다'), { status: 400 });
+export async function interpretDrawing({ image, images, mediaType = 'image/png', analysis, fileName, regionText, provider }) {
+  const all = aiConfig();
+  const name = PROVIDERS[provider] ? provider : all.default;
+  if (!name || !all[name]?.apiKey) throw Object.assign(new Error(`AI 키(${name === 'openai' ? 'OPENAI_API_KEY' : 'ANTHROPIC_API_KEY'})가 서버에 설정되어 있지 않습니다`), { status: 400 });
+  const cfg = all[name];
   const ctx = contextText(analysis, fileName, regionText);
   const imgs = images || [image];
+  const caption = (i) => (i === 0 ? '그림 1: 도면' : '그림 2: 같은 도면에 뷰 번호(V)·윤곽 번호(S 외형, F 안쪽 영역, C 원)를 표시');
+  if (name === 'openai') return interpretOpenAI({ cfg, imgs, mediaType, ctx, caption });
   const body = {
     model: cfg.model, max_tokens: 16000, system: SYSTEM,
     // 최신 모델은 도구 강제(tool_choice: tool)를 지원하지 않아 auto + 지시문으로 호출하게 한다
     tools: [TOOL], tool_choice: { type: 'auto' },
     messages: [{ role: 'user', content: [
-      ...imgs.map((im, i) => [{ type: 'text', text: i === 0 ? '그림 1: 도면' : '그림 2: 같은 도면에 뷰 번호(V)·윤곽 번호(S 외형, F 안쪽 영역, C 원)를 표시' }, { type: 'image', source: { type: 'base64', media_type: mediaType, data: im.toString('base64') } }]).flat(),
+      ...imgs.map((im, i) => [{ type: 'text', text: caption(i) }, { type: 'image', source: { type: 'base64', media_type: mediaType, data: im.toString('base64') } }]).flat(),
       { type: 'text', text: ctx },
     ] }],
   };
@@ -128,7 +155,46 @@ export async function interpretDrawing({ image, images, mediaType = 'image/png',
     const why = (j.content || []).filter((c) => c.type === 'text').map((c) => c.text).join(' ').slice(0, 300);
     throw Object.assign(new Error('AI 가 부품 목록을 돌려주지 않았습니다' + (j.stop_reason ? ` (${j.stop_reason})` : '') + (why ? ': ' + why : '')), { status: 502 });
   }
-  return { spec: tool.input, usage: { ...j.usage, model: j.model || cfg.model, ms: Date.now() - t0 } };
+  return { spec: tool.input, usage: { ...j.usage, model: j.model || cfg.model, provider: 'claude', ms: Date.now() - t0 } };
+}
+
+/** OpenAI (GPT) — Chat Completions 함수 호출로 같은 명세를 받는다 */
+async function interpretOpenAI({ cfg, imgs, mediaType, ctx, caption }) {
+  const body = {
+    model: cfg.model, max_completion_tokens: 16000,
+    messages: [
+      { role: 'system', content: SYSTEM },
+      { role: 'user', content: [
+        ...imgs.map((im, i) => [{ type: 'text', text: caption(i) }, { type: 'image_url', image_url: { url: `data:${mediaType};base64,${im.toString('base64')}`, detail: 'high' } }]).flat(),
+        { type: 'text', text: ctx },
+      ] },
+    ],
+    tools: [{ type: 'function', function: { name: TOOL.name, description: TOOL.description, parameters: TOOL.input_schema } }],
+    tool_choice: { type: 'function', function: { name: TOOL.name } },
+  };
+  const t0 = Date.now();
+  const res = await fetch(`${cfg.baseUrl}/v1/chat/completions`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${cfg.apiKey}` },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(180000),
+  });
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const msg = j?.error?.message || res.statusText;
+    throw Object.assign(new Error(`AI(GPT) 해석 실패 (${res.status}): ${msg}`), { status: res.status === 401 ? 400 : 502 });
+  }
+  const msg = j.choices?.[0]?.message || {};
+  let input = null;
+  const tc = (msg.tool_calls || []).find((t) => t.function?.name === TOOL.name) || msg.tool_calls?.[0];
+  if (tc) { try { input = JSON.parse(tc.function.arguments); } catch { input = null; } }
+  if (!input) { const m = /\{[\s\S]*\}/.exec(typeof msg.content === 'string' ? msg.content : ''); try { input = m ? JSON.parse(m[0]) : null; } catch { input = null; } }
+  if (!input?.parts?.length) {
+    const fin = j.choices?.[0]?.finish_reason;
+    throw Object.assign(new Error('AI(GPT) 가 부품 목록을 돌려주지 않았습니다' + (fin ? ` (${fin})` : '') + (typeof msg.content === 'string' && msg.content ? ': ' + msg.content.slice(0, 300) : '')), { status: 502 });
+  }
+  const u = j.usage || {};
+  return { spec: input, usage: { input_tokens: u.prompt_tokens, output_tokens: u.completion_tokens, model: j.model || cfg.model, provider: 'openai', ms: Date.now() - t0 } };
 }
 
 function contextText(a, fileName, regionText) {

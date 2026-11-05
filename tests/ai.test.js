@@ -10,11 +10,18 @@ const SPEC = { product: '매입형 분전함', overall: [340, 115, 250], views: 
     { name: '몸체', shape: 'shell', position: [15, 15, 15], size: [310, 100, 220], wall: 1.6, open: 'front', material: 'steel', holes: [{ axis: 'z', diameter: 27, center: [60, 50, 0] }], explode: 'none' },
     { name: '고정 볼트', shape: 'cylinder', position: [30, 0, 30], diameter: 6, length: 20, axis: 'y', material: 'stainless', explode: 'front', explodeStep: 2 },
   ] };
-let mock, calls = [], failNext = false, A, B, proj;
+const GPT_SPEC = { ...SPEC, product: 'GPT 분전함', parts: SPEC.parts.slice(0, 2) };
+let mock, calls = [], gptCalls = [], failNext = false, A, B, proj;
 before(async () => {
   mock = http.createServer((req, res) => {
     let b = ''; req.on('data', (d) => (b += d)); req.on('end', () => {
-      const body = JSON.parse(b); calls.push({ headers: req.headers, body });
+      const body = JSON.parse(b);
+      if (req.url.startsWith('/v1/chat/completions')) {   // 모의 OpenAI
+        gptCalls.push({ headers: req.headers, body });
+        res.writeHead(200, { 'content-type': 'application/json' });
+        return res.end(JSON.stringify({ model: body.model, choices: [{ finish_reason: 'tool_calls', message: { role: 'assistant', content: null, tool_calls: [{ id: 'c1', type: 'function', function: { name: 'build_showroom_model', arguments: JSON.stringify(GPT_SPEC) } }] } }], usage: { prompt_tokens: 2800, completion_tokens: 900 } }));
+      }
+      calls.push({ headers: req.headers, body });
       if (failNext) { failNext = false; res.writeHead(529, { 'content-type': 'application/json' }); return res.end(JSON.stringify({ error: { message: 'overloaded' } })); }
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ model: body.model, content: [{ type: 'tool_use', id: 't1', name: 'build_showroom_model', input: SPEC }], usage: { input_tokens: 3210, output_tokens: 1450 } }));
@@ -23,9 +30,11 @@ before(async () => {
   await new Promise((r) => mock.listen(0, '127.0.0.1', r));
   process.env.ANTHROPIC_API_KEY = 'sk-test';
   process.env.ANTHROPIC_BASE_URL = `http://127.0.0.1:${mock.address().port}`;
+  process.env.OPENAI_API_KEY = 'sk-gpt-test';
+  process.env.OPENAI_BASE_URL = process.env.ANTHROPIC_BASE_URL;
   await startServer(); A = await signup('AI-A'); B = await signup('AI-B'); proj = await newProject(A, 'AI 도면', 'electric');
 });
-after(async () => { await stopServer(); mock.close(); delete process.env.ANTHROPIC_API_KEY; delete process.env.ANTHROPIC_BASE_URL; });
+after(async () => { await stopServer(); mock.close(); delete process.env.ANTHROPIC_API_KEY; delete process.env.ANTHROPIC_BASE_URL; delete process.env.OPENAI_API_KEY; delete process.env.OPENAI_BASE_URL; });
 
 test('AI-1. 허용 전: 업로드는 규칙 기반 초안, AI 요청 거부, 외부 전송 없음', async () => {
   const up = await upload(A, proj.id, 'three_view_block.dxf');
@@ -114,4 +123,51 @@ test('AI-3. AI 실패(서버 과부하) → 규칙 기반 초안으로 대체, �
   assert.equal((await A.get(`/api/models/${j.result.modelId}`)).data.model.method, 'views-reconstruct');
   const a = (await A.get(`/api/files/${up.data.file.id}`)).data.analysis;
   assert.equal(a.aiDraft.status, 'failed'); assert.match(a.aiDraft.reason, /529/);
+});
+
+test('AI-5. GPT 제공자: 같은 그림·명세를 OpenAI 함수 호출 형식으로 보내고, 회사 설정으로 기본 AI 선택', async () => {
+  const st = (await A.get('/api/ai/status')).data;
+  assert.deepEqual(st.providers, ['claude', 'openai']); assert.equal(st.provider, 'claude', '기본은 Claude');
+  const up = await upload(A, proj.id, 'three_view_block.dxf', { name: 'gpt.dxf' });
+  const j = await waitJob(A, up.data.job.id); assert.equal(j.status, 'done', j.error);
+  const n0 = gptCalls.length;
+  const r = await A.post(`/api/files/${up.data.file.id}/ai-draft`, { provider: 'openai' });
+  assert.equal(r.status, 201, JSON.stringify(r.data)); assert.equal(r.data.provider, 'openai'); assert.equal(r.data.product, 'GPT 분전함');
+  assert.equal(gptCalls.length, n0 + 1);
+  const call = gptCalls.at(-1);
+  assert.equal(call.headers.authorization, 'Bearer sk-gpt-test');
+  assert.equal(call.body.tools[0].function.name, 'build_showroom_model');
+  assert.equal(call.body.tool_choice.function.name, 'build_showroom_model');
+  assert.equal(call.body.messages[0].role, 'system');
+  const content = call.body.messages[1].content;
+  assert.equal(content.filter((c) => c.type === 'image_url').length, 2, '도면 그림 2장');
+  assert.match(content.find((c) => c.type === 'image_url').image_url.url, /^data:image\/png;base64,/);
+  assert.match(content.filter((c) => c.type === 'text').map((c) => c.text).join('\n'), /V1S1 전체 실루엣/);
+  const m = (await A.get(`/api/models/${r.data.modelId}`)).data.model;
+  assert.deepEqual(m.parts.map((p) => p.name), ['커버', '몸체']);
+  // 회사 기본을 GPT 로 → 업로드 때도 GPT 로 해석
+  assert.equal((await A.put('/api/company', { aiProvider: 'openai' })).data.ai_provider, 'openai');
+  assert.equal((await A.get('/api/ai/status')).data.provider, 'openai');
+  const up2 = await upload(A, proj.id, 'three_view_block.dxf', { name: 'gpt2.dxf' });
+  const j2 = await waitJob(A, up2.data.job.id); assert.equal(j2.status, 'done', j2.error);
+  assert.equal((await A.get(`/api/files/${up2.data.file.id}`)).data.analysis.aiDraft.provider, 'openai');
+  const bad = await A.put('/api/company', { aiProvider: 'gemini' }); assert.equal(bad.status, 400);
+  await A.put('/api/company', { aiProvider: '' });
+});
+
+test('AI-6. 비교 모드(both): 두 AI 를 동시에 호출해 모델 2개, 점수 높은 쪽을 대표로', async () => {
+  const up = await upload(A, proj.id, 'three_view_block.dxf', { name: 'both.dxf' });
+  const j = await waitJob(A, up.data.job.id); assert.equal(j.status, 'done', j.error);
+  const n0 = calls.length, g0 = gptCalls.length;
+  const r = await A.post(`/api/files/${up.data.file.id}/ai-draft`, { provider: 'both' });
+  assert.equal(r.status, 201, JSON.stringify(r.data));
+  assert.equal(calls.length, n0 + 1); assert.equal(gptCalls.length, g0 + 1);
+  assert.equal(r.data.results.length, 2);
+  assert.equal(r.data.provider, 'claude', 'Claude 명세가 부품이 더 많아 점수가 높음');
+  const names = await Promise.all(r.data.results.map(async (x) => (await A.get(`/api/models/${x.modelId}`)).data.model.name));
+  assert.deepEqual(names.sort(), ['both (AI 3D·Claude)', 'both (AI 3D·GPT)']);
+  const a = (await A.get(`/api/files/${up.data.file.id}`)).data.analysis.aiDraft;
+  assert.equal(a.compare.length, 2); assert.equal(a.modelId, r.data.modelId);
+  // 사용량은 호출 횟수(2)만큼 기록
+  assert.equal((await A.get('/api/ai/status')).data.used >= 2, true);
 });

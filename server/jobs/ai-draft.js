@@ -6,7 +6,7 @@ import path from 'node:path';
 import os from 'node:os';
 import * as storage from '../storage.js';
 import { audit } from '../db/index.js';
-import { interpretDrawing, buildFromSpec, explodeFromSpec, aiAvailable } from '../convert/ai.js';
+import { interpretDrawing, buildFromSpec, explodeFromSpec, aiAvailable, aiProviders, resolveProviders, PROVIDERS, aiConfig } from '../convert/ai.js';
 import { listRegions, describeRegions, annotate, decodeGrayPng } from '../convert/regions.js';
 import { parsePgm } from '../convert/raster.js';
 import { IMAGE_EXTS } from '../convert/index.js';
@@ -17,10 +17,14 @@ export const AI_MONTHLY_DEFAULT = 300;
 
 /** 이 회사가 AI 해석을 쓸 수 있는지 (허용 설정 + 서버 키 + 월 한도) */
 export async function aiStatus(c, companyId) {
-  const { rows: [co] } = await c.query('SELECT external_ai_allowed, limits FROM companies WHERE id=$1', [companyId]);
+  const { rows: [co] } = await c.query('SELECT external_ai_allowed, ai_provider, limits FROM companies WHERE id=$1', [companyId]);
   const limit = Number(co?.limits?.ai_drawings ?? AI_MONTHLY_DEFAULT);
   const { rows: [u] } = await c.query("SELECT count(*)::int AS n FROM audit_logs WHERE company_id=$1 AND action='model.aidraft' AND at >= date_trunc('month', now())", [companyId]);
-  return { allowed: !!co?.external_ai_allowed, key: aiAvailable(), used: u.n, limit, ok: !!co?.external_ai_allowed && aiAvailable() && u.n < limit };
+  const providers = aiProviders();
+  // 회사가 고른 제공자(claude/openai/both). 키가 없어진 제공자를 골라 뒀으면 서버 기본으로
+  const want = co?.ai_provider || aiConfig().default || '';
+  const provider = want === 'both' ? (providers.length > 1 ? 'both' : providers[0] || '') : providers.includes(want) ? want : providers[0] || '';
+  return { allowed: !!co?.external_ai_allowed, key: aiAvailable(), providers, provider, used: u.n, limit, ok: !!co?.external_ai_allowed && aiAvailable() && u.n < limit };
 }
 
 /**
@@ -63,27 +67,58 @@ export async function drawingImages(file, analysis) {
  * @param c   회사 범위 DB 연결 (tenant)
  * @param file files 행 (analysis 포함)
  */
-export async function aiDraftFile(c, file, { userId } = {}) {
+export async function aiDraftFile(c, file, { userId, provider } = {}) {
   const st = await aiStatus(c, file.company_id);
   if (!st.allowed) throw Object.assign(new Error('관리자가 [브랜드·쇼룸] 설정에서 "AI 도면 해석"을 켜야 사용할 수 있습니다'), { status: 400 });
-  if (!st.key) throw Object.assign(new Error('서버에 AI 키(ANTHROPIC_API_KEY)가 설정되어 있지 않습니다'), { status: 400 });
+  if (!st.key) throw Object.assign(new Error('서버에 AI 키(ANTHROPIC_API_KEY 또는 OPENAI_API_KEY)가 설정되어 있지 않습니다'), { status: 400 });
   if (st.used >= st.limit) throw Object.assign(new Error(`이번 달 AI 도면 해석 한도(${st.limit}장)를 모두 썼습니다`), { status: 429 });
+  const names = resolveProviders(provider || st.provider);
+  if (!names.length) throw Object.assign(new Error(`AI 제공자(${provider})의 키가 서버에 없습니다`), { status: 400 });
   const im = await drawingImages(file, file.analysis);
-  const { spec, usage } = await interpretDrawing({ images: [im.clean, im.annotated], analysis: file.analysis, fileName: file.original_name, regionText: im.regionText });
   const base = file.original_name.replace(/\.[^.]+$/, '');
-  const result = await buildFromSpec(spec, base, { analysis: file.analysis, regions: im.regions, k: im.k });
-  const m = await createModel(c, { file, result, glb: Buffer.from(result.glb), name: `${base} (AI 3D)` });
-  await c.query("UPDATE models SET review_status='pending' WHERE id=$1", [m.id]);
-  // AI 가 정한 분해 방향을 장면에 반영
-  const ex = explodeFromSpec(result.parts, result.stats.size || [1, 1, 1]);
-  const { rows: [sc] } = await c.query('SELECT data FROM scenes WHERE model_id=$1 AND version=1', [m.id]);
-  if (sc) {
-    for (const [id, e] of Object.entries(ex)) sc.data.parts[id] = { ...(sc.data.parts[id] || {}), explode: e };
-    await c.query('UPDATE scenes SET data=$2 WHERE model_id=$1 AND version=1', [m.id, sc.data]);
+  const suffix = names.length > 1 ? (n) => ` (AI 3D·${PROVIDERS[n].label})` : () => ' (AI 3D)';
+  // 여러 제공자(비교 모드)는 동시에 호출하고 성공한 것만 모델로 만든다
+  const settled = await Promise.allSettled(names.map((n) => interpretDrawing({ images: [im.clean, im.annotated], analysis: file.analysis, fileName: file.original_name, regionText: im.regionText, provider: n })));
+  const results = [];
+  for (let i = 0; i < names.length; i++) {
+    const r = settled[i];
+    if (r.status === 'rejected') { results.push({ provider: names[i], error: r.reason?.message || String(r.reason) }); continue; }
+    const { spec, usage } = r.value;
+    try {
+      const result = await buildFromSpec(spec, base, { analysis: file.analysis, regions: im.regions, k: im.k });
+      const m = await createModel(c, { file, result, glb: Buffer.from(result.glb), name: `${base}${suffix(names[i])}` });
+      await c.query("UPDATE models SET review_status='pending' WHERE id=$1", [m.id]);
+      // AI 가 정한 분해 방향을 장면에 반영
+      const ex = explodeFromSpec(result.parts, result.stats.size || [1, 1, 1]);
+      const { rows: [sc] } = await c.query('SELECT data FROM scenes WHERE model_id=$1 AND version=1', [m.id]);
+      if (sc) {
+        for (const [id, e] of Object.entries(ex)) sc.data.parts[id] = { ...(sc.data.parts[id] || {}), explode: e };
+        await c.query('UPDATE scenes SET data=$2 WHERE model_id=$1 AND version=1', [m.id, sc.data]);
+      }
+      const outlineParts = spec.parts.filter((p) => ['intersect', 'extrude', 'revolve', 'hull'].includes(p.shape)).length;
+      await audit(c, { companyId: file.company_id, userId, action: 'model.aidraft', target: m.id,
+        meta: { fileId: file.id, provider: names[i], product: spec.product, parts: result.parts.length, model: usage.model, input_tokens: usage.input_tokens, output_tokens: usage.output_tokens, ms: usage.ms } });
+      results.push({ provider: names[i], modelId: m.id, spec, usage, stats: result.stats, parts: result.parts.length, outlineParts, score: scoreSpec(spec, result, file.analysis) });
+    } catch (e) { results.push({ provider: names[i], error: e.message }); }
   }
-  const aiInfo = { status: 'created', modelId: m.id, product: spec.product, overall: spec.overall, parts: result.parts.length, outlineParts: spec.parts.filter((p) => ['intersect', 'extrude', 'revolve', 'hull'].includes(p.shape)).length, viewRoles: spec.viewRoles, drawingScale: spec.drawingScale, ignored: spec.ignored || [], assumptions: spec.assumptions || [], usage, at: new Date().toISOString() };
+  const ok = results.filter((r) => r.modelId).sort((a, b) => b.score - a.score);
+  if (!ok.length) { const e = results[0]?.error || 'AI 해석 실패'; throw Object.assign(new Error(results.length > 1 ? results.map((r) => `${PROVIDERS[r.provider].label}: ${r.error}`).join(' / ') : e), { status: 502 }); }
+  const best = ok[0];
+  const aiInfo = { status: 'created', modelId: best.modelId, provider: best.provider, product: best.spec.product, overall: best.spec.overall, parts: best.parts, outlineParts: best.outlineParts, viewRoles: best.spec.viewRoles, drawingScale: best.spec.drawingScale, ignored: best.spec.ignored || [], assumptions: best.spec.assumptions || [], usage: best.usage,
+    compare: results.length > 1 ? results.map((r) => ({ provider: r.provider, modelId: r.modelId, parts: r.parts, outlineParts: r.outlineParts, score: r.score, error: r.error, model: r.usage?.model, ms: r.usage?.ms })) : undefined, at: new Date().toISOString() };
   await c.query("UPDATE files SET status='converted', analysis = jsonb_set(coalesce(analysis,'{}'::jsonb), '{aiDraft}', $2::jsonb) WHERE id=$1", [file.id, JSON.stringify(aiInfo)]);
-  await audit(c, { companyId: file.company_id, userId, action: 'model.aidraft', target: m.id,
-    meta: { fileId: file.id, product: spec.product, parts: result.parts.length, model: usage.model, input_tokens: usage.input_tokens, output_tokens: usage.output_tokens, ms: usage.ms } });
-  return { modelId: m.id, spec, usage, stats: result.stats };
+  return { modelId: best.modelId, provider: best.provider, spec: best.spec, usage: best.usage, stats: best.stats, results: aiInfo.compare };
+}
+
+/** 비교 모드에서 어느 결과를 앞에 둘지: 도면 윤곽으로 만든 부품이 많고, 전체 크기가 도면 뷰 비율과 맞는 쪽 */
+function scoreSpec(spec, result, analysis) {
+  const outline = spec.parts.filter((p) => ['intersect', 'extrude', 'revolve', 'hull'].includes(p.shape)).length;
+  let s = outline * 3 + Math.min(spec.parts.length, 30);
+  if (spec.scaleRef) s += 2;
+  const sz = result.stats?.size, front = (analysis?.views || []).find((v) => v.role === 'front');
+  if (sz && front) { // 정면 뷰의 가로/세로 비와 모델의 X/Z 비가 비슷하면 가점
+    const vr = (front.box[1][0] - front.box[0][0]) / Math.max(1e-6, front.box[1][1] - front.box[0][1]), mr = sz[0] / Math.max(1e-6, sz[2]);
+    if (Math.abs(Math.log(vr / mr)) < 0.15) s += 5;
+  }
+  return s;
 }

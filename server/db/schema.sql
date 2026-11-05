@@ -171,6 +171,7 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 
 -- 고객사별 쇼룸: 공개 주소(/c/<slug>)·브랜드, 공유 링크의 쇼룸 목록 노출 여부, 모델 썸네일
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS slug text;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS ai_provider text;  -- claude | openai | both (NULL = 서버 기본)
 CREATE UNIQUE INDEX IF NOT EXISTS companies_slug_idx ON companies (slug);
 ALTER TABLE share_links ADD COLUMN IF NOT EXISTS listed boolean NOT NULL DEFAULT true;
 ALTER TABLE models ADD COLUMN IF NOT EXISTS thumb_key text;

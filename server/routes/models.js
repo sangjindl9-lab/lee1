@@ -101,8 +101,8 @@ r.post('/files/:id/ai-draft', write, async (req, res) => {
     const { rows: [f] } = await c.query('SELECT * FROM files WHERE id=$1', [req.params.id]);
     if (!f) return { code: 404, body: { error: '파일을 찾을 수 없습니다' } };
     if (!DRAWING_EXTS.includes(f.ext)) return { code: 400, body: { error: '2D 도면만 AI 해석할 수 있습니다' } };
-    const r = await aiDraftFile(c, f, { userId: req.user.id });
-    return { code: 201, body: { modelId: r.modelId, product: r.spec.product, parts: r.spec.parts.length, ignored: r.spec.ignored, assumptions: r.spec.assumptions, usage: r.usage } };
+    const r = await aiDraftFile(c, f, { userId: req.user.id, provider: req.body?.provider });
+    return { code: 201, body: { modelId: r.modelId, provider: r.provider, product: r.spec.product, parts: r.spec.parts.length, ignored: r.spec.ignored, assumptions: r.spec.assumptions, usage: r.usage, results: r.results } };
   });
   res.status(out.code).json(out.body);
 });
