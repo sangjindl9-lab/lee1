@@ -35,6 +35,8 @@
    - **STEP/IGES**: OCCT 로 B-Rep 읽기 → 테셀레이션 → 조립 계층·부품명(UTF-8 복원)·색상 유지 → GLB. AI 재생성 없음
    - **STL**: 바이너리/ASCII 파싱 → 단일 부품 GLB (단위 mm 가정 경고)
    - **GLB**: 형상 유지, 메시 노드마다 partId 부여
+   - **DWG**: LibreDWG `dwg2dxf` 로 DXF 변환(별도 프로세스) → DXF 분석. 버전(AC10xx) 표시, 형상 객체 경고만 집계
+   - **PDF**: Poppler `pdftocairo -svg -nocenter -noshrink`(1쪽, 좌표 1:1) → 실선 경로만 윤곽으로(점선=중심선/숨은선, 채움=화살표 제외) → 도곽 판정 → 축척 1:N 사용자 입력 필수. `pdftotext` 로 글자·축척 표기·치수 숫자, `pdftoppm` 미리보기, `pdfimages` 로 스캔 판별
    - **DXF**: 단위·레이어·객체수·치수(측정값/정의점 계산)·주석·닫힌 윤곽(폴리라인·원·선/호 연결)·외곽/구멍 판정 → 분석만 저장. 두께 입력 후 `POST /files/:id/extrude` 로 돌출
 5. 모델 저장: `models` 행(원본 파일 ID·버전 연결, 부품 트리·통계·형상 근거) + GLB + 기본 장면 v1
 

@@ -2,7 +2,7 @@
 
 AI 기반 CAD·PDF 3D 변환, 산업용 디지털 쇼룸 및 조립·분해 시뮬레이션 플랫폼 — **1단계 MVP**
 
-CAD 파일(STEP·IGES·STL·GLB·DXF)을 올리면 3D 모델과 부품 트리가 만들어지고, 분해도·조립 애니메이션을 편집해
+CAD 파일(STEP·IGES·STL·GLB·DXF·DWG·PDF)을 올리면 3D 모델과 부품 트리가 만들어지고, 분해도·조립 애니메이션을 편집해
 **MP4 동영상**과 **공유 URL(QR)** 로 내보냅니다.
 
 | 문서 | 내용 |
@@ -18,7 +18,7 @@ npm ci
 npm run build                     # 웹 빌드 → web/dist
 DATABASE_URL=postgres://postgres@localhost:5432/eum3d npm start   # http://localhost:8080
 ```
-필요: Node 22, PostgreSQL 14+, FFmpeg, Chromium(`npx playwright-core install chromium`).
+필요: Node 22, PostgreSQL 14+, FFmpeg, Poppler, LibreDWG(`dwg2dxf`), Chromium(`npx playwright-core install chromium`).
 
 ## 테스트
 ```bash

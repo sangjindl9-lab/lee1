@@ -24,7 +24,7 @@ export default function PartProps({ readOnly = false }: { readOnly?: boolean }) 
         {part.volume != null && <><dt className="text-mute">체적</dt><dd className="num">{(part.volume / 1000).toFixed(2)} cm³ <span className="text-mute">(형상 계산)</span></dd></>}
         <dt className="text-mute">삼각형</dt><dd className="num">{part.triangles.toLocaleString()}</dd>
         {part.extras?.brepFaces != null && <><dt className="text-mute">B-Rep 면</dt><dd className="num">{part.extras.brepFaces}</dd></>}
-        {part.extras?.provenance && <><dt className="text-mute">형상 근거</dt><dd>윤곽=<span className="text-ok">원본 도면</span>, 두께=<span className="text-warn">사용자 입력</span></dd></>}
+        {part.extras?.provenance && <><dt className="text-mute">형상 근거</dt><dd>윤곽=<span className="text-ok">원본 도면</span>, {part.extras.provenance.scale ? <>축척 1:{part.extras.scale}·</> : null}두께=<span className="text-warn">사용자 입력</span></dd></>}
       </dl>
       {!readOnly && (<>
         <div className="grid grid-cols-2 gap-2">

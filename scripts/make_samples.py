@@ -110,3 +110,63 @@ msp.add_linear_dim(base=(-15, 0), p1=(0, 0), p2=(0, 120), angle=90, dxfattribs={
 msp.add_text("BRACKET PLATE  MAT: SS400  T=?", dxfattribs={"layer": "TEXT", "height": 5}).set_placement((0, 130))
 doc.saveas(os.path.join(OUT, "bracket_plate.dxf"))
 print("samples written to", os.path.abspath(OUT))
+
+# ── 5) 벡터 PDF 도면 (축척 1:2, A4 가로, 도곽·표제란·치수·중심선 포함) ──────
+def pdf_bracket(path):
+    MM = 72 / 25.4
+    S = 0.5  # 1:2
+    ox, oy = 40 * MM, 60 * MM
+    P = lambda x, y: (ox + x * S * MM, oy + y * S * MM)
+    ops = ["0 0 0 RG 0.6 w"]
+    def rect(x0, y0, x1, y1): ops.append(f"{x0:.3f} {y0:.3f} {x1-x0:.3f} {y1-y0:.3f} re S")
+    def poly(pts, close=True):
+        ops.append(" ".join([f"{pts[0][0]:.3f} {pts[0][1]:.3f} m"] + [f"{x:.3f} {y:.3f} l" for x, y in pts[1:]]) + (" h S" if close else " S"))
+    def circle(cx, cy, r, op="S"):
+        k = 0.5523 * r
+        ops.append(f"{cx+r:.3f} {cy:.3f} m {cx+r:.3f} {cy+k:.3f} {cx+k:.3f} {cy+r:.3f} {cx:.3f} {cy+r:.3f} c "
+                   f"{cx-k:.3f} {cy+r:.3f} {cx-r:.3f} {cy+k:.3f} {cx-r:.3f} {cy:.3f} c "
+                   f"{cx-r:.3f} {cy-k:.3f} {cx-k:.3f} {cy-r:.3f} {cx:.3f} {cy-r:.3f} c "
+                   f"{cx+k:.3f} {cy-r:.3f} {cx+r:.3f} {cy-k:.3f} {cx+r:.3f} {cy:.3f} c h {op}")
+    def text(x, y, s, size=9): ops.append(f"BT /F1 {size} Tf {x:.3f} {y:.3f} Td ({s}) Tj ET")
+    W, H = 297 * MM, 210 * MM
+    rect(10 * MM, 10 * MM, W - 10 * MM, H - 10 * MM)              # 도곽
+    rect(W - 110 * MM, 10 * MM, W - 10 * MM, 40 * MM)             # 표제란
+    text(W - 105 * MM, 30 * MM, "BRACKET PLATE  MAT: SS400", 10)
+    text(W - 105 * MM, 18 * MM, "SCALE 1:2   UNIT: mm", 10)
+    ops.append("1.0 w")
+    poly([P(0, 0), P(200, 0), P(200, 120), P(0, 120)])            # 외곽 (선 4개가 아닌 닫힌 경로)
+    for x, y in ((15, 15), (185, 15), (15, 105), (185, 105)):
+        circle(*P(x, y), 4.5 * S * MM)
+    circle(*P(100, 60), 20 * S * MM)
+    # 장공: 선 2개 + 반원 2개 (열린 선분 연결 시험)
+    poly([P(140, 50), P(160, 50)], close=False); poly([P(160, 70), P(140, 70)], close=False)
+    import math
+    arc = lambda cx, cy, a0, a1: [P(cx + 10 * math.cos(a), cy + 10 * math.sin(a)) for a in [a0 + (a1 - a0) * i / 16 for i in range(17)]]
+    poly(arc(160, 60, -math.pi / 2, math.pi / 2), close=False); poly(arc(140, 60, math.pi / 2, 3 * math.pi / 2), close=False)
+    ops.append("0.3 w [6 2 1 2] 0 d")                              # 중심선(점선)
+    poly([P(100, -8), P(100, 128)], close=False)
+    ops.append("[] 0 d 0.3 w")
+    poly([P(0, -12), P(200, -12)], close=False)                    # 치수선 + 채움 화살표
+    for x, d in ((0, 1), (200, -1)):
+        a = P(x, -12); ops.append(f"{a[0]:.3f} {a[1]:.3f} m {a[0]+d*6:.3f} {a[1]+1.5:.3f} l {a[0]+d*6:.3f} {a[1]-1.5:.3f} l h f")
+    text(*P(95, -10), "200"); text(*P(-14, 58), "120")
+    content = "\n".join(ops).encode()
+    objs = [b"<< /Type /Catalog /Pages 2 0 R >>", b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {W:.2f} {H:.2f}] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>".encode(),
+            b"<< /Length %d >>\nstream\n" % len(content) + content + b"\nendstream",
+            b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"]
+    out = b"%PDF-1.4\n"; offs = []
+    for i, o in enumerate(objs):
+        offs.append(len(out)); out += f"{i+1} 0 obj\n".encode() + o + b"\nendobj\n"
+    x = len(out)
+    out += f"xref\n0 {len(objs)+1}\n0000000000 65535 f \n".encode() + b"".join(f"{o:010d} 00000 n \n".encode() for o in offs)
+    out += f"trailer << /Size {len(objs)+1} /Root 1 0 R >>\nstartxref\n{x}\n%%EOF\n".encode()
+    open(path, "wb").write(out)
+pdf_bracket(os.path.join(OUT, "bracket_plate_1to2.pdf"))
+
+# ── 6) 스캔 PDF (이미지만 있는 도면) ─────────────────────────────────
+from PIL import Image, ImageDraw
+img = Image.new("L", (1240, 877), 255); d = ImageDraw.Draw(img)
+d.rectangle([200, 300, 800, 660], outline=0, width=4); d.ellipse([460, 440, 540, 520], outline=0, width=4)
+img.save(os.path.join(OUT, "scanned_drawing.pdf"), resolution=150)
+print("pdf samples written")

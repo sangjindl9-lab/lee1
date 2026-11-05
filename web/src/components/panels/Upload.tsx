@@ -32,8 +32,8 @@ export default function UploadPanel({ projectId, files, jobs, onChange, onExtrud
           onClick={() => inp.current?.click()}
           className={`cursor-pointer rounded-lg border-2 border-dashed p-5 text-center transition ${drag ? 'border-accent bg-accent/10' : 'border-line hover:border-mute'}`}>
           <div className="text-sm font-medium">파일을 끌어다 놓거나 클릭</div>
-          <div className="mt-1 text-xs text-mute">STEP·STP·IGES·STL·GLB·DXF · 대용량은 8MB 단위 분할 업로드</div>
-          <input ref={inp} type="file" multiple hidden data-testid="file-input" accept=".step,.stp,.iges,.igs,.stl,.glb,.dxf" onChange={(e) => { send(e.target.files); e.target.value = ''; }} />
+          <div className="mt-1 text-xs text-mute">STEP·IGES·STL·GLB · DXF·DWG·PDF 도면 · 대용량은 8MB 단위 분할 업로드</div>
+          <input ref={inp} type="file" multiple hidden data-testid="file-input" accept=".step,.stp,.iges,.igs,.stl,.glb,.dxf,.dwg,.pdf" onChange={(e) => { send(e.target.files); e.target.value = ''; }} />
         </div>
       )}
       {busy.map((b) => (
@@ -53,7 +53,7 @@ export default function UploadPanel({ projectId, files, jobs, onChange, onExtrud
                 <span className="ml-auto num">{fmtBytes(Number(f.size))} · {fmtDate(f.created_at)}</span></div>
               {f.error && <div className="mt-1 text-bad">{f.error}</div>}
               <div className="mt-1.5 flex gap-1">
-                {f.ext === 'dxf' && f.status !== 'analyzing' && f.has_analysis && canWrite && <button className="btn h-6 px-2 text-xs btn-on" onClick={() => onExtrude(f.id)}>두께 입력 → 3D 생성</button>}
+                {['dxf', 'dwg', 'pdf'].includes(f.ext) && f.status !== 'analyzing' && f.has_analysis && canWrite && <button className="btn h-6 px-2 text-xs btn-on" onClick={() => onExtrude(f.id)}>{f.ext === 'pdf' ? '축척·두께 입력 → 3D 생성' : '두께 입력 → 3D 생성'}</button>}
                 {canWrite && <a className="btn h-6 px-2 text-xs" href={`/api/files/${f.id}/original`}>원본</a>}
               </div>
             </div>

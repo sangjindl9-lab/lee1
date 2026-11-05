@@ -7,7 +7,8 @@ import { requireRole } from '../auth.js';
 import { config } from '../config.js';
 import * as storage from '../storage.js';
 import { extrudeDxf } from '../convert/dxf.js';
-import { createModel } from '../jobs/convert-job.js';
+import { createModel, previewKey } from '../jobs/convert-job.js';
+import { DRAWING_EXTS } from '../convert/index.js';
 import { enqueue } from '../jobs/queue.js';
 import { QUALITY } from '../jobs/render.js';
 import { totalDuration } from '../../shared/scene.js';
@@ -59,20 +60,29 @@ r.get('/models/:id/scenes', async (req, res) => {
   res.json(await req.db(async (c) => (await c.query('SELECT version,created_at,created_by FROM scenes WHERE model_id=$1 ORDER BY version DESC', [req.params.id])).rows));
 });
 
-// DXF → 사용자 두께 입력 → 돌출 3D 생성
+// 2D 도면(DXF·DWG·PDF) → 사용자 두께(·축척) 입력 → 돌출 3D 생성
 r.post('/files/:id/extrude', write, async (req, res) => {
   const out = await req.db(async (c) => {
     const { rows: [f] } = await c.query('SELECT * FROM files WHERE id=$1', [req.params.id]);
     if (!f) return { code: 404, body: { error: '파일을 찾을 수 없습니다' } };
-    if (f.ext !== 'dxf' || !f.analysis) return { code: 400, body: { error: 'DXF 분석이 끝난 파일만 3D 생성할 수 있습니다' } };
+    if (!DRAWING_EXTS.includes(f.ext) || !f.analysis) return { code: 400, body: { error: '분석이 끝난 2D 도면(DXF·DWG·PDF)만 3D 생성할 수 있습니다' } };
     const name = (req.body?.name || f.original_name.replace(/\.[^.]+$/, '')).slice(0, 120);
     const result = await extrudeDxf(f.analysis, req.body || {}, name);
     const m = await createModel(c, { file: f, result, glb: Buffer.from(result.glb), name });
     await c.query("UPDATE files SET status='converted' WHERE id=$1", [f.id]);
-    await audit(c, { companyId: f.company_id, userId: req.user.id, action: 'model.create', target: m.id, meta: { fileId: f.id, method: 'dxf-extrude', input: req.body } });
+    await audit(c, { companyId: f.company_id, userId: req.user.id, action: 'model.create', target: m.id, meta: { fileId: f.id, method: result.method, input: req.body } });
     return { code: 201, body: { modelId: m.id, stats: result.stats, provenance: result.provenance } };
   });
   res.status(out.code).json(out.body);
+});
+
+r.get('/files/:id/preview', async (req, res) => {
+  const f = await req.db(async (c) => (await c.query('SELECT id,company_id FROM files WHERE id=$1', [req.params.id])).rows[0]);
+  if (!f) return nf(res, '파일');
+  const st = await storage.stat(f.company_id, previewKey(f)).catch(() => null);
+  if (!st) return nf(res, '미리보기');
+  res.type('png');
+  storage.stream(f.company_id, previewKey(f)).pipe(res);
 });
 
 // ── 동영상 렌더 ────────────────────────────────────────────────

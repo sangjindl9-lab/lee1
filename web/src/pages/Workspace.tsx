@@ -77,7 +77,7 @@ export default function Workspace({ projectId, me }: { projectId: string; me: Me
   if (err) return <div className="p-8 text-bad">{err} <button className="btn ml-2" onClick={() => navigate('/app')}>목록으로</button></div>;
   if (!data) return <div className="grid h-full place-items-center text-mute">불러오는 중…</div>;
   const zUp = model ? model.stats?.upAxis !== 'Y' : true;
-  const pendingDxf = data.files.filter((f: any) => f.ext === 'dxf' && f.has_analysis);
+  const pendingDxf = data.files.filter((f: any) => ['dxf', 'dwg', 'pdf'].includes(f.ext) && f.has_analysis);
 
   return (
     <div className="grid h-full grid-rows-[auto_1fr_auto] overflow-hidden">
@@ -122,7 +122,7 @@ export default function Workspace({ projectId, me }: { projectId: string; me: Me
           ) : (
             <div className="grid h-full place-items-center p-6 text-center">
               <div><div className="text-lg font-semibold">{data.models.length ? '모델 불러오는 중…' : '3D 모델이 아직 없습니다'}</div>
-                <div className="mt-1 text-sm text-mute">{busy ? '파일을 분석·변환하고 있습니다…' : '오른쪽 [파일 업로드]에서 STEP·STL·GLB·DXF 를 올리세요.'}</div></div>
+                <div className="mt-1 text-sm text-mute">{busy ? '파일을 분석·변환하고 있습니다…' : '오른쪽 [파일 업로드]에서 STEP·STL·GLB·DXF·DWG·PDF 를 올리세요.'}</div></div>
             </div>
           )}
         </main>
@@ -134,9 +134,9 @@ export default function Workspace({ projectId, me }: { projectId: string; me: Me
           {tab === 'convert' && (
             <div className="space-y-3 p-3">
               <div className="panel-title">3D 변환</div>
-              <p className="text-xs text-mute">STEP·IGES·STL·GLB 는 업로드 즉시 자동 변환됩니다(원본 B-Rep·부품 구조 보존, AI 재생성 없음). DXF 는 두께를 입력해야 3D 가 됩니다.</p>
+              <p className="text-xs text-mute">STEP·IGES·STL·GLB 는 업로드 즉시 자동 변환됩니다(원본 B-Rep·부품 구조 보존, AI 재생성 없음). DXF·DWG 는 두께, PDF 는 축척과 두께를 입력해야 3D 가 됩니다(스캔 PDF 는 3단계).</p>
               {pendingDxf.map((f: any) => (
-                <div key={f.id} className="flex items-center gap-2 rounded border border-line p-2 text-xs"><span className="chip">DXF</span><span className="truncate">{f.original_name} v{f.version}</span>
+                <div key={f.id} className="flex items-center gap-2 rounded border border-line p-2 text-xs"><span className="chip uppercase">{f.ext}</span><span className="truncate">{f.original_name} v{f.version}</span>
                   {canWrite && <button className="btn btn-on ml-auto h-6 px-2 text-xs" onClick={() => setDxf(f.id)}>3D 생성</button>}</div>
               ))}
               <ProjectInfo project={data.project} versions={versions} />

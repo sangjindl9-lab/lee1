@@ -18,6 +18,9 @@ export async function createModel(c, { file, result, glb, name }) {
   return { ...m, glb_key: key };
 }
 
+/** 2D 도면(PDF) 미리보기 이미지 위치 */
+export const previewKey = (f) => storage.keyFor(f.company_id, 'previews', `${f.id}.png`);
+
 export async function processConvert(job) {
   const { fileId } = job.payload;
   const file = await tenant(job.company_id, async (c) => {
@@ -35,7 +38,8 @@ export async function processConvert(job) {
     throw e;
   }
   await progress(job, 0.8, '저장 중');
-  const { result, glb } = out;
+  const { result, glb, preview } = out;
+  if (preview) await storage.put(file.company_id, previewKey(file), preview);
   return tenant(job.company_id, async (c) => {
     if (result.analysisOnly) {
       await c.query("UPDATE files SET status='analyzed', analysis=$2, error=NULL WHERE id=$1", [file.id, result.analysis]);

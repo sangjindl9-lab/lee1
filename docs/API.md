@@ -18,7 +18,8 @@
 | POST | /uploads/:id/complete | 검사·원본 저장·변환 작업 등록 → `{file,job}` |
 | GET | /files/:id | 파일·분석 결과 |
 | GET | /files/:id/original | 원본 다운로드(관리자·사용자, 감사 기록) |
-| POST | /files/:id/extrude | DXF → 3D `{thickness (필수), profiles?, perProfile?, name?}` |
+| POST | /files/:id/extrude | DXF·DWG·PDF → 3D `{thickness (필수), scale (PDF 필수, 1:N 의 N), profiles?, perProfile?, name?}` |
+| GET | /files/:id/preview | PDF 1쪽 미리보기 PNG |
 | GET | /jobs/:id · POST /jobs/:id/retry | 작업 상태 / 실패 작업 재시도 |
 
 ## 모델·장면·영상

@@ -2,7 +2,7 @@ import { fmtDate } from '../../api';
 import { t } from '../../i18n';
 import { useWS } from '../../store';
 
-const METHOD: Record<string, string> = { 'step-brep-tessellation': 'STEP/IGES B-Rep → 테셀레이션', 'stl-mesh': 'STL 메시', 'glb-import': 'GLB 가져오기', 'dxf-extrude': 'DXF 윤곽 + 사용자 두께 돌출' };
+const METHOD: Record<string, string> = { 'step-brep-tessellation': 'STEP/IGES B-Rep → 테셀레이션', 'stl-mesh': 'STL 메시', 'glb-import': 'GLB 가져오기', 'dxf-extrude': 'DXF 윤곽 + 사용자 두께 돌출', 'dwg-extrude': 'DWG(→DXF) 윤곽 + 사용자 두께 돌출', 'pdf-extrude': 'PDF 벡터 윤곽 + 사용자 축척·두께 돌출' };
 
 export default function ProjectInfo({ project, versions }: { project: any; versions: any[] }) {
   const model = useWS((s) => s.model);
