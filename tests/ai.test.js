@@ -48,8 +48,11 @@ test('AI-2. 허용 → AI 로 부품별 3D (커버·몸체·볼트, 분해 방�
   assert.equal(call.headers['x-api-key'], 'sk-test');
   assert.equal(call.body.tools[0].name, 'build_showroom_model');
   const content = call.body.messages[0].content;
-  assert.equal(content[0].type, 'image'); assert.equal(Buffer.from(content[0].source.data, 'base64').subarray(1, 4).toString(), 'PNG', 'DXF 를 그림으로 그려 보냄');
-  assert.match(content[1].text, /투상도/);
+  const imgs = content.filter((c) => c.type === 'image');
+  assert.equal(imgs.length, 2, '도면 그림 + 윤곽 번호 그림');
+  assert.equal(Buffer.from(imgs[0].source.data, 'base64').subarray(1, 4).toString(), 'PNG', 'DXF 를 그림으로 그려 보냄');
+  const txt = content.filter((c) => c.type === 'text').map((c) => c.text).join('\n');
+  assert.match(txt, /V1S1 외형/, '윤곽 목록을 보냄');
   const d = (await A.get(`/api/models/${j.result.modelId}`)).data;
   assert.equal(d.model.method, 'ai-drawing');
   assert.equal(d.model.review_status, 'pending');
@@ -70,6 +73,37 @@ test('AI-2. 허용 → AI 로 부품별 3D (커버·몸체·볼트, 분해 방�
   // 타사: 허용 안 됨·접근 불가
   assert.equal((await B.post(`/api/files/${up.data.file.id}/ai-draft`)).status, 404);
   assert.equal((await B.get('/api/ai/status')).data.allowed, false);
+});
+
+test('AI-4. 도면 윤곽 기반 부품(intersect·extrude): 3면도 외형을 교차해 정답 체적과 비교', async () => {
+  // 3면도 블록: 정면(V?)+평면+측면 외형 교차 = 계단 블록 185,717 mm³ (구멍 제외 시 +구멍 체적)
+  const up0 = await upload(A, proj.id, 'three_view_block.dxf', { name: 'probe.dxf' });
+  await waitJob(A, up0.data.job.id);
+  const a = (await A.get(`/api/files/${up0.data.file.id}`)).data.analysis;
+  const g = a.groups.find((x) => x.side);
+  const F = a.views.find((v) => v.id === g.front);
+  // 정면 외형 중 계단 블록(큰 것) 실루엣 번호
+  const si = F.silhouettes.findIndex((s) => Math.max(...s.pts.map((p) => p[0])) - Math.min(...s.pts.map((p) => p[0])) > 90) + 1;
+  const T = a.views.find((v) => v.id === g.top), S = a.views.find((v) => v.id === g.side);
+  const ti = T.silhouettes.findIndex((s) => Math.max(...s.pts.map((p) => p[0])) - Math.min(...s.pts.map((p) => p[0])) > 90) + 1;
+  const old = [...SPEC.parts];
+  SPEC.viewRoles = { [g.front]: 'front', [g.top]: g.topPos === 'below' ? 'bottom' : 'top', [g.side]: g.sidePos === 'left' ? 'left' : 'right' };
+  SPEC.drawingScale = 1;
+  SPEC.parts = [
+    { name: '계단 블록', shape: 'intersect', profiles: [`${g.front}S${si}`, `${g.top}S${ti}`, `${g.side}S1`], material: 'steel', explode: 'none' },
+    { name: '밑판', shape: 'extrude', profiles: [`${g.top}S${ti}`], from: 0, to: 5, material: 'steel', explode: 'down' },
+  ];
+  try {
+    const r = await A.post(`/api/files/${up0.data.file.id}/ai-draft`);
+    assert.equal(r.status, 201, JSON.stringify(r.data));
+    const m = (await A.get(`/api/models/${r.data.modelId}`)).data.model;
+    const blk = m.parts.find((p) => p.name === '계단 블록'), base = m.parts.find((p) => p.name === '밑판');
+    assert.deepEqual(blk.bbox.max.map((v, i) => Math.round(v - blk.bbox.min[i])), [100, 60, 50], '외형 교차 크기 = 도면');
+    const expect = 185717 + Math.PI * 100 * 20; // 실루엣 교차는 관통 구멍을 모름
+    assert.ok(Math.abs(blk.volume - expect) / expect < 0.01, `교차 체적 ${blk.volume} ≈ ${expect.toFixed(0)}`);
+    assert.deepEqual(base.bbox.max.map((v, i) => Math.round(v - base.bbox.min[i])), [100, 60, 5], '윤곽 돌출 두께 5');
+    assert.ok(m.parts.every((p) => p.extras?.profiles?.length), '부품마다 사용한 윤곽 기록');
+  } finally { SPEC.parts = old; delete SPEC.viewRoles; }
 });
 
 test('AI-3. AI 실패(서버 과부하) → 규칙 기반 초안으로 대체, 실패 사유 기록', async () => {

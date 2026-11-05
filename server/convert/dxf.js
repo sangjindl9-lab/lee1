@@ -111,7 +111,7 @@ export function analyzeParsed(dxf, layerLT = {}, format = 'DXF') {
       const r = renderPolys(clip, { bbox });
       preview = r.png;
       const px = (a) => a && r.toPx(a[0], a[1]).map((v) => Math.round(v));
-      image = { width: r.width, height: r.height, mmPerPx: +(1 / r.scale).toFixed(4),
+      image = { width: r.width, height: r.height, mmPerPx: +(1 / r.scale).toFixed(4), scale: r.scale, pad: r.pad, origin: r.origin,
         dimMarks: dims.filter((d) => d.at && d.value != null).map((d) => ({ value: d.value, kind: d.kind, px: px(d.at) })).filter((d) => d.px[0] >= 0 && d.px[1] >= 0 && d.px[0] <= r.width && d.px[1] <= r.height),
         textMarks: textMarks.map((t) => ({ text: t.text, px: px(t.at) })).filter((t) => t.px[0] >= 0 && t.px[1] >= 0 && t.px[0] <= r.width && t.px[1] <= r.height).slice(0, 120) };
     }

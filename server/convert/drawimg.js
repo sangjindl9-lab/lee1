@@ -19,7 +19,7 @@ export function renderPolys(polys, { maxSide = 1568, pad = 24, bbox } = {}) {
     const n = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay)));
     for (let k = 0; k <= n; k++) { const x = ax + ((bx - ax) * k) / n, y = ay + ((by - ay) * k) / n; dot(x, y); dot(x + 0.6, y + 0.6); }
   }
-  return { png: encodePng(img, W, H), width: W, height: H, toPx, scale: s };
+  return { png: encodePng(img, W, H), gray: img, width: W, height: H, toPx, scale: s, origin: [x0, y0], pad };
 }
 
 export function extent(polys) {

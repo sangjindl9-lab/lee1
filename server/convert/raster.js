@@ -35,7 +35,8 @@ export async function analyzeRaster(file, kind) {
       const d = imageDpi(head);
       if (d) dpi = d; else dpiAssumed = true;
       try {
-        await run('ffmpeg', ['-v', 'error', '-y', '-i', file, '-frames:v', '1', '-vf', `scale='min(${MAX_SIDE},iw)':-2:flags=area,format=gray`, '-c:v', 'pgm', path.join(dir, 'p.pgm')], { timeout: 120000 });
+        // 투명 배경 PNG 는 흰 바탕에 합성해서 읽는다 (투명한 검정 픽셀이 선으로 오인되는 것을 막음)
+        await run('ffmpeg', ['-v', 'error', '-y', '-i', file, '-filter_complex', `[0:v]scale='min(${MAX_SIDE},iw)':-2:flags=area[v];color=white[bg];[bg][v]scale2ref[bg2][v2];[bg2][v2]overlay=shortest=1,format=gray`, '-frames:v', '1', '-c:v', 'pgm', path.join(dir, 'p.pgm')], { timeout: 120000 });
       } catch (e) { throw new Error('이미지를 열지 못했습니다 (손상·지원하지 않는 압축): ' + String(e.stderr || e.message).slice(0, 200)); }
       pgm = await fs.readFile(path.join(dir, 'p.pgm'));
       // 축소했으면 DPI 도 같은 비율로

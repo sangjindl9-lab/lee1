@@ -24,16 +24,24 @@ export const TOOL = {
       product: { type: 'string', description: '제품 종류 (예: 매입형 분전함, 사출금형 조립체, 브라켓 판)' },
       overall: { ...XYZ, description: '전체 크기 [폭 X, 깊이 Y, 높이 Z] mm' },
       views: { type: 'string', description: '해석에 쓴 투상도 (예: 정면·저면·우측면, 3각법)' },
+      viewRoles: { type: 'object', description: '그림(V1, V2…)마다 역할. 값: front(정면)·rear(후면)·top(평면/상면)·bottom(저면)·left(좌측면)·right(우측면)·other(구성도 등 3D 아님). 예 {"V1":"front","V3":"right","V4":"top"}', additionalProperties: { type: 'string', enum: ['front', 'rear', 'top', 'bottom', 'left', 'right', 'other'] } },
+      projection: { type: 'string', enum: ['third', 'first'], description: '투상법. 기본 third(3각법: 정면도 위=평면도, 오른쪽=우측면도)' },
+      scaleRef: { type: 'object', required: ['dimension', 'region', 'along'], description: '배율 기준(권장): 도면에 적힌 치수 숫자 하나와, 그 치수가 가리키는 윤곽. 프로그램이 배율 = dimension ÷ 윤곽 크기 로 계산한다. 예 {"dimension":539,"region":"V2S1","along":"width"}', properties: {
+        dimension: { type: 'number', description: '도면에 적힌 치수 숫자 (mm)' }, region: { type: 'string', description: '그 치수가 재는 윤곽 번호 (예 V2S1)' }, along: { type: 'string', enum: ['width', 'height', 'diameter'], description: '윤곽의 가로/세로/지름 중 어느 길이인지' } } },
+      drawingScale: { type: 'number', description: 'scaleRef 를 줄 수 없을 때만: 그림 단위 → 실제 mm 배율 (CAD 실치수 1, "Scale 1:2" 는 2)' },
       ignored: { type: 'array', items: { type: 'string' }, description: '3D 로 만들지 않은 그림 (구성도·결선도·표제란·부품표 등)' },
       assumptions: { type: 'array', items: { type: 'string' }, description: '도면에 적혀 있지 않아 추정한 값과 이유' },
       parts: {
         type: 'array', minItems: 1, maxItems: 80,
         items: {
-          type: 'object', required: ['name', 'shape', 'position'],
+          type: 'object', required: ['name', 'shape'],
           properties: {
             name: { type: 'string', description: '부품 이름 (한국어)' },
-            shape: { type: 'string', enum: ['box', 'shell', 'cylinder'], description: 'box=속이 찬 직육면체/판, shell=속이 빈 상자(외함·케이스, 한 면이 열림), cylinder=원기둥(핀·볼트·축·부시)' },
-            position: { ...XYZ, description: 'box/shell: 가장 작은 X·Y·Z 모서리 좌표, cylinder: 시작 면의 중심 좌표' },
+            shape: { type: 'string', enum: ['intersect', 'extrude', 'box', 'shell', 'cylinder'], description: 'intersect=도면 윤곽 2~3개(정면·측면·평면)를 각 방향으로 밀어 교차 — 곡면·복잡한 외형을 도면 그대로 재현(권장). extrude=도면 윤곽 1개를 두께만큼 밀기(판·플랜지·브래킷). box=직육면체, shell=속 빈 상자(한 면 열림), cylinder=원기둥(핀·볼트·축)' },
+            profiles: { type: 'array', minItems: 1, maxItems: 3, description: 'intersect/extrude: 쓸 윤곽 번호 (그림의 S/F/C 라벨, 예 "V1S1", "V3F2"). intersect 는 서로 다른 방향의 뷰(정면+측면, 정면+평면 등)에서 1개씩', items: { type: 'string' } },
+            from: { type: 'number', description: 'extrude: 밀기 시작 좌표(윤곽 뷰의 법선 축: 정면/후면 윤곽이면 Y, 평면/저면이면 Z, 측면이면 X). 생략하면 전체 범위' },
+            to: { type: 'number', description: 'extrude: 밀기 끝 좌표' },
+            position: { ...XYZ, description: 'box/shell: 가장 작은 X·Y·Z 모서리 좌표, cylinder: 시작 면의 중심 좌표. intersect/extrude 는 생략(도면 좌표 사용)' },
             size: { ...XYZ, description: 'box/shell: [폭 X, 깊이 Y, 높이 Z]' },
             cornerRadius: { type: 'number', description: 'box/shell: 정면에서 보이는 모서리 둥글기 반지름 (없으면 0)' },
             wall: { type: 'number', description: 'shell: 벽 두께 (판금이면 1.2~2)' },
@@ -65,7 +73,13 @@ export const SYSTEM = `너는 산업용 도면(금형·분전반·기계·판금
 목표는 '보여주기'다. 정밀 설계가 아니라, 도면에 적힌 치수대로 보이는 형상을 만든다.
 규칙:
 - 좌표계: 원점 = 제품 전체의 왼쪽·앞·아래 모서리. X = 정면도에서 오른쪽(폭), Y = 뒤쪽(깊이), Z = 위(높이). 단위 mm.
-- 치수는 도면에 적힌 숫자를 그대로 쓴다. 적혀 있지 않은 치수는 그림 비율로 추정하고 assumptions 에 적는다.
+- 가장 중요: 형상은 도면 윤곽을 그대로 써라. 두 번째 그림에 뷰 번호(V1…)와 윤곽 번호(S=외형, F=안쪽 영역, C=원)가 적혀 있고, 그 윤곽의 실제 좌표로 3D 를 만든다.
+  · 본체·하우징·외함·몸통 등 가장 큰 부품은 반드시 intersect 로 만든다: 정면 외형(S) + 측면 외형(S) (+ 평면 외형). 둥근 외형·테이퍼·돔이 도면대로 나온다. box 로 대신하지 말 것.
+  · 판·플랜지·브래킷·프레임 → extrude 에 그 뷰의 윤곽(안쪽 영역 F 포함) + from/to 로 두께 위치.
+  · 윤곽 번호가 없는 부품(요크·브래킷·바이저·볼트·단자 등)은 box/shell/cylinder 로 치수·위치를 적어 추가한다. 큰 부품은 빠뜨리지 말 것.
+- viewRoles 로 그림마다 역할을 정한다. 'Rear view', 'Bottom view' 글자가 있으면 그대로, 없으면 배치(3각법)로 판단. 구성도·결선도·상세도는 other.
+- 배율은 scaleRef 로 준다: 도면 치수 하나(예 전체 폭 539)와 그 치수가 재는 윤곽(예 V2S1 의 width). CAD 실치수 도면이면 drawingScale 1.
+- box/cylinder 치수는 도면에 적힌 숫자를 그대로 쓴다. 적혀 있지 않은 치수는 그림 비율로 추정하고 assumptions 에 적는다.
 - 3각법(정면도 위=평면도, 아래=저면도, 오른쪽=우측면도)을 기본으로 보되, 그림 배치로 1각법이면 그에 맞게 해석한다.
 - 외형도·조립도의 제품만 만든다. 구성도·결선도·회로도·표제란·부품표·상세 확대도는 ignored 에 적고 만들지 않는다.
 - 부품을 나눠라: 외함과 커버, 문과 손잡이, 금형 판·핀처럼 실제로 분리되는 단위로. 각 부품의 explode 방향도 정한다.
@@ -75,16 +89,17 @@ export const SYSTEM = `너는 산업용 도면(금형·분전반·기계·판금
 반드시 build_showroom_model 도구 한 번으로 답한다.`;
 
 /** 도면 그림 + 프로그램이 읽은 정보로 AI 해석 요청 */
-export async function interpretDrawing({ image, mediaType = 'image/png', analysis, fileName }) {
+export async function interpretDrawing({ image, images, mediaType = 'image/png', analysis, fileName, regionText }) {
   const cfg = aiConfig();
   if (!cfg.apiKey) throw Object.assign(new Error('AI 키(ANTHROPIC_API_KEY)가 서버에 설정되어 있지 않습니다'), { status: 400 });
-  const ctx = contextText(analysis, fileName);
+  const ctx = contextText(analysis, fileName, regionText);
+  const imgs = images || [image];
   const body = {
     model: cfg.model, max_tokens: 8000, system: SYSTEM,
     // 최신 모델은 도구 강제(tool_choice: tool)를 지원하지 않아 auto + 지시문으로 호출하게 한다
     tools: [TOOL], tool_choice: { type: 'auto' },
     messages: [{ role: 'user', content: [
-      { type: 'image', source: { type: 'base64', media_type: mediaType, data: image.toString('base64') } },
+      ...imgs.map((im, i) => [{ type: 'text', text: i === 0 ? '그림 1: 도면' : '그림 2: 같은 도면에 뷰 번호(V)·윤곽 번호(S 외형, F 안쪽 영역, C 원)를 표시' }, { type: 'image', source: { type: 'base64', media_type: mediaType, data: im.toString('base64') } }]).flat(),
       { type: 'text', text: ctx },
     ] }],
   };
@@ -109,8 +124,11 @@ export async function interpretDrawing({ image, mediaType = 'image/png', analysi
   return { spec: tool.input, usage: { ...j.usage, model: j.model || cfg.model, ms: Date.now() - t0 } };
 }
 
-function contextText(a, fileName) {
+function contextText(a, fileName, regionText) {
   const L = [`파일: ${fileName || ''}`, `형식: ${a?.format || ''}`];
+  if (a?.views?.some((v) => v.raster)) L.push('이 도면은 스캔·이미지라 외형(S)만 있다. 제품 전체 외형은 각 뷰의 S 를 intersect 한 부품으로 반드시 만들고, 요크·브래킷 같은 돌출부만 box/cylinder 로 덧붙여라.');
+  if (a?.scaleRequired) L.push('주의: 이 도면은 용지(종이/이미지) 좌표라 아래 윤곽 크기는 실제 치수가 아니다. 반드시 scaleRef 로 (도면 치수 숫자, 그 치수가 재는 윤곽, width/height/diameter) 를 지정하라. box/cylinder 의 치수·위치는 실제 mm 로 적는다.');
+  if (regionText) L.push('뷰·윤곽 목록 (그림 2 의 번호, 크기는 배율 적용 전 그림 단위):', regionText);
   if (a?.unit) L.push(`도면 단위: ${a.unit}`);
   if (a?.image?.mmPerPx) L.push(`그림 1픽셀 = 실제 ${a.image.mmPerPx} mm (CAD 원본 좌표에서 그린 그림)`);
   if (a?.scaleRequired && a?.autoDraft?.scale?.scale) L.push(`용지 축척 추정: 1:${a.autoDraft.scale.scale} (${a.autoDraft.scale.why})`);
@@ -161,11 +179,105 @@ function cylSolid(W, len, dia, axis) {
   return axis === 'x' ? c.rotate([0, 90, 0]) : axis === 'y' ? c.rotate([-90, 0, 0]) : c;
 }
 
+// ── 도면 윤곽 → 3D (뷰 역할 기반 좌표계) ───────────────────────
+/**
+ * 제품 좌표계: 정면도 폭·높이와 측면/평면 깊이로 전체 상자를 잡고, 각 뷰의 외곽 중심을 그 상자 중심에 맞춘다.
+ * (투상선이 어긋난 도면, 축척이 다른 뷰도 중심 정렬로 맞는다)
+ */
+export function makeFrame(spec, ctx) {
+  const views = Object.fromEntries((ctx?.analysis?.views || []).map((v) => [v.id, v]));
+  const roles = { ...autoRoles(ctx?.analysis), ...(spec.viewRoles || {}) };
+  let k = num(spec.drawingScale, ctx?.k || 1) || 1;
+  const ref = spec.scaleRef, rg = ref && ctx?.regions?.find((r) => r.id === ref.region);
+  if (rg && num(ref.dimension) > 0) {
+    const w = rg.bbox[1][0] - rg.bbox[0][0], h = rg.bbox[1][1] - rg.bbox[0][1];
+    const base = ref.along === 'height' ? h : ref.along === 'diameter' ? (rg.diameter || Math.max(w, h)) : w;
+    if (base > 0) k = num(ref.dimension) / base;
+  }
+  const byRole = (r) => Object.entries(roles).filter(([id, role]) => role === r && views[id]).map(([id]) => views[id])[0];
+  const front = byRole('front') || byRole('rear');
+  if (!front) return null;
+  const bw = (v) => (v.box[1][0] - v.box[0][0]) * k, bh = (v) => (v.box[1][1] - v.box[0][1]) * k;
+  const W = bw(front), H = bh(front);
+  const side = byRole('right') || byRole('left'), topv = byRole('top') || byRole('bottom');
+  // 뷰가 90° 눕혀 그려진 경우(세로로 긴 측면도 등): 정면도 높이·폭과 비교해 판단
+  const near = (a, b) => Math.abs(a - b) <= Math.max(a, b) * 0.15;
+  const rot = {};
+  for (const v of [side, topv].filter(Boolean)) {
+    const r = roles[v.id];
+    if (r === 'left' || r === 'right') rot[v.id] = !near(bh(v), H) && near(bw(v), H);
+    else rot[v.id] = !near(bw(v), W) && near(bh(v), W);
+  }
+  const D = side ? (rot[side.id] ? bh(side) : bw(side)) : topv ? (rot[topv.id] ? bw(topv) : bh(topv)) : num(spec.overall?.[1], W);
+  const first = spec.projection === 'first';
+  const ctr = (v) => [(v.box[0][0] + v.box[1][0]) / 2, (v.box[0][1] + v.box[1][1]) / 2];
+  /** 뷰 좌표 [u,v] → 3D 평면 좌표 + 법선축 */
+  const mapOf = (vid) => {
+    const v = views[vid], role = roles[vid]; if (!v || !role || role === 'other') return null;
+    const [cu, cv] = ctr(v);
+    const U = (u) => (u - cu) * k, V = (x) => (x - cv) * k;
+    const mirrorSide = first ? role === 'right' : role === 'left';
+    const mirrorTop = first ? role === 'top' : role === 'bottom';
+    switch (role) {
+      case 'front': return { axis: 'y', to3: ([u, v2]) => [U(u) + W / 2, V(v2) + H / 2] };            // (X,Z)
+      case 'rear': return { axis: 'y', to3: ([u, v2]) => [-U(u) + W / 2, V(v2) + H / 2] };
+      case 'top': case 'bottom': return rot[vid]
+        ? { axis: 'z', to3: ([u, v2]) => [V(v2) + W / 2, (mirrorTop ? -U(u) : U(u)) + D / 2] }
+        : { axis: 'z', to3: ([u, v2]) => [U(u) + W / 2, (mirrorTop ? -V(v2) : V(v2)) + D / 2] }; // (X,Y)  3각법 평면도: 아래쪽이 앞
+      case 'left': case 'right': return rot[vid]
+        ? { axis: 'x', to3: ([u, v2]) => [V(v2) + D / 2, -U(u) + H / 2] }                       // 눕힌 측면도: 세로 = 깊이, 왼쪽 = 위
+        : { axis: 'x', to3: ([u, v2]) => [(mirrorSide ? -U(u) : U(u)) + D / 2, V(v2) + H / 2] }; // (Y,Z) 3각법 우측면도: 왼쪽이 앞
+      default: return null;
+    }
+  };
+  return { W, H, D, k, roles, rot, mapOf, scaleFrom: rg ? `치수 ${ref.dimension} ÷ ${ref.region} ${ref.along}` : spec.drawingScale ? 'AI 지정' : '기본' };
+}
+function autoRoles(a) {
+  const out = {};
+  for (const g of a?.groups || []) {
+    out[g.front] = 'front';
+    if (g.top) out[g.top] = g.topPos === 'below' ? 'bottom' : 'top';
+    if (g.side) out[g.side] = g.sidePos === 'left' ? 'left' : 'right';
+    break; // 주 그룹만
+  }
+  return out;
+}
+/** 평면 윤곽(2D) → 법선축 방향 [from,to] 구간의 기둥 */
+function prism(W, pts, axis, from, to) {
+  const L = to - from; if (!(L > 0) || pts.length < 3) return null;
+  const cs = new W.CrossSection([pts], 'EvenOdd');
+  if (axis === 'y') return cs.extrude(L).rotate([90, 0, 0]).translate([0, to, 0]);
+  if (axis === 'z') return cs.extrude(L).translate([0, 0, from]);
+  return cs.extrude(L).transform([0, 1, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, from, 0, 0, 1]);
+}
+function outlineSolid(W, p, frame, regions) {
+  const ids = p.profiles || [];
+  const full = { x: [-frame.D * 0.5, frame.W + frame.D * 0.5], y: [-frame.D * 0.5, frame.D * 1.5], z: [-frame.H * 0.5, frame.H * 1.5] };
+  const solids = [];
+  for (const id of ids) {
+    const r = regions?.[id]; if (!r) continue;
+    const m = frame.mapOf(r.view); if (!m) continue;
+    const pts = r.pts.map(m.to3);
+    const rng = p.shape === 'extrude' && Number.isFinite(+p.from) && Number.isFinite(+p.to) ? [Math.min(+p.from, +p.to), Math.max(+p.from, +p.to)] : full[m.axis];
+    // 같은 뷰 안의 다른 윤곽으로 구멍을 내지는 않는다(AI 가 holes 로 지정)
+    const s = prism(W, pts, m.axis, rng[0], rng[1]);
+    if (s && s.volume() > 1e-6) solids.push(s);
+  }
+  if (!solids.length) return null;
+  let s = solids[0];
+  for (let i = 1; i < solids.length; i++) s = p.shape === 'extrude' ? W.Manifold.union(s, solids[i]) : s.intersect(solids[i]);
+  return s;
+}
+
 /** 부품 하나 → Manifold (월드 좌표) */
-export function partSolid(W, p, big) {
+export function partSolid(W, p, big, frame, regions) {
   const [x, y, z] = (p.position || [0, 0, 0]).map((v) => num(v));
   let s;
-  if (p.shape === 'cylinder') {
+  if (p.shape === 'intersect' || p.shape === 'extrude') {
+    if (!frame) return null;
+    s = outlineSolid(W, p, frame, regions);
+    if (!s) return null;
+  } else if (p.shape === 'cylinder') {
     const len = num(p.length), dia = num(p.diameter);
     if (!(len > 0 && dia > 0)) return null;
     s = cylSolid(W, len, dia, p.axis || 'z').translate([x, y, z]);
@@ -208,22 +320,30 @@ export function partSolid(W, p, big) {
   return s;
 }
 
-export async function buildFromSpec(spec, name) {
+export async function buildFromSpec(spec, name, ctx = null) {
   const W = await mf();
+  const frame = ctx ? makeFrame(spec, ctx) : null;
+  const regions = ctx?.regions ? Object.fromEntries(ctx.regions.map((r) => [r.id, r])) : null;
   const ov = (spec.overall || []).map((v) => num(v));
-  const big = Math.max(...ov, ...spec.parts.flatMap((p) => [...(p.size || []), num(p.length)]).map((v) => num(v)), 10);
+  const big = Math.max(...ov, ...(frame ? [frame.W, frame.H, frame.D] : []), ...spec.parts.flatMap((p) => [...(p.size || []), num(p.length)]).map((v) => num(v)), 10);
   const children = [];
   const used = new Map();
-  for (const p of spec.parts.slice(0, 80)) {
+  const plist = [...spec.parts];
+  // 스캔·이미지 도면(안쪽 영역 정보 없음)에서 AI 가 윤곽을 쓰지 않았으면, 정면·측면·평면 외형 교차(도면 그대로의 외형)를 맨 앞에 넣는다
+  if (frame && regions && ctx?.analysis?.views?.some((v) => v.raster) && !plist.some((p) => p.shape === 'intersect' || p.shape === 'extrude')) {
+    const sils = Object.entries(frame.roles).filter(([, r]) => r && r !== 'other').map(([id]) => `${id}S1`).filter((id) => regions[id]);
+    if (sils.length >= 2) plist.unshift({ name: '외형 (도면 윤곽)', shape: 'intersect', profiles: sils, material: plist[0]?.material || 'painted', explode: 'none', _auto: true });
+  }
+  for (const p of plist.slice(0, 80)) {
     let s;
-    try { s = partSolid(W, p, big); } catch { s = null; }
+    try { s = partSolid(W, p, big, frame, regions); } catch { s = null; }
     if (!s || !(s.volume() > 1e-3)) continue;
     const m = MAT[p.material] || MAT.painted;
     const mesh = meshOf(s, hex(p.color) || m.color);
     mesh.metallic = m.metallic; mesh.roughness = m.roughness; if (m.opacity) mesh.opacity = m.opacity;
     let nm = String(p.name || `부품${children.length + 1}`).slice(0, 60);
     const k = (used.get(nm) || 0) + 1; used.set(nm, k); if (k > 1) nm = `${nm} (${k})`;
-    children.push({ name: nm, meshes: [mesh], children: [], extras: { estimated: true, ai: true, shape: p.shape, ...(p.explode ? { explode: p.explode, explodeStep: p.explodeStep || 1 } : {}), ...(p.sourceDims?.length ? { sourceDims: p.sourceDims } : {}) } });
+    children.push({ name: nm, meshes: [mesh], children: [], extras: { estimated: true, ai: true, shape: p.shape, ...(p.profiles ? { profiles: p.profiles } : {}), ...(p.explode ? { explode: p.explode, explodeStep: p.explodeStep || 1 } : {}), ...(p.sourceDims?.length ? { sourceDims: p.sourceDims } : {}) } });
   }
   if (!children.length) throw Object.assign(new Error('AI 해석 결과로 만들 수 있는 부품이 없습니다'), { status: 502 });
   const { glb, parts } = await writeGlb({ name, children }, { unit: 'mm' });
@@ -239,7 +359,7 @@ export async function buildFromSpec(spec, name) {
         ...(spec.assumptions || []).slice(0, 12).map((a) => ({ what: String(a).slice(0, 200), source: 'ai', label: 'AI가 추정한 형상' })),
         { what: '곡면·세부 형상(단순화)', source: 'unbuildable', label: '생성할 수 없는 형상' },
       ],
-      ai: { product: spec.product, overall: spec.overall, views: spec.views, ignored: spec.ignored, assumptions: spec.assumptions },
+      ai: { product: spec.product, overall: spec.overall, views: spec.views, viewRoles: spec.viewRoles, drawingScale: spec.drawingScale, ignored: spec.ignored, assumptions: spec.assumptions, outlineParts: spec.parts.filter((p) => p.shape === 'intersect' || p.shape === 'extrude').length },
     },
   };
 }
