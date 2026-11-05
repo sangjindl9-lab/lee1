@@ -1,0 +1,4 @@
+plugins { id 'com.android.application' }
+dependencies { implementation "androidx.core:core:1.15.0" }
+android { namespace 'com.eum.safe'; compileSdk 35
+ defaultConfig { applicationId 'com.eum.safe'; minSdk 26; targetSdk 35; versionCode 1; versionName '1.0' } }
