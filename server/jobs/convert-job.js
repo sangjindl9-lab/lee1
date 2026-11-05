@@ -3,6 +3,7 @@ import * as storage from '../storage.js';
 import { runConvert } from '../convert/pool.js';
 import { progress } from './queue.js';
 import { defaultScene } from '../../shared/scene.js';
+import { aiStatus, aiDraftFile } from './ai-draft.js';
 
 export async function createModel(c, { file, result, glb, name }) {
   const { rows: [m] } = await c.query(
@@ -41,6 +42,23 @@ export async function processConvert(job) {
   await progress(job, 0.8, '저장 중');
   const { result, glb, preview } = out;
   if (preview) await storage.put(file.company_id, previewKey(file), preview);
+  // 2D 도면 + 고객사가 AI 해석 허용 + 서버 키 있음 → AI 해석을 먼저 시도 (실패하면 규칙 기반 초안)
+  if (result.analysisOnly) {
+    const st = await tenant(job.company_id, (c) => aiStatus(c, file.company_id));
+    if (st.ok) {
+      await progress(job, 0.85, 'AI 도면 해석 중');
+      await tenant(job.company_id, (c) => c.query("UPDATE files SET analysis=$2 WHERE id=$1", [file.id, result.analysis]));
+      try {
+        const r = await tenant(job.company_id, async (c) => {
+          const { rows: [f] } = await c.query('SELECT * FROM files WHERE id=$1', [file.id]);
+          return aiDraftFile(c, f, { userId: job.created_by });
+        });
+        return { fileId: file.id, analysisOnly: true, modelId: r.modelId, aiDraft: true };
+      } catch (e) {
+        result.analysis.aiDraft = { status: 'failed', reason: e.message, at: new Date().toISOString() };
+      }
+    }
+  }
   return tenant(job.company_id, async (c) => {
     if (result.analysisOnly) {
       // 2D 도면: 자동 3D 초안이 만들어졌으면 '참고용 AI 3D 시각화'(검토 대기) 모델로 저장 → 바로 쇼룸에서 보임

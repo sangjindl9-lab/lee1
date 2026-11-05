@@ -3,6 +3,7 @@ import { Router } from 'express';
 import { audit } from '../db/index.js';
 import { requireRole } from '../auth.js';
 import { baseUrl } from './models.js';
+import { aiAvailable } from '../convert/ai.js';
 
 const r = Router();
 export const SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])$/;
@@ -14,8 +15,8 @@ const LOGO = /^data:image\/(png|jpeg|svg\+xml|webp);base64,[A-Za-z0-9+/=]+$/;
 export const slugOf = (co) => co.slug || `c-${co.id.slice(0, 8)}`;
 
 r.get('/company', async (req, res) => {
-  const co = await req.db(async (c) => (await c.query('SELECT id,name,slug,brand FROM companies WHERE id=$1', [req.user.companyId])).rows[0]);
-  res.json({ ...co, slug: slugOf(co), showroomUrl: `${baseUrl(req)}/c/${slugOf(co)}` });
+  const co = await req.db(async (c) => (await c.query('SELECT id,name,slug,brand,external_ai_allowed FROM companies WHERE id=$1', [req.user.companyId])).rows[0]);
+  res.json({ ...co, slug: slugOf(co), showroomUrl: `${baseUrl(req)}/c/${slugOf(co)}`, aiKey: aiAvailable() });
 });
 
 r.put('/company', requireRole('admin'), async (req, res) => {
@@ -38,12 +39,13 @@ r.put('/company', requireRole('admin'), async (req, res) => {
   try {
     const co = await req.db(async (c) => {
       const { rows: [co] } = await c.query(
-        `UPDATE companies SET brand = brand || $2::jsonb, slug = COALESCE($3, slug), name = COALESCE(NULLIF($4,''), name) WHERE id=$1 RETURNING id,name,slug,brand`,
-        [req.user.companyId, JSON.stringify(brand), slug ?? null, name]);
-      await audit(c, { companyId: req.user.companyId, userId: req.user.id, action: 'company.brand', target: co.id, meta: { fields: Object.keys(brand), slug } });
+        `UPDATE companies SET brand = brand || $2::jsonb, slug = COALESCE($3, slug), name = COALESCE(NULLIF($4,''), name),
+           external_ai_allowed = COALESCE($5, external_ai_allowed) WHERE id=$1 RETURNING id,name,slug,brand,external_ai_allowed`,
+        [req.user.companyId, JSON.stringify(brand), slug ?? null, name, typeof b.externalAi === 'boolean' ? b.externalAi : null]);
+      await audit(c, { companyId: req.user.companyId, userId: req.user.id, action: 'company.brand', target: co.id, meta: { fields: Object.keys(brand), slug, externalAi: b.externalAi } });
       return co;
     });
-    res.json({ ...co, slug: slugOf(co), showroomUrl: `${baseUrl(req)}/c/${slugOf(co)}` });
+    res.json({ ...co, slug: slugOf(co), showroomUrl: `${baseUrl(req)}/c/${slugOf(co)}`, aiKey: aiAvailable() });
   } catch (e) {
     if (e.code === '23505') return res.status(409).json({ error: '이미 다른 회사가 쓰는 쇼룸 주소입니다' });
     throw e;

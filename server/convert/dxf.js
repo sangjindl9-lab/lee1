@@ -1,6 +1,7 @@
 // DXF 분석: 단위·레이어·객체 수·치수·주석·닫힌 윤곽(블록 INSERT 전개 포함). 3D 는 profiles.extrude2d (두께 필수 입력).
 import DxfParser from 'dxf-parser';
 import { buildProfiles, checkDims, extrude2d, arcPts } from './profiles.js';
+import { renderPolys } from './drawimg.js';
 
 const UNITS = { 0: ['미지정', 1], 1: ['inch', 25.4], 2: ['feet', 304.8], 4: ['mm', 1], 5: ['cm', 10], 6: ['m', 1000] };
 const DIMKIND = { 0: '선형', 1: '평행', 2: '각도', 3: '지름', 4: '반지름', 5: '각도(3점)', 6: '좌표' };
@@ -47,7 +48,7 @@ export function analyzeParsed(dxf, layerLT = {}, format = 'DXF') {
   const counts = {};
   for (const e of ents) counts[e.type] = (counts[e.type] || 0) + 1;
 
-  const loops = [], open = [], dims = [], texts = [], hints = [];
+  const loops = [], open = [], dims = [], texts = [], hints = [], textMarks = [];
   let skipped = 0, aux = 0;
   const I = (x, y) => [x, y];
   const visit = (e, T, depth, layerOverride) => {
@@ -75,9 +76,13 @@ export function analyzeParsed(dxf, layerLT = {}, format = 'DXF') {
       open.push({ layer, a: pts[0], b: pts[pts.length - 1], pts });
     } else if (e.type === 'DIMENSION' && depth === 0) {
       const v = dimValue(e);
-      dims.push({ layer, kind: DIMKIND[(e.dimensionType ?? 0) & 7] || '기타', value: v != null ? +(v * scale).toFixed(3) : null, text: e.text || null });
+      const at = e.middleOfText ? T(e.middleOfText.x, e.middleOfText.y) : null;
+      dims.push({ layer, kind: DIMKIND[(e.dimensionType ?? 0) & 7] || '기타', value: v != null ? +(v * scale).toFixed(3) : null, text: e.text || null, ...(at ? { at: at.map((q) => q * scale) } : {}) });
     } else if ((e.type === 'TEXT' || e.type === 'MTEXT') && e.text) {
-      texts.push(e.text.replace(/\\P/g, ' ').replace(/\\[A-Za-z][^;]*;/g, '').replace(/[{}]/g, ''));
+      const t = e.text.replace(/\\P/g, ' ').replace(/\\[A-Za-z][^;]*;/g, '').replace(/[{}]/g, '');
+      texts.push(t);
+      const p = e.startPoint || e.position;
+      if (p && textMarks.length < 300) textMarks.push({ text: t.slice(0, 60), at: T(p.x, p.y).map((q) => q * scale) });
     } else if (e.type === 'INSERT' && depth < 4) {
       const blk = dxf.blocks?.[e.name];
       if (!blk?.entities) return;
@@ -91,7 +96,27 @@ export function analyzeParsed(dxf, layerLT = {}, format = 'DXF') {
   for (const e of ents) visit(e, I, 0);
 
   const { profiles, openChains, truncated, views, groups } = buildProfiles(loops, open, scale, undefined, undefined, hints);
-  return {
+  // 도면 그림(mm 좌표): 미리보기·AI 해석용. 투상도가 있으면 투상도 범위(+여유)만, 멀리 떨어진 잡선 제외
+  let image = null, preview = null;
+  try {
+    const polys = [...loops.map((l) => [...l.pts, l.pts[0]]), ...open.map((s) => s.pts)].map((p) => p.map(([x, y]) => [x * scale, y * scale]));
+    let bbox;
+    if (views.length) {
+      const xs = views.flatMap((v) => [v.box[0][0], v.box[1][0]]), ys = views.flatMap((v) => [v.box[0][1], v.box[1][1]]);
+      const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys), m = Math.max(x1 - x0, y1 - y0) * 0.08;
+      bbox = [[x0 - m, y0 - m], [x1 + m, y1 + m]];
+    }
+    const clip = bbox ? polys.filter((p) => p.some(([x, y]) => x >= bbox[0][0] && x <= bbox[1][0] && y >= bbox[0][1] && y <= bbox[1][1])) : polys;
+    if (clip.length) {
+      const r = renderPolys(clip, { bbox });
+      preview = r.png;
+      const px = (a) => a && r.toPx(a[0], a[1]).map((v) => Math.round(v));
+      image = { width: r.width, height: r.height, mmPerPx: +(1 / r.scale).toFixed(4),
+        dimMarks: dims.filter((d) => d.at && d.value != null).map((d) => ({ value: d.value, kind: d.kind, px: px(d.at) })).filter((d) => d.px[0] >= 0 && d.px[1] >= 0 && d.px[0] <= r.width && d.px[1] <= r.height),
+        textMarks: textMarks.map((t) => ({ text: t.text, px: px(t.at) })).filter((t) => t.px[0] >= 0 && t.px[1] >= 0 && t.px[0] <= r.width && t.px[1] <= r.height).slice(0, 120) };
+    }
+  } catch { /* 그림은 부가 기능 */ }
+  const out = {
     format, is3D: false, version: dxf.header?.$ACADVER || null,
     unit: unitName, unitCode: code, unitScaleToMm: scale,
     coordinateSystem: 'WCS 2D (XY 평면)', scaleNote: '모형공간 1:1 기준. 도면 축척(배치) 인식은 미지원',
@@ -106,7 +131,10 @@ export function analyzeParsed(dxf, layerLT = {}, format = 'DXF') {
       ...(truncated ? ['닫힌 윤곽이 너무 많아 큰 순서로 3000개만 표시합니다.'] : []),
       '2D 도면에는 두께(깊이) 정보가 없으므로 두께를 직접 입력해야 3D 생성이 됩니다.',
     ],
+    ...(image ? { image, hasPreview: true } : {}),
   };
+  if (preview) Object.defineProperty(out, '_preview', { value: preview, enumerable: false });
+  return out;
 }
 
 export const extrudeDxf = extrude2d;

@@ -9,7 +9,7 @@ export default function BrandSettings({ onClose, canEdit }: { onClose: () => voi
   const [err, setErr] = useState('');
   const [ok, setOk] = useState('');
   const [busy, setBusy] = useState(false);
-  useEffect(() => { api('/company').then((c) => { setCo(c); setF({ name: c.name, slug: c.slug, ...c.brand }); }); }, []);
+  useEffect(() => { api('/company').then((c) => { setCo(c); setF({ name: c.name, slug: c.slug, externalAi: !!c.external_ai_allowed, ...c.brand }); }); }, []);
   const set = (k: string, v: string) => setF((x: any) => ({ ...x, [k]: v }));
   async function pickLogo(file?: File) {
     if (!file) return;
@@ -24,8 +24,8 @@ export default function BrandSettings({ onClose, canEdit }: { onClose: () => voi
   async function save() {
     setErr(''); setOk(''); setBusy(true);
     try {
-      const { name, slug, ...brand } = f;
-      const r = await api('/company', { method: 'PUT', body: { name, slug: slug === co.slug ? undefined : slug, brand } });
+      const { name, slug, externalAi, ...brand } = f;
+      const r = await api('/company', { method: 'PUT', body: { name, slug: slug === co.slug ? undefined : slug, externalAi, brand } });
       setCo(r); setOk('저장했습니다');
     } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
   }
@@ -55,6 +55,11 @@ export default function BrandSettings({ onClose, canEdit }: { onClose: () => voi
               <L k="주소"><input className="input" value={f.address || ''} disabled={!canEdit} onChange={(e) => set('address', e.target.value)} /></L>
             </div>
             <div className="space-y-3 border-t border-line bg-bg p-4 text-sm md:border-l md:border-t-0">
+              <div className="rounded-md border border-ai/40 bg-ai/5 p-2.5" data-testid="ai-setting">
+                <label className="flex items-start gap-2 text-sm"><input type="checkbox" className="mt-1" checked={!!f.externalAi} disabled={!canEdit} onChange={(e) => setF((x: any) => ({ ...x, externalAi: e.target.checked }))} data-testid="ai-toggle" />
+                  <span><b>AI 도면 해석 사용</b><br /><span className="text-xs text-mute">2D 도면을 AI(Claude)가 보고 커버·몸체·구멍 등 부품별 3D 로 만듭니다. 켜면 도면 그림이 외부 AI 서버(Anthropic)로 전송됩니다.</span></span></label>
+                <div className="mt-1 text-[11px]">{co.aiKey ? <span className="text-ok">서버 AI 키 연결됨</span> : <span className="text-warn">서버에 AI 키(ANTHROPIC_API_KEY)가 아직 없습니다 — 켜 두면 키를 넣는 즉시 동작</span>}</div>
+              </div>
               <L k="고객사 쇼룸 주소">
                 <div className="flex items-center gap-1"><span className="shrink-0 text-xs text-mute">/c/</span>
                   <input className="input num" value={f.slug || ''} disabled={!canEdit} onChange={(e) => set('slug', e.target.value.toLowerCase())} data-testid="brand-slug" /></div>

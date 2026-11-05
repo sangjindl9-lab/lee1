@@ -9,6 +9,7 @@ import * as storage from '../storage.js';
 import { extrudeDxf } from '../convert/dxf.js';
 import { reconstructViews } from '../convert/reconstruct.js';
 import { createModel, previewKey } from '../jobs/convert-job.js';
+import { aiDraftFile, aiStatus } from '../jobs/ai-draft.js';
 import { DRAWING_EXTS } from '../convert/index.js';
 import { enqueue } from '../jobs/queue.js';
 import { QUALITY } from '../jobs/render.js';
@@ -89,6 +90,19 @@ r.post('/files/:id/reconstruct', write, async (req, res) => {
     await c.query("UPDATE models SET review_status='pending' WHERE id=$1", [m.id]);
     await audit(c, { companyId: f.company_id, userId: req.user.id, action: 'model.reconstruct', target: m.id, meta: { fileId: f.id, groups: result.report, scale: req.body?.scale ?? null, mode: req.body?.mode || 'parts' } });
     return { code: 201, body: { modelId: m.id, stats: result.stats, report: result.report, provenance: result.provenance } };
+  });
+  res.status(out.code).json(out.body);
+});
+
+// AI 도면 해석으로 3D 만들기 (고객사 허용 + 서버 키 + 월 한도)
+r.get('/ai/status', async (req, res) => { res.json(await req.db((c) => aiStatus(c, req.user.companyId))); });
+r.post('/files/:id/ai-draft', write, async (req, res) => {
+  const out = await req.db(async (c) => {
+    const { rows: [f] } = await c.query('SELECT * FROM files WHERE id=$1', [req.params.id]);
+    if (!f) return { code: 404, body: { error: '파일을 찾을 수 없습니다' } };
+    if (!DRAWING_EXTS.includes(f.ext)) return { code: 400, body: { error: '2D 도면만 AI 해석할 수 있습니다' } };
+    const r = await aiDraftFile(c, f, { userId: req.user.id });
+    return { code: 201, body: { modelId: r.modelId, product: r.spec.product, parts: r.spec.parts.length, ignored: r.spec.ignored, assumptions: r.spec.assumptions, usage: r.usage } };
   });
   res.status(out.code).json(out.body);
 });

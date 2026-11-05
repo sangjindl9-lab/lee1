@@ -59,8 +59,8 @@ function conv(o, { layerName, byH, ltypes }) {
       const closed = !!o.closed_b || (pts.length > 2 && Math.hypot(pts[0].x - pts.at(-1).x, pts[0].y - pts.at(-1).y) < 1e-6);
       return { ...base, type: 'LWPOLYLINE', shape: closed, vertices: closed ? pts.slice(0, -1) : pts };
     }
-    case 'TEXT': return o.text_value ? { ...base, type: 'TEXT', text: o.text_value } : null;
-    case 'MTEXT': return o.text ? { ...base, type: 'MTEXT', text: o.text } : null;
+    case 'TEXT': return o.text_value ? { ...base, type: 'TEXT', text: o.text_value, startPoint: P(o.ins_pt) } : null;
+    case 'MTEXT': return o.text ? { ...base, type: 'MTEXT', text: o.text, position: P(o.ins_pt) } : null;
     case 'INSERT': case 'MINSERT': {
       const b = byH.get(H(o.block_header));
       if (!b?.name) return null;
@@ -69,7 +69,7 @@ function conv(o, { layerName, byH, ltypes }) {
     default:
       if (o.entity?.startsWith('DIMENSION_')) {
         const kind = { DIMENSION_LINEAR: 0, DIMENSION_ALIGNED: 1, DIMENSION_ANG2LN: 2, DIMENSION_DIAMETER: 3, DIMENSION_RADIUS: 4, DIMENSION_ANG3PT: 5, DIMENSION_ORDINATE: 6 }[o.entity] ?? 0;
-        return { ...base, type: 'DIMENSION', dimensionType: kind, actualMeasurement: o.act_measurement, text: o.user_text || null };
+        return { ...base, type: 'DIMENSION', dimensionType: kind, actualMeasurement: o.act_measurement, text: o.user_text || null, ...(o.text_midpt ? { middleOfText: P(o.text_midpt) } : {}) };
       }
       return null;
   }

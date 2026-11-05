@@ -196,7 +196,7 @@ function cs(W, c) {
 function circle([cx, cy], r, n = 48) { return Array.from({ length: n }, (_, i) => [cx + r * Math.cos((i / n) * Math.PI * 2), cy + r * Math.sin((i / n) * Math.PI * 2)]); }
 
 /** Manifold 메시 → 각진 면이 보이도록 삼각형별 정점(평면 법선) */
-function meshOf(solid, color) {
+export function meshOf(solid, color) {
   const mesh = solid.getMesh();
   const P = mesh.vertProperties, np = mesh.numProp, T = mesh.triVerts;
   const pos = new Float32Array(T.length * 3), nor = new Float32Array(T.length * 3);

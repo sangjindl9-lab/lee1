@@ -36,8 +36,8 @@ export async function convertFile({ ext, buf, name, path }) {
     case 'step': case 'stp': case 'iges': case 'igs': return convertStep(buf, ext);
     case 'stl': return convertStl(buf, name);
     case 'glb': return convertGlb(buf);
-    case 'dxf': return drawing({ analysis: analyzeDxf(buf) }, name);
-    case 'dwg': return drawing({ analysis: await analyzeDwg(path) }, name);
+    case 'dxf': { const a = analyzeDxf(buf); return drawing({ analysis: a, preview: a._preview }, name); }
+    case 'dwg': { const a = await analyzeDwg(path); return drawing({ analysis: a, preview: a._preview }, name); }
     case 'pdf': return drawing(await analyzePdf(path), name);
     case 'jpg': case 'jpeg': case 'png': case 'tif': case 'tiff': return drawing(await analyzeRaster(path, 'image'), name);
     default: throw new Error('지원하지 않는 형식');

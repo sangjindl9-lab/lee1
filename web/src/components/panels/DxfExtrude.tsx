@@ -12,6 +12,13 @@ export default function DxfExtrude({ fileId, onClose, onCreated }: { fileId: str
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
+  const [ai, setAi] = useState<any>(null);
+  useEffect(() => { api('/ai/status').then(setAi).catch(() => {}); }, []);
+  async function makeAi() {
+    setErr(''); setBusy(true);
+    try { const r = await api(`/files/${fileId}/ai-draft`, { method: 'POST' }); onCreated(r.modelId); }
+    catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+  }
   useEffect(() => {
     api(`/files/${fileId}`).then((x) => {
       setF(x);
@@ -96,6 +103,15 @@ export default function DxfExtrude({ fileId, onClose, onCreated }: { fileId: str
               </div>
             </div>
             <div className="space-y-3 p-4 text-sm">
+              <div className="rounded-md border border-ai/50 bg-ai/10 p-2 text-xs" data-testid="ai-box">
+                <div className="flex items-center gap-2"><b className="text-ai">AI 도면 해석</b>
+                  {ai && <span className="text-mute">이번 달 {ai.used}/{ai.limit}장</span>}
+                  <button className="btn btn-accent ml-auto h-7 px-3" disabled={busy || !ai?.ok} onClick={makeAi} data-testid="ai-go">{busy ? 'AI 해석 중… (30초~1분)' : 'AI로 부품별 3D 만들기'}</button></div>
+                {a.aiDraft?.status === 'created' && <div className="mt-1 text-mute">AI 결과: {a.aiDraft.product} · 부품 {a.aiDraft.parts}개{a.aiDraft.ignored?.length ? ` · 제외: ${a.aiDraft.ignored.join(', ')}` : ''}</div>}
+                {a.aiDraft?.status === 'failed' && <div className="mt-1 text-bad">AI 해석 실패: {a.aiDraft.reason}</div>}
+                {ai && !ai.allowed && <div className="mt-1 text-mute">관리자가 [브랜드·쇼룸]에서 'AI 도면 해석 사용'을 켜야 합니다.</div>}
+                {ai && ai.allowed && !ai.key && <div className="mt-1 text-warn">서버에 AI 키가 아직 설정되지 않았습니다.</div>}
+              </div>
               {ad?.status === 'created' && <div className="rounded-md border border-ai/50 bg-ai/10 p-2 text-xs" data-testid="autodraft-note">
                 <div className="font-medium text-ai">업로드 때 자동으로 참고용 3D 초안을 만들었습니다</div>
                 <div className="mt-0.5 text-mute">{ad.kind === 'views' ? `투상도 결합 ${ad.groups}개 물체` : `외곽 ${ad.profiles?.length}개 돌출`}
