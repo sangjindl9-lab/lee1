@@ -35,6 +35,10 @@ export function ViewsOverlay({ a, roleOf, sw }: { a: any; roleOf: (id: string) =
               <polygon key={i} points={s.pts.map(([x, y]: number[]) => `${x},${-y}`).join(' ')} fill={role ? col : 'transparent'} fillOpacity={0.18}
                 stroke={col} strokeWidth={sw * (role ? 1.6 : 0.8)} strokeDasharray={role ? undefined : `${sw * 4} ${sw * 3}`} />
             ))}
+            {(v.faces || []).map((f: any, i: number) => (
+              <polygon key={'f' + i} points={f.pts.map(([x, y]: number[]) => `${x},${-y}`).join(' ')} fill="none"
+                stroke={f.material ? col : '#6b7280'} strokeWidth={sw * 0.6} strokeDasharray={f.material ? undefined : `${sw * 2} ${sw * 2}`} opacity={0.9} />
+            ))}
             <text x={v.box[0][0]} y={-v.box[1][1] - sw * 3} fontSize={sw * 14} fill={col} fontWeight={700}>{v.id}{role ? ` ${ROLE_LABEL[role]} ${gid}` : ''}</text>
           </g>
         );

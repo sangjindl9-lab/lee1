@@ -87,7 +87,7 @@ r.post('/files/:id/reconstruct', write, async (req, res) => {
     const result = await reconstructViews(f.analysis, req.body || {}, name);
     const m = await createModel(c, { file: f, result, glb: Buffer.from(result.glb), name: `${name} (3D 초안)` });
     await c.query("UPDATE models SET review_status='pending' WHERE id=$1", [m.id]);
-    await audit(c, { companyId: f.company_id, userId: req.user.id, action: 'model.reconstruct', target: m.id, meta: { fileId: f.id, groups: result.report, scale: req.body?.scale ?? null } });
+    await audit(c, { companyId: f.company_id, userId: req.user.id, action: 'model.reconstruct', target: m.id, meta: { fileId: f.id, groups: result.report, scale: req.body?.scale ?? null, mode: req.body?.mode || 'parts' } });
     return { code: 201, body: { modelId: m.id, stats: result.stats, report: result.report, provenance: result.provenance } };
   });
   res.status(out.code).json(out.body);

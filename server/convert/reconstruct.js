@@ -13,7 +13,7 @@ const AI_COLOR = [0.62, 0.52, 0.95];
 
 /**
  * @param analysis 2D 도면 분석 결과 (views, groups 포함)
- * @param input { scale?: number (PDF 필수), groups?: [{front, top, side, topPos, sidePos}] }
+ * @param input { scale?: number (PDF 필수), groups?: [{front, top, side, topPos, sidePos}], mode?: 'parts'(부품별 분할, 기본) | 'outline'(외형 한 덩어리) }
  */
 export async function reconstructViews(analysis, input, name) {
   let k = 1;
@@ -38,39 +38,110 @@ export async function reconstructViews(analysis, input, name) {
     const Wd = (F.box[1][0] - F.box[0][0]) * k, H = (F.box[1][1] - F.box[0][1]) * k;
     const D = Math.max(T ? (T.box[1][1] - T.box[0][1]) * k : 0, S ? (S.box[1][0] - S.box[0][0]) * k : 0);
     const m = Math.max(Wd, H, D) * 0.05;
-    const comps = (V, map) => V.silhouettes.map((s) => {
-      const pts = s.pts.map(map);
-      const holes = V.circles.filter((c) => inside(c.c, s.pts)).map((c) => circle(map(c.c), (c.d * k) / 2));
-      return { pts, holes, bb: bbox(pts), exact: s.exact };
-    });
-    const fc = comps(F, mapF), tc = T ? comps(T, mapT) : [], sc = S ? comps(S, mapS) : [];
-    // 돌출: 정면 (x,z) → y 방향, 평면 (x,y) → z 방향, 측면 (y,z) → x 방향
-    const exF = (c) => cs(W, c).extrude(D + 2 * m).rotate([90, 0, 0]).translate([0, D + m, 0]);
-    const exT = (c) => cs(W, c).extrude(H + 2 * m).translate([0, 0, -m]);
-    const exS = (c) => cs(W, c).extrude(Wd + 2 * m).transform([0, 1, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, -m, 0, 0, 1]);
+    const big = Math.max(Wd, H, D);
+    const exF = (pts, holes = []) => new W.CrossSection([pts, ...holes], 'EvenOdd').extrude(D + 2 * m).rotate([90, 0, 0]).translate([0, D + m, 0]);
+    const exT = (pts, holes = []) => new W.CrossSection([pts, ...holes], 'EvenOdd').extrude(H + 2 * m).translate([0, 0, -m]);
+    const exS = (pts, holes = []) => new W.CrossSection([pts, ...holes], 'EvenOdd').extrude(Wd + 2 * m).transform([0, 1, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, -m, 0, 0, 1]);
+    // 뷰의 실루엣(원형 윤곽은 관통 구멍 추정) — 대응 영역을 못 찾았을 때 쓰는 전체 외형
+    const iou0 = (a0, a1, b0, b1) => { const i = Math.min(a1, b1) - Math.max(a0, b0); return i > 0 ? i / (Math.max(a1, b1) - Math.min(a0, b0)) : 0; };
+    let fuRef = [];
+    const silOf = (V, map, ex, axis) => V ? W.Manifold.union(V.silhouettes.map((s) => ex(s.pts.map(map),
+      V.circles.filter((c) => !c.hidden && inside(c.c, s.pts)).map((c) => ({ p: map(c.c), r: (c.d * k) / 2 }))
+        .filter((c) => !fuRef.some((u) => iou0(u.bb[0][axis], u.bb[1][axis], c.p[axis === 0 ? 0 : 1] - c.r, c.p[axis === 0 ? 0 : 1] + c.r) >= 0.8))
+        .map((c) => circle(c.p, c.r))))) : null;
+    // 부품 단위(정면도): 닫힌 윤곽이 있으면 윤곽 단위, 없으면 선으로 나뉜 영역 단위
+    const outline = input?.mode === 'outline';
+    const unitsOf = (V, map) => {
+      const faces = outline ? [] : (V.faces || []).filter((f) => f.material);
+      const byLoop = new Map((V.loops || []).map((l) => [l.id, l]));
+      const units = [];
+      const seen = new Set();
+      const silA = V.silhouettes.reduce((t, s) => t + Math.abs(area2(s.pts)), 0);
+      for (const f of faces) {
+        if (f.owner && byLoop.has(f.owner)) { if (!seen.has(f.owner)) { seen.add(f.owner); units.push({ key: f.owner, pts: byLoop.get(f.owner).pts.map(map), layer: byLoop.get(f.owner).layer }); } continue; }
+        // 낱개 선으로 나뉜 칸: 충분히 크거나(외형의 2% 이상) 핀처럼 가늘고 긴 것만 부품 — 작은 칸은 감싸는 부품에 흡수
+        const w = f.bbox[1][0] - f.bbox[0][0], h = f.bbox[1][1] - f.bbox[0][1];
+        const slim = Math.max(w, h) >= Math.min(w, h) * 3 && Math.max(w, h) > Math.sqrt(silA) * 0.15;
+        if (f.area >= silA * 0.02 || slim) units.push({ key: 'f' + units.length, pts: f.pts.map(map) });
+      }
+      if (!units.length) for (const s of V.silhouettes) units.push({ key: 's' + units.length, pts: s.pts.map(map) });
+      for (const u of units) u.bb = bbox(u.pts);
+      return units;
+    };
+    const fu = unitsOf(F, mapF), tu = T ? unitsOf(T, mapT) : [], su = S ? unitsOf(S, mapS) : [];
+    fuRef = fu;
+    const silT = silOf(T, mapT, exT, 0), silS = silOf(S, mapS, exS, 1);
+    const inBox = (a, b) => a[0][0] >= b[0][0] && a[1][0] <= b[1][0] && a[0][1] >= b[0][1] && a[1][1] <= b[1][1];
+    const frontHas = (lo, hi, axis) => fu.some((u) => iou0(u.bb[0][axis], u.bb[1][axis], lo, hi) >= 0.8);
+    // 평면도의 안쪽 영역: 정면도에 같은 폭의 부품이 없으면 구멍 (있으면 스프루처럼 별도 부품)
+    const holesIn = (list, outer, axis) => list.filter((h) => h !== outer && inBox(h.bb, outer.bb) && (h.bb[1][0] - h.bb[0][0]) * (h.bb[1][1] - h.bb[0][1]) < (outer.bb[1][0] - outer.bb[0][0]) * (outer.bb[1][1] - outer.bb[0][1]) * 0.5
+      && !frontHas(h.bb[0][axis === 'x' ? 0 : 1], h.bb[1][axis === 'x' ? 0 : 1], axis === 'x' ? 0 : 1)).map((h) => h.pts);
+    // 구간 일치도
     const iou = (a0, a1, b0, b1) => { const i = Math.min(a1, b1) - Math.max(a0, b0); return i > 0 ? i / (Math.max(a1, b1) - Math.min(a0, b0)) : 0; };
+    const contain = (a0, a1, b0, b1) => { const i = Math.min(a1, b1) - Math.max(a0, b0); return i > 0 ? i / Math.min(a1 - a0, b1 - b0) : 0; };
+    const cells = [];
+    let pins = 0;
+    for (const [ui, u] of fu.entries()) {
+      const [[x0, z0], [x1, z1]] = u.bb;
+      const w = x1 - x0, h = z1 - z0;
+      const sM = S ? su.filter((s) => iou(s.bb[0][1], s.bb[1][1], z0, z1) >= 0.8) : [];
+      const tM = T ? tu.filter((t) => iou(t.bb[0][0], t.bb[1][0], x0, x1) >= 0.8) : [];
+      const unresolved = !outline && ((S && !sM.length) || (T && !tM.length));
+      // 핀·볼트·부시: 가늘고 작은데 다른 뷰에 대응 영역이 없으면 원기둥으로 추정 (위치는 평면도 원 → 없으면 깊이 중앙)
+      const slender = Math.min(w, h) < big * 0.1 && Math.max(w, h) >= Math.min(w, h) * 3 && (h >= w || w < Wd * 0.4);
+      if (unresolved && slender) {
+        const vertical = h >= w, dia = vertical ? w : h;
+        let yc = D / 2;
+        const cx = vertical ? (x0 + x1) / 2 : null;
+        const hint = T && vertical && T.circles.map((c) => ({ p: mapT(c.c), d: c.d * k })).find((c) => Math.abs(c.p[0] - cx) < dia * 0.6 && Math.abs(c.d - dia) < dia * 0.4);
+        if (hint) yc = hint.p[1];
+        const cyl = vertical
+          ? W.Manifold.cylinder(h, dia / 2, dia / 2, 32).translate([cx, yc, z0])
+          : W.Manifold.cylinder(w, dia / 2, dia / 2, 32).rotate([0, 90, 0]).translate([x0, yc, (z0 + z1) / 2]);
+        cells.push({ unit: ui, s: 'pin', t: 'pin', solid: cyl, pin: true, hint: !!hint });
+        pins++;
+        continue;
+      }
+      // 대응 영역이 없으면: 이 구간을 포함하는 영역 → 그것도 없으면 전체 실루엣
+      const sList = S ? (sM.length ? sM.map((s, i) => ({ id: 's' + su.indexOf(s), solid: exS(s.pts, holesIn(su, s, 'z')) }))
+        : [{ id: 'S*', solid: (() => { const c = su.filter((s) => contain(s.bb[0][1], s.bb[1][1], z0, z1) >= 0.8); return c.length ? W.Manifold.union(c.map((s) => exS(s.pts, holesIn(su, s, 'z')))) : silS; })() }]) : [{ id: '-', solid: null }];
+      const tList = T ? (tM.length ? tM.map((t) => ({ id: 't' + tu.indexOf(t), solid: exT(t.pts, holesIn(tu, t, 'x')) }))
+        : [{ id: 'T*', solid: silT }]) : [{ id: '-', solid: null }];
+      const ef = exF(u.pts);
+      for (const sv of sList) for (const tv of tList) {
+        let solid = ef;
+        if (sv.solid) solid = solid.intersect(sv.solid);
+        if (tv.solid) solid = solid.intersect(tv.solid);
+        if (!S && !T) continue;
+        const vol = solid.volume();
+        const bb = solid.boundingBox();
+        const thin = Math.min(...[0, 1, 2].map((i) => bb.max[i] - bb.min[i]));
+        if (vol > Wd * H * D * 2e-5 && thin > big * 0.004) cells.push({ unit: ui, s: sv.id, t: tv.id, solid, layer: u.layer });
+      }
+    }
+    // 병합: 같은 측면·평면 영역을 쓰고, 정면도에서 맞닿거나 포함 관계인 부품끼리 (예: 외함 테두리 + 문 앞면)
+    const touch = (a, b) => { const A = fu[a].bb, B = fu[b].bb, e = big * 0.004; return A[0][0] <= B[1][0] + e && B[0][0] <= A[1][0] + e && A[0][1] <= B[1][1] + e && B[0][1] <= A[1][1] + e; };
+    const par = cells.map((_, i) => i);
+    const find = (i) => (par[i] === i ? i : (par[i] = find(par[i])));
+    for (let a = 0; a < cells.length; a++) for (let b = a + 1; b < cells.length; b++) {
+      const A = cells[a], B = cells[b];
+      if (A.pin || B.pin || A.s !== B.s || A.t !== B.t || A.unit === B.unit) continue;
+      if (touch(A.unit, B.unit) && overlapSolid(A.solid, B.solid)) par[find(a)] = find(b);
+    }
+    const merged = new Map();
+    cells.forEach((c, i) => { const r = find(i); merged.set(r, [...(merged.get(r) || []), c]); });
     let n = 0;
-    for (const f of fc) {
-      // 같은 부품의 다른 뷰 실루엣: 폭(x) 또는 높이(z) 구간이 맞는 것, 없으면 겹치는 전체
-      let ts = tc.filter((t) => iou(t.bb[0][0], t.bb[1][0], f.bb[0][0], f.bb[1][0]) > 0.7);
-      if (!ts.length) ts = tc.filter((t) => iou(t.bb[0][0], t.bb[1][0], f.bb[0][0], f.bb[1][0]) > 0);
-      let ss = sc.filter((s) => iou(s.bb[0][1], s.bb[1][1], f.bb[0][1], f.bb[1][1]) > 0.7);
-      if (!ss.length) ss = sc.filter((s) => iou(s.bb[0][1], s.bb[1][1], f.bb[0][1], f.bb[1][1]) > 0);
-      let solid = exF(f);
-      if (ts.length) solid = solid.intersect(W.Manifold.union(ts.map(exT)));
-      if (ss.length) solid = solid.intersect(W.Manifold.union(ss.map(exS)));
-      if (!ts.length && !ss.length) continue;
-      const vol = solid.volume();
-      if (!(vol > 1e-6)) continue;
+    for (const list of merged.values()) {
+      const solid = list.length > 1 ? W.Manifold.union(list.map((c) => c.solid)) : list[0].solid;
       n++;
-      const nm = `${name}_${g.id}${fc.length > 1 ? `_${n}` : ''}`;
+      const pin = list[0].pin;
       children.push({
-        name: nm, meshes: [meshOf(solid, AI_COLOR)], children: [],
-        extras: { group: g.id, views: { front: F.id, top: T?.id || null, side: S?.id || null }, estimated: true,
-          provenance: { silhouette: 'drawing', correspondence: 'ai', depth: 'ai', holes: f.holes.length ? 'ai' : undefined, scale: analysis.scaleRequired ? 'user' : undefined } },
+        name: `${name}_${g.id}_${pin ? '핀' : 'P'}${n}`, meshes: [meshOf(solid, AI_COLOR)], children: [],
+        extras: { group: g.id, views: { front: F.id, top: T?.id || null, side: S?.id || null }, estimated: true, ...(list[0].layer ? { layer: list[0].layer } : {}),
+          provenance: { silhouette: 'drawing', correspondence: 'ai', depth: pin ? (list[0].hint ? 'drawing-hint' : 'ai') : 'ai', shape: pin ? 'ai-cylinder' : undefined, scale: analysis.scaleRequired ? 'user' : undefined } },
       });
     }
-    report.push({ group: g.id, front: F.id, top: T?.id || null, side: S?.id || null, parts: n, size: [Wd, D, H].map((x) => +x.toFixed(1)) });
+    report.push({ group: g.id, front: F.id, top: T?.id || null, side: S?.id || null, parts: n, pins, size: [Wd, D, H].map((x) => +x.toFixed(1)) });
   }
   if (!children.length) throw httpErr('투상도 교차 결과 형상이 비었습니다. 투상도 지정(정면·평면·측면)을 확인하세요');
   // 그룹끼리 겹치지 않게 X 방향으로 나란히 배치
@@ -91,6 +162,12 @@ export async function reconstructViews(analysis, input, name) {
       ai: report,
     },
   };
+}
+
+/** 두 형상이 실제로 겹치거나 맞닿는지 (경계상자 기준) */
+function overlapSolid(a, b) {
+  const A = a.boundingBox(), B = b.boundingBox(), e = 0.5;
+  return [0, 1, 2].every((i) => A.min[i] <= B.max[i] + e && B.min[i] <= A.max[i] + e);
 }
 
 function cs(W, c) {
@@ -132,4 +209,5 @@ function layout(children) {
   }
   return children;
 }
+const area2 = (p) => p.reduce((t, a, i) => { const b = p[(i + 1) % p.length]; return t + a[0] * b[1] - b[0] * a[1]; }, 0) / 2;
 const httpErr = (msg) => Object.assign(new Error(msg), { status: 400 });

@@ -140,3 +140,43 @@ test('R. STEP 없이 3면도 → 투상도 자동 인식 → 결합 3D 초안(�
   const plain = await A.post(`/api/files/${up.data.file.id}/extrude`, { thickness: 5 });
   assert.equal((await A.post(`/api/models/${plain.data.modelId}/review`, { decision: 'approved' })).status, 404);
 });
+
+test('M. 금형 조립도(3면도, 해칭·중심선·숨은선) → 판·스페이서·이젝터·핀·가이드핀·스프루 부품별 3D', async () => {
+  const up = await upload(A, proj.id, 'mold_assy_3view.dxf');
+  await waitJob(A, up.data.job.id);
+  const a = (await A.get(`/api/files/${up.data.file.id}`)).data.analysis;
+  assert.equal(a.groups.length, 1);
+  const r = await A.post(`/api/files/${up.data.file.id}/reconstruct`, {});
+  assert.equal(r.status, 201, JSON.stringify(r.data));
+  const parts = (await A.get(`/api/models/${r.data.modelId}`)).data.model.parts;
+  const size = (p) => p.bbox.max.map((v, i) => Math.round(v - p.bbox.min[i]));
+  const has = (w, d, h, z) => parts.some((p) => { const s = size(p); return s[0] === w && s[1] === d && s[2] === h && (z == null || Math.round(p.bbox.min[2]) === z); });
+  assert.equal(parts.length, 12, '부품 12개');
+  for (const [w, d, h, z] of [[200, 180, 25, 0], [200, 180, 40, 85], [200, 180, 45, 125], [200, 180, 25, 170], [30, 180, 60, 25], [130, 180, 15, 37]]) assert.ok(has(w, d, h, z), `판/블록 ${w}×${d}×${h}@${z}`);
+  assert.equal(parts.filter((p) => { const s = size(p); return s[0] === 30 && s[2] === 60; }).length, 2, '스페이서 좌·우');
+  const pins = parts.filter((p) => p.name.includes('핀'));
+  assert.equal(pins.length, 5, '이젝터핀 2 + 가이드핀 2 + 스프루 1');
+  const guide = pins.filter((p) => size(p)[0] === 16 && size(p)[2] === 85).map((p) => p.bbox.min.slice(0, 2).map(Math.round));
+  assert.deepEqual(guide.sort(), [[10, 10], [174, 154]], '가이드핀 위치 = 평면도 숨은선 원');
+});
+
+test('P. 분전반 외함도(3면도) → 베이스·외함·문·손잡이 4개 부품', async () => {
+  const up = await upload(A, proj.id, 'panel_3view.dxf');
+  await waitJob(A, up.data.job.id);
+  const r = await A.post(`/api/files/${up.data.file.id}/reconstruct`, {});
+  assert.equal(r.status, 201, JSON.stringify(r.data));
+  const parts = (await A.get(`/api/models/${r.data.modelId}`)).data.model.parts;
+  const sizes = parts.map((p) => p.bbox.max.map((v, i) => Math.round(v - p.bbox.min[i])).join('x')).sort();
+  assert.deepEqual(sizes, ['20x30x120', '560x30x760', '600x250x100', '600x250x800'].sort());
+});
+
+test('M-2. 같은 금형 도면을 "외형 한 덩어리" 모드로 → 부품 1개', async () => {
+  const up = await upload(A, proj.id, 'mold_assy_3view.dxf', { name: 'mold2.dxf' });
+  await waitJob(A, up.data.job.id);
+  const r = await A.post(`/api/files/${up.data.file.id}/reconstruct`, { mode: 'outline' });
+  assert.equal(r.status, 201);
+  const parts = (await A.get(`/api/models/${r.data.modelId}`)).data.model.parts;
+  assert.equal(parts.length, 1);
+  const sz = parts[0].bbox.max.map((v, i) => v - parts[0].bbox.min[i]);
+  [200, 180, 195].forEach((v, i) => assert.ok(Math.abs(sz[i] - v) <= 1.5, `외형 ${sz.map(Math.round)}`));
+});

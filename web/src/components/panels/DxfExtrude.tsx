@@ -6,6 +6,7 @@ import { useGroups, ViewsOverlay, GroupsEditor } from './ViewsPanel';
 export default function DxfExtrude({ fileId, onClose, onCreated }: { fileId: string; onClose: () => void; onCreated: (modelId: string) => void }) {
   const [f, setF] = useState<any>(null);
   const [mode, setMode] = useState<'views' | 'extrude'>('extrude');
+  const [split, setSplit] = useState<'parts' | 'outline'>('parts');
   const [th, setTh] = useState('');
   const [sc, setSc] = useState('');
   const [sel, setSel] = useState<Set<string>>(new Set());
@@ -44,7 +45,7 @@ export default function DxfExtrude({ fileId, onClose, onCreated }: { fileId: str
   const matchNum = (v: number) => nums.some((n) => Math.abs(n - v) <= Math.max(0.05, v * 0.003));
   async function makeViews() {
     setErr(''); setBusy(true);
-    try { const r = await api(`/files/${fileId}/reconstruct`, { body: { groups: G.groups, ...(pdf ? { scale: Number(sc) } : {}) } }); onCreated(r.modelId); }
+    try { const r = await api(`/files/${fileId}/reconstruct`, { body: { groups: G.groups, mode: split, ...(pdf ? { scale: Number(sc) } : {}) } }); onCreated(r.modelId); }
     catch (e: any) { setErr(e.message); } finally { setBusy(false); }
   }
   async function reanalyze() {
@@ -100,6 +101,11 @@ export default function DxfExtrude({ fileId, onClose, onCreated }: { fileId: str
                 {!a.views ? <div className="space-y-2 rounded border border-warn/40 bg-warn/10 p-2 text-xs text-warn">이 파일은 투상도 인식 기능 이전에 분석되었습니다.
                   <button className="btn h-7 w-full justify-center" disabled={busy} onClick={reanalyze}>{busy ? '다시 분석 중…' : '다시 분석'}</button></div>
                   : <GroupsEditor a={a} groups={G.groups} set={G.set} add={G.add} remove={G.remove} />}
+                <div className="space-y-1"><span className="label">부품 나누기</span>
+                  <div className="grid grid-cols-2 gap-1" data-testid="split-mode">
+                    <button className={`btn h-auto justify-center py-1.5 text-xs ${split === 'parts' ? 'btn-on' : ''}`} onClick={() => setSplit('parts')}>부품별 자동 분할<br /><span className="text-[10px] text-mute">금형 판·핀, 외함·문 등</span></button>
+                    <button className={`btn h-auto justify-center py-1.5 text-xs ${split === 'outline' ? 'btn-on' : ''}`} onClick={() => setSplit('outline')}>외형 한 덩어리<br /><span className="text-[10px] text-mute">복잡한 상세도의 전체 모양</span></button>
+                  </div></div>
                 {pdf && <label className="block space-y-1"><span className="label">축척 1 : N — 필수 입력</span>
                   <div className="flex items-center gap-2"><span className="num shrink-0">1 :</span><input className="input num" type="number" min={0.001} step="any" value={sc} onChange={(e) => setSc(e.target.value)} placeholder="도면 표제란의 축척" data-testid="scale-views" /></div>
                   {a.scaleHint ? <div className="text-[11px] text-ai">도면 글자에서 "1:{a.scaleHint}" 를 읽었습니다 — 확인 후 사용하세요.</div> : <div className="text-[11px] text-mute">축척 표기가 "NONE"·없음이면 도면 치수 숫자와 비교해 정하세요.</div>}</label>}

@@ -235,3 +235,76 @@ def three_view(dxf_path, pdf_path):
     open(pdf_path, "wb").write(out)
 three_view(os.path.join(OUT, "three_view_block.dxf"), os.path.join(OUT, "three_view_block_1to2.pdf"))
 print("three-view samples written")
+
+# ── 8) 금형 조립도 3면도 (3각법, DXF) — 형판 적층 + 스페이서 + 이젝터 플레이트·핀 + 가이드 핀 + 스프루
+#   부품(정답): 하측고정판 200×180×25 / 스페이서 좌·우 30×180×60 / 이젝터플레이트 130×160×15
+#              가동측형판 200×180×40 / 고정측형판 200×180×45 / 상측고정판 200×180×25 / 이젝터핀 Ø6×2 / 가이드핀 Ø16×2 / 스프루부시 Ø16
+#   단면 해칭(45° 선)·중심선(CENTER 레이어)·숨은선(HIDDEN 레이어)·치수 포함
+def mold_drawing(path):
+    doc = ezdxf.new("R2010", setup=True); doc.units = ezdxf.units.MM; doc.header["$INSUNITS"] = 4
+    msp = doc.modelspace()
+    doc.layers.add("OUTLINE", color=7); doc.layers.add("CENTER", color=1, linetype="CENTER")
+    doc.layers.add("HIDDEN", color=6, linetype="HIDDEN"); doc.layers.add("DIM", color=3); doc.layers.add("HATCH", color=8)
+    F, T, S = (50, 50), (50, 290), (300, 50)
+    def rect(o, x0, y0, x1, y1, layer="OUTLINE"):
+        msp.add_lwpolyline([(o[0]+x0, o[1]+y0), (o[0]+x1, o[1]+y0), (o[0]+x1, o[1]+y1), (o[0]+x0, o[1]+y1)], close=True, dxfattribs={"layer": layer})
+    def line(o, a, b, layer="OUTLINE"): msp.add_line((o[0]+a[0], o[1]+a[1]), (o[0]+b[0], o[1]+b[1]), dxfattribs={"layer": layer})
+    def hatch45(o, x0, y0, x1, y1, step=6):   # 분해된 해칭(선) — CAD 에서 EXPLODE 한 해칭과 같음
+        k = -(y1 - y0)
+        while k < (x1 - x0):
+            pts = []
+            for t in (0, 1):
+                pass
+            ax, ay = max(x0, x0 + k), y0 + max(0, -k)
+            bx = min(x1, x0 + k + (y1 - y0)); by = y0 + (bx - (x0 + k))
+            if bx > ax: msp.add_line((o[0]+ax, o[1]+ay), (o[0]+bx, o[1]+by))
+            k += step
+    # 정면도 (x, z) — 단면
+    plates = [(0, 0, 200, 25), (0, 85, 200, 125), (0, 125, 200, 170), (0, 170, 200, 195)]
+    for p in plates: rect(F, *p)
+    rect(F, 0, 25, 30, 85); rect(F, 170, 25, 200, 85)                 # 스페이서
+    rect(F, 35, 37, 165, 52)                                            # 이젝터 플레이트
+    for x in (70, 124): rect(F, x, 52, x + 6, 125)                      # 이젝터 핀
+    for x in (10, 174): rect(F, x, 85, x + 16, 170)                     # 가이드 핀
+    rect(F, 92, 125, 108, 195)                                          # 스프루 부시
+    for p in [(0, 0, 200, 25), (0, 25, 30, 85), (170, 25, 200, 85)]: hatch45(F, *p)
+    for x in (73, 127, 18, 182, 100): line(F, (x, -5), (x, 200), "CENTER")
+    # 평면도 (x, y)
+    rect(T, 0, 0, 200, 180); msp.add_circle((T[0]+100, T[1]+90), 8, dxfattribs={"layer": "OUTLINE"})
+    for x, y in ((18, 18), (182, 162)): msp.add_circle((T[0]+x, T[1]+y), 8, dxfattribs={"layer": "HIDDEN"})
+    line(T, (100, -5), (100, 185), "CENTER"); line(T, (-5, 90), (205, 90), "CENTER")
+    # 우측면도 (y, z)
+    for z0, z1 in ((0, 25), (25, 85), (85, 125), (125, 170), (170, 195)): rect(S, 0, z0, 180, z1)
+    rect(S, 10, 37, 170, 52, "HIDDEN")
+    for y in (87, ): rect(S, y, 52, y + 6, 125, "HIDDEN")
+    line(S, (90, -5), (90, 200), "CENTER")
+    msp.add_linear_dim(base=(F[0], F[1]-15), p1=(F[0], F[1]), p2=(F[0]+200, F[1]), dxfattribs={"layer": "DIM"}).render()
+    msp.add_text("MOLD ASSY  SCALE 1:1", dxfattribs={"height": 5, "layer": "DIM"}).set_placement((420, 20))
+    doc.saveas(path)
+mold_drawing(os.path.join(OUT, "mold_assy_3view.dxf"))
+
+# ── 9) 분전반 외함도 3면도 (3각법, DXF) — 외함 600×800×250 + 문(두께 25) + 손잡이 + 베이스 채널
+def panel_drawing(path):
+    doc = ezdxf.new("R2010", setup=True); doc.units = ezdxf.units.MM; doc.header["$INSUNITS"] = 4
+    msp = doc.modelspace(); doc.layers.add("CENTER", color=1, linetype="CENTER"); doc.layers.add("HIDDEN", color=6, linetype="HIDDEN")
+    F, T, S = (100, 100), (100, 1150), (800, 100)
+    def rect(o, x0, y0, x1, y1, layer="0"):
+        msp.add_lwpolyline([(o[0]+x0, o[1]+y0), (o[0]+x1, o[1]+y0), (o[0]+x1, o[1]+y1), (o[0]+x0, o[1]+y1)], close=True, dxfattribs={"layer": layer})
+    # 정면도 (x, z): 베이스 0~100, 외함 100~900, 문 20 안쪽, 손잡이
+    rect(F, 0, 0, 600, 100)                       # 베이스 채널
+    rect(F, 0, 100, 600, 900)                     # 외함 정면 외곽
+    rect(F, 20, 120, 580, 880)                    # 문
+    rect(F, 530, 450, 550, 570)                   # 손잡이
+    # 평면도 (x, y): 앞쪽(아래)이 문, y 0~25 문, 25~275 외함, 손잡이 돌출 y -30~0
+    rect(T, 0, 30, 600, 280)                      # 외함 (위에서)
+    rect(T, 20, 0, 580, 30)                       # 문 두께 25 + 여유 → 0~30
+    rect(T, 530, -30, 550, 0)                     # 손잡이 돌출
+    # 우측면도 (y, z): 왼쪽이 앞 (정면도에 가까운 쪽)
+    rect(S, 0, 0, 280, 100) if False else rect(S, 30, 0, 280, 100)   # 베이스 (외함 깊이)
+    rect(S, 30, 100, 280, 900)                    # 외함 측면
+    rect(S, 0, 120, 30, 880)                      # 문 측면
+    rect(S, -30, 450, 0, 570)                     # 손잡이 측면
+    msp.add_text("PANEL BOARD 600x800x250", dxfattribs={"height": 20}).set_placement((800, 1100))
+    doc.saveas(path)
+panel_drawing(os.path.join(OUT, "panel_3view.dxf"))
+print("mold/panel drawings written")

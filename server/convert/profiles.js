@@ -36,7 +36,7 @@ export function chainLoops(segs, tol = 1e-3) {
  * @param page  (선택) 용지 경계 {w,h} — 이를 거의 덮는 고리는 도곽(frame)으로 표시
  * @param tol   선분 끝점 일치 허용오차 (원본 단위)
  */
-export function buildProfiles(loops, open, scale, page, tol = 1e-3) {
+export function buildProfiles(loops, open, scale, page, tol = 1e-3, hints = []) {
   const ch = chainLoops(open, tol);
   const all = [...loops, ...ch.loops].filter((l) => l.pts.length >= 3);
   for (const l of all) l.area = Math.abs(area(l.pts));
@@ -90,7 +90,7 @@ export function buildProfiles(loops, open, scale, page, tol = 1e-3) {
     points: simplify(l.pts).map(([x, y]) => [+(x * scale).toFixed(4), +(y * scale).toFixed(4)]),
   }));
   const segs = open.filter((_, i) => !ch.used.has(i)).slice(0, 60000).map((s) => s.pts.map(([x, y]) => [x * scale, y * scale]));
-  const { views, groups } = detectViews(profiles, segs);
+  const { views, groups } = detectViews(profiles, segs, hints);
   return { profiles, openChains: open.length - ch.usedSegs, truncated: all.length > MAX_LOOPS, views, groups };
 }
 

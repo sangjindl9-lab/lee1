@@ -10,20 +10,49 @@ function decode(buf) {
   try { return new TextDecoder('utf-8', { fatal: true }).decode(buf); } catch { return new TextDecoder('euc-kr').decode(buf); }
 }
 
+// 형상이 아닌 보조선: 중심선·숨은선·가상선(선 종류) 또는 치수·해칭·문자 레이어
+const AUX_LT = /CENTER|CENT|HIDDEN|HIDD|DASH|PHANTOM|DOT|DIVIDE|BORDER/i;
+const AUX_LAYER = /CENTER|CEN[-_]|^CEN$|중심|HIDDEN|HID|숨은|은선|DIM|치수|HATCH|해치|TEXT|문자|NOTE|주석|BORDER|도곽|TITLE|표제/i;
+
+/** dxf-parser 가 읽지 않는 레이어별 선 종류(그룹 코드 6)를 직접 읽는다 */
+function layerLineTypes(text) {
+  const out = {};
+  const i = text.search(/\n\s*2\r?\n\s*LAYER\s*\r?\n/);
+  if (i < 0) return out;
+  const end = text.indexOf('ENDTAB', i);
+  const lines = text.slice(i, end > 0 ? end : undefined).split(/\r?\n/);
+  let name = null;
+  for (let k = 0; k + 1 < lines.length; k += 1) {
+    const code = lines[k].trim(), val = lines[k + 1]?.trim();
+    if (code === '0' && val === 'LAYER') name = null;
+    else if (code === '2' && name === null) { name = val; k++; }
+    else if (code === '6' && name) { out[name] = val; k++; }
+  }
+  return out;
+}
+
 export function analyzeDxf(buf, format = 'DXF') {
   let dxf;
-  try { dxf = new DxfParser().parseSync(decode(buf)); } catch (e) { throw new Error(`${format} 를 해석하지 못했습니다: ` + e.message); }
+  const text = decode(buf);
+  const layerLT = layerLineTypes(text);
+  try { dxf = new DxfParser().parseSync(text); } catch (e) { throw new Error(`${format} 를 해석하지 못했습니다: ` + e.message); }
   const code = dxf.header?.$INSUNITS ?? 0;
   const [unitName, scale] = UNITS[code] || ['기타', 1];
   const ents = dxf.entities || [];
   const counts = {};
   for (const e of ents) counts[e.type] = (counts[e.type] || 0) + 1;
 
-  const loops = [], open = [], dims = [], texts = [];
-  let skipped = 0;
+  const loops = [], open = [], dims = [], texts = [], hints = [];
+  let skipped = 0, aux = 0;
   const I = (x, y) => [x, y];
   const visit = (e, T, depth, layerOverride) => {
     const layer = e.layer === '0' && layerOverride ? layerOverride : e.layer;
+    const lt = e.lineType && !/BYLAYER|BYBLOCK|CONTINUOUS/i.test(e.lineType) ? e.lineType : layerLT[layer] || '';
+    if (['LINE', 'ARC', 'LWPOLYLINE', 'POLYLINE', 'CIRCLE'].includes(e.type) && (AUX_LT.test(lt) || AUX_LAYER.test(layer || ''))) {
+      aux++;
+      if (e.type === 'CIRCLE') { const c = T(e.center.x, e.center.y), q = T(e.center.x + e.radius, e.center.y); hints.push({ c: c.map((v) => v * scale), d: Math.hypot(q[0] - c[0], q[1] - c[1]) * 2 * scale, hidden: true }); }
+      return;
+    }
     if ((e.type === 'LWPOLYLINE' || e.type === 'POLYLINE') && e.vertices?.length > 1) {
       const closed = e.shape || e.closed;
       const pts = polyPoints(e.vertices, closed).map(([x, y]) => T(x, y));
@@ -56,7 +85,7 @@ export function analyzeDxf(buf, format = 'DXF') {
   };
   for (const e of ents) visit(e, I, 0);
 
-  const { profiles, openChains, truncated, views, groups } = buildProfiles(loops, open, scale);
+  const { profiles, openChains, truncated, views, groups } = buildProfiles(loops, open, scale, undefined, undefined, hints);
   return {
     format, is3D: false, version: dxf.header?.$ACADVER || null,
     unit: unitName, unitCode: code, unitScaleToMm: scale,
@@ -68,6 +97,7 @@ export function analyzeDxf(buf, format = 'DXF') {
     warnings: [
       ...(code === 0 ? ['도면 단위가 지정되지 않아 mm 로 간주합니다. 확인이 필요합니다.'] : []),
       ...(skipped ? [`해석하지 않은 객체 ${skipped}개 (해치·스플라인·이미지 등)`] : []),
+      ...(aux ? [`중심선·숨은선·치수·문자 레이어 선 ${aux}개는 형상에서 제외했습니다.`] : []),
       ...(truncated ? ['닫힌 윤곽이 너무 많아 큰 순서로 3000개만 표시합니다.'] : []),
       '2D 도면에는 두께(깊이) 정보가 없으므로 두께를 직접 입력해야 3D 생성이 됩니다.',
     ],
