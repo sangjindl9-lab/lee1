@@ -25,22 +25,27 @@ export async function analyzePdf(file) {
     await run('pdftoppm', ['-png', '-r', '60', '-f', '1', '-l', '1', '-singlefile', file, path.join(dir, 'prev')], { timeout: 60000 }).catch(() => {});
     const preview = await fs.readFile(path.join(dir, 'prev.png')).catch(() => null);
 
-    const vb = /viewBox="[\d.]+ [\d.]+ ([\d.]+) ([\d.]+)"/.exec(svg);
-    const g = parseSvg(svg, vb ? Number(vb[2]) : ph);
+    // 회전(/Rotate 90·270)된 페이지는 SVG 가 회전을 적용한 화면 기준으로 나오므로 용지 크기도 SVG 기준을 쓴다
+    const vb = /viewBox="[\d.-]+ [\d.-]+ ([\d.]+) ([\d.]+)"/.exec(svg);
+    const rot = +(/Page rot:\s+(\d+)/.exec(info)?.[1] || 0);
+    const [W, H] = vb ? [Number(vb[1]), Number(vb[2])] : rot % 180 ? [ph, pw] : [pw, ph];
+    const g = parseSvg(svg, H);
     const imgList = (await run('pdfimages', ['-list', '-f', '1', '-l', '1', file], { timeout: 30000 }).catch(() => ({ stdout: '' }))).stdout;
     g.images = Math.max(g.images, imgList.split('\n').slice(2).filter((l) => l.trim()).length);
-    const { profiles, openChains, truncated } = buildProfiles(g.loops, g.open, PT2MM, { w: pw, h: ph }, 0.05);
+    const { profiles, openChains, truncated } = buildProfiles(g.loops, g.open, PT2MM, { w: W, h: H }, 0.05);
     const texts = text.split(/\r?\n/).map((s) => s.trim().replace(/\s{2,}/g, ' ')).filter(Boolean).slice(0, 200);
     const m = /(?:SCALE|S|축척)\s*[:=]?\s*1\s*[:/]\s*(\d+(?:\.\d+)?)/i.exec(text) || /\b1\s*:\s*(\d+(?:\.\d+)?)\b/.exec(text);
     const numbers = [...new Set((text.match(/(?<![\d.])\d+(?:\.\d+)?(?![\d.])/g) || []).map(Number).filter((n) => n >= 1 && n < 100000))].slice(0, 300);
     const vector = g.strokes > 0;
     const outer = profiles.filter((p) => p.role === 'outer');
+    const sheet = outer.length > 20; // 여러 상세·투상도가 그려진 도면
     return {
       analysis: {
-        format: 'PDF', is3D: false, pages, page: { width: +(pw * PT2MM).toFixed(2), height: +(ph * PT2MM).toFixed(2) },
+        format: 'PDF', is3D: false, pages, page: { width: +(W * PT2MM).toFixed(2), height: +(H * PT2MM).toFixed(2), rotation: rot },
         unit: '용지 mm (축척 미확정)', unitScaleToMm: null, scaleRequired: true,
         scaleHint: m ? Number(m[1]) : null,
         coordinateSystem: '1쪽 용지 좌표 (왼쪽 아래 원점)',
+        sheet,
         pdfType: vector ? 'vector' : g.images ? 'scanned' : 'empty',
         layers: [], entityCounts: { 실선: g.strokes, 점선: g.dashed, 채움: g.filled, 이미지: g.images },
         profiles, dimensions: [], texts, numbers, openChains,
@@ -49,6 +54,7 @@ export async function analyzePdf(file) {
         hasPreview: !!preview,
         warnings: [
           ...(!vector ? [g.images ? '스캔(이미지) PDF 입니다. 벡터 선이 없어 3D 를 만들 수 없습니다. OCR·AI 형상 재구성은 3단계 기능입니다.' : 'PDF 에서 도면 선을 찾지 못했습니다.'] : []),
+          ...(sheet ? [`닫힌 외곽이 ${outer.length}개인 상세도·조립도입니다. 돌출 3D 는 판재처럼 한 윤곽에 두께를 주는 형상에만 맞습니다. 돌출할 외곽을 직접 클릭해 고르세요(자동 선택 안 함). 조립 상세의 입체 형상은 STEP 등 3D 원본이 필요합니다.`] : []),
           ...(pages > 1 ? [`전체 ${pages}쪽 중 1쪽만 분석했습니다.`] : []),
           ...(g.dashed ? [`점선 ${g.dashed}개(중심선·숨은선)와 채움 도형 ${g.filled}개(화살표 등)는 윤곽에서 제외했습니다.`] : []),
           ...(truncated ? ['닫힌 윤곽이 너무 많아 큰 순서로 3000개만 표시합니다.'] : []),

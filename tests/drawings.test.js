@@ -73,3 +73,23 @@ test('H-2. 스캔 PDF → 업로드·미리보기는 되고 3D 생성은 거부(
   const r = await A.post(`/api/files/${up.data.file.id}/extrude`, { thickness: 5, scale: 1 });
   assert.equal(r.status, 400);
 });
+
+test('H-3. 회전(/Rotate 270) PDF → 용지 가로·세로 바뀜 반영, 윤곽이 용지 안·미리보기와 같은 좌표', async () => {
+  const up = await upload(A, proj.id, 'bracket_plate_rot270.pdf');
+  const j = await waitJob(A, up.data.job.id);
+  assert.equal(j.status, 'done', j.error);
+  const a = (await A.get(`/api/files/${up.data.file.id}`)).data.analysis;
+  assert.equal(a.page.rotation, 270);
+  assert.deepEqual([Math.round(a.page.width), Math.round(a.page.height)], [210, 297], '회전 적용된 용지 크기');
+  const outer = a.profiles.filter((p) => p.role === 'outer').sort((x, y) => y.area - x.area)[0];
+  const [w, h] = [outer.bbox[1][0] - outer.bbox[0][0], outer.bbox[1][1] - outer.bbox[0][1]];
+  assert.deepEqual([Math.round(w), Math.round(h)], [60, 100], '외곽도 회전 (60×100)');
+  for (const p of a.profiles) {
+    assert.ok(p.bbox[0][0] >= -0.5 && p.bbox[1][0] <= a.page.width + 0.5 && p.bbox[0][1] >= -0.5 && p.bbox[1][1] <= a.page.height + 0.5, `${p.id} 용지 밖`);
+  }
+  // 미리보기 이미지 비율 = 용지 비율
+  const png = (await A.get(`/api/files/${up.data.file.id}/preview`)).data;
+  const pw = png.readUInt32BE(16), ph = png.readUInt32BE(20);
+  assert.ok(Math.abs(pw / ph - a.page.width / a.page.height) < 0.01, `미리보기 ${pw}×${ph}`);
+  assert.equal(a.profiles.filter((p) => p.role === 'hole' && p.parent === outer.id).length, 6);
+});

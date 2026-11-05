@@ -112,7 +112,7 @@ doc.saveas(os.path.join(OUT, "bracket_plate.dxf"))
 print("samples written to", os.path.abspath(OUT))
 
 # ── 5) 벡터 PDF 도면 (축척 1:2, A4 가로, 도곽·표제란·치수·중심선 포함) ──────
-def pdf_bracket(path):
+def pdf_bracket(path, rotate=0):
     MM = 72 / 25.4
     S = 0.5  # 1:2
     ox, oy = 40 * MM, 60 * MM
@@ -152,7 +152,7 @@ def pdf_bracket(path):
     text(*P(95, -10), "200"); text(*P(-14, 58), "120")
     content = "\n".join(ops).encode()
     objs = [b"<< /Type /Catalog /Pages 2 0 R >>", b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-            f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {W:.2f} {H:.2f}] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>".encode(),
+            f"<< /Type /Page /Parent 2 0 R /Rotate {rotate} /MediaBox [0 0 {W:.2f} {H:.2f}] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>".encode(),
             b"<< /Length %d >>\nstream\n" % len(content) + content + b"\nendstream",
             b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"]
     out = b"%PDF-1.4\n"; offs = []
@@ -163,6 +163,7 @@ def pdf_bracket(path):
     out += f"trailer << /Size {len(objs)+1} /Root 1 0 R >>\nstartxref\n{x}\n%%EOF\n".encode()
     open(path, "wb").write(out)
 pdf_bracket(os.path.join(OUT, "bracket_plate_1to2.pdf"))
+pdf_bracket(os.path.join(OUT, "bracket_plate_rot270.pdf"), rotate=270)  # 회전 페이지 (CAD 출력 PDF 에 흔함)
 
 # ── 6) 스캔 PDF (이미지만 있는 도면) ─────────────────────────────────
 from PIL import Image, ImageDraw

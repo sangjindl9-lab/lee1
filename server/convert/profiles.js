@@ -55,10 +55,14 @@ export function buildProfiles(loops, open, scale, page, tol = 1e-3) {
   const frames = new Set(kept.filter(isFrame).map((l) => l.id));
   // 도곽 안쪽 고리는 도곽을 부모로 보지 않는다
   for (const l of kept) while (l.parent && frames.has(l.parent)) l.parent = byId[l.parent].parent;
+  // 굵은 선을 얇은 사각형으로 그린 것(폭 0.6mm 미만, 길쭉함)은 형상이 아닌 '선'으로 분류
+  const isLine = (l) => { const w = (l.bb[1][0] - l.bb[0][0]) * scale, h = (l.bb[1][1] - l.bb[0][1]) * scale; return Math.min(w, h) < 0.6 && Math.max(w, h) > 8 * Math.min(w, h); };
+  const lines = new Set(kept.filter((l) => !frames.has(l.id) && isLine(l)).map((l) => l.id));
+  for (const l of kept) while (l.parent && lines.has(l.parent)) l.parent = byId[l.parent].parent;
   const depth = (l) => (l.parent ? 1 + depth(byId[l.parent]) : 0);
   const profiles = kept.map((l) => ({
     id: l.id, layer: l.layer, source: l.source,
-    role: frames.has(l.id) ? 'frame' : depth(l) % 2 === 0 ? 'outer' : 'hole', parent: l.parent,
+    role: frames.has(l.id) ? 'frame' : lines.has(l.id) ? 'line' : depth(l) % 2 === 0 ? 'outer' : 'hole', parent: l.parent,
     area: +(l.area * scale * scale).toFixed(3), bbox: l.bb.map((p) => p.map((v) => +(v * scale).toFixed(3))),
     ...(l.circle ? { diameter: +(l.circle.r * 2 * scale).toFixed(3) } : roundDia(l, scale)),
     points: simplify(l.pts).map(([x, y]) => [+(x * scale).toFixed(4), +(y * scale).toFixed(4)]),
@@ -86,7 +90,7 @@ export async function extrude2d(analysis, input, name) {
     if (!(k > 0)) throw httpErr('PDF 도면은 축척(1:N 의 N)을 입력해야 실제 치수로 만들 수 있습니다');
   }
   const sel = new Set(input.profiles?.length ? input.profiles : analysis.profiles.filter((p) => p.role === 'outer').map((p) => p.id));
-  const outers = analysis.profiles.filter((p) => p.role !== 'hole' && sel.has(p.id));
+  const outers = analysis.profiles.filter((p) => (p.role === 'outer' || p.role === 'frame') && sel.has(p.id));
   if (!outers.length) throw httpErr('돌출할 닫힌 외곽 윤곽을 선택하세요');
   const S = (pts) => pts.map(([x, y]) => new THREE.Vector2(x * k, y * k));
   const children = outers.map((o, i) => {

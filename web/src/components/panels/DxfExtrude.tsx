@@ -15,7 +15,8 @@ export default function DxfExtrude({ fileId, onClose, onCreated }: { fileId: str
       const a = x.analysis;
       const outers = a.profiles.filter((p: any) => p.role === 'outer');
       // PDF 는 표제란 같은 사각형도 외곽으로 잡히므로 가장 큰 외곽 하나만 기본 선택
-      setSel(new Set((a.format === 'PDF' ? outers.slice(0, 1) : outers).map((p: any) => p.id)));
+      // 상세도처럼 외곽이 많은 도면은 자동 선택하지 않는다
+      setSel(new Set((a.sheet || outers.length > 20 ? [] : a.format === 'PDF' ? outers.slice(0, 1) : outers).map((p: any) => p.id)));
       if (a.scaleHint) setSc(String(a.scaleHint));
     });
   }, [fileId]);
@@ -33,6 +34,7 @@ export default function DxfExtrude({ fileId, onClose, onCreated }: { fileId: str
   }, [a, pdf]);
   const toggle = (id: string) => setSel((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const selected = a?.profiles.filter((p: any) => sel.has(p.id)) || [];
+  const shown = selected.slice(0, 8);
   const sizeOf = (p: any) => [(p.bbox[1][0] - p.bbox[0][0]) * k, (p.bbox[1][1] - p.bbox[0][1]) * k];
   const nums: number[] = a?.numbers || [];
   const matchNum = (v: number) => nums.some((n) => Math.abs(n - v) <= Math.max(0.05, v * 0.003));
@@ -54,6 +56,7 @@ export default function DxfExtrude({ fileId, onClose, onCreated }: { fileId: str
                 {pdf && <rect x={0} y={-a.page.height} width={a.page.width} height={a.page.height} fill="none" stroke="var(--line)" strokeWidth={view.sw} />}
                 {a.profiles.map((p: any) => {
                   const isSel = sel.has(p.id) || (p.role === 'hole' && sel.has(p.parent));
+                  if (p.role === 'line') return <polygon key={p.id} points={p.points.map(([x, y]: number[]) => `${x},${-y}`).join(' ')} fill="none" stroke="var(--mute)" strokeWidth={view.sw * 0.6} opacity={0.5} />;
                   const stroke = p.role === 'frame' ? (isSel ? 'var(--accent)' : 'var(--mute)') : p.role === 'outer' ? (isSel ? 'var(--accent)' : 'var(--mute)') : 'var(--ok)';
                   return <polygon key={p.id} points={p.points.map(([x, y]: number[]) => `${x},${-y}`).join(' ')}
                     fill={p.role === 'hole' ? 'var(--bg)' : isSel ? 'color-mix(in srgb, var(--accent) 22%, transparent)' : 'transparent'}
@@ -76,7 +79,7 @@ export default function DxfExtrude({ fileId, onClose, onCreated }: { fileId: str
                 <Info k="단위" v={a.unit} />
                 {pdf && <Info k="PDF 종류" v={a.pdfType === 'vector' ? '벡터 도면' : a.pdfType === 'scanned' ? '스캔(이미지)' : '내용 없음'} />}
                 {pdf && <Info k="용지" v={`${a.page.width.toFixed(0)}×${a.page.height.toFixed(0)} mm · ${a.pages}쪽`} />}
-                <Info k="닫힌 윤곽" v={`${a.profiles.length}개 (외곽 ${a.profiles.filter((p: any) => p.role === 'outer').length})`} />
+                <Info k="닫힌 윤곽" v={`외곽 ${a.profiles.filter((p: any) => p.role === 'outer').length} · 구멍 ${a.profiles.filter((p: any) => p.role === 'hole').length}`} />
                 <Info k="열린 선분" v={String(a.openChains)} />
               </div>
               {a.layers?.length > 0 && <div><div className="label mb-1">레이어</div><div className="flex max-h-16 flex-wrap gap-1 overflow-auto">{a.layers.map((l: string) => <span key={l} className="chip">{l}</span>)}</div></div>}
@@ -90,9 +93,10 @@ export default function DxfExtrude({ fileId, onClose, onCreated }: { fileId: str
               {pdf && <label className="block space-y-1"><span className="label">축척 1 : N — 필수 입력</span>
                 <div className="flex items-center gap-2"><span className="num shrink-0">1 :</span><input className="input num" type="number" min={0.001} step="any" value={sc} onChange={(e) => setSc(e.target.value)} placeholder="예: 2" data-testid="scale" /></div>
                 {a.scaleHint && <div className="text-[11px] text-ai">도면 글자에서 "1:{a.scaleHint}" 를 읽었습니다 — 확인 후 사용하세요.</div>}</label>}
+              {selected.length === 0 && a.convertible && <div className="rounded border border-accent/40 bg-accent/10 px-2 py-1.5 text-xs">왼쪽 도면에서 돌출할 외곽을 클릭해 선택하세요.</div>}
               {selected.length > 0 && k > 0 && <div className="rounded-md border border-line p-2 text-xs" data-testid="real-size">
                 <div className="label mb-1">선택 외곽 실제 크기{pdf ? ` (축척 1:${k})` : ''}</div>
-                {selected.map((p: any) => { const [w, h] = sizeOf(p); return (
+                {shown.map((p: any) => { const [w, h] = sizeOf(p); return (
                   <div key={p.id} className="num">{p.id}: {w.toFixed(2)} × {h.toFixed(2)} mm
                     {pdf && <> {matchNum(+w.toFixed(1)) ? <span className="text-ok">가로=도면 숫자</span> : null} {matchNum(+h.toFixed(1)) ? <span className="text-ok">세로=도면 숫자</span> : null}</>}</div>); })}
                 {pdf && <div className="mt-1 text-[11px] text-mute">도면에 적힌 치수 숫자와 일치하면 축척이 맞습니다.</div>}

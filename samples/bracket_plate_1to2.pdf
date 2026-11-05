@@ -6,7 +6,7 @@ endobj
 << /Type /Pages /Kids [3 0 R] /Count 1 >>
 endobj
 3 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 841.89 595.28] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>
+<< /Type /Page /Parent 2 0 R /Rotate 0 /MediaBox [0 0 841.89 595.28] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>
 endobj
 4 0 obj
 << /Length 2403 >>
@@ -46,9 +46,9 @@ xref
 0000000009 00000 n 
 0000000058 00000 n 
 0000000115 00000 n 
-0000000247 00000 n 
-0000002702 00000 n 
+0000000257 00000 n 
+0000002712 00000 n 
 trailer << /Size 6 /Root 1 0 R >>
 startxref
-2772
+2782
 %%EOF
