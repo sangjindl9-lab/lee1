@@ -290,7 +290,10 @@
       await write(S.uri);
       setDirty(false);
       toast('저장했습니다.');
-    } catch (e) { toast('저장하지 못했습니다: ' + (e && e.message || e)); }
+    } catch (e) {
+      toast('원본 위치에는 저장할 수 없어 저장할 곳을 선택합니다.');
+      await saveAs();
+    }
   }
   async function saveAs() {
     try {

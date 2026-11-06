@@ -53,6 +53,10 @@ public class EumFilesPlugin extends Plugin {
     private JSObject fileFromIntent(Intent intent) {
         if (intent == null || !Intent.ACTION_VIEW.equals(intent.getAction()) || intent.getData() == null) return null;
         Uri uri = intent.getData();
+        try {
+            // 보낸 앱이 허락한 경우에만 성공한다. 성공하면 앱을 다시 켜도 최근 문서에서 열 수 있다.
+            getContext().getContentResolver().takePersistableUriPermission(uri, intent.getFlags() & RW);
+        } catch (Exception ignored) {}
         JSObject o = new JSObject();
         o.put("uri", uri.toString());
         o.put("name", displayName(uri));
@@ -94,6 +98,18 @@ public class EumFilesPlugin extends Plugin {
         JSObject o = new JSObject();
         o.put("uri", uri.toString());
         o.put("name", displayName(uri));
+        call.resolve(o);
+    }
+
+    /** 지금 이 파일을 읽을 권한이 있는지 */
+    @PluginMethod
+    public void canRead(PluginCall call) {
+        JSObject o = new JSObject();
+        try (InputStream in = getContext().getContentResolver().openInputStream(Uri.parse(call.getString("uri")))) {
+            o.put("ok", in != null);
+        } catch (Exception e) {
+            o.put("ok", false);
+        }
         call.resolve(o);
     }
 

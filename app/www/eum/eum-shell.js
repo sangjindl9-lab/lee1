@@ -112,7 +112,14 @@
     }).then((ok) => { if (ok) hideHome(); });
     return true;
   }
-  function openUri(uri, name) {
+  async function openUri(uri, name) {
+    // 다른 앱이 잠시 열어 준 파일은 앱을 다시 켜면 접근 권한이 사라진다 → 다시 고르게 한다.
+    if (typeof native.canRead === 'function' && !(await native.canRead({ uri })).ok) {
+      forget(uri);
+      renderHome();
+      if (await ask(`「${name}」에 지금은 접근할 수 없습니다.\n다른 앱에서 잠시 열어 준 파일은 앱을 다시 켜면 권한이 사라집니다.\n\n파일을 다시 선택할까요?`, '파일 선택')) pickAndOpen();
+      return;
+    }
     if (routeOther(uri, name)) return;
     if (!leaveViewer()) return;
     remember(uri, name);
@@ -312,6 +319,12 @@
   }
 
   // ── 뒤로 가기 ─────────────────────────────────────────────
+  /** 파일을 먼저 고르고, 종류에 맞는 화면으로 보낸다. */
+  async function pickAndOpen() {
+    const r = await native.pickOpen();
+    if (r && r.uri) openUri(r.uri, r.name);
+  }
+
   /** 확인 창. 확인을 누르면 true */
   let askClose = null;
   function ask(message, okLabel) {
@@ -390,9 +403,7 @@
     bOpen.onclick = async () => {
       wantEditOnLoad = false;
       if (!native) { armed = true; run('file:open'); return; }
-      // 파일을 먼저 고르고, 종류에 맞는 화면으로 보낸다.
-      const r = await native.pickOpen();
-      if (r && r.uri) openUri(r.uri, r.name);
+      pickAndOpen();
     };
     const bNew = el('button', 'eum-act', '새 문서');
     bNew.onclick = () => { if (!leaveViewer()) return; armed = true; wantEditOnLoad = true; run('file:new-doc'); };
