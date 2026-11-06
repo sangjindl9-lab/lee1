@@ -432,9 +432,8 @@
     if (!S.wb || root.hidden) return false;
     if (!menu.hidden) { menu.hidden = true; return true; }
     if (document.activeElement === fxInput) { fxInput.blur(); return true; }
-    if (S.edit) { commit(); setEdit(false); return true; }
-    window.EumShell.showHome();
-    return true;
+    commit();
+    return false;
   }
 
   build();

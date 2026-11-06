@@ -10,7 +10,6 @@ import android.print.PrintAttributes;
 import android.print.PrintManager;
 import android.provider.OpenableColumns;
 import android.util.Base64;
-import androidx.activity.OnBackPressedCallback;
 import androidx.activity.result.ActivityResult;
 import androidx.core.content.FileProvider;
 import com.getcapacitor.JSObject;
@@ -35,12 +34,6 @@ public class EumFilesPlugin extends Plugin {
     @Override
     public void load() {
         pendingLaunch = getActivity().getIntent();
-        getActivity().getOnBackPressedDispatcher().addCallback(getActivity(), new OnBackPressedCallback(true) {
-            @Override
-            public void handleOnBackPressed() {
-                bridge.triggerWindowJSEvent("eumBack");
-            }
-        });
     }
 
     @Override

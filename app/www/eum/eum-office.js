@@ -361,9 +361,7 @@
     if (!S.zip || root.hidden) return false;
     if (!sheet.hidden) { sheet.cancel(); return true; }
     if (!menu.hidden) { menu.hidden = true; return true; }
-    if (S.edit) { setEdit(false); return true; }
-    window.EumShell.showHome();
-    return true;
+    return false;
   }
 
   build();

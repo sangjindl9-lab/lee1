@@ -312,17 +312,46 @@
   }
 
   // ── 뒤로 가기 ─────────────────────────────────────────────
-  function onBack() {
+  /** 확인 창. 확인을 누르면 true */
+  let askClose = null;
+  function ask(message, okLabel) {
+    return new Promise((resolve) => {
+      const box = $('eum-ask');
+      box.textContent = '';
+      const card = el('div', 'eum-ask-card');
+      const acts = el('div', 'eum-edit-acts');
+      const cancel = el('button', null, '취소'), ok = el('button', 'eum-edit-ok', okLabel);
+      askClose = (v) => { box.hidden = true; askClose = null; resolve(v); };
+      cancel.onclick = () => askClose(false);
+      ok.onclick = () => askClose(true);
+      acts.append(cancel, ok);
+      card.append(el('p', null, message), acts);
+      box.append(card);
+      box.hidden = false;
+    });
+  }
+
+  async function onBack() {
+    if (askClose) { askClose(false); return; }
     if (!$('eum-about').hidden) { $('eum-about').hidden = true; return; }
     if (!$('eum-menu').hidden) { closeMenu(); return; }
-    if (!$('eum-home').hidden) { if (native) native.exit(); return; }
+    const other = openViewer();
+    const unsaved = other ? other.isDirty() : (docOpened && isDirty());
+    if (!$('eum-home').hidden) {
+      const msg = unsaved ? '저장하지 않은 변경 내용이 있습니다.\n앱을 종료하면 사라집니다. 종료할까요?' : '앱을 종료할까요?';
+      if (await ask(msg, '종료') && native) native.exit();
+      return;
+    }
+    // 열려 있는 메뉴·입력 창이 있으면 그것부터 닫는다.
     if (viewers().some((v) => v.back())) return;
     if (document.querySelector('.dialog-overlay, .modal-overlay, .menu-item.open, dialog[open]')) {
       (document.activeElement || document.body).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
       return;
     }
-    if (mode === 'edit') { setMode('view'); return; }
-    showHome();
+    const msg = unsaved
+      ? '저장하지 않은 변경 내용이 있습니다.\n홈으로 나갈까요?\n\n문서는 닫히지 않고, 홈의 「열어 둔 문서」에서 다시 돌아올 수 있습니다.'
+      : '문서 화면에서 나가 홈으로 갈까요?';
+    if (await ask(msg, '홈으로')) showHome();
   }
 
   // ── 화면 만들기 ───────────────────────────────────────────
@@ -358,7 +387,13 @@
     head.append(logo, headText);
     const acts = el('div', 'eum-home-acts');
     const bOpen = el('button', 'eum-act eum-act-primary', '문서 열기');
-    bOpen.onclick = () => { armed = true; wantEditOnLoad = false; run('file:open'); };
+    bOpen.onclick = async () => {
+      wantEditOnLoad = false;
+      if (!native) { armed = true; run('file:open'); return; }
+      // 파일을 먼저 고르고, 종류에 맞는 화면으로 보낸다.
+      const r = await native.pickOpen();
+      if (r && r.uri) openUri(r.uri, r.name);
+    };
     const bNew = el('button', 'eum-act', '새 문서');
     bNew.onclick = () => { if (!leaveViewer()) return; armed = true; wantEditOnLoad = true; run('file:new-doc'); };
     acts.append(bOpen, bNew);
@@ -378,6 +413,9 @@
     card.append(ok);
     about.append(card);
     document.body.append(about);
+
+    const askBox = el('div'); askBox.id = 'eum-ask'; askBox.hidden = true;
+    document.body.append(askBox);
 
     renderHome();
     setMode('view');

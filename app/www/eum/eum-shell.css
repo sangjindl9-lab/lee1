@@ -302,3 +302,9 @@ button.eum-row { border-bottom: 1px solid var(--eum-line); }
 /* 홈 로고 */
 .eum-home-head { display: flex; align-items: center; gap: 14px; }
 .eum-logo { width: 56px; height: 56px; flex: 0 0 auto; }
+
+/* 확인 창 */
+#eum-ask { position: fixed; inset: 0; z-index: 995; display: grid; place-items: center; padding: 24px; background: rgba(15, 23, 42, 0.4); }
+#eum-ask[hidden] { display: none; }
+.eum-ask-card { width: 100%; max-width: 340px; background: #fff; border-radius: 16px; padding: 22px 18px 16px; color: var(--eum-ink); font: 15px/1.5 system-ui, -apple-system, "Pretendard", "Noto Sans KR", sans-serif; }
+.eum-ask-card p { margin: 0 0 6px; white-space: pre-line; }
