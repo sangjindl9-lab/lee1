@@ -29,9 +29,12 @@ jobs:
         working-directory: app/android
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon
+          ./gradlew assembleDebug bundleRelease --no-daemon
       - name: 파일 이름 정리
-        run: cp android/app/build/outputs/apk/debug/app-debug.apk ../eum-hwp.apk
+        run: |
+          cp android/app/build/outputs/apk/debug/app-debug.apk ../eum-hwp.apk
+          # 구글 플레이용 앱 번들(서명 전). 서명 키는 공개 저장소에 두지 않고 따로 서명한다.
+          cp android/app/build/outputs/bundle/release/app-release.aab ../eum-docs-unsigned.aab
       - uses: actions/upload-artifact@v4
         with:
           name: eum-hwp-apk
@@ -42,7 +45,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release delete eum-hwp-latest --yes --cleanup-tag || true
-          gh release create eum-hwp-latest eum-hwp.apk \
+          gh release create eum-hwp-latest eum-hwp.apk eum-docs-unsigned.aab \
             --target "$GITHUB_SHA" \
             --title "이음과 문서 앱 (최신)" \
             --notes "휴대폰에서 eum-hwp.apk를 눌러 내려받아 설치하세요. 한글(hwp·hwpx) · 엑셀(xlsx) · 워드(docx) · PPT(pptx) 문서를 열고 고쳐 같은 형식으로 저장합니다."
