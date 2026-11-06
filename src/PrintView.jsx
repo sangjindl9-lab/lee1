@@ -12,6 +12,19 @@ export const DOCS = [
   ['unit', '일위대가표'],
 ];
 
+// 한 서류 = 한 묶음. 머리·꼬리 빈칸은 인쇄할 때 페이지마다 반복되어 위·아래 여백이 된다.
+function Pg({ land, children }) {
+  return (
+    <section className={'pr-page' + (land ? ' pr-land' : '')}>
+      <table className="pr-frame">
+        <thead><tr><td className="pr-sp-top" /></tr></thead>
+        <tfoot><tr><td className="pr-sp-bot" /></tr></tfoot>
+        <tbody><tr><td>{children}</td></tr></tbody>
+      </table>
+    </section>
+  );
+}
+
 function Head({ p, title, sub }) {
   return (
     <div className="pr-head">
@@ -30,7 +43,7 @@ function EstimateDoc({ p, r }) {
   const direct = cs.DM + cs.DL + cs.ME;
   const date = e.date || new Date().toISOString().slice(0, 10);
   return (
-    <section className="pr-page">
+    <Pg>
       <h1 className="pr-title-big">견 적 서</h1>
       <div className="pr-est-top">
         <div>
@@ -64,13 +77,13 @@ function EstimateDoc({ p, r }) {
         </tbody>
       </table>
       {e.note && <div className="pr-note"><b>비 고</b>{e.note.split('\n').map((l, i) => <p key={i}>{l}</p>)}</div>}
-    </section>
+    </Pg>
   );
 }
 
 function CostDoc({ p, cs, label }) {
   return (
-    <section className="pr-page">
+    <Pg>
       <Head p={p} title={`${label} 원가계산서`} sub={p.client ? `발주처 : ${p.client}` : ''} />
       <table className="pr-tbl">
         <thead><tr><th className="pr-g">비 목</th><th>구 분</th><th className="pr-amt">금 액</th><th>산출근거</th></tr></thead>
@@ -84,13 +97,13 @@ function CostDoc({ p, cs, label }) {
         </tbody>
       </table>
       <p className="pr-hangul">공사금액 : 일금 {hangulAmount(cs.grand)}원정 (￦{won(cs.grand)})</p>
-    </section>
+    </Pg>
   );
 }
 
 function SumDoc({ p, cs, label }) {
   return (
-    <section className="pr-page">
+    <Pg>
       <Head p={p} title={`${label} 공종별 집계표`} />
       <table className="pr-tbl">
         <thead><tr><th className="pr-no">No</th><th>공 종</th><th>재료비</th><th>노무비</th><th>경 비</th><th>합 계</th></tr></thead>
@@ -99,14 +112,14 @@ function SumDoc({ p, cs, label }) {
           <tr className="pr-total"><td></td><td>합 계</td><td className="r">{won(cs.DM)}</td><td className="r">{won(cs.DL)}</td><td className="r">{won(cs.ME)}</td><td className="r">{won(cs.DM + cs.DL + cs.ME)}</td></tr>
         </tbody>
       </table>
-    </section>
+    </Pg>
   );
 }
 
 function BillDoc({ p, factor, label }) {
   const secs = sectionTotals(p, factor);
   return (
-    <section className="pr-page pr-land">
+    <Pg land>
       <Head p={p} title={`${label}내역서`} />
       <table className="pr-tbl pr-bill">
         <thead>
@@ -128,7 +141,7 @@ function BillDoc({ p, factor, label }) {
           </tbody>
         ))}
       </table>
-    </section>
+    </Pg>
   );
 }
 
@@ -136,7 +149,7 @@ function UnitDoc({ p, factor }) {
   const used = p.units;
   if (!used.length) return null;
   return (
-    <section className="pr-page">
+    <Pg>
       <Head p={p} title="일위대가표" />
       {used.map((u) => {
         const c = unitCost(p, u);
@@ -154,11 +167,11 @@ function UnitDoc({ p, factor }) {
           </table>
         );
       })}
-    </section>
+    </Pg>
   );
 }
 
-export function PrintArea({ p, job }) {
+export function PrintArea({ p, job, pdf }) {
   if (!job) return null;
   let factor = 1, profitAdd = 0, label = '설계';
   if (job.basis === 'contract') { const f = contractFit(p); if (f) { factor = f.factor; profitAdd = f.profitAdd; label = '계약'; } }
@@ -167,24 +180,26 @@ export function PrintArea({ p, job }) {
   const cs = costSheet(pp, { factor, profitAdd });
   const est = estimateCalc(p);
   return (
-    <div className="print-root" aria-hidden="true">
+    <div className={pdf ? 'pdf-root' : 'print-root'} aria-hidden="true">
       {job.docs.includes('est') && <EstimateDoc p={p} r={est} />}
       {job.docs.includes('cost') && <CostDoc p={p} cs={cs} label={label} />}
       {job.docs.includes('sum') && <SumDoc p={p} cs={cs} label={label} />}
       {job.docs.includes('bill') && <BillDoc p={pp} factor={factor} label={label} />}
       {job.docs.includes('unit') && <UnitDoc p={p} factor={1} />}
+      {!pdf && <div className="pr-footer">{p.company}</div>}
     </div>
   );
 }
 
-export function PrintDialog({ p, initial, onClose, onPrint }) {
+export function PrintDialog({ p, initial, onClose, onPrint, onPdf, canPrint = true }) {
   const [docs, setDocs] = useState(initial || ['est', 'cost', 'sum', 'bill']);
   const hasContract = !!contractFit(p);
   const [basis, setBasis] = useState('design');
+  const job = () => ({ docs: DOCS.map((d) => d[0]).filter((k) => docs.includes(k)), basis });
   const toggle = (k) => setDocs((d) => (d.includes(k) ? d.filter((x) => x !== k) : [...d, k]));
   return (
     <Modal title="출력" onClose={onClose}>
-      <p className="muted small">인쇄할 서류를 고르세요. 프린터 대신 ‘PDF로 저장’을 고르면 PDF 파일로 받을 수 있습니다.</p>
+      <p className="muted small">출력할 서류를 고르세요. ‘PDF 저장’은 바로 PDF 파일로 내려받습니다. 쪽마다 아래에 회사명이 들어갑니다.</p>
       <div className="pr-pick">
         {DOCS.map(([k, t]) => (
           <label key={k} className="pr-check"><input type="checkbox" id={'pd-' + k} checked={docs.includes(k)} onChange={() => toggle(k)} />{t}</label>
@@ -199,7 +214,10 @@ export function PrintDialog({ p, initial, onClose, onPrint }) {
       </div>
       <div className="row-between">
         <span className="muted small">A4 · 내역서는 가로 방향</span>
-        <button className="btn primary" disabled={!docs.length} onClick={() => onPrint({ docs: DOCS.map((d) => d[0]).filter((k) => docs.includes(k)), basis })}>인쇄하기</button>
+        <span className="grp">
+          <button className="btn" disabled={!docs.length} onClick={() => onPdf(job())}>PDF 저장</button>
+          <button className="btn primary" disabled={!docs.length || !canPrint} title={canPrint ? '' : '이 미리보기 창에서는 인쇄가 막혀 있습니다. PDF 저장을 쓰세요.'} onClick={() => onPrint(job())}>인쇄하기</button>
+        </span>
       </div>
     </Modal>
   );

@@ -304,9 +304,49 @@ td.adj { color: var(--accent); }
 .pr-check { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 4px; cursor: pointer; }
 .print-root { display: none; }
 
-@page { size: A4 portrait; margin: 14mm 12mm; }
-@page land { size: A4 landscape; margin: 10mm 10mm; }
+/* 서류 양식 (인쇄·PDF 공용) */
+.pr-head { text-align: center; margin-bottom: 4mm; }
+.pr-head h1 { font: 800 17pt 'Nanum Myeongjo', Batang, serif; letter-spacing: .25em; margin: 0 0 2mm; }
+.pr-meta { display: flex; justify-content: space-between; font-size: 9.5pt; text-align: left; }
+.pr-title-big { font: 800 26pt 'Nanum Myeongjo', Batang, serif; text-align: center; letter-spacing: .6em; padding-bottom: 3mm; border-bottom: 3px double #000; margin: 0 0 6mm; }
+.pr-est-top { display: flex; justify-content: space-between; gap: 8mm; margin-bottom: 5mm; }
+.pr-est-top p { margin: 1mm 0; }
+.pr-to { font-size: 14pt; font-weight: 700; }
+.pr-lead { margin-top: 4mm !important; }
+.pr-supplier { border-collapse: collapse; font-size: 9.5pt; }
+.pr-supplier th, .pr-supplier td { border: 1px solid #000; padding: 1.5mm 2.5mm; }
+.pr-supplier th { background: #eee; font-weight: 600; white-space: nowrap; }
+.pr-amount { border: 2px solid #000; padding: 3mm 4mm; font: 700 12.5pt 'Nanum Myeongjo', Batang, serif; margin-bottom: 5mm; }
+.pr-amount small { font: 400 9pt sans-serif; margin-left: 2mm; }
+.pr-tbl { width: 100%; border-collapse: collapse; font-size: 9.5pt; margin-bottom: 4mm; }
+.pr-tbl th, .pr-tbl td { border: 1px solid #000; padding: 1.2mm 1.8mm; vertical-align: middle; }
+.pr-tbl th { background: #eee; font-weight: 600; text-align: center; }
+.pr-tbl thead { display: table-header-group; }
+.pr-tbl tr { break-inside: avoid; }
+.pr-tbl .r { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pr-tbl .c { text-align: center; }
+.pr-no { width: 9mm; }
+.pr-g { width: 22mm; }
+.pr-amt { width: 32mm; }
+.pr-small { font-size: 8pt; }
+.pr-sub td { background: #f3f3f3; font-weight: 600; }
+.pr-sum td { background: #e8e8e8; font-weight: 700; }
+.pr-total td { background: #ddd; font-weight: 800; }
+.pr-secname td { font-weight: 700; background: #fafafa; }
+.pr-bill { font-size: 8pt; }
+.pr-bill th, .pr-bill td { padding: .8mm 1.2mm; }
+.pr-unit { break-inside: avoid; }
+.pr-unit-title { text-align: left !important; background: #ddd !important; }
+.pr-note { font-size: 9.5pt; border-top: 1px solid #000; padding-top: 2mm; }
+.pr-note p { margin: .5mm 0; }
+.pr-hangul { font-size: 10pt; margin-top: 2mm; }
+.pr-frame { width: 100%; border-collapse: collapse; }
+.pr-frame > thead > tr > td, .pr-frame > tfoot > tr > td, .pr-frame > tbody > tr > td { padding: 0; border: 0; }
+.pr-footer { display: none; }
 
+/* 인쇄: 브라우저 머리글·바닥글(제목·주소)이 나오지 않도록 여백 0, 여백은 반복되는 머리·꼬리 칸으로 만든다 */
+@page { size: A4 portrait; margin: 0; }
+@page land { size: A4 landscape; margin: 0; }
 @media print {
   html, body { background: #fff !important; color: #000 !important; }
   :root { padding: 0 !important; }
@@ -315,44 +355,19 @@ td.adj { color: var(--accent); }
   .modal-back, .toast { display: none !important; }
   .print-root { display: block; font: 10.5pt/1.45 'IBM Plex Sans KR', 'Malgun Gothic', sans-serif; color: #000; }
   .pr-page { break-after: page; }
-  .pr-page:last-child { break-after: auto; }
+  .pr-page:last-of-type { break-after: auto; }
   .pr-land { page: land; }
-  .pr-head { text-align: center; margin-bottom: 4mm; }
-  .pr-head h1 { font: 800 17pt 'Nanum Myeongjo', Batang, serif; letter-spacing: .25em; margin: 0 0 2mm; }
-  .pr-meta { display: flex; justify-content: space-between; font-size: 9.5pt; text-align: left; }
-  .pr-title-big { font: 800 26pt 'Nanum Myeongjo', Batang, serif; text-align: center; letter-spacing: .6em; padding-bottom: 3mm; border-bottom: 3px double #000; margin: 0 0 6mm; }
-  .pr-est-top { display: flex; justify-content: space-between; gap: 8mm; margin-bottom: 5mm; }
-  .pr-est-top p { margin: 1mm 0; }
-  .pr-to { font-size: 14pt; font-weight: 700; }
-  .pr-lead { margin-top: 4mm !important; }
-  .pr-supplier { border-collapse: collapse; font-size: 9.5pt; }
-  .pr-supplier th, .pr-supplier td { border: 1px solid #000; padding: 1.5mm 2.5mm; }
-  .pr-supplier th { background: #eee; font-weight: 600; white-space: nowrap; }
-  .pr-amount { border: 2px solid #000; padding: 3mm 4mm; font: 700 12.5pt 'Nanum Myeongjo', Batang, serif; margin-bottom: 5mm; }
-  .pr-amount small { font: 400 9pt sans-serif; margin-left: 2mm; }
-  .pr-tbl { width: 100%; border-collapse: collapse; font-size: 9.5pt; margin-bottom: 4mm; }
-  .pr-tbl th, .pr-tbl td { border: 1px solid #000; padding: 1.2mm 1.8mm; vertical-align: middle; }
-  .pr-tbl th { background: #eee; font-weight: 600; text-align: center; }
-  .pr-tbl thead { display: table-header-group; }
-  .pr-tbl tr { break-inside: avoid; }
-  .pr-tbl .r { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .pr-tbl .c { text-align: center; }
-  .pr-no { width: 9mm; }
-  .pr-g { width: 22mm; }
-  .pr-amt { width: 32mm; }
-  .pr-small { font-size: 8pt; }
-  .pr-sub td { background: #f3f3f3; font-weight: 600; }
-  .pr-sum td { background: #e8e8e8; font-weight: 700; }
-  .pr-total td { background: #ddd; font-weight: 800; }
-  .pr-secname td { font-weight: 700; background: #fafafa; }
-  .pr-bill { font-size: 8pt; }
-  .pr-bill th, .pr-bill td { padding: .8mm 1.2mm; }
-  .pr-unit { break-inside: avoid; }
-  .pr-unit-title { text-align: left !important; background: #ddd !important; }
-  .pr-note { font-size: 9.5pt; border-top: 1px solid #000; padding-top: 2mm; }
-  .pr-note p { margin: .5mm 0; }
-  .pr-hangul { font-size: 10pt; margin-top: 2mm; }
+  .pr-page { padding: 0 12mm; }
+  .pr-sp-top { height: 12mm; }
+  .pr-sp-bot { height: 16mm; }
+  .pr-footer { display: block; position: fixed; left: 0; right: 0; bottom: 6mm; text-align: center; font: 600 9pt 'IBM Plex Sans KR', 'Malgun Gothic', sans-serif; color: #333; }
 }
+
+/* PDF 내보내기용 화면 밖 렌더링 */
+.pdf-root { position: fixed; left: -30000px; top: 0; background: #fff; color: #000; font: 10.5pt/1.45 'IBM Plex Sans KR', 'Malgun Gothic', sans-serif; }
+.pdf-root .pr-page { width: 794px; padding: 0 45px; box-sizing: border-box; background: #fff; }
+.pdf-root .pr-land { width: 1123px; padding: 0 38px; }
+.pdf-root .pr-sp-top, .pdf-root .pr-sp-bot { height: 0; }
 .sub-h { font-size: 13px; margin: 14px 0 8px; padding-top: 12px; border-top: 1px solid var(--line-2); }
 
 .total small { font-size: 11px; color: var(--ink-2); }

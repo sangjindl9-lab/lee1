@@ -5,6 +5,7 @@ import { loadAll, saveProject, deleteProject, saveFile } from './store.js';
 import { TextInput } from './ui.jsx';
 import { buildWorkbook } from './excel.js';
 import { PrintArea, PrintDialog } from './PrintView.jsx';
+import { buildPdf } from './pdf.js';
 
 export const LIVE_URL = 'https://web-jeoksan-production.up.railway.app';
 const inArtifact = () => typeof window !== 'undefined' && !!window.claude?.use;
@@ -99,6 +100,7 @@ export default function App() {
   const [clip, setClip] = useState([]);
   const [printOpen, setPrintOpen] = useState(null);
   const [printJob, setPrintJob] = useState(null);
+  const [pdfJob, setPdfJob] = useState(null);
   const dirty = useRef(new Set());
   const listRef = useRef([]);
 
@@ -126,10 +128,20 @@ export default function App() {
     const t = setTimeout(() => window.print(), 120);
     return () => { clearTimeout(t); window.removeEventListener('afterprint', done); };
   }, [printJob]);
-  const openPrint = (docs) => {
-    if (inArtifact()) return toast(`이 미리보기 창에서는 인쇄가 막혀 있습니다. ${LIVE_URL} 에서 출력하세요.`);
-    setPrintOpen(docs || ['est', 'cost', 'sum', 'bill']);
-  };
+  const openPrint = (docs) => setPrintOpen(docs || ['est', 'cost', 'sum', 'bill']);
+  useEffect(() => {
+    if (!pdfJob) return;
+    let alive = true;
+    toast('PDF를 만드는 중입니다…');
+    const t = setTimeout(async () => {
+      try {
+        const blob = await buildPdf(document.querySelector('.pdf-root'), p.company);
+        if (alive) await download(`${safeName(p.name)}_${pdfJob.docs.length === 1 && pdfJob.docs[0] === 'est' ? '견적서' : '공사서류'}.pdf`, blob);
+      } catch { toast('PDF를 만들지 못했습니다. 다시 시도해 주세요.'); }
+      if (alive) setPdfJob(null);
+    }, 150);
+    return () => { alive = false; clearTimeout(t); };
+  }, [pdfJob]);
 
   useEffect(() => {
     if (!projects || !dirty.current.size) return;
@@ -235,8 +247,9 @@ export default function App() {
       </main>
 
       {msg && <div className="toast" role="status">{msg}</div>}
-      {printOpen && p && <PrintDialog p={p} initial={printOpen} onClose={() => setPrintOpen(null)} onPrint={(job) => { setPrintOpen(null); setPrintJob(job); }} />}
+      {printOpen && p && <PrintDialog p={p} initial={printOpen} onClose={() => setPrintOpen(null)} canPrint={!inArtifact()} onPrint={(job) => { setPrintOpen(null); setPrintJob(job); }} onPdf={(job) => { setPrintOpen(null); setPdfJob(job); }} />}
       {p && <PrintArea p={p} job={printJob} />}
+      {p && pdfJob && <PrintArea p={p} job={pdfJob} pdf />}
     </div>
   );
 }
