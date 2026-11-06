@@ -1,9 +1,11 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { startServer, stopServer, signup, upload, waitJob, newProject } from './helpers.js';
+import fs from 'node:fs';
+import path from 'node:path';
+import { startServer, stopServer, signup, upload, waitJob, newProject, Client } from './helpers.js';
 
-let A, B, proj;
-before(async () => { await startServer(); A = await signup('도면A'); B = await signup('도면B'); proj = await newProject(A, '도면 변환', 'machine'); });
+let A, B, proj, srv;
+before(async () => { srv = await startServer(); A = await signup('도면A'); B = await signup('도면B'); proj = await newProject(A, '도면 변환', 'machine'); });
 after(stopServer);
 
 test('G. DWG 업로드 → LibreDWG 변환 → DXF 분석(버전·단위·치수·윤곽) → 두께 입력 3D', async () => {
@@ -191,4 +193,50 @@ test('M-2. 같은 금형 도면을 "외형 한 덩어리" 모드로 → 부품 1
   assert.equal(parts.length, 1);
   const sz = parts[0].bbox.max.map((v, i) => v - parts[0].bbox.min[i]);
   [200, 180, 195].forEach((v, i) => assert.ok(Math.abs(sz[i] - v) <= 1.5, `외형 ${sz.map(Math.round)}`));
+});
+
+test('X. 삭제: 영상·모델·파일(연쇄)·공유 기록·프로젝트, 저장소 파일 실제 제거, 타사·보기전용 차단', async () => {
+  const p = await newProject(A, '삭제 시험');
+  const filesOnDisk = () => { const out = []; const walk = (d) => { if (!fs.existsSync(d)) return; for (const e of fs.readdirSync(d, { withFileTypes: true })) e.isDirectory() ? walk(path.join(d, e.name)) : out.push(path.join(d, e.name)); }; walk(path.join(srv.dataDir, 'storage', 'companies', A.user.company_id)); return out; };
+  const up = await upload(A, p.id, 'bracket_plate.dxf');
+  await waitJob(A, up.data.job.id);
+  const m1 = (await A.post(`/api/files/${up.data.file.id}/extrude`, { thickness: 5 })).data.modelId;
+  const m2 = (await A.post(`/api/files/${up.data.file.id}/extrude`, { thickness: 8 })).data.modelId;
+  const sh = (await A.post(`/api/models/${m1}/shares`, {})).data;
+  const glbs = () => filesOnDisk().filter((f) => f.endsWith('.glb'));
+  // 타사·보기전용 차단
+  assert.equal((await B.req('DELETE', `/api/models/${m1}`)).status, 404);
+  assert.equal((await B.req('DELETE', `/api/files/${up.data.file.id}`)).status, 404);
+  assert.equal((await B.req('DELETE', `/api/projects/${p.id}`)).status, 404);
+  const v = await A.post('/api/auth/users', { email: `ro-${Date.now()}@test.kr`, name: '열람', password: 'password123', role: 'viewer' });
+  const V = new Client(); await V.post('/api/auth/login', { email: v.data.email, password: 'password123' });
+  assert.equal((await V.req('DELETE', `/api/models/${m1}`)).status, 403);
+  // 모델 삭제 → 공유 링크도 사라짐, GLB 파일 제거, 원본은 남음
+  assert.equal((await A.req('DELETE', `/api/models/${m1}`)).status, 200);
+  assert.equal((await A.get(`/api/models/${m1}`)).status, 404);
+  assert.equal((await new Client().get(`/api/public/shares/${sh.token}`)).status, 404);
+  assert.ok(!glbs().some((f) => f.includes(m1)), 'm1 GLB 제거');
+  assert.equal((await A.get(`/api/files/${up.data.file.id}`)).status, 200);
+  // 파일 삭제 → 남은 모델(m2)까지 연쇄 삭제, 원본 파일 제거
+  const linked = (await A.get(`/api/projects/${p.id}`)).data.models.filter((m) => m.source_file_id === up.data.file.id).length;
+  assert.ok(linked >= 1, 'm2 (+ 업로드 즉시 자동 초안)');
+  const del = await A.req('DELETE', `/api/files/${up.data.file.id}`);
+  assert.equal(del.status, 200); assert.equal(del.data.deletedModels, linked);
+  assert.equal((await A.get(`/api/projects/${p.id}`)).data.models.filter((m) => m.source_file_id === up.data.file.id).length, 0);
+  assert.equal((await A.get(`/api/models/${m2}`)).status, 404);
+  assert.ok(!filesOnDisk().some((f) => f.includes(up.data.file.id)), '원본 파일 제거');
+  // 공유 기록 삭제
+  const up2 = await upload(A, p.id, 'cover_single.stl');
+  const j2 = await waitJob(A, up2.data.job.id);
+  const s2 = (await A.post(`/api/models/${j2.result.modelId}/shares`, {})).data;
+  await A.patch(`/api/shares/${s2.id}`, { revoke: true });
+  assert.equal((await A.req('DELETE', `/api/shares/${s2.id}`)).status, 200);
+  assert.equal((await A.get(`/api/projects/${p.id}/shares`)).data.length, 0);
+  // 프로젝트 삭제(관리자) → 전부 제거
+  assert.ok(glbs().some((f) => f.includes(j2.result.modelId)));
+  assert.equal((await A.req('DELETE', `/api/projects/${p.id}`)).status, 200);
+  assert.equal((await A.get(`/api/projects/${p.id}`)).status, 404);
+  assert.ok(!glbs().some((f) => f.includes(j2.result.modelId)), '프로젝트 GLB 제거');
+  const log = (await A.get('/api/auth/audit')).data.map((l) => l.action);
+  for (const a of ['model.delete', 'file.delete', 'share.delete', 'project.delete']) assert.ok(log.includes(a), a);
 });

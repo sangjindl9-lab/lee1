@@ -153,6 +153,42 @@ r.get('/files/:id/preview', async (req, res) => {
   storage.stream(f.company_id, previewKey(f)).pipe(res);
 });
 
+// 3D 모델 삭제 (원본 파일은 남김) → 장면·영상·공유 링크 함께 삭제
+r.delete('/models/:id', write, async (req, res) => {
+  const keys = await req.db(async (c) => {
+    const { rows: [m] } = await c.query('SELECT id,name,glb_key FROM models WHERE id=$1', [req.params.id]);
+    if (!m) return null;
+    const { rows } = await c.query('SELECT storage_key,thumb_key FROM videos WHERE model_id=$1', [m.id]);
+    await c.query('DELETE FROM models WHERE id=$1', [m.id]);
+    await audit(c, { companyId: req.user.companyId, userId: req.user.id, action: 'model.delete', target: m.id, meta: { name: m.name, videos: rows.length } });
+    return [m.glb_key, ...rows.flatMap((v) => [v.storage_key, v.thumb_key])].filter(Boolean);
+  });
+  if (!keys) return nf(res, '모델');
+  for (const k of keys) await storage.remove(req.user.companyId, k).catch(() => {});
+  res.json({ ok: true });
+});
+
+r.delete('/videos/:id', write, async (req, res) => {
+  const v = await req.db(async (c) => {
+    const { rows: [v] } = await c.query('DELETE FROM videos WHERE id=$1 RETURNING id,model_id,storage_key,thumb_key', [req.params.id]);
+    if (v) await audit(c, { companyId: req.user.companyId, userId: req.user.id, action: 'video.delete', target: v.id, meta: { modelId: v.model_id } });
+    return v;
+  });
+  if (!v) return nf(res, '영상');
+  for (const k of [v.storage_key, v.thumb_key]) await storage.remove(req.user.companyId, k).catch(() => {});
+  res.json({ ok: true });
+});
+
+// 공유 링크 기록 삭제 (폐기와 달리 목록에서도 사라짐)
+r.delete('/shares/:id', write, async (req, res) => {
+  const s2 = await req.db(async (c) => {
+    const { rows: [s] } = await c.query('DELETE FROM share_links WHERE id=$1 RETURNING id', [req.params.id]);
+    if (s) await audit(c, { companyId: req.user.companyId, userId: req.user.id, action: 'share.delete', target: s.id });
+    return s;
+  });
+  s2 ? res.json({ ok: true }) : nf(res, '공유 링크');
+});
+
 // ── 동영상 렌더 ────────────────────────────────────────────────
 r.post('/models/:id/renders', write, async (req, res) => {
   const { quality = 'fhd', fps = 30 } = req.body || {};

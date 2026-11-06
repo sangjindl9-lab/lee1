@@ -55,13 +55,46 @@ r.patch('/projects/:id', write, async (req, res) => {
   p ? res.json(p) : nf(res, '프로젝트');
 });
 
+// 삭제 시 함께 지울 저장소 객체 (DB 는 외래키 CASCADE 로 모델·장면·영상·공유 링크가 같이 지워짐)
+async function storageKeysFor(c, companyId, where, args) {
+  const { rows } = await c.query(`
+    SELECT f.storage_key AS k, f.id AS fid FROM files f WHERE ${where.files}
+    UNION ALL SELECT m.glb_key, NULL FROM models m WHERE ${where.models}
+    UNION ALL SELECT v.storage_key, NULL FROM videos v JOIN models m ON m.id=v.model_id WHERE ${where.models}
+    UNION ALL SELECT v.thumb_key, NULL FROM videos v JOIN models m ON m.id=v.model_id WHERE ${where.models}`, args);
+  return [...rows.map((r) => r.k), ...rows.filter((r) => r.fid).map((r) => storage.keyFor(companyId, 'previews', `${r.fid}.png`))].filter(Boolean);
+}
+const purge = async (companyId, keys) => { for (const k of keys) await storage.remove(companyId, k).catch(() => {}); };
+
 r.delete('/projects/:id', requireRole('admin'), async (req, res) => {
-  const ok = await req.db(async (c) => {
-    const { rowCount } = await c.query('DELETE FROM projects WHERE id=$1', [req.params.id]);
-    if (rowCount) await audit(c, { companyId: req.user.companyId, userId: req.user.id, action: 'project.delete', target: req.params.id });
-    return rowCount;
+  const keys = await req.db(async (c) => {
+    const { rows: [p] } = await c.query('SELECT id,name FROM projects WHERE id=$1', [req.params.id]);
+    if (!p) return null;
+    const keys = await storageKeysFor(c, req.user.companyId, { files: 'f.project_id=$1', models: 'm.project_id=$1' }, [p.id]);
+    await c.query('DELETE FROM projects WHERE id=$1', [p.id]);
+    await audit(c, { companyId: req.user.companyId, userId: req.user.id, action: 'project.delete', target: p.id, meta: { name: p.name } });
+    return keys;
   });
-  ok ? res.json({ ok: true }) : nf(res, '프로젝트');
+  if (!keys) return nf(res, '프로젝트');
+  await purge(req.user.companyId, keys);
+  res.json({ ok: true });
+});
+
+// 원본 파일 삭제 → 이 파일로 만든 3D 모델·장면·영상·공유 링크도 함께 삭제
+r.delete('/files/:id', write, async (req, res) => {
+  const out = await req.db(async (c) => {
+    const { rows: [f] } = await c.query('SELECT id,original_name,project_id FROM files WHERE id=$1', [req.params.id]);
+    if (!f) return null;
+    const { rows: [n] } = await c.query('SELECT count(*)::int AS models FROM models WHERE source_file_id=$1', [f.id]);
+    const keys = await storageKeysFor(c, req.user.companyId, { files: 'f.id=$1', models: 'm.source_file_id=$1' }, [f.id]);
+    await c.query('DELETE FROM files WHERE id=$1', [f.id]);
+    await c.query("UPDATE jobs SET status='failed', error='파일이 삭제됨', finished_at=now() WHERE status IN ('queued') AND payload->>'fileId'=$1", [f.id]);
+    await audit(c, { companyId: req.user.companyId, userId: req.user.id, action: 'file.delete', target: f.id, meta: { name: f.original_name, models: n.models } });
+    return { keys, models: n.models };
+  });
+  if (!out) return nf(res, '파일');
+  await purge(req.user.companyId, out.keys);
+  res.json({ ok: true, deletedModels: out.models });
 });
 
 // ── 분할 업로드 ────────────────────────────────────────────────

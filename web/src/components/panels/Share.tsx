@@ -54,6 +54,7 @@ export default function SharePanel({ projectId, modelId, modelName, canWrite, on
               {canWrite && <><button className="btn h-6 px-2 text-xs" onClick={async () => { await api(`/shares/${s.id}/reissue`, { method: 'POST' }); load(); }}>재발급</button>
                 <button className="btn h-6 px-2 text-xs text-bad" onClick={async () => { if (confirm('이 링크를 폐기할까요? 더 이상 열리지 않습니다.')) { await api(`/shares/${s.id}`, { method: 'PATCH', body: { revoke: true } }); load(); } }}>폐기</button></>}
             </div>}
+            {s.revoked_at && canWrite && <button className="btn h-6 px-2 text-xs text-bad" onClick={async () => { await api(`/shares/${s.id}`, { method: 'DELETE' }); load(); }}>기록 삭제</button>}
             {qr === s.id && <div className="flex items-end gap-2 pt-1"><img src={`/api/shares/${s.id}/qr.png`} alt="QR" className="h-36 w-36 rounded bg-white p-1" data-testid="qr" />
               <a className="btn h-6 px-2 text-xs" href={`/api/shares/${s.id}/qr.png`} download={`qr-${s.token}.png`}>PNG 저장</a></div>}
           </div>

@@ -95,7 +95,8 @@ export default function VideoPanel({ modelId, jobs, onSave, canWrite, refresh }:
           <div key={v.id} className="overflow-hidden rounded-md border border-line" data-testid="video-row">
             <video src={`/api/videos/${v.id}/file`} poster={`/api/videos/${v.id}/thumb`} controls preload="none" className="aspect-video w-full bg-black" />
             <div className="flex items-center gap-2 p-2 text-xs"><span className="num">{v.width}×{v.height} · {v.fps}fps · {Number(v.duration).toFixed(1)}s · {fmtBytes(Number(v.size))}</span>
-              <a className="btn btn-accent ml-auto h-6 px-2 text-xs" href={`/api/videos/${v.id}/file?download=1`}>MP4 다운로드</a></div>
+              <a className="btn btn-accent ml-auto h-6 px-2 text-xs" href={`/api/videos/${v.id}/file?download=1`}>MP4 다운로드</a>
+              {canWrite && <button className="btn h-6 px-2 text-xs text-bad" data-testid="video-delete" onClick={async () => { if (confirm('이 영상을 삭제할까요?')) { await api(`/videos/${v.id}`, { method: 'DELETE' }); loadV(); } }}>삭제</button>}</div>
             <div className="px-2 pb-2 text-[11px] text-mute">{fmtDate(v.created_at)}</div>
           </div>
         ))}

@@ -44,3 +44,9 @@ export async function sha256File(p) {
   for await (const chunk of fs.createReadStream(p)) h.update(chunk);
   return h.digest('hex');
 }
+
+/** 객체 삭제 (없으면 무시). 회사 접두사 검사는 동일하게 적용 */
+export async function remove(companyId, key) {
+  if (!key) return;
+  await fsp.rm(resolve(companyId, key), { force: true });
+}

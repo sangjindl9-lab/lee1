@@ -40,6 +40,10 @@ export default function Workspace({ projectId, me }: { projectId: string; me: Me
   useEffect(() => { load().then((d) => { if (d?.models?.length) { setTab('explode'); setModelId((m) => m || d.models[0].id); } }); }, [load]);
 
   // 진행 중 작업이 있으면 2초 간격 갱신
+  // 선택된 모델이 삭제되었으면 선택 해제
+  useEffect(() => {
+    if (data && modelId && !data.models.some((m: any) => m.id === modelId)) { setModelId(data.models[0]?.id || null); if (!data.models.length) useWS.setState({ model: null, scene: null }); }
+  }, [data, modelId]);
   const busy = data?.jobs?.some((j: any) => j.status === 'queued' || j.status === 'running');
   useEffect(() => {
     if (!busy) return;
@@ -112,10 +116,17 @@ export default function Workspace({ projectId, me }: { projectId: string; me: Me
             <div className="panel-title mb-2">모델</div>
             <div className="max-h-40 space-y-0.5 overflow-auto">
               {data.models.map((m: any) => (
-                <button key={m.id} data-testid="model-row" onClick={() => setModelId(m.id)}
-                  className={`flex w-full items-center gap-2 rounded px-2 py-1 text-left text-[13px] ${m.id === modelId ? 'bg-accent/15 text-accent' : 'hover:bg-panel2'}`}>
+                <div key={m.id} data-testid="model-row" onClick={() => setModelId(m.id)} role="button"
+                  className={`group flex w-full cursor-pointer items-center gap-2 rounded px-2 py-1 text-left text-[13px] ${m.id === modelId ? 'bg-accent/15 text-accent' : 'hover:bg-panel2'}`}>
                   <span className="truncate">{m.name}</span><span className="num ml-auto text-[10px] text-mute">{m.stats.partCount}p</span>
-                </button>
+                  {canWrite && <button title="모델 삭제" data-testid="model-delete" className="w-4 text-mute opacity-0 hover:text-bad group-hover:opacity-100" onClick={async (e) => {
+                    e.stopPropagation();
+                    if (!confirm(`3D 모델 '${m.name}' 을(를) 삭제할까요?\n장면 설정·영상·공유 링크도 함께 삭제됩니다. 원본 파일은 남습니다.`)) return;
+                    await api(`/models/${m.id}`, { method: 'DELETE' });
+                    if (m.id === modelId) { setModelId(null); useWS.setState({ model: null, scene: null }); history.replaceState(null, '', `/app/p/${projectId}`); }
+                    load();
+                  }}>✕</button>}
+                </div>
               ))}
               {!data.models.length && <div className="text-xs text-mute">파일을 올리면 모델이 생성됩니다.</div>}
             </div>

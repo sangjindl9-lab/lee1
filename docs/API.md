@@ -22,6 +22,9 @@
 | GET | /files/:id/preview | PDF 1쪽 미리보기 PNG |
 | POST | /files/:id/reconstruct | 투상도 결합 3D 초안 `{scale (PDF 필수), groups?: [{front, top, side, topPos, sidePos}]}` → 검토 대기 모델 |
 | POST | /files/:id/reanalyze | 2D 도면 다시 분석 |
+| DELETE | /files/:id | 원본 파일 삭제 (이 파일로 만든 모델·영상·공유 링크 연쇄 삭제) |
+| DELETE | /models/:id | 3D 모델 삭제 (원본 파일은 유지) |
+| DELETE | /videos/:id · /shares/:id | 영상 삭제 / 공유 링크 기록 삭제 |
 | POST | /models/:id/review | AI 추정 모델 검토 `{decision: approved|rejected, note}` |
 | GET | /jobs/:id · POST /jobs/:id/retry | 작업 상태 / 실패 작업 재시도 |
 

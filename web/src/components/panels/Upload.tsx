@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { uploadFile, fmtBytes, fmtDate } from '../../api';
+import { api, uploadFile, fmtBytes, fmtDate } from '../../api';
 
 export const DRAWING = ['dxf', 'dwg', 'pdf', 'jpg', 'jpeg', 'png', 'tif', 'tiff'];
 
@@ -57,6 +57,10 @@ export default function UploadPanel({ projectId, files, jobs, onChange, onExtrud
               <div className="mt-1.5 flex gap-1">
                 {DRAWING.includes(f.ext) && f.status !== 'analyzing' && f.has_analysis && canWrite && <button className={`btn h-6 px-2 text-xs ${f.status === 'analyzed' ? 'btn-on' : ''}`} onClick={() => onExtrude(f.id)}>{f.status === 'converted' ? '값 고쳐 3D 다시 만들기' : '축척·두께 입력 → 3D 생성'}</button>}
                 {canWrite && <a className="btn h-6 px-2 text-xs" href={`/api/files/${f.id}/original`}>원본</a>}
+                {canWrite && <button className="btn h-6 px-2 text-xs text-bad ml-auto" data-testid="file-delete" onClick={async () => {
+                  if (!confirm(`'${f.original_name}' v${f.version} 을(를) 삭제할까요?\n이 파일로 만든 3D 모델·영상·공유 링크도 함께 삭제되며 되돌릴 수 없습니다.`)) return;
+                  try { await api(`/files/${f.id}`, { method: 'DELETE' }); onChange(); } catch (e: any) { setErr(e.message); }
+                }}>삭제</button>}
               </div>
             </div>
           );

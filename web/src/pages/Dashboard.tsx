@@ -50,12 +50,17 @@ export default function Dashboard({ me, onLogout }: { me: Me; onLogout: () => vo
         ) : (
           <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {list.map((p) => (
-              <button key={p.id} onClick={() => navigate(`/app/p/${p.id}`)} className="group rounded-xl border border-line bg-panel p-4 text-left transition hover:border-accent">
-                <div className="flex items-center gap-2"><span className="chip">{t(`industry.${p.industry}` as any)}</span><span className="ml-auto text-xs text-mute">{fmtDate(p.updated_at)}</span></div>
+              <div key={p.id} role="button" onClick={() => navigate(`/app/p/${p.id}`)} className="group cursor-pointer rounded-xl border border-line bg-panel p-4 text-left transition hover:border-accent" data-testid="project-card">
+                <div className="flex items-center gap-2"><span className="chip">{t(`industry.${p.industry}` as any)}</span><span className="ml-auto text-xs text-mute">{fmtDate(p.updated_at)}</span>
+                  {me.user.role === 'admin' && <button title="프로젝트 삭제" data-testid="project-delete" className="text-mute opacity-0 hover:text-bad group-hover:opacity-100" onClick={async (e) => {
+                    e.stopPropagation();
+                    if (prompt(`프로젝트 '${p.name}' 의 모든 파일·3D 모델·영상·공유 링크가 삭제되며 되돌릴 수 없습니다.\n삭제하려면 프로젝트명을 입력하세요.`) !== p.name) return;
+                    await api(`/projects/${p.id}`, { method: 'DELETE' }); load();
+                  }}>✕</button>}</div>
                 <div className="mt-3 text-base font-semibold group-hover:text-accent">{p.name}</div>
                 <div className="mt-1 line-clamp-2 min-h-[2.5em] text-sm text-mute">{p.description || '설명 없음'}</div>
                 <div className="mt-3 flex gap-4 text-xs text-mute"><span>모델 <b className="num text-ink">{p.model_count}</b></span><span>파일 <b className="num text-ink">{p.file_count}</b></span></div>
-              </button>
+              </div>
             ))}
           </div>
         )}
