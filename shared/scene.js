@@ -73,7 +73,7 @@ export function defaultScene(parts, name, industry) {
 }
 
 export const stepCount = (scene) =>
-  Math.max(0, ...Object.values(scene.parts || {}).map((p) => (p.explode?.dist > 0 ? p.explode.step || 0 : 0)));
+  Math.max(0, ...Object.values(scene.parts || {}).map((p) => (!p.deleted && p.explode?.dist > 0 ? p.explode.step || 0 : 0)));
 
 export const totalDuration = (scene) => (scene.animation?.clips || []).reduce((s, c) => s + Math.max(0, +c.duration || 0), 0);
 

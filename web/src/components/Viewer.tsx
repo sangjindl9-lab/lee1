@@ -123,7 +123,15 @@ function Scene3D({ model, interactive }: { model: LoadedModel; interactive: bool
     viewerBridge.target = controls.current?.target;
   });
 
-  const pick = (e: any) => partIdOf(e.object);
+  // 숨김·삭제된 부품은 클릭을 가로채지 않음: 교차 목록에서 보이는 첫 부품
+  const pick = (e: any) => {
+    for (const it of e.intersections || [{ object: e.object }]) {
+      let o = it.object, vis = true;
+      while (o) { if (!o.visible) { vis = false; break; } o = o.parent; }
+      if (vis) return partIdOf(it.object);
+    }
+    return null;
+  };
   return (
     <>
       <primitive object={model.root}

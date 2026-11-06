@@ -59,7 +59,7 @@ export function applyScene(model: LoadedModel, scene: any, e: number, view: View
     const off = partOffset(cfg, e, factor);
     tmp.set(off[0], off[1], off[2]).applyMatrix3(p.toLocal);
     p.node.position.copy(p.base).add(tmp);
-    const hidden = !!cfg.hidden || (view.isolate ? view.isolate !== p.id : false);
+    const hidden = !!cfg.hidden || !!cfg.deleted || (view.isolate ? view.isolate !== p.id : false);
     p.node.visible = !hidden;
     const sel = view.selected === p.id, hov = view.hover === p.id;
     for (const m of p.materials) {

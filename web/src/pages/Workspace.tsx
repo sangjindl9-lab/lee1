@@ -40,6 +40,19 @@ export default function Workspace({ projectId, me }: { projectId: string; me: Me
   useEffect(() => { load().then((d) => { if (d?.models?.length) { setTab('explode'); setModelId((m) => m || d.models[0].id); } }); }, [load]);
 
   // 진행 중 작업이 있으면 2초 간격 갱신
+  // 다른 프로젝트에서 넘어왔거나 모델이 없으면 이전 모델의 부품 트리를 비움
+  useEffect(() => { useWS.setState({ model: null, scene: null, selected: null, isolate: null }); }, [projectId]);
+  useEffect(() => { if (!modelId) useWS.setState({ model: null, scene: null, selected: null, isolate: null }); }, [modelId]);
+  // Delete 키: 선택한 부품 삭제 (저장 시 반영, 부품 트리 아래 '모두 복원' 가능)
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement;
+      if (e.key !== 'Delete' || !canWrite || /INPUT|TEXTAREA|SELECT/.test(t.tagName)) return;
+      const st = useWS.getState();
+      if (st.selected && st.model) { st.patchPart(st.selected, { deleted: true, hidden: undefined }); st.set({ selected: null, isolate: null }); }
+    };
+    addEventListener('keydown', k); return () => removeEventListener('keydown', k);
+  }, [canWrite]);
   // 선택된 모델이 삭제되었으면 선택 해제
   useEffect(() => {
     if (data && modelId && !data.models.some((m: any) => m.id === modelId)) { setModelId(data.models[0]?.id || null); if (!data.models.length) useWS.setState({ model: null, scene: null }); }

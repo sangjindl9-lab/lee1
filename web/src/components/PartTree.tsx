@@ -13,11 +13,13 @@ export default function PartTree() {
     return kids;
   }, [model]);
   if (!model) return null;
+  const deleted = (model.parts || []).filter((p) => scene?.parts?.[p.id]?.deleted);
   const match = (p: Part) => !q || p.name.toLowerCase().includes(q.toLowerCase()) || p.id.toLowerCase().includes(q.toLowerCase());
   const row = (p: Part, depth: number): React.ReactNode => {
     const hidden = !!scene?.parts?.[p.id]?.hidden;
     const sel = selected === p.id;
     const children = tree.get(p.id) || [];
+    if (scene?.parts?.[p.id]?.deleted) return <div key={p.id}>{children.map((c) => row(c, depth))}</div>;
     if (!match(p) && !children.some(match)) return null;
     return (
       <div key={p.id}>
@@ -40,12 +42,18 @@ export default function PartTree() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex items-center gap-2 px-3 pb-2 pt-3">
-        <span className="panel-title">부품 트리</span><span className="num text-xs text-mute">{model.parts.length}</span>
+        <span className="panel-title">부품 트리</span><span className="num text-xs text-mute">{model.parts.length - deleted.length}</span>
         {isolate && <button className="btn ml-auto h-6 px-2 text-xs" onClick={() => useWS.getState().set({ isolate: null })}>격리 해제</button>}
       </div>
       <div className="px-3 pb-2"><input className="input h-7" placeholder="부품 검색" value={q} onChange={(e) => setQ(e.target.value)} /></div>
       <div className="min-h-0 flex-1 overflow-auto px-1.5 pb-3">{(tree.get(null) || []).map((p) => row(p, 0))}</div>
-      <div className="border-t border-line px-3 py-2 text-[11px] text-mute">클릭: 선택 · 더블클릭: 격리 · ●: 숨김</div>
+      {deleted.length > 0 && (
+        <div className="flex items-center gap-2 border-t border-line px-3 py-1.5 text-[11px] text-mute" data-testid="deleted-parts">
+          삭제된 부품 {deleted.length}개
+          <button className="btn ml-auto h-6 px-2 text-[11px]" onClick={() => useWS.getState().patchScene((s) => { for (const p of deleted) delete s.parts[p.id].deleted; })}>모두 복원</button>
+        </div>
+      )}
+      <div className="border-t border-line px-3 py-2 text-[11px] text-mute">클릭: 선택 · 더블클릭: 격리 · ●: 숨김 · Delete: 삭제</div>
     </div>
   );
 }

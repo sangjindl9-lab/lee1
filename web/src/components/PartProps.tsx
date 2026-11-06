@@ -37,6 +37,7 @@ export default function PartProps({ readOnly = false }: { readOnly?: boolean }) 
         <div className="flex gap-2">
           <button className="btn flex-1 justify-center" onClick={() => patch({ hidden: cfg.hidden ? undefined : true })}>{cfg.hidden ? '보이기' : '숨기기'}</button>
           <button className="btn flex-1 justify-center" onClick={() => useWS.getState().set({ isolate: useWS.getState().isolate === part.id ? null : part.id })}>격리</button>
+          <button className="btn flex-1 justify-center text-bad" data-testid="part-delete" onClick={() => { useWS.getState().patchPart(part.id, { deleted: true, hidden: undefined }); useWS.getState().set({ selected: null, isolate: null }); }}>부품 삭제</button>
         </div>
         <div className="space-y-2 rounded-lg border border-line bg-panel2 p-2.5">
           <div className="panel-title">분해 설정</div>

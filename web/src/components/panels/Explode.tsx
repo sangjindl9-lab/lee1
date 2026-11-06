@@ -7,7 +7,7 @@ export default function ExplodePanel({ canWrite }: { canWrite: boolean }) {
   if (!scene || !model) return null;
   const S = steps(scene);
   const byStep = new Map<number, string[]>();
-  for (const p of model.parts) { const k = scene.parts[p.id]?.explode?.dist > 0 ? scene.parts[p.id].explode.step : 0; byStep.set(k, [...(byStep.get(k) || []), p.id]); }
+  for (const p of model.parts) { if (scene.parts[p.id]?.deleted) continue; const k = scene.parts[p.id]?.explode?.dist > 0 ? scene.parts[p.id].explode.step : 0; byStep.set(k, [...(byStep.get(k) || []), p.id]); }
   const name = (id: string) => scene.parts[id]?.label || model.parts.find((p) => p.id === id)?.name;
   return (
     <div className="space-y-3 p-3">
