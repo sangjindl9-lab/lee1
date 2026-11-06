@@ -298,3 +298,7 @@ button.eum-row { border-bottom: 1px solid var(--eum-line); }
 .eum-edit-acts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
 .eum-edit-acts button { height: 46px; border-radius: 10px; border: 1px solid var(--eum-line); background: #fff; font: 600 15px system-ui, sans-serif; color: inherit; }
 .eum-edit-acts .eum-edit-ok { background: var(--eum-blue); border-color: var(--eum-blue); color: #fff; }
+
+/* 홈 로고 */
+.eum-home-head { display: flex; align-items: center; gap: 14px; }
+.eum-logo { width: 56px; height: 56px; flex: 0 0 auto; }

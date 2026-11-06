@@ -352,7 +352,10 @@
 
     const home = el('div'); home.id = 'eum-home';
     const head = el('div', 'eum-home-head');
-    head.append(el('h1', null, '이음과 문서'), el('p', null, '한글 · 엑셀 · 워드 · PPT 보기 · 편집'));
+    const logo = el('img', 'eum-logo'); logo.src = 'eum/icon.png'; logo.alt = '';
+    const headText = el('div');
+    headText.append(el('h1', null, '이음과 문서'), el('p', null, '한글 · 엑셀 · 워드 · PPT 보기 · 편집'));
+    head.append(logo, headText);
     const acts = el('div', 'eum-home-acts');
     const bOpen = el('button', 'eum-act eum-act-primary', '문서 열기');
     bOpen.onclick = () => { armed = true; wantEditOnLoad = false; run('file:open'); };
