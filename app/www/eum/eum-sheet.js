@@ -1,5 +1,5 @@
 /*
- * 이음한글 — 엑셀(xlsx · xlsm) 보기·셀 편집·저장 화면.
+ * 이음과 문서 — 엑셀(xlsx · xlsm) 보기·셀 편집·저장 화면.
  * 읽기/쓰기: ExcelJS, 표시 형식: SSF, 수식 재계산: fast-formula-parser (모두 eum/lib, 처음 열 때 불러온다).
  */
 (function () {
@@ -283,7 +283,6 @@
 
   // ── 열기·저장 ─────────────────────────────────────────────
   async function open(uri, name) {
-    if (S.wb && S.dirty && !confirm('저장하지 않은 엑셀 변경 내용이 있습니다. 버리고 다른 파일을 열까요?')) return false;
     root.hidden = false;
     root.classList.add('eum-loading');
     titleEl.textContent = name;

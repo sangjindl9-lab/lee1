@@ -49,7 +49,7 @@ public class EumFilesPlugin extends Plugin {
         if (file != null) bridge.triggerWindowJSEvent("eumLaunch", file.toString());
     }
 
-    /** 다른 앱(파일 관리자·카카오톡 등)에서 "이음한글로 열기"로 넘어온 파일. 한 번만 돌려준다. */
+    /** 다른 앱(파일 관리자·카카오톡 등)에서 "이음과 문서로 열기"로 넘어온 파일. 한 번만 돌려준다. */
     @PluginMethod
     public void getLaunch(PluginCall call) {
         JSObject file = fileFromIntent(pendingLaunch);

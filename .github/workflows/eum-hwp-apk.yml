@@ -1,4 +1,4 @@
-name: 이음한글 APK 빌드
+name: 이음과 문서 APK 빌드
 on:
   push:
     branches: [eum-hwp]
@@ -44,5 +44,5 @@ jobs:
           gh release delete eum-hwp-latest --yes --cleanup-tag || true
           gh release create eum-hwp-latest eum-hwp.apk \
             --target "$GITHUB_SHA" \
-            --title "이음한글 앱 (최신)" \
-            --notes "휴대폰에서 eum-hwp.apk를 눌러 내려받아 설치하세요. hwp · hwpx 문서를 열고 편집해 같은 형식으로 저장합니다."
+            --title "이음과 문서 앱 (최신)" \
+            --notes "휴대폰에서 eum-hwp.apk를 눌러 내려받아 설치하세요. 한글(hwp·hwpx) · 엑셀(xlsx) · 워드(docx) · PPT(pptx) 문서를 열고 고쳐 같은 형식으로 저장합니다."

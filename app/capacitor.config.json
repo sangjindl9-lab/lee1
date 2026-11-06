@@ -1,6 +1,6 @@
 {
   "appId": "kr.eumsoft.hwp",
-  "appName": "이음한글",
+  "appName": "이음과 문서",
   "webDir": "www",
   "android": {
     "adjustMarginsForEdgeToEdge": "force"
