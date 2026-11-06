@@ -1,0 +1,54 @@
+name: 이음뷰어 APK 빌드
+on:
+  push:
+    branches: [eum-viewer]
+    paths: ['app/**', '.github/workflows/eum-viewer-apk.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: 패키지 설치
+        run: npm install
+      - name: 화면 코드 묶기
+        run: npm run build
+      - name: 웹 화면을 안드로이드에 반영
+        run: npx cap sync android
+      - name: APK(테스트 설치용)·AAB(플레이 스토어용) 빌드
+        working-directory: app/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug bundleRelease --no-daemon
+      - name: 파일 이름 정리
+        run: |
+          cp android/app/build/outputs/apk/debug/app-debug.apk ../eum-viewer.apk
+          cp android/app/build/outputs/bundle/release/app-release.aab ../eum-viewer-unsigned.aab
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eum-viewer-apk
+          path: |
+            eum-viewer.apk
+            eum-viewer-unsigned.aab
+      - name: 다운로드 페이지(릴리스)에 올리기
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete eum-viewer-latest --yes --cleanup-tag || true
+          gh release create eum-viewer-latest eum-viewer.apk eum-viewer-unsigned.aab \
+            --target "$GITHUB_SHA" \
+            --title "이음뷰어 앱 (최신)" \
+            --notes "휴대폰에서 eum-viewer.apk를 눌러 내려받아 설치하세요. PDF · DWG · DXF 를 열고, 치수를 재고, PDF 는 편집해 저장합니다. eum-viewer-unsigned.aab 는 서명 전 플레이 스토어용 번들입니다(업로드 키로 서명한 뒤 콘솔에 올림)."

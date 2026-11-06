@@ -1,0 +1,21 @@
+{
+  "name": "eum-viewer-app",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "@capacitor/android": "7.6.9",
+    "@capacitor/core": "7.6.9",
+    "@mlightcad/dxf-json": "^1.2.8",
+    "@mlightcad/libredwg-web": "0.8.4",
+    "@pdf-lib/fontkit": "1.1.1",
+    "pdf-lib": "1.17.1",
+    "pdfjs-dist": "4.10.38"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "7.6.9",
+    "esbuild": "0.25.5"
+  }
+}

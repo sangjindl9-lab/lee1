@@ -1,0 +1,4 @@
+/build/*
+!/build/.npmkeep
+release.keystore
+release.properties

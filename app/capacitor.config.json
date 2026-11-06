@@ -1,0 +1,8 @@
+{
+  "appId": "kr.eumsoft.viewer",
+  "appName": "이음뷰어",
+  "webDir": "www",
+  "android": {
+    "adjustMarginsForEdgeToEdge": "force"
+  }
+}
