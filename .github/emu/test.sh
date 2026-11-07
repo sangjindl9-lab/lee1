@@ -70,12 +70,12 @@ for NAV in gestural threebutton; do
 done
 
 ensure; log "== 가로 화면 캡처 (3버튼)"
-adb shell settings put system accelerometer_rotation 0; adb shell cmd window user-rotation lock 1; sleep 4
+adb shell settings put system accelerometer_rotation 1; adb emu rotate; sleep 5; log "  회전 상태: $(adb shell dumpsys window displays | grep -o "mCurrentRotation=[A-Z_0-9]*" | head -1)"
 adb shell am start -W -n $A/.ui.MainActivity >/dev/null; sleep 3
 shot 07_landscape_screen
 LP=$(helper); log "  가로 화면 도우미 위치: $LP"
 adb shell input swipe $LP $LP 1200 | true; sleep 5; pullnew 08_landscape_capture; elog
-adb shell cmd window user-rotation lock 0; sleep 3
+adb emu rotate; adb emu rotate; adb emu rotate; sleep 4
 
 log "== 공유 메뉴로 클립 저장"
 adb shell am start -a android.intent.action.SEND -t text/plain --es android.intent.extra.TEXT "붙여넣기테스트" -n $A/.ui.ShareReceiveActivity >/dev/null; sleep 2
