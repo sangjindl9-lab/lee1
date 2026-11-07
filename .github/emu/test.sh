@@ -8,7 +8,8 @@ log(){ echo "$*" | tee -a $R; }
 shot(){ adb exec-out screencap -p > $O/$1.png; }
 dump(){ adb shell uiautomator dump --windows /sdcard/ui.xml >/dev/null 2>&1 || adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1; adb pull /sdcard/ui.xml $O/ui.xml >/dev/null 2>&1; }
 tap_text(){ dump; p=$(python3 $D/ui.py $O/ui.xml "$1" $2) || { log "  (못 찾음: $1)"; return 1; }; adb shell input tap $p; sleep ${3:-2}; }
-elog(){ adb logcat -d -s EUMQ:I | grep EUMQ | tail -${1:-6} | sed 's/^.*EUMQ *: /    log: /' | tee -a $R; adb logcat -c; }
+LC=0
+elog(){ adb logcat -d -s EUMQ:I | grep EUMQ > $O/eumq.txt; local n; n=$(wc -l < $O/eumq.txt); tail -n +$((LC+1)) $O/eumq.txt | grep -v "helper " | tail -${1:-8} | sed 's/^.*EUMQ *: /    log: /' | tee -a $R; LC=$n; }
 helper(){ adb logcat -d -s EUMQ:I | grep "helper " | tail -1 | awk '{n=NF; print $(n-3)+int($(n-1)/2), $(n-2)+int($(n-1)/2)}'; }
 pics(){ adb shell ls /sdcard/Pictures/EUM_QUICK/ 2>/dev/null | tr -d '\r'; }
 pullnew(){ # $1 = 저장 이름, 이전 목록과 비교해 새 파일을 가져온다
@@ -30,7 +31,12 @@ adb shell "cat /data/local/tmp/eum.xml | run-as $A sh -c 'mkdir -p shared_prefs 
 adb shell settings put secure enabled_accessibility_services $A/$A.service.HelperService
 adb shell settings put secure accessibility_enabled 1
 sleep 6
-log "== 접근성 서비스"; adb shell dumpsys accessibility | grep -o "kr.eumsoft.quick[^ ,}]*" | sort -u | tee -a $R
+for t in 1 2 3; do
+  if adb logcat -d -s EUMQ:I | grep -q "service connected"; then break; fi
+  log "  접근성 서비스 연결 대기 ($t)"; adb shell settings put secure enabled_accessibility_services null; sleep 2
+  adb shell settings put secure enabled_accessibility_services $A/$A.service.HelperService; sleep 6
+done
+log "== 접근성 서비스"; elog 3; adb shell dumpsys accessibility | grep -i "eumsoft" | cut -c1-200 | head -5 | tee -a $R
 adb shell am start -W -n $A/.ui.MainActivity >/dev/null; sleep 3; shot 02_home_on
 
 # 도우미 버튼 위치 계산 (기본: 오른쪽, 높이 40%, 44dp)
@@ -46,7 +52,7 @@ for NAV in gestural threebutton; do
   adb shell cmd overlay enable-exclusive --category com.android.internal.systemui.navbar.$NAV >/dev/null 2>&1; sleep 4
   adb shell input keyevent KEYCODE_HOME; sleep 2
   shot 04_${NAV}_screen
-  log "== [$NAV] 길게 누르기 캡처"; adb logcat -c; adb shell input swipe $BX $BY $BX $BY 1200; sleep 2; shot 05_${NAV}_longpress_toast; sleep 3; pullnew 05_${NAV}_longpress; elog
+  log "== [$NAV] 길게 누르기 캡처"; adb shell input swipe $BX $BY $BX $BY 1200; sleep 2; shot 05_${NAV}_longpress_toast; sleep 3; pullnew 05_${NAV}_longpress; elog
   log "== [$NAV] 세 번 터치 캡처"; adb shell "input tap $BX $BY; input tap $BX $BY; input tap $BX $BY"; sleep 5; pullnew 06_${NAV}_triple; elog
 done
 
@@ -79,9 +85,8 @@ PY
 adb shell input tap $p; sleep 2
 adb shell input keyevent KEYCODE_MOVE_END; adb shell input keyevent KEYCODE_DPAD_LEFT KEYCODE_DPAD_LEFT KEYCODE_DPAD_LEFT; sleep 1
 shot 10_field_focused
-HP=$(helper); log "  도우미 위치(입력창 옆): $HP"; elog 3
+HP=$(helper); log "  도우미 위치(입력창 옆): $HP"; adb logcat -d -s EUMQ:I | grep "helper " | tail -2 | tee -a $R
 log "  붙여넣기 전 입력창: $(dump; python3 $D/find_text.py $O/ui.xml | head -1)"
-adb logcat -c
 adb shell input tap $HP; sleep 3; shot 11_panel_open
 RP=$(adb logcat -d -s EUMQ:I | grep "panel row0" | tail -1 | awk '{print $(NF-1), $NF}')
 log "  패널 첫 항목 위치: $RP"

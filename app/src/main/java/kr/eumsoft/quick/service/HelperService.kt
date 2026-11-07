@@ -5,6 +5,7 @@ import android.content.res.Configuration
 import android.graphics.Rect
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
@@ -46,6 +47,7 @@ class HelperService : AccessibilityService() {
     override fun onServiceConnected() {
         instance = this
         prefs = Prefs(this)
+        Log.i("EUMQ", "service connected consent=${prefs.consentA11y}")
         if (!prefs.consentA11y) {
             Toast.makeText(this, "이음 퀵도우미 앱에서 접근성 사용 안내를 확인하고 동의해야 동작합니다.", Toast.LENGTH_LONG).show()
             return
