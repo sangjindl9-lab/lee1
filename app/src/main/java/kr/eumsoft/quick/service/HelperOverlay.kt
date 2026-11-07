@@ -63,8 +63,9 @@ class HelperOverlay(private val svc: HelperService) {
 
     /** 상태 변화(입력창·키보드·설정·일시정지·앱 전환·회전) 때마다 호출 */
     fun refresh() {
-        if (hiddenForCapture) return
+        if (hiddenForCapture) { Log.i("EUMQ", "refresh skipped (capturing)"); return }
         val hide = p.paused || svc.isExcludedNow() || (!p.pasteEnabled && !p.captureEnabled)
+        if (hide) Log.i("EUMQ", "refresh hide pkg=${svc.currentPkg}")
         if (hide) { removeButton(); closePanel(); removeEdge(); return }
         ensureButton()
         updateEdgeZone()
@@ -176,6 +177,7 @@ class HelperOverlay(private val svc: HelperService) {
 
         override fun onTouch(v: View, e: MotionEvent): Boolean {
             val lp = buttonLp ?: return false
+            if (e.actionMasked != MotionEvent.ACTION_MOVE) Log.i("EUMQ", "touch ${e.actionMasked}")
             when (e.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     downX = e.rawX; downY = e.rawY; startX = lp.x; startY = lp.y

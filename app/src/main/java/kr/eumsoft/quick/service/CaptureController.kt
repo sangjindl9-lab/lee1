@@ -45,10 +45,21 @@ class CaptureController(private val svc: HelperService) {
         svc.main.postDelayed({ shoot() }, if (fromShade) 700L else 180L)
     }
 
-    private fun finish() { busy = false; svc.overlay.restoreAfterCapture() }
+    private var shotSeq = 0
+    private fun finish() { busy = false; svc.main.removeCallbacks(watchdog); svc.overlay.restoreAfterCapture() }
+
+    /** 캡처 콜백이 오지 않아도 도우미를 반드시 복구 */
+    private val watchdog = Runnable {
+        Log.i("EUMQ", "capture timeout")
+        shotSeq++
+        finish()
+        toast("캡처 응답이 없어 취소했습니다. 다시 시도해 주세요.")
+    }
 
     private fun shoot() {
         Log.i("EUMQ", "capture shoot")
+        val seq = ++shotSeq
+        svc.main.postDelayed(watchdog, 3000)
         val wm = svc.getSystemService(WindowManager::class.java)
         val disp = wm.currentWindowMetrics.bounds
         val bars = svc.systemWindowRects().map { CropCalc.Box(it.left, it.top, it.right, it.bottom) }
@@ -57,6 +68,7 @@ class CaptureController(private val svc: HelperService) {
             svc.takeScreenshot(Display.DEFAULT_DISPLAY, svc.mainExecutor, object : AccessibilityService.TakeScreenshotCallback {
                 override fun onSuccess(r: AccessibilityService.ScreenshotResult) {
                     Log.i("EUMQ", "capture success")
+                    if (seq != shotSeq) { r.hardwareBuffer.close(); return }
                     val hb = r.hardwareBuffer
                     val bmp = try { Bitmap.wrapHardwareBuffer(hb, r.colorSpace)?.copy(Bitmap.Config.ARGB_8888, false) } catch (e: Exception) { null }
                     hb.close()
@@ -67,6 +79,7 @@ class CaptureController(private val svc: HelperService) {
 
                 override fun onFailure(code: Int) {
                     Log.i("EUMQ", "capture failure $code")
+                    if (seq != shotSeq) return
                     finish()
                     toast(
                         when (code) {

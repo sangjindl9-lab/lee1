@@ -21,6 +21,7 @@ pullnew(){ # $1 = 저장 이름, 이전 목록과 비교해 새 파일을 가져
   BEFORE=$now
 }
 
+adb logcat -G 16M; adb logcat -c
 log "== 환경"; log "$(adb shell getprop ro.build.version.release | tr -d '\r') / API $(adb shell getprop ro.build.version.sdk | tr -d '\r') / $(adb shell wm size | tr -d '\r') / density $(adb shell wm density | tr -d '\r' | grep -o '[0-9]*$')"
 adb install -r eum-quick.apk | tee -a $R
 adb shell pm grant $A android.permission.POST_NOTIFICATIONS
@@ -46,7 +47,7 @@ S=$((44*DEN/160)); BX=$((W - S/2)); BY=$((H*400/1000 + S/2))
 log "도우미 버튼 예상 위치 $BX,$BY (크기 ${S}px)"
 
 log "  pid(앱 화면): $(adb shell pidof $A)"
-adb shell input keyevent KEYCODE_HOME; sleep 2; shot 03_launcher_with_helper
+adb shell input keyevent KEYCODE_HOME; sleep 4; shot 03_launcher_with_helper
 log "  pid(홈): $(adb shell pidof $A)"; elog 4
 BEFORE=$(pics)
 
