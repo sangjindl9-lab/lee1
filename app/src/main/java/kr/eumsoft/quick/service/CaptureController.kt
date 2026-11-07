@@ -62,7 +62,7 @@ class CaptureController(private val svc: HelperService) {
         svc.main.postDelayed(watchdog, 3000)
         val wm = svc.getSystemService(WindowManager::class.java)
         val disp = wm.currentWindowMetrics.bounds
-        val bars = svc.systemWindowRects().map { CropCalc.Box(it.left, it.top, it.right, it.bottom) }
+        val bars = svc.systemBars()
         val pkg = svc.currentPkg ?: ""
         try {
             svc.takeScreenshot(Display.DEFAULT_DISPLAY, svc.mainExecutor, object : AccessibilityService.TakeScreenshotCallback {

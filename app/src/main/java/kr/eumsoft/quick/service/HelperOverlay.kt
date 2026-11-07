@@ -18,6 +18,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import kr.eumsoft.quick.R
+import kr.eumsoft.quick.core.CropCalc
 import kr.eumsoft.quick.core.Prefs
 import kr.eumsoft.quick.ui.ImageEditActivity
 import kr.eumsoft.quick.ui.OcrActivity
@@ -132,9 +133,16 @@ class HelperOverlay(private val svc: HelperService) {
         Log.i("EUMQ", "helper ${lp.x} ${lp.y} ${lp.width} field=${fieldOk}")
     }
 
-    private fun placeAtEdge(lp: WindowManager.LayoutParams, s: Rect, ime: Rect?, half: Boolean) {
+    /** 시스템 바(상태표시줄·내비게이션)를 제외한 영역 */
+    private fun safeArea(s: Rect): Rect {
+        val r = CropCalc.compute(s.width(), s.height(), s.width(), s.height(), svc.systemBars(), CropCalc.Opts()).box
+        return Rect(s.left + r.l, s.top + r.t, s.left + r.r, s.top + r.b)
+    }
+
+    private fun placeAtEdge(lp: WindowManager.LayoutParams, full: Rect, ime: Rect?, half: Boolean) {
+        val s = safeArea(full)
         val size = lp.width
-        val margin = svc.dp(48) // 상태표시줄·내비게이션 영역을 피함
+        val margin = svc.dp(24) // 시스템 영역에서 조금 더 띄움
         var y = s.top + s.height() * p.helperYPermil / 1000
         y = y.coerceIn(s.top + margin, s.bottom - size - margin)
         if (ime != null && ime.height() > 0 && y + size > ime.top) y = (ime.top - size - svc.dp(8)).coerceAtLeast(s.top + margin)

@@ -71,8 +71,8 @@ log "== 가로 화면 캡처 (3버튼)"
 adb shell settings put system accelerometer_rotation 0; adb shell settings put system user_rotation 1; sleep 4
 adb shell am start -W -n $A/.ui.MainActivity >/dev/null; sleep 3
 shot 07_landscape_screen
-read W2 H2 < <(echo $H $W)
-adb shell input swipe $((W2 - S/2)) $((H2*400/1000 + S/2)) $((W2 - S/2)) $((H2*400/1000 + S/2)) 1200; sleep 5; pullnew 08_landscape_capture; elog
+LP=$(helper); log "  가로 화면 도우미 위치: $LP"
+adb shell input swipe $LP $LP 1200 | true; sleep 5; pullnew 08_landscape_capture; elog
 adb shell settings put system user_rotation 0; sleep 3
 
 log "== 공유 메뉴로 클립 저장"
@@ -108,6 +108,37 @@ adb shell ime enable $A/.ime.EumKeyboard | tee -a $R
 adb shell ime set $A/.ime.EumKeyboard | tee -a $R
 sleep 2; adb shell input tap $p; sleep 3; shot 13_ime
 adb shell ime reset >/dev/null 2>&1
+
+log "== 한글 OCR (앱 홈 화면 캡처 → 글자 추출)"
+adb shell am start -W -n $A/.ui.MainActivity >/dev/null; sleep 2; tap_text "홈"; sleep 1
+HP=$(helper); adb shell input swipe $HP $HP 1200; sleep 5; pullnew 18_korean_screen_capture; elog 3
+tap_text "캡처 보관함"; tap_text "글자" "" 8; shot 19_ocr
+dump; python3 - $O/ui.xml <<'PY' | tee -a $R
+import sys,xml.etree.ElementTree as ET
+r=ET.parse(sys.argv[1]).getroot()
+st=[n.get('text') for n in r.iter('node') if (n.get('text') or '').startswith(('인식','글자 인식'))]
+print('  상태:', st[:1])
+cb=[n.get('text') for n in r.iter('node') if n.get('class')=='android.widget.CheckBox']
+print('  인식된 줄(앞 8개):', cb[:8])
+PY
+adb shell input keyevent KEYCODE_BACK; sleep 1
+
+log "== 가리기 후 저장 결과 확인"
+tap_text "캡처 보관함"; tap_text "가리기" "" 3; shot 20_mask_editor
+adb shell input swipe 300 700 750 1000 600; sleep 1; shot 21_mask_drawn
+tap_text "저장" "" 5; pullnew 22_masked_saved; elog 3
+pip install -q pillow >/dev/null 2>&1
+python3 - $O/22_masked_saved.png <<'PY' | tee -a $R
+import sys
+from PIL import Image
+im=Image.open(sys.argv[1]).convert('RGB'); w,h=im.size
+px=im.load(); n=0; tot=0
+for y in range(0,h,4):
+    for x in range(0,w,4):
+        tot+=1; r,g,b=px[x,y]
+        if r<5 and g<5 and b<5: n+=1
+print(f'  저장 파일 {w}x{h}, 순수 검정 픽셀 비율 {100*n/tot:.1f}% (가림 합성 확인용)')
+PY
 
 log "== 화면들"
 adb shell am start -W -n $A/.ui.MainActivity >/dev/null; sleep 2
