@@ -1,0 +1,6 @@
+<?xml version='1.0' encoding='utf-8' standalone='yes' ?>
+<map>
+    <boolean name="consentA11y" value="true" />
+    <int name="tripleMs" value="2500" />
+    <int name="collapseSec" value="0" />
+</map>
