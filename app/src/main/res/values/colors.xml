@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 대표 색상: 이 값만 바꾸면 버튼·강조색·아이콘 배경에 반영됩니다 -->
+    <color name="brand">#1E6FD9</color>
+    <color name="brand_dark">#1554A8</color>
+</resources>

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 로고: 이 파일을 바꾸면 앱 안 로고가 바뀝니다 (색은 @color/brand) -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="48dp" android:height="48dp" android:viewportWidth="48" android:viewportHeight="48">
+    <path android:fillColor="@color/brand" android:pathData="M12,2h24a10,10 0 0 1 10,10v24a10,10 0 0 1 -10,10h-24a10,10 0 0 1 -10,-10v-24a10,10 0 0 1 10,-10z"/>
+    <path android:fillColor="#FFFFFF" android:pathData="M13,14h14v4h-14z M13,22h10v4h-10z M13,30h14v4h-14z M13,14h4v20h-4z"/>
+    <path android:fillColor="#FFFFFF" android:pathData="M34,26m-5,0a5,5 0 1 1 10,0a5,5 0 1 1 -10,0"/>
+</vector>

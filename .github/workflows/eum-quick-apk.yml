@@ -1,0 +1,66 @@
+name: EUM QUICK APK 빌드
+on:
+  push:
+    branches: [eum-quick]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+      - name: 단위 테스트 + APK 빌드
+        shell: bash
+        run: |
+          set -o pipefail
+          gradle testDebugUnitTest assembleDebug --no-daemon 2>&1 | tee build.log
+      - name: 테스트 결과 요약
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY' > tests.txt || true
+          import glob, xml.etree.ElementTree as ET
+          tot=fail=0
+          for f in sorted(glob.glob('app/build/test-results/testDebugUnitTest/*.xml')):
+              r=ET.parse(f).getroot()
+              for tc in r.iter('testcase'):
+                  tot+=1
+                  bad=[c for c in tc if c.tag in('failure','error')]
+                  fail+=bool(bad)
+                  print(('FAIL ' if bad else 'PASS ')+tc.get('classname').split('.')[-1]+'.'+tc.get('name'))
+                  for b in bad: print('    '+(b.get('message') or '')[:300])
+          print(f'TOTAL {tot}, FAILED {fail}')
+          PY
+          cat tests.txt
+      - name: 실패 로그 올리기
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          grep -E "^e: |error:|FAILED|What went wrong|Exception" -A3 build.log | head -300 > errors.txt || true
+          gh release delete eum-quick-buildlog --yes --cleanup-tag || true
+          gh release create eum-quick-buildlog build.log errors.txt tests.txt --target "$GITHUB_SHA" --prerelease --title "EUM QUICK 빌드 로그" --notes "빌드 실패 로그"
+      - name: APK 정리
+        run: cp app/build/outputs/apk/debug/app-debug.apk eum-quick.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eum-quick-apk
+          path: eum-quick.apk
+      - name: 다운로드 페이지(릴리스)에 올리기
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete eum-quick-buildlog --yes --cleanup-tag || true
+          gh release delete eum-quick-latest --yes --cleanup-tag || true
+          gh release create eum-quick-latest eum-quick.apk tests.txt \
+            --target "$GITHUB_SHA" \
+            --title "이음 퀵도우미 EUM QUICK (테스트 APK)" \
+            --notes "휴대폰에서 eum-quick.apk를 내려받아 설치하세요. 설치 후 앱의 홈 화면에서 '도우미 켜기'를 눌러 안내에 동의하고 접근성 설정에서 이음 퀵도우미를 켜세요. (Android 11 이상)"
