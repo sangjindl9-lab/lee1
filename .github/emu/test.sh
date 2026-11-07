@@ -109,10 +109,15 @@ log "== 전용 키보드"
 adb shell ime enable $A/.ime.EumKeyboard | tee -a $R
 adb shell ime set $A/.ime.EumKeyboard | tee -a $R
 sleep 2; adb shell input tap $p; sleep 3; shot 13_ime
-# 두벌식 입력: ㅎ ㅏ ㄴ ㄱ ㅡ ㄹ (좌표는 pixel_6 1080x2400 기준)
+# 두벌식 입력 (좌표는 pixel_6 1080x2400 화면에서 측정): ㅎ ㅏ ㄴ ㄱ ㅡ ㄹ ㄷ ㅏ ㄹ ㄱ ㅏ ⌫
 adb shell input keyevent KEYCODE_MOVE_END
-for k in "444 1911" "864 1911" "189 1911" "348 1776" "864 2046" "570 1911"; do adb shell input tap $k; sleep 0.4; done; sleep 1
-dump; log "  전용 키보드로 'ㅎㅏㄴㄱㅡㄹ' 입력 후: $(python3 $D/find_text.py $O/ui.xml | head -1)"
+K_h="540 1915"; K_a="866 1915"; K_n="212 1915"; K_g="379 1778"; K_eu="861 2053"; K_r="430 1915"; K_d="273 1778"; K_del="993 2053"
+for k in "$K_h" "$K_a" "$K_n" "$K_g" "$K_eu" "$K_r"; do adb shell input tap $k; sleep 0.4; done; sleep 1
+dump; log "  전용 키보드로 'ㅎㅏㄴㄱㅡㄹ' 입력 후(기대: …한글): $(python3 $D/find_text.py $O/ui.xml | head -1)"
+for k in "$K_d" "$K_a" "$K_r" "$K_g" "$K_a"; do adb shell input tap $k; sleep 0.4; done; sleep 1
+dump; log "  이어서 'ㄷㅏㄹㄱㅏ' 입력 후(기대: …한글달가): $(python3 $D/find_text.py $O/ui.xml | head -1)"
+adb shell input tap $K_del; sleep 0.5; adb shell input tap $K_del; sleep 1
+dump; log "  ⌫ 두 번 후(기대: …한글달ㄱ → 자모 단위 삭제): $(python3 $D/find_text.py $O/ui.xml | head -1)"
 adb shell input tap 135 1659; sleep 2; shot 13b_ime_clips
 
 adb shell ime reset >/dev/null 2>&1

@@ -124,7 +124,8 @@ class EumKeyboard : InputMethodService() {
     override fun onUpdateSelection(oldSelStart: Int, oldSelEnd: Int, newSelStart: Int, newSelEnd: Int, candidatesStart: Int, candidatesEnd: Int) {
         super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd)
         // 사용자가 커서를 옮기면 조합을 끝낸다
-        if (composer.isComposing && (newSelStart != candidatesEnd || newSelEnd != candidatesEnd)) {
+        // 커밋 직후의 중간 알림(candidatesEnd = -1)은 무시하고, 조합 영역이 있는데 커서가 벗어났을 때만 종료
+        if (composer.isComposing && candidatesEnd != -1 && (newSelStart != candidatesEnd || newSelEnd != candidatesEnd)) {
             composer.reset()
             currentInputConnection?.finishComposingText()
         }
@@ -269,8 +270,10 @@ class EumKeyboard : InputMethodService() {
         val c = s[0]
         if (s.length == 1 && mode == 0 && Hangul.isJamo(c)) {
             val done = composer.input(c)
+            ic.beginBatchEdit()
             if (done.isNotEmpty()) ic.commitText(done, 1)
             ic.setComposingText(composer.composing(), 1)
+            ic.endBatchEdit()
             if (shift) { shift = false; rebuild() }
             return
         }
