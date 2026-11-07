@@ -3,6 +3,7 @@ package kr.eumsoft.quick.service
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.util.Log
 import android.view.accessibility.AccessibilityNodeInfo
 import android.widget.Toast
 import kr.eumsoft.quick.ime.EumKeyboard
@@ -18,6 +19,7 @@ class PasteController(private val svc: HelperService) {
     enum class Result { INSERTED, COPIED_ONLY, BLOCKED }
 
     fun paste(text: String, done: (Result) -> Unit) {
+        Log.i("EUMQ", "paste field=${svc.field != null} pw=${svc.fieldPassword}")
         if (svc.prefs.paused) { done(Result.BLOCKED); return }
         if (svc.fieldPassword) {
             toast("비밀번호 입력창에서는 붙여넣기 도우미를 사용할 수 없습니다.")
@@ -43,6 +45,7 @@ class PasteController(private val svc: HelperService) {
         // 결과 확인: 앱이 실제로 내용을 바꿨는지 확인
         svc.main.postDelayed({
             val after = try { node.refresh(); node.text?.toString() } catch (e: Exception) { null }
+            Log.i("EUMQ", "paste verify changed=${after != before}")
             if (after != null && after != before) done(Result.INSERTED)
             else {
                 toast("붙여넣기 결과를 확인하지 못했습니다. 입력되지 않았다면 입력창을 길게 눌러 붙여넣기 하세요. (클립보드에 복사됨)")

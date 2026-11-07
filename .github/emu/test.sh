@@ -8,6 +8,8 @@ log(){ echo "$*" | tee -a $R; }
 shot(){ adb exec-out screencap -p > $O/$1.png; }
 dump(){ adb shell uiautomator dump --windows /sdcard/ui.xml >/dev/null 2>&1 || adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1; adb pull /sdcard/ui.xml $O/ui.xml >/dev/null 2>&1; }
 tap_text(){ dump; p=$(python3 $D/ui.py $O/ui.xml "$1" $2) || { log "  (못 찾음: $1)"; return 1; }; adb shell input tap $p; sleep ${3:-2}; }
+elog(){ adb logcat -d -s EUMQ:I | grep EUMQ | tail -${1:-6} | sed 's/^.*EUMQ *: /    log: /' | tee -a $R; adb logcat -c; }
+helper(){ adb logcat -d -s EUMQ:I | grep "helper " | tail -1 | awk '{n=NF; print $(n-3)+int($(n-1)/2), $(n-2)+int($(n-1)/2)}'; }
 pics(){ adb shell ls /sdcard/Pictures/EUM_QUICK/ 2>/dev/null | tr -d '\r'; }
 pullnew(){ # $1 = 저장 이름, 이전 목록과 비교해 새 파일을 가져온다
   local now; now=$(pics)
@@ -44,8 +46,8 @@ for NAV in gestural threebutton; do
   adb shell cmd overlay enable-exclusive --category com.android.internal.systemui.navbar.$NAV >/dev/null 2>&1; sleep 4
   adb shell input keyevent KEYCODE_HOME; sleep 2
   shot 04_${NAV}_screen
-  log "== [$NAV] 길게 누르기 캡처"; adb shell input swipe $BX $BY $BX $BY 1200; sleep 5; pullnew 05_${NAV}_longpress
-  log "== [$NAV] 세 번 터치 캡처"; adb shell "input tap $BX $BY; input tap $BX $BY; input tap $BX $BY"; sleep 5; pullnew 06_${NAV}_triple
+  log "== [$NAV] 길게 누르기 캡처"; adb logcat -c; adb shell input swipe $BX $BY $BX $BY 1200; sleep 2; shot 05_${NAV}_longpress_toast; sleep 3; pullnew 05_${NAV}_longpress; elog
+  log "== [$NAV] 세 번 터치 캡처"; adb shell "input tap $BX $BY; input tap $BX $BY; input tap $BX $BY"; sleep 5; pullnew 06_${NAV}_triple; elog
 done
 
 log "== 가로 화면 캡처 (3버튼)"
@@ -53,7 +55,7 @@ adb shell settings put system accelerometer_rotation 0; adb shell settings put s
 adb shell am start -W -n $A/.ui.MainActivity >/dev/null; sleep 3
 shot 07_landscape_screen
 read W2 H2 < <(echo $H $W)
-adb shell input swipe $((W2 - S/2)) $((H2*400/1000 + S/2)) $((W2 - S/2)) $((H2*400/1000 + S/2)) 1200; sleep 5; pullnew 08_landscape_capture
+adb shell input swipe $((W2 - S/2)) $((H2*400/1000 + S/2)) $((W2 - S/2)) $((H2*400/1000 + S/2)) 1200; sleep 5; pullnew 08_landscape_capture; elog
 adb shell settings put system user_rotation 0; sleep 3
 
 log "== 공유 메뉴로 클립 저장"
@@ -75,16 +77,16 @@ for n in ET.parse(sys.argv[1]).getroot().iter('node'):
 PY
 )
 adb shell input tap $p; sleep 2
-adb shell input keyevent KEYCODE_MOVE_END; sleep 1
+adb shell input keyevent KEYCODE_MOVE_END; adb shell input keyevent KEYCODE_DPAD_LEFT KEYCODE_DPAD_LEFT KEYCODE_DPAD_LEFT; sleep 1
 shot 10_field_focused
-dump; cp $O/ui.xml $O/ui_field.xml
-if tap_text "이음 퀵도우미 버튼" desc 3; then
-  shot 11_panel_open
-  tap_text "붙여넣기테스트" "" 3 && { dump; log "  입력창 내용: $(python3 $D/find_text.py $O/ui.xml | head -1)"; shot 12_after_paste; }
-else
-  log "  도우미 버튼 노드를 덤프에서 찾지 못함 → 화면 좌표로 시도"
-fi
-
+HP=$(helper); log "  도우미 위치(입력창 옆): $HP"; elog 3
+log "  붙여넣기 전 입력창: $(dump; python3 $D/find_text.py $O/ui.xml | head -1)"
+adb logcat -c
+adb shell input tap $HP; sleep 3; shot 11_panel_open
+RP=$(adb logcat -d -s EUMQ:I | grep "panel row0" | tail -1 | awk '{print $(NF-1), $NF}')
+log "  패널 첫 항목 위치: $RP"
+adb shell input tap $RP; sleep 3; shot 12_after_paste; elog
+log "  붙여넣기 후 입력창: $(dump; python3 $D/find_text.py $O/ui.xml | head -1)"
 log "== 전용 키보드"
 adb shell ime enable $A/.ime.EumKeyboard | tee -a $R
 adb shell ime set $A/.ime.EumKeyboard | tee -a $R

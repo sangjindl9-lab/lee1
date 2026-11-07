@@ -6,6 +6,7 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.Rect
+import android.util.Log
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
@@ -127,6 +128,7 @@ class HelperOverlay(private val svc: HelperService) {
             scheduleCollapse()
         }
         try { wm.updateViewLayout(b, lp) } catch (_: Exception) {}
+        Log.i("EUMQ", "helper ${lp.x} ${lp.y} ${lp.width} field=${fieldOk}")
     }
 
     private fun placeAtEdge(lp: WindowManager.LayoutParams, s: Rect, ime: Rect?, half: Boolean) {

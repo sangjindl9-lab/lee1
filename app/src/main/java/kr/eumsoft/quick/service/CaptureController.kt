@@ -6,6 +6,7 @@ import android.os.SystemClock
 import android.os.VibrationEffect
 import android.os.Build
 import android.os.Vibrator
+import android.util.Log
 import android.view.Display
 import android.view.WindowManager
 import android.widget.Toast
@@ -31,6 +32,7 @@ class CaptureController(private val svc: HelperService) {
         val p = svc.prefs
         if (p.paused) { toast("일시정지 중입니다. 알림에서 재개하세요."); return }
         if (!p.captureEnabled) { toast("캡처 기능이 꺼져 있습니다."); return }
+        Log.i("EUMQ", "capture request busy=$busy")
         if (busy) return // 중복 실행 방지
         val now = SystemClock.elapsedRealtime()
         if (now - lastAt < 1100) { toast("잠시 후 다시 캡처하세요."); return }
@@ -46,6 +48,7 @@ class CaptureController(private val svc: HelperService) {
     private fun finish() { busy = false; svc.overlay.restoreAfterCapture() }
 
     private fun shoot() {
+        Log.i("EUMQ", "capture shoot")
         val wm = svc.getSystemService(WindowManager::class.java)
         val disp = wm.currentWindowMetrics.bounds
         val bars = svc.systemWindowRects().map { CropCalc.Box(it.left, it.top, it.right, it.bottom) }
@@ -53,6 +56,7 @@ class CaptureController(private val svc: HelperService) {
         try {
             svc.takeScreenshot(Display.DEFAULT_DISPLAY, svc.mainExecutor, object : AccessibilityService.TakeScreenshotCallback {
                 override fun onSuccess(r: AccessibilityService.ScreenshotResult) {
+                    Log.i("EUMQ", "capture success")
                     val hb = r.hardwareBuffer
                     val bmp = try { Bitmap.wrapHardwareBuffer(hb, r.colorSpace)?.copy(Bitmap.Config.ARGB_8888, false) } catch (e: Exception) { null }
                     hb.close()
@@ -62,6 +66,7 @@ class CaptureController(private val svc: HelperService) {
                 }
 
                 override fun onFailure(code: Int) {
+                    Log.i("EUMQ", "capture failure $code")
                     finish()
                     toast(
                         when (code) {
@@ -90,6 +95,7 @@ class CaptureController(private val svc: HelperService) {
         )
         val res = CropCalc.compute(full.width, full.height, dispW, dispH, bars, opts)
         val b = res.box
+        Log.i("EUMQ", "crop img=${full.width}x${full.height} disp=${dispW}x$dispH bars=$bars box=$b")
         val cropped = if (res.changed) Bitmap.createBitmap(full, b.l, b.t, b.w, b.h) else full
         if (looksBlank(cropped)) {
             toast("화면 내용이 비어 있습니다. 보안 설정으로 캡처가 차단된 화면일 수 있어 저장하지 않았습니다.")
@@ -141,5 +147,7 @@ class CaptureController(private val svc: HelperService) {
         } catch (_: Exception) {}
     }
 
-    private fun toast(s: String) = svc.main.post { Toast.makeText(svc, s, Toast.LENGTH_LONG).show() }
+    private fun toast(s: String) = svc.main.post {
+        Log.i("EUMQ", "toast $s")
+        Toast.makeText(svc, s, Toast.LENGTH_LONG).show() }
 }

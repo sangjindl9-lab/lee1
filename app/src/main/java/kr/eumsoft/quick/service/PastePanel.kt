@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Color
 import android.text.TextUtils
+import android.util.Log
 import android.view.Gravity
 import android.view.View
 import android.widget.HorizontalScrollView
@@ -172,6 +173,10 @@ class PastePanel(private val svc: HelperService, private val overlay: HelperOver
             val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
             lp.bottomMargin = ctx.dp(4)
             list.addView(row, lp)
+            if (list.childCount == 1) row.post {
+                val xy = IntArray(2); row.getLocationOnScreen(xy)
+                Log.i("EUMQ", "panel row0 ${xy[0] + row.width / 3} ${xy[1] + row.height / 3}")
+            }
         }
     }
 
