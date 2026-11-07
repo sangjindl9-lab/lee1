@@ -4,7 +4,8 @@ A=kr.eumsoft.quick
 D=.github/emu
 O=emu; mkdir -p $O
 R=$O/report.txt
-log(){ echo "$*" | tee -a $R; }
+log(){ echo "[$(adb shell date +%H:%M:%S | tr -d '\r')] $*" | tee -a $R; }
+bound(){ log "  바인딩: $(adb shell dumpsys accessibility | grep -o "Bound services:{[^}]*}" | head -1 | cut -c1-160)"; }
 shot(){ adb exec-out screencap -p > $O/$1.png; }
 dump(){ adb shell uiautomator dump --windows /sdcard/ui.xml >/dev/null 2>&1 || adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1; adb pull /sdcard/ui.xml $O/ui.xml >/dev/null 2>&1; }
 tap_text(){ dump; p=$(python3 $D/ui.py $O/ui.xml "$1" $2) || { log "  (못 찾음: $1)"; return 1; }; adb shell input tap $p; sleep ${3:-2}; }
@@ -32,11 +33,7 @@ adb shell "cat /data/local/tmp/eum.xml | run-as $A sh -c 'mkdir -p shared_prefs 
 adb shell settings put secure enabled_accessibility_services $A/$A.service.HelperService
 adb shell settings put secure accessibility_enabled 1
 sleep 6
-for t in 1 2 3; do
-  if adb logcat -d -s EUMQ:I | grep -q "service connected"; then break; fi
-  log "  접근성 서비스 연결 대기 ($t)"; adb shell settings put secure enabled_accessibility_services null; sleep 2
-  adb shell settings put secure enabled_accessibility_services $A/$A.service.HelperService; sleep 6
-done
+sleep 4
 log "== 접근성 서비스"; elog 3; adb shell dumpsys accessibility | grep -i "eumsoft" | cut -c1-200 | head -5 | tee -a $R
 adb shell am start -W -n $A/.ui.MainActivity >/dev/null; sleep 3; shot 02_home_on
 
@@ -46,15 +43,15 @@ DEN=$(adb shell wm density | tr -d '\r' | grep -o '[0-9]*$' | tail -1)
 S=$((44*DEN/160)); BX=$((W - S/2)); BY=$((H*400/1000 + S/2))
 log "도우미 버튼 예상 위치 $BX,$BY (크기 ${S}px)"
 
-log "  pid(앱 화면): $(adb shell pidof $A)"
+log "  pid(앱 화면): $(adb shell pidof $A)"; bound
 adb shell input keyevent KEYCODE_HOME; sleep 4; shot 03_launcher_with_helper
-log "  pid(홈): $(adb shell pidof $A)"; elog 4
+log "  pid(홈): $(adb shell pidof $A)"; bound; elog 4
 BEFORE=$(pics)
 
 for NAV in gestural threebutton; do
   adb shell cmd overlay enable-exclusive --category com.android.internal.systemui.navbar.$NAV >/dev/null 2>&1; sleep 4
   adb shell input keyevent KEYCODE_HOME; sleep 2
-  shot 04_${NAV}_screen; log "  pid: $(adb shell pidof $A)"; elog 4
+  shot 04_${NAV}_screen; log "  pid: $(adb shell pidof $A)"; bound; elog 4
   log "== [$NAV] 길게 누르기 캡처"; adb shell input swipe $BX $BY $BX $BY 1200; sleep 2; shot 05_${NAV}_longpress_toast; sleep 3; pullnew 05_${NAV}_longpress; elog
   log "== [$NAV] 세 번 터치 캡처"; adb shell "input tap $BX $BY; input tap $BX $BY; input tap $BX $BY"; sleep 5; pullnew 06_${NAV}_triple; elog
 done
