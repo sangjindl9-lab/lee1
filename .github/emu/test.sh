@@ -45,13 +45,15 @@ DEN=$(adb shell wm density | tr -d '\r' | grep -o '[0-9]*$' | tail -1)
 S=$((44*DEN/160)); BX=$((W - S/2)); BY=$((H*400/1000 + S/2))
 log "도우미 버튼 예상 위치 $BX,$BY (크기 ${S}px)"
 
+log "  pid(앱 화면): $(adb shell pidof $A)"
 adb shell input keyevent KEYCODE_HOME; sleep 2; shot 03_launcher_with_helper
+log "  pid(홈): $(adb shell pidof $A)"; elog 4
 BEFORE=$(pics)
 
 for NAV in gestural threebutton; do
   adb shell cmd overlay enable-exclusive --category com.android.internal.systemui.navbar.$NAV >/dev/null 2>&1; sleep 4
   adb shell input keyevent KEYCODE_HOME; sleep 2
-  shot 04_${NAV}_screen
+  shot 04_${NAV}_screen; log "  pid: $(adb shell pidof $A)"; elog 4
   log "== [$NAV] 길게 누르기 캡처"; adb shell input swipe $BX $BY $BX $BY 1200; sleep 2; shot 05_${NAV}_longpress_toast; sleep 3; pullnew 05_${NAV}_longpress; elog
   log "== [$NAV] 세 번 터치 캡처"; adb shell "input tap $BX $BY; input tap $BX $BY; input tap $BX $BY"; sleep 5; pullnew 06_${NAV}_triple; elog
 done
@@ -105,6 +107,8 @@ tap_text "설정"; shot 15_settings
 adb shell input swipe $((W/2)) $((H*3/4)) $((W/2)) $((H/4)) 300; sleep 1; shot 16_settings2
 tap_text "홈"; shot 17_home
 
+log "== 앱 프로세스 관련 시스템 로그"
+adb logcat -d -b all | grep -E "kr.eumsoft.quick|EUMQ|FATAL|am_kill|am_proc_died|has died|Killing" | grep -v "Dumper\|CoreBackPreview\|WindowManagerShell\|ImeTracker\|Current config" | cut -c1-260 | head -80 > $O/proc.txt
 log "== 오류(크래시) 로그"
 adb logcat -d -b crash | tail -50 | tee -a $R
 adb logcat -d | grep -i "kr.eumsoft.quick\|AndroidRuntime" | tail -80 > $O/logcat.txt
