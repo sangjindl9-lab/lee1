@@ -21,6 +21,7 @@ import kr.eumsoft.quick.R
 import kr.eumsoft.quick.core.CropCalc
 import kr.eumsoft.quick.core.Prefs
 import kr.eumsoft.quick.ui.ImageEditActivity
+import kr.eumsoft.quick.ui.ImportClipActivity
 import kr.eumsoft.quick.ui.OcrActivity
 import kr.eumsoft.quick.ui.dp
 import kr.eumsoft.quick.ui.round
@@ -233,7 +234,25 @@ class HelperOverlay(private val svc: HelperService) {
     private fun onSingleTap() {
         if (panel != null) { closePanel(); return }
         if (System.currentTimeMillis() - panelClosedAt < 800) return // 바깥 터치로 방금 닫힌 경우 다시 열지 않음
+        if (p.autoImport && p.pasteEnabled && !svc.fieldPassword) {
+            // 사용자가 도우미를 누른 순간에만, 잠깐 포커스를 얻는 투명 화면으로 현재 클립 1개를 읽고 패널을 연다
+            svc.main.removeCallbacks(panelFallback)
+            svc.main.postDelayed(panelFallback, 1500)
+            try {
+                svc.startActivity(Intent(svc, ImportClipActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION).putExtra("panel", true))
+                return
+            } catch (e: Exception) { svc.main.removeCallbacks(panelFallback) }
+        }
         openPanel()
+    }
+
+    private val panelFallback = Runnable { if (panel == null) openPanel() }
+
+    /** 클립보드 자동 가져오기가 끝난 뒤 호출 */
+    fun panelAfterImport() {
+        svc.main.removeCallbacks(panelFallback)
+        svc.main.postDelayed({ if (panel == null) openPanel() }, 200)
     }
 
     // ---------- 패널(붙여넣기 + 메뉴 통합) ----------

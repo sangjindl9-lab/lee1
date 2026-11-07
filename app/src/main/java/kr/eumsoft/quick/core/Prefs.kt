@@ -22,6 +22,8 @@ class Prefs(ctx: Context) {
     // 기능 켜기/끄기
     var pasteEnabled: Boolean get() = b("pasteEnabled", true); set(v) = put("pasteEnabled", v)
     var captureEnabled: Boolean get() = b("captureEnabled", true); set(v) = put("captureEnabled", v)
+    /** 도우미 패널을 열 때 현재 클립보드를 자동으로 가져오기 */
+    var autoImport: Boolean get() = b("autoImport", true); set(v) = put("autoImport", v)
     var nearField: Boolean get() = b("nearField", true); set(v) = put("nearField", v)
 
     // 도우미 버튼

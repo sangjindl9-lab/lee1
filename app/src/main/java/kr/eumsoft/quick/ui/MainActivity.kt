@@ -383,6 +383,8 @@ class MainActivity : Activity() {
             val lp = LinearLayout.LayoutParams(0, WRAP, 1f); lp.setMargins(dp(2), dp(6), dp(2), 0)
             cr.addView(v, lp)
         }
+        box.sw("도우미를 열 때 현재 클립보드 자동 가져오기", prefs.autoImport,
+            "도우미를 누르는 순간 지금 복사돼 있는 내용 1개를 최근 클립에 넣습니다. 삼성 키보드에 저장된 지난 기록은 Android 정책상 읽을 수 없습니다.") { prefs.autoImport = it }
         box.sw("입력창 옆에 표시", prefs.nearField, "입력창 위치를 확인할 수 있는 앱에서만 옆으로 이동하고, 확인할 수 없으면 가장자리에 고정됩니다.") { prefs.nearField = it; svc() }
         box.btn("앱별 도우미 제외 (${prefs.excluded.size}개)") { chooseExcluded() }
 

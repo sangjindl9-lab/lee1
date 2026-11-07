@@ -32,8 +32,13 @@ class ImportClipActivity : Activity() {
         done = true
         val clip = getSystemService(ClipboardManager::class.java).primaryClip
         val text = if (clip != null && clip.itemCount > 0) clip.getItemAt(0).coerceToText(this)?.toString() ?: "" else ""
-        reportAdd(Db.get(this).addRecent(text, "가져오기", Prefs(this)))
+        val panel = intent.getBooleanExtra("panel", false)
+        val r = Db.get(this).addRecent(text, "클립보드", Prefs(this))
+        // 패널 자동 가져오기에서는 저장·이동은 조용히, 저장하지 않은 이유만 알림
+        if (!panel || r == Db.AddResult.SENSITIVE) reportAdd(r)
         finish()
+        @Suppress("DEPRECATION") overridePendingTransition(0, 0)
+        if (panel) kr.eumsoft.quick.service.HelperService.instance?.let { if (it.ready) it.overlay.panelAfterImport() }
     }
 }
 

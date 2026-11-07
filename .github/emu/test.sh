@@ -96,12 +96,16 @@ for n in ET.parse(sys.argv[1]).getroot().iter('node'):
 PY
 )
 adb shell input tap $p; sleep 2
+# 다른 문구를 입력해 기본 키보드 상태에서 복사(Ctrl+A, Ctrl+C) → 도우미를 누르면 자동으로 보여야 함
+adb shell input keyevent KEYCODE_MOVE_END; adb shell input text COPY777; sleep 1
+adb shell input keycombination 113 29; sleep 0.5; adb shell input keycombination 113 31; sleep 1
 adb shell input keyevent KEYCODE_MOVE_END; adb shell input keyevent KEYCODE_DPAD_LEFT KEYCODE_DPAD_LEFT KEYCODE_DPAD_LEFT; sleep 1
 shot 10_field_focused
 HP=$(helper); log "  도우미 위치(입력창 옆): $HP"; adb logcat -d -s EUMQ:I | grep "helper " | tail -2 | tee -a $R
 log "  붙여넣기 전 입력창: $(dump; python3 $D/find_text.py $O/ui.xml | head -1)"
 adb shell input tap $HP; sleep 3; shot 11_panel_open
 RP=$(adb logcat -d -s EUMQ:I | grep "panel row0" | tail -1 | awk '{print $(NF-1), $NF}')
+dump; log "  패널 첫 항목(자동 가져온 클립이어야 함): $(grep -o 'text="[^"]*COPY777[^"]*"' $O/ui.xml | head -1) / 덤프에 없으면 화면 11_panel_open 확인"
 log "  패널 첫 항목 위치: $RP"
 adb shell input tap $RP; sleep 3; shot 12_after_paste; elog
 log "  붙여넣기 후 입력창: $(dump; python3 $D/find_text.py $O/ui.xml | head -1)"
