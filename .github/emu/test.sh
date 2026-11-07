@@ -70,12 +70,12 @@ for NAV in gestural threebutton; do
 done
 
 ensure; log "== 가로 화면 캡처 (3버튼)"
-adb shell settings put system accelerometer_rotation 0; adb shell settings put system user_rotation 1; sleep 4
+adb shell settings put system accelerometer_rotation 0; adb shell cmd window user-rotation lock 1; sleep 4
 adb shell am start -W -n $A/.ui.MainActivity >/dev/null; sleep 3
 shot 07_landscape_screen
 LP=$(helper); log "  가로 화면 도우미 위치: $LP"
 adb shell input swipe $LP $LP 1200 | true; sleep 5; pullnew 08_landscape_capture; elog
-adb shell settings put system user_rotation 0; sleep 3
+adb shell cmd window user-rotation lock 0; sleep 3
 
 log "== 공유 메뉴로 클립 저장"
 adb shell am start -a android.intent.action.SEND -t text/plain --es android.intent.extra.TEXT "붙여넣기테스트" -n $A/.ui.ShareReceiveActivity >/dev/null; sleep 2
@@ -109,12 +109,19 @@ log "== 전용 키보드"
 adb shell ime enable $A/.ime.EumKeyboard | tee -a $R
 adb shell ime set $A/.ime.EumKeyboard | tee -a $R
 sleep 2; adb shell input tap $p; sleep 3; shot 13_ime
+# 두벌식 입력: ㅎ ㅏ ㄴ ㄱ ㅡ ㄹ (좌표는 pixel_6 1080x2400 기준)
+adb shell input keyevent KEYCODE_MOVE_END
+for k in "444 1911" "864 1911" "189 1911" "348 1776" "864 2046" "570 1911"; do adb shell input tap $k; sleep 0.4; done; sleep 1
+dump; log "  전용 키보드로 'ㅎㅏㄴㄱㅡㄹ' 입력 후: $(python3 $D/find_text.py $O/ui.xml | head -1)"
+adb shell input tap 135 1659; sleep 2; shot 13b_ime_clips
+
 adb shell ime reset >/dev/null 2>&1
 
 ensure; log "== 한글 OCR (앱 홈 화면 캡처 → 글자 추출)"
 adb shell am start -W -n $A/.ui.MainActivity >/dev/null; sleep 2; tap_text "홈"; sleep 1
 HP=$(helper); adb shell input swipe $HP $HP 1200; sleep 5; pullnew 18_korean_screen_capture; elog 3
-tap_text "캡처 보관함"; tap_text "글자" "" 8; shot 19_ocr
+tap_text "캡처 보관함"; tap_text "글자" "" 3
+for i in $(seq 1 15); do sleep 3; dump; grep -q '인식 완료\|인식 실패\|인식된 글자가' $O/ui.xml && break; done; log "  OCR 대기 $((i*3))초"; shot 19_ocr
 dump; python3 - $O/ui.xml <<'PY' | tee -a $R
 import sys,xml.etree.ElementTree as ET
 r=ET.parse(sys.argv[1]).getroot()
