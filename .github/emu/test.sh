@@ -5,7 +5,8 @@ D=.github/emu
 O=emu; mkdir -p $O
 R=$O/report.txt
 log(){ echo "[$(adb shell date +%H:%M:%S | tr -d '\r')] $*" | tee -a $R; }
-bound(){ log "  바인딩: $(adb shell dumpsys accessibility | grep -o "Bound services:{[^}]*}" | head -1 | cut -c1-160)"; }
+BN=0
+bound(){ BN=$((BN+1)); adb shell dumpsys accessibility > $O/a11y_$BN.txt; log "  바인딩: $(grep -o "Bound services:{[^}]*}" $O/a11y_$BN.txt | head -1 | cut -c1-160) / 설정값: $(adb shell settings get secure enabled_accessibility_services | tr -d '\r') / $(adb shell settings get secure accessibility_enabled | tr -d '\r')"; }
 shot(){ adb exec-out screencap -p > $O/$1.png; }
 dump(){ adb shell uiautomator dump --windows /sdcard/ui.xml >/dev/null 2>&1 || adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1; adb pull /sdcard/ui.xml $O/ui.xml >/dev/null 2>&1; }
 tap_text(){ dump; p=$(python3 $D/ui.py $O/ui.xml "$1" $2) || { log "  (못 찾음: $1)"; return 1; }; adb shell input tap $p; sleep ${3:-2}; }
@@ -33,7 +34,7 @@ adb shell "cat /data/local/tmp/eum.xml | run-as $A sh -c 'mkdir -p shared_prefs 
 adb shell settings put secure enabled_accessibility_services $A/$A.service.HelperService
 adb shell settings put secure accessibility_enabled 1
 sleep 6
-sleep 4
+sleep 1; bound; sleep 3; bound
 log "== 접근성 서비스"; elog 3; adb shell dumpsys accessibility | grep -i "eumsoft" | cut -c1-200 | head -5 | tee -a $R
 adb shell am start -W -n $A/.ui.MainActivity >/dev/null; sleep 3; shot 02_home_on
 
