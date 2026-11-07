@@ -31,9 +31,19 @@ adb shell am start -W -n $A/.ui.MainActivity >/dev/null; sleep 3; shot 01_home_b
 adb shell am force-stop $A
 adb push $D/eum.xml /data/local/tmp/eum.xml >/dev/null
 adb shell "cat /data/local/tmp/eum.xml | run-as $A sh -c 'mkdir -p shared_prefs && cat > shared_prefs/eum.xml'"
-adb shell settings put secure enabled_accessibility_services $A/$A.service.HelperService
-adb shell settings put secure accessibility_enabled 1
-sleep 6
+enable_a11y(){
+  for t in 1 2 3 4 5 6; do
+    adb shell settings put secure enabled_accessibility_services $A/$A.service.HelperService
+    adb shell settings put secure accessibility_enabled 1
+    sleep 5
+    v=$(adb shell settings get secure enabled_accessibility_services | tr -d '\r')
+    b=$(adb shell dumpsys accessibility | grep -c "Bound services:{Service")
+    log "  접근성 켜기 시도 $t: 설정=$v 바인딩=$b"
+    [ "$v" != "null" ] && [ "$b" -gt 0 ] && return 0
+  done
+  return 1
+}
+enable_a11y
 sleep 1; bound; sleep 3; bound
 log "== 접근성 서비스"; elog 3; adb shell dumpsys accessibility | grep -i "eumsoft" | cut -c1-200 | head -5 | tee -a $R
 adb shell am start -W -n $A/.ui.MainActivity >/dev/null; sleep 3; shot 02_home_on
