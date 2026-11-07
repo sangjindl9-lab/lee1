@@ -44,6 +44,8 @@ enable_a11y(){
   return 1
 }
 enable_a11y
+ensure(){ local v; v=$(adb shell settings get secure enabled_accessibility_services | tr -d '\r'); if [ "$v" = "null" ]; then log "  (에뮬레이터가 접근성 설정을 초기화함 → 다시 켬)"; enable_a11y; sleep 2; fi; }
+sleep 20; ensure
 sleep 1; bound; sleep 3; bound
 log "== 접근성 서비스"; elog 3; adb shell dumpsys accessibility | grep -i "eumsoft" | cut -c1-200 | head -5 | tee -a $R
 adb shell am start -W -n $A/.ui.MainActivity >/dev/null; sleep 3; shot 02_home_on
@@ -63,11 +65,11 @@ for NAV in gestural threebutton; do
   adb shell cmd overlay enable-exclusive --category com.android.internal.systemui.navbar.$NAV >/dev/null 2>&1; sleep 4
   adb shell input keyevent KEYCODE_HOME; sleep 2
   shot 04_${NAV}_screen; log "  pid: $(adb shell pidof $A)"; bound; elog 4
-  log "== [$NAV] 길게 누르기 캡처"; adb shell input swipe $BX $BY $BX $BY 1200; sleep 2; shot 05_${NAV}_longpress_toast; sleep 3; pullnew 05_${NAV}_longpress; elog
-  log "== [$NAV] 세 번 터치 캡처"; adb shell "input tap $BX $BY; input tap $BX $BY; input tap $BX $BY"; sleep 5; pullnew 06_${NAV}_triple; elog
+  ensure; log "== [$NAV] 길게 누르기 캡처"; adb shell input swipe $BX $BY $BX $BY 1200; sleep 2; shot 05_${NAV}_longpress_toast; sleep 3; pullnew 05_${NAV}_longpress; elog
+  ensure; log "== [$NAV] 세 번 터치 캡처"; adb shell "input tap $BX $BY; input tap $BX $BY; input tap $BX $BY"; sleep 5; pullnew 06_${NAV}_triple; elog
 done
 
-log "== 가로 화면 캡처 (3버튼)"
+ensure; log "== 가로 화면 캡처 (3버튼)"
 adb shell settings put system accelerometer_rotation 0; adb shell settings put system user_rotation 1; sleep 4
 adb shell am start -W -n $A/.ui.MainActivity >/dev/null; sleep 3
 shot 07_landscape_screen
@@ -82,7 +84,7 @@ adb shell am start -W -n $A/.ui.MainActivity >/dev/null; sleep 2
 tap_text "클립 보관함"; shot 09_clips
 dump; grep -o 'text="[^"]*테스트[^"]*"\|text="482913"' $O/ui.xml | sort -u | tee -a $R
 
-log "== 입력창 붙여넣기 (기본 키보드, ACTION_PASTE 경로)"
+ensure; log "== 입력창 붙여넣기 (기본 키보드, ACTION_PASTE 경로)"
 tap_text "수정" "" 3
 adb shell input keyevent KEYCODE_MOVE_HOME 2>/dev/null
 # EditText를 탭해서 커서를 둔다
@@ -109,7 +111,7 @@ adb shell ime set $A/.ime.EumKeyboard | tee -a $R
 sleep 2; adb shell input tap $p; sleep 3; shot 13_ime
 adb shell ime reset >/dev/null 2>&1
 
-log "== 한글 OCR (앱 홈 화면 캡처 → 글자 추출)"
+ensure; log "== 한글 OCR (앱 홈 화면 캡처 → 글자 추출)"
 adb shell am start -W -n $A/.ui.MainActivity >/dev/null; sleep 2; tap_text "홈"; sleep 1
 HP=$(helper); adb shell input swipe $HP $HP 1200; sleep 5; pullnew 18_korean_screen_capture; elog 3
 tap_text "캡처 보관함"; tap_text "글자" "" 8; shot 19_ocr
@@ -123,7 +125,7 @@ print('  인식된 줄(앞 8개):', cb[:8])
 PY
 adb shell input keyevent KEYCODE_BACK; sleep 1
 
-log "== 가리기 후 저장 결과 확인"
+ensure; log "== 가리기 후 저장 결과 확인"
 tap_text "캡처 보관함"; tap_text "가리기" "" 3; shot 20_mask_editor
 adb shell input swipe 300 700 750 1000 600; sleep 1; shot 21_mask_drawn
 tap_text "저장" "" 5; pullnew 22_masked_saved; elog 3
