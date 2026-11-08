@@ -29,7 +29,7 @@ const TRIAL_USERS = 10;
 const TRIAL_STORAGE_MB = 5 * 1024;
 /** 체험이 끝난 뒤 조회 전용으로 자료를 보관하는 기간 (그 뒤 서버 정리는 판매자가 직접 판단) */
 const TRIAL_KEEP_DAYS = 30;
-const OPTION_MODULES = ['geomcheuk', 'gongjung', 'sajindaeji', 'chakgong', 'jajae'];
+const OPTION_MODULES = ['geomcheuk', 'gongjung', 'sajindaeji', 'chakgong', 'jajae', 'ai'];
 
 function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpoint, railwaySleep, railwayWaitMs, githubEndpoint, githubTokenEnv = env('GITHUB_TOKEN'), publicUrl = env('PUBLIC_URL', 'https://admin.ieumerp.kr'), cfToken = env('CF_API_TOKEN'), cfEndpoint, customerZone = env('CUSTOMER_DOMAIN', 'ieumerp.kr') }) {
   const publicKey = crypto.createPublicKey(privateKey);

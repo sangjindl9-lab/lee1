@@ -173,8 +173,8 @@ function customerForm(c = {}) {
 }
 const formData = (form) => Object.fromEntries(new FormData(form).entries());
 /** 따로 파는 옵션 기능 — 라이선스 modules 에 이름이 들어가면 고객 ERP 공무지원 메뉴에 나타난다 */
-const OPTIONS = [['geomcheuk', '검측서류'], ['gongjung', '예정공정표'], ['sajindaeji', '사진대지'], ['chakgong', '착공계'], ['jajae', '자재검수']];
-const optionBoxes = (mods = []) => `<div class="f wide"><span>옵션 (공무지원)</span><div class="row" style="gap:16px;margin-top:6px">${OPTIONS.map(([v, l]) => `<label style="display:flex;gap:6px;align-items:center;font-weight:400"><input type="checkbox" name="opt" value="${v}" ${mods.includes(v) ? 'checked' : ''} /> ${l}</label>`).join('')}</div><span class="hint">체크한 옵션만 고객 ERP의 공무지원 메뉴에 보입니다. 꺼도 작성한 자료는 지워지지 않습니다.</span></div>`;
+const OPTIONS = [['geomcheuk', '검측서류'], ['gongjung', '예정공정표'], ['sajindaeji', '사진대지'], ['chakgong', '착공계'], ['jajae', '자재검수'], ['ai', 'AI 도우미']];
+const optionBoxes = (mods = []) => `<div class="f wide"><span>판매 옵션</span><div class="row" style="gap:16px;margin-top:6px">${OPTIONS.map(([v, l]) => `<label style="display:flex;gap:6px;align-items:center;font-weight:400"><input type="checkbox" name="opt" value="${v}" ${mods.includes(v) ? 'checked' : ''} /> ${l}</label>`).join('')}</div><span class="hint">체크한 옵션만 고객 ERP에 보입니다 (공무지원 메뉴·위쪽 AI 도우미 버튼). 끄면 고객 화면에서 아예 사라지고, 작성한 자료는 지워지지 않습니다. AI 도우미는 고객이 관리 › 외부 연동에 AI 키를 넣어야 동작합니다.</span></div>`;
 const pickedModules = (form, extra = '') => [...form.querySelectorAll('input[name=opt]:checked')].map((x) => x.value).concat(String(extra).split(/[,\s]+/).filter(Boolean)).join(',');
 // 요금제 (홍보 사이트 요금표와 같음, VAT 별도) — 고르면 사용자 수·저장 용량·금액이 채워진다
 const PLANS = [['starter', '스타터', 5, 5, 79000], ['std', '스탠다드', 15, 20, 149000], ['pro', '프로', 30, 50, 229000]];
