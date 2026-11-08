@@ -962,7 +962,7 @@ async function pageTrials() {
     <section class="panel"><header><h2>새 신청</h2><span class="muted small">${newOnes.length}건</span></header>
       ${newOnes.length ? `<div class="table-wrap"><table><thead><tr><th>신청일</th><th>회사</th><th>담당자 · 연락처</th><th class="r">인원</th><th>하고 싶은 말</th><th></th></tr></thead><tbody>${newOnes.map((r) => `<tr>
         <td class="small num">${dt(r.createdAt)}</td><td><b>${esc(r.company)}</b><div class="num small muted">${biz(r.bizRegNo)}</div></td>
-        <td>${esc(r.contactName)}<div class="small muted">${esc(r.phone)} ${esc(r.email ?? '')}</div></td><td class="r num">${r.users ?? '–'}</td>
+        <td>${esc(r.contactName)}<div class="small muted">${esc(r.phone)} ${esc(r.email ?? '')}</div>${(r.reapplyNotes ?? []).map((n) => `<div class="small" style="margin-top:6px;color:#b45309" title="원래 신청의 연락처는 바뀌지 않았습니다. 신청자 본인인지 확인한 뒤 체험을 시작하세요">주의: ${esc(n.kind)} ${dt(n.at)} — ${esc(n.contactName)} ${esc(n.phone)} ${esc(n.email ?? '')}${n.company !== r.company ? ` (${esc(n.company)})` : ''}</div>`).join('')}</td><td class="r num">${r.users ?? '–'}</td>
         <td class="small" style="max-width:280px;white-space:pre-wrap">${esc(r.message ?? '')}</td>
         <td class="r" style="white-space:nowrap"><button class="btn primary" data-start="${r.id}">체험 시작</button> <button class="btn" data-reject="${r.id}">보류</button></td></tr>`).join('')}</tbody></table></div>`
       : '<div class="empty">새 신청이 없습니다. 신청은 홈페이지 ieumerp.kr 의 무료 체험 신청서로 들어옵니다</div>'}

@@ -131,6 +131,42 @@ test('임시 비밀번호는 ERP 비밀번호 정책(10자+, 3종+, 같은 문�
 });
 
 let id;
+test('개설 중 실패해도 만든 ID 는 바로 저장되고, 다시 시도하면 이미 만든 것을 다시 만들지 않는다', async () => {
+  const made = [];
+  let failNext = 'serviceInstanceUpdate';
+  const gql = async (query, variables) => {
+    const name = (query.match(/\{\s*(\w+)/) ?? [])[1];
+    made.push({ name, svc: variables.input?.name });
+    if (name === failNext) { failNext = null; throw new Error('Railway: 일시적 오류'); }
+    return {
+      projectCreate: { projectCreate: { id: 'p1', environments: { edges: [{ node: { id: 'e1', name: 'production' } }] } } },
+      serviceCreate: { serviceCreate: { id: variables.input?.name === 'Postgres' ? 'pg1' : 'app1' } },
+      serviceInstanceUpdate: { serviceInstanceUpdate: true },
+      serviceDomainCreate: { serviceDomainCreate: { id: 'd1', domain: 'x.up.railway.app' } },
+      variableCollectionUpsert: { variableCollectionUpsert: true },
+      volumeCreate: { volumeCreate: { id: 'v-' + variables.input?.serviceId } },
+      serviceConnect: { serviceConnect: { id: 'app1' } },
+      deployments: { deployments: { edges: [{ node: { id: 'dep', status: 'SUCCESS' } }] } },
+    }[name];
+  };
+  let saved = null; // DB 에 남은 값처럼 — 매번 복사해 둔다
+  const opts = { gql, region: 'r', repo: 'o/r', branch: 'b', dockerfilePath: 'D', licenseServerUrl: 'u', sleep: async () => {}, onSave: (d) => { saved = JSON.parse(JSON.stringify(d)); } };
+  const job = { data: {}, input: { projectName: 'erp-x', companyName: 'x', bizRegNo: '2148839612', companyCode: 'X', adminId: 'admin' }, secrets: { dbPassword: 'p', encryptionKey: 'k', adminPassword: 'a' } };
+  await assert.rejects(R.provision(job, opts), /일시적 오류/);
+  assert.equal(saved.projectId, 'p1');
+  assert.equal(saved.pgServiceId, 'pg1', '데이터베이스를 만든 직후 실패해도 ID 가 저장된다');
+  assert.equal(saved.pgConfigured, undefined);
+  // 저장된 값으로 다시 시도 (서버가 다시 시작된 것처럼)
+  await R.provision({ ...job, data: saved }, opts);
+  const count = (n, svc) => made.filter((x) => x.name === n && (svc === undefined || x.svc === svc)).length;
+  assert.equal(count('projectCreate'), 1);
+  assert.equal(count('serviceCreate', 'Postgres'), 1, 'Postgres 를 두 번 만들지 않는다');
+  assert.equal(count('serviceCreate', 'ieum-erp'), 1);
+  assert.equal(count('serviceDomainCreate'), 1);
+  assert.equal(saved.pgConfigured, true);
+  assert.equal(saved.connected, true);
+});
+
 test('Railway 연결 전에는 서버를 개설할 수 없고, 연결 확인 후 토큰은 암호화 저장된다', async () => {
   id = (await call('/api/admin/customers', { method: 'POST', json: { name: '㈜한누리통신', bizRegNo: '214-88-39612', deployment: 'HOSTED' } })).body.id;
   await call(`/api/admin/customers/${id}/licenses`, { method: 'POST', json: { kind: 'NEW', maxUsers: 12 } });

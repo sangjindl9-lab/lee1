@@ -65,6 +65,23 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
   const smallJson = express.json({ limit: '64kb' });
   const bigJson = express.json({ limit: '40mb' });
   const isUpload = (req) => req.method === 'POST' && (/^\/api\/admin\/(customers\/[^/]+\/requests|requests|requests\/[^/]+\/comments)$/.test(req.path) || req.path === '/api/v1/support');
+  // 같은 키(IP·설치 코드)로 windowMs 안에 max 번을 넘으면 true
+  const overLimit = (map, key, max, windowMs) => {
+    const now = Date.now();
+    const h = map.get(key);
+    const cur = h && now - h.at < windowMs ? { n: h.n + 1, at: h.at } : { n: 1, at: now };
+    map.set(key, cur);
+    if (map.size > 5000) map.clear();
+    return cur.n > max;
+  };
+  // 고객 ERP 의 고장·수정 요청(첨부 최대 수십 MB) — 큰 본문을 읽기 전에 같은 IP 10분 30건으로 막는다. 설치 코드별 제한은 아래 라우트에서
+  const supportHits = new Map();
+  app.use((req, res, next) => {
+    if (req.method === 'POST' && req.path === '/api/v1/support' && overLimit(supportHits, `ip:${req.ip ?? ''}`, 30, 600_000)) {
+      return res.status(429).json({ message: '요청이 너무 많습니다. 잠시 뒤 다시 보내 주세요' });
+    }
+    next();
+  });
   app.use((req, res, next) => (isUpload(req) ? bigJson : smallJson)(req, res, next));
   app.use((req, res, next) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -97,6 +114,9 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
     const m = (req.headers.cookie ?? '').split(/;\s*/).find((c) => c.startsWith(name + '='));
     return m ? decodeURIComponent(m.slice(name.length + 1)) : null;
   };
+  // 세션마다 고유 번호(jti) — 로그아웃하면 그 번호를 기록해 쿠키를 다시 써도 들어오지 못하게 한다
+  const newSession = (ver) => signSession({ exp: Date.now() + SESSION_HOURS * 3600_000, v: ver, jti: crypto.randomBytes(16).toString('base64url') });
+  const isRevoked = async (jti) => (await pool.query('select 1 from admin_session_revoked where jti = $1', [jti])).rowCount > 0;
   const setSessionCookie = (res, value, maxAgeSec) => {
     res.setHeader('Set-Cookie', `sid=${encodeURIComponent(value)}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAgeSec}${PROD ? '; Secure' : ''}`);
   };
@@ -119,12 +139,23 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
       return res.status(401).json({ message: '비밀번호가 맞지 않습니다' });
     }
     fails.delete(ip);
-    setSessionCookie(res, signSession({ exp: Date.now() + SESSION_HOURS * 3600_000, v: a.ver }), SESSION_HOURS * 3600);
+    setSessionCookie(res, newSession(a.ver), SESSION_HOURS * 3600);
     audit(req, 'LOGIN', '관리자 로그인');
     res.json({ ok: true });
   });
 
-  app.post('/api/admin/logout', (req, res) => {
+  app.post('/api/admin/logout', async (req, res) => {
+    const sess = readSession(cookie(req, 'sid'));
+    if (sess?.jti) {
+      try {
+        await pool.query('delete from admin_session_revoked where exp < now()');
+        await pool.query('insert into admin_session_revoked(jti, exp) values ($1, to_timestamp($2 / 1000.0)) on conflict do nothing', [sess.jti, sess.exp]);
+        audit(req, 'LOGOUT', '관리자 로그아웃');
+      } catch (e) {
+        console.error('로그아웃 기록 실패', e.message);
+        return res.status(500).json({ message: '로그아웃 처리 중 오류가 발생했습니다. 다시 눌러 주세요' });
+      }
+    }
     setSessionCookie(res, '', 0);
     res.json({ ok: true });
   });
@@ -136,7 +167,7 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
   admin.use((req, res, next) => { res.setHeader('x-app-build', APP_BUILD); next(); });
   admin.use(async (req, res, next) => {
     const sess = readSession(cookie(req, 'sid'));
-    if (!sess || (sess.v ?? 0) !== (await auth()).ver) return res.status(401).json({ message: '로그인이 필요합니다' });
+    if (!sess?.jti || (sess.v ?? 0) !== (await auth()).ver || (await isRevoked(sess.jti))) return res.status(401).json({ message: '로그인이 필요합니다' });
     if (req.method !== 'GET' && req.get('x-portal') !== '1') return res.status(403).json({ message: '요청이 올바르지 않습니다' });
     next();
   });
@@ -177,7 +208,7 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
     authCache = null;
     audit(req, 'PASSWORD_CHANGE', '관리자 비밀번호 변경');
     // 지금 쓰는 화면은 새 세션으로 이어서 사용
-    setSessionCookie(res, signSession({ exp: Date.now() + SESSION_HOURS * 3600_000, v: ver }), SESSION_HOURS * 3600);
+    setSessionCookie(res, newSession(ver), SESSION_HOURS * 3600);
     res.json({ ok: true });
   }));
 
@@ -420,7 +451,7 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
 
   // ── 고객관리: 영업 단계·계약(전자서명)·과금·상담 ──
   // ── 무료 체험 신청 (홈페이지 ieumerp.kr 의 신청서 → /api/v1/trial) ─────────────
-  const shapeTrialReq = (r) => ({ id: r.id, company: r.company, bizRegNo: r.biz_reg_no, contactName: r.contact_name, phone: r.phone, email: r.email, users: r.users, message: r.message, status: r.status, customerId: r.customer_id, createdAt: r.created_at, handledAt: r.handled_at });
+  const shapeTrialReq = (r) => ({ id: r.id, company: r.company, bizRegNo: r.biz_reg_no, contactName: r.contact_name, phone: r.phone, email: r.email, users: r.users, message: r.message, status: r.status, customerId: r.customer_id, createdAt: r.created_at, handledAt: r.handled_at, reapplyNotes: r.reapply_notes ?? [] });
   /** 체험 서버 일별 접속 — 방문자(서로 다른 사람) 수와 로그인 수, 계정별 로그인 */
   admin.get('/demo-visits', wrap(async (req, res) => {
     const days = Math.min(Math.max(Number(req.query.days) || 30, 1), 180);
@@ -582,12 +613,15 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
   async function runJob(customerId) {
     if (running.has(customerId)) return;
     running.add(customerId);
+    let job = null;
+    // 만든 ID 를 바로 저장 — 실패한 뒤 다시 시도할 때 이미 만든 데이터베이스·서비스·주소를 다시 만들지 않는다
+    const saveData = (data) => q('update server_job set data = $2, updated_at = now() where customer_id = $1', [customerId, data]);
     try {
       const j = await loadJob(customerId);
       if (!j || j.status !== 'RUNNING') return;
       const conf = await railwayConf();
       if (!conf.token) throw new Error('Railway 연결이 설정되지 않았습니다 (설정 > Railway 연결)');
-      const job = { data: j.data ?? {}, input: j.input, secrets: unseal(j.secrets) };
+      job = { data: j.data ?? {}, input: j.input, secrets: unseal(j.secrets) };
       await R.provision(job, {
         gql: R.client(conf.token, railwayEndpoint),
         workspaceId: conf.workspaceId,
@@ -601,6 +635,7 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
         sleep: railwaySleep,
         waitTimeoutMs: railwayWaitMs,
         onStep: (step, data) => q('update server_job set step = $2, data = $3, updated_at = now() where customer_id = $1', [customerId, step, data]),
+        onSave: saveData,
       });
       await q(`update server_job set status = 'DONE', step = 'done', data = $2, error = null, updated_at = now(), finished_at = now() where customer_id = $1`, [customerId, job.data]);
       await q('update customer set server_url = $2, updated_at = now() where id = $1', [customerId, `https://${job.data.domain}`]);
@@ -617,6 +652,7 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
       await q('insert into audit_log(action, summary) values ($1,$2)', ['SERVER_DONE', `고객 서버 개설 완료 ${j.input.companyName} https://${job.data.domain}`]);
     } catch (e) {
       console.error('고객 서버 개설 실패', e);
+      if (job) await saveData(job.data).catch(() => undefined);
       await q(`update server_job set status = 'FAILED', error = $2, updated_at = now() where customer_id = $1`, [customerId, String(e.message).slice(0, 1000)]).catch(() => undefined);
     } finally {
       running.delete(customerId);
@@ -1092,6 +1128,7 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
   app.post('/api/v1/support', wrap(async (req, res) => {
     const b = req.body ?? {};
     const c = await supportCustomer(b);
+    if (overLimit(supportHits, `code:${c.id}`, 10, 600_000)) throw bad('요청이 너무 많습니다. 10분 뒤 다시 보내 주세요', 429);
     const s = (v, n) => String(v ?? '').trim().slice(0, n);
     const kind = SUPPORT_TYPES[b.kind] ? b.kind : '수정';
     const title = s(b.title, 200), body = s(b.body, 8000);
@@ -1110,8 +1147,9 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
     audit(req, 'SUPPORT_IN', `고객 ERP 요청 ${c.name} · [${kind}] ${title}${files.length ? ` · 첨부 ${files.length}` : ''}`);
     res.status(201).json({ id: t.id });
   }));
+  // 설치 코드는 머리글(x-install-code, x-biz-reg-nos)로 받는다 — 주소에 넣으면 접속 기록에 남기 때문. 이미 배포된 ERP 는 주소(?code=)로 보내므로 그것도 받는다
   app.get('/api/v1/support', wrap(async (req, res) => {
-    const c = await supportCustomer(req.query ?? {});
+    const c = await supportCustomer({ code: req.get('x-install-code') ?? req.query?.code, bizRegNos: req.get('x-biz-reg-nos') ?? req.query?.bizRegNos });
     const rows = (await q(`select t.id, t.title, t.body, t.screen, t.status, t.reply, t.replied_at, t.opened_on, t.created_at, t.request_id, r.status as req_status,
         (select count(*)::int from ticket_file f where f.ticket_id = t.id) as files
       from ticket t left join request r on r.id = t.request_id where t.customer_id = $1 and t.source = 'ERP' order by t.created_at desc limit 200`, [c.id])).rows;
@@ -1156,12 +1194,24 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
     if (!company || !name || !phone) throw bad('회사명·담당자·연락처를 입력해 주세요');
     if (!L.isValidBiz(biz)) throw bad('사업자등록번호를 확인해 주세요 (10자리)');
     const [c] = (await q(CUSTOMER_STATE_SQL + ' where c.biz_reg_no = $1', [biz])).rows;
-    if (c?.license_id && c.lic_edition !== TRIAL) throw bad('이미 이음ERP를 쓰고 있는 회사입니다. 회사 담당자에게 확인해 주세요', 409);
-    if (c?.lic_edition === TRIAL) throw bad('이미 무료 체험을 신청한 회사입니다. 기간 연장이나 계약은 070-7938-5027 로 문의해 주세요', 409);
+    // 정식 고객인지 체험 중인지는 신청자에게 구분해 알려 주지 않는다 (사업자번호만으로 고객 여부를 알아내지 못하게). 판매자는 활동 기록으로 본다
+    if (c?.license_id) {
+      await q('insert into audit_log(action, summary, ip) values ($1,$2,$3)', ['TRIAL_REQUEST_DUP', `무료 체험 재신청 거절 (${c.lic_edition === TRIAL ? '체험 중' : '정식 고객'}) ${company} (${biz}) ${name} ${phone}`, ip]);
+      throw bad('이미 신청했거나 이음ERP를 쓰고 있는 회사입니다. 체험 연장·계약·사용 문의는 070-7938-5027 로 연락해 주세요', 409);
+    }
     const users = Number.isFinite(Number(b.users)) ? Math.min(Math.max(Math.trunc(Number(b.users)), 1), 1000) : null;
-    const [open] = (await q(`select id from trial_request where biz_reg_no = $1 and status = 'NEW'`, [biz])).rows;
-    if (open) await q(`update trial_request set company=$2, contact_name=$3, phone=$4, email=$5, users=$6, message=$7, created_at = now() where id = $1`, [open.id, company, name, phone, email || null, users, t(b.message, 2000) || null]);
-    else await q(`insert into trial_request(company, biz_reg_no, contact_name, phone, email, users, message, ip) values ($1,$2,$3,$4,$5,$6,$7,$8)`, [company, biz, name, phone, email || null, users, t(b.message, 2000) || null, ip]);
+    const [open] = (await q(`select id, phone, email from trial_request where biz_reg_no = $1 and status = 'NEW'`, [biz])).rows;
+    const digits = (v) => String(v ?? '').replace(/\D/g, '');
+    if (open && digits(open.phone) === digits(phone)) {
+      // 같은 연락처로 다시 보낸 신청 — 같은 사람이 고쳐 보낸 것으로 보고 내용만 바꾼다 (연락처는 그대로)
+      await q(`update trial_request set company=$2, contact_name=$3, email=coalesce(email, $4), users=$5, message=$6, created_at = now() where id = $1`, [open.id, company, name, email || null, users, t(b.message, 2000) || null]);
+    } else if (open) {
+      // 다른 연락처의 재신청 — 원래 신청(연락처)은 바꾸지 않고 '연락처 다른 재신청'으로 붙여 판매자에게만 보여 준다
+      const note = { kind: '연락처 다른 재신청', at: new Date().toISOString(), company, contactName: name, phone, email: email || null, users, message: t(b.message, 2000) || null, ip };
+      await q(`update trial_request set reapply_notes = (case when jsonb_array_length(reapply_notes) >= 20 then reapply_notes else reapply_notes || $2::jsonb end) where id = $1`, [open.id, JSON.stringify([note])]);
+      await q('insert into audit_log(action, summary, ip) values ($1,$2,$3)', ['TRIAL_REQUEST_REAPPLY', `무료 체험 재신청(연락처 다름) ${company} (${biz}) ${name} ${phone}`, ip]);
+      return res.status(201).json({ ok: true, days: TRIAL_DAYS });
+    } else await q(`insert into trial_request(company, biz_reg_no, contact_name, phone, email, users, message, ip) values ($1,$2,$3,$4,$5,$6,$7,$8)`, [company, biz, name, phone, email || null, users, t(b.message, 2000) || null, ip]);
     await q('insert into audit_log(action, summary, ip) values ($1,$2,$3)', ['TRIAL_REQUEST', `무료 체험 신청 ${company} (${biz}) ${name} ${phone}`, ip]);
     res.status(201).json({ ok: true, days: TRIAL_DAYS });
   }));

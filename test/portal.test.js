@@ -252,7 +252,8 @@ test('무료 체험: 홈페이지 신청 → 판매자가 시작하면 30일 체
   assert.equal((await call('/api/v1/trial', { method: 'POST', auth: false, json: { company: '체험전기', bizRegNo: no, name: '김체험', phone: '010-1111-2222', users: 6 } })).status, 201);
   assert.equal((await call('/api/v1/trial', { method: 'POST', auth: false, json: { company: '체험전기㈜', bizRegNo: no, name: '김체험', phone: '010-1111-2222', message: '현장 3곳' } })).status, 201);
   // 이미 정식으로 쓰는 회사는 신청 불가
-  assert.equal((await call('/api/v1/trial', { method: 'POST', auth: false, json: { company: 'x', bizRegNo: '2208660440', name: 'x', phone: '1' } })).status, 409);
+  const dupCustomer = await call('/api/v1/trial', { method: 'POST', auth: false, json: { company: 'x', bizRegNo: '2208660440', name: 'x', phone: '1' } });
+  assert.equal(dupCustomer.status, 409);
   // 로그인 없이 목록은 못 본다
   assert.equal((await call('/api/admin/trials', { auth: false })).status, 401);
   let d = (await call('/api/admin/trials')).body;
@@ -274,8 +275,10 @@ test('무료 체험: 홈페이지 신청 → 판매자가 시작하면 30일 체
   const payload = L.verify(c.licenses[0].licenseText, publicKey);
   assert.equal(payload.edition, 'trial');
   assert.equal((await call(`/api/admin/trials/${r.id}/start`, { method: 'POST', json: {} })).status, 400); // 이미 처리
-  // 체험 중인 회사는 다시 신청하지 못하고 연락처를 안내
-  assert.equal((await call('/api/v1/trial', { method: 'POST', auth: false, json: { company: '체험전기', bizRegNo: no, name: '김', phone: '1' } })).status, 409);
+  // 체험 중인 회사는 다시 신청하지 못하고 연락처를 안내 — 정식 고객과 같은 문구 (사업자번호로 고객 여부를 알아내지 못하게)
+  const dupTrial = await call('/api/v1/trial', { method: 'POST', auth: false, json: { company: '체험전기', bizRegNo: no, name: '김', phone: '1' } });
+  assert.equal(dupTrial.status, 409);
+  assert.equal(dupTrial.body.message, dupCustomer.body.message);
   // 사용자 수만 바꾸는 변경 발급은 체험 그대로
   await call(`/api/admin/customers/${c.id}/licenses`, { method: 'POST', json: { kind: 'CHANGE', maxUsers: 8 } });
   assert.equal((await call('/api/admin/customers/' + c.id)).body.state, 'TRIAL');
@@ -306,4 +309,55 @@ test('체험 서버 접속 기록: 로그인마다 받아 일별 방문자·로�
   assert.ok(today.visitors >= 2 && today.logins >= 3);
   assert.ok(today.byLogin.ceo >= 2);
   assert.equal((await call('/api/admin/demo-visits', { auth: false })).status, 401);
+});
+
+test('무료 체험 재신청: 다른 연락처로 다시 신청해도 원래 연락처는 바뀌지 않고, 판매자에게 표시된다', async () => {
+  const no = bizNo('516863456');
+  assert.equal((await call('/api/v1/trial', { method: 'POST', auth: false, json: { company: '원래전기', bizRegNo: no, name: '원신청', phone: '010-1234-5678', email: 'a@won.kr' } })).status, 201);
+  const r = await call('/api/v1/trial', { method: 'POST', auth: false, json: { company: '가로채기', bizRegNo: no, name: '남', phone: '010-9999-0000', email: 'x@evil.kr' } });
+  assert.equal(r.status, 201, '신청자에게는 보통 접수와 같게 보인다');
+  const list = (await call('/api/admin/trials')).body.requests.filter((x) => x.bizRegNo === no);
+  assert.equal(list.length, 1);
+  assert.equal(list[0].contactName, '원신청');
+  assert.equal(list[0].phone, '010-1234-5678');
+  assert.equal(list[0].email, 'a@won.kr');
+  assert.equal(list[0].company, '원래전기');
+  assert.equal(list[0].reapplyNotes.length, 1);
+  assert.equal(list[0].reapplyNotes[0].kind, '연락처 다른 재신청');
+  assert.equal(list[0].reapplyNotes[0].phone, '010-9999-0000');
+  // 같은 연락처(하이픈 달라도)로 다시 보내면 내용만 고친다 — 이메일은 그대로
+  assert.equal((await call('/api/v1/trial', { method: 'POST', auth: false, json: { company: '원래전기㈜', bizRegNo: no, name: '원신청', phone: '01012345678', email: 'b@other.kr' } })).status, 201);
+  const again = (await call('/api/admin/trials')).body.requests.find((x) => x.bizRegNo === no);
+  assert.equal(again.company, '원래전기㈜');
+  assert.equal(again.phone, '010-1234-5678');
+  assert.equal(again.email, 'a@won.kr');
+});
+
+test('고객 ERP 요청: 설치 코드를 머리글로도 받고(주소 방식도 계속 지원), 같은 설치 코드는 10분 10건까지', async () => {
+  const code = cust.activationCode;
+  const viaHeader = await fetch(`${base}/api/v1/support`, { headers: { 'x-install-code': code, 'x-biz-reg-nos': '2208660440' } });
+  assert.equal(viaHeader.status, 200);
+  assert.ok(Array.isArray((await viaHeader.json()).rows));
+  assert.equal((await fetch(`${base}/api/v1/support`, { headers: { 'x-install-code': code, 'x-biz-reg-nos': '1018117536' } })).status, 403);
+  assert.equal((await call(`/api/v1/support?code=${code}&bizRegNos=2208660440`, { auth: false })).status, 200);
+  const send = () => call('/api/v1/support', { method: 'POST', auth: false, json: { code, bizRegNos: ['2208660440'], kind: '문의', title: '반복', body: '내용' } });
+  const statuses = [];
+  for (let i = 0; i < 12; i++) statuses.push((await send()).status);
+  assert.ok(statuses.includes(201));
+  assert.equal(statuses.at(-1), 429, '한도를 넘으면 막는다');
+});
+
+test('로그아웃하면 그 세션 쿠키는 서버에서도 끊긴다 (쿠키를 다시 써도 401)', async () => {
+  const pw = 'NewPass!2026xyz'; // 앞의 시험에서 바꾼 비밀번호
+  assert.equal((await call('/api/admin/login', { method: 'POST', json: { password: pw } })).status, 200);
+  const old = cookie;
+  const other = await fetch(base + '/api/admin/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password: pw }) });
+  const otherCookie = other.headers.get('set-cookie').split(';')[0];
+  assert.equal((await call('/api/admin/customers')).status, 200);
+  assert.equal((await call('/api/admin/logout', { method: 'POST' })).status, 200);
+  const reuse = await fetch(base + '/api/admin/customers', { headers: { cookie: old } });
+  assert.equal(reuse.status, 401);
+  // 다른 곳에서 로그인한 세션은 그대로
+  assert.equal((await fetch(base + '/api/admin/customers', { headers: { cookie: otherCookie } })).status, 200);
+  cookie = otherCookie;
 });
