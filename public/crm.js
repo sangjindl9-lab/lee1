@@ -285,10 +285,9 @@ async function pageContract(id) {
     if (k.licenseRowId) { location.hash = '#/customers/' + k.customerId; return; }
     if (k.customer.licenseKind === 'SUSPEND') return toast('사용 중지된 고객입니다. 고객 화면에서 먼저 중지를 해제해 주세요', 'error');
     const kind = k.customer.hasLicense ? 'RENEW' : 'NEW';
-    if (!confirm(`${k.customer.name}에 ${kind === 'NEW' ? '신규' : '연장'} 라이선스를 발급할까요?\n사용자 ${k.seats}명 · ${k.startsOn} ~ ${k.endsOn} · ${won(k.annualFee)}`)) return;
+    if (!confirm(`${k.customer.name}에 ${kind === 'NEW' ? '신규' : '연장'} 라이선스를 발급할까요?\n사용자 ${k.seats}명 · ${k.startsOn} ~ ${k.endsOn} · ${won(k.annualFee)}\n계약의 요금제·판매 옵션(검측서류·AI 도우미 등)·저장 용량이 라이선스에 그대로 들어갑니다.`)) return;
     try {
-      const l = await api(`/customers/${k.customerId}/licenses`, { method: 'POST', json: { kind, maxUsers: k.seats, startsOn: k.startsOn, expiresAt: k.endsOn, amount: k.annualFee, memo: `계약 ${k.no}` } });
-      await api(`/contracts/${k.id}/license`, { method: 'POST', json: { licenseRowId: l.id } });
+      const l = await api(`/contracts/${k.id}/issue-license`, { method: 'POST' });
       issuedDialog({ id: k.customerId, name: k.customer.name }, l);
     } catch (e) { toast(e.message, 'error'); }
   };
@@ -497,7 +496,9 @@ async function pagePricing() {
   const pv = c.provider ?? {};
   const prodSel = (v, blank) => `<select data-k="product">${blank ? '<option value="">전 제품</option>' : ''}${opt(c.lists.PRODUCTS, v)}</select>`;
   const planRow = (p) => `<tr data-id="${esc(p.id ?? '')}"><td>${prodSel(p.product)}</td><td><input data-k="name" value="${esc(p.name)}" /></td>${['hosting', 'install', 'setup', 'seats', 'perSeat'].map((k) => `<td><input data-k="${k}" type="number" min="0" class="r" value="${Number(p[k]) || 0}" /></td>`).join('')}<td><button type="button" class="btn sm danger" data-rm>삭제</button></td></tr>`;
-  const optRow = (o) => `<tr data-id="${esc(o.id ?? '')}"><td><input data-k="name" value="${esc(o.name)}" /></td><td>${prodSel(o.product, true)}</td><td><input data-k="price" type="number" min="0" class="r" value="${Number(o.price) || 0}" /></td><td><select data-k="once">${opt([['0', '매년'], ['1', '1회']], o.once ? '1' : '0')}</select></td><td><button type="button" class="btn sm danger" data-rm>삭제</button></td></tr>`;
+  const GRANT_OPTS = [['', '없음'], ['geomcheuk', '검측서류'], ['gongjung', '예정공정표'], ['gongmu', '공무지원 묶음 (검측서류+예정공정표)'], ['sajindaeji', '사진대지'], ['chakgong', '착공계'], ['jajae', '자재검수'], ['ai', 'AI 도우미'], ['storage10', '저장 용량 +10GB']];
+  const DEFAULT_GRANT = { 'opt-geomcheuk': 'geomcheuk', 'opt-gongjung': 'gongjung', 'opt-gongmu': 'gongmu', storage10: 'storage10' };
+  const optRow = (o) => `<tr data-id="${esc(o.id ?? '')}"><td><input data-k="name" value="${esc(o.name)}" /></td><td>${prodSel(o.product, true)}</td><td><input data-k="price" type="number" min="0" class="r" value="${Number(o.price) || 0}" /></td><td><select data-k="once">${opt([['0', '매년'], ['1', '1회']], o.once ? '1' : '0')}</select></td><td><select data-k="grant">${opt(GRANT_OPTS, o.grant ?? DEFAULT_GRANT[o.id] ?? '')}</select></td><td><button type="button" class="btn sm danger" data-rm>삭제</button></td></tr>`;
   shell('pricing', `
     <div class="page-head"><div><h1>요금제 · 계약 설정</h1><p>계약서 이용료 계산과 계약서에 들어갈 공급자 정보입니다. 바꾼 단가는 새로 쓰는 계약부터 적용됩니다.</p></div>
       <button class="btn primary" id="psave">설정 저장</button></div>
@@ -506,7 +507,7 @@ async function pagePricing() {
       <div class="table-wrap"><table class="edit" id="plans"><thead><tr><th>제품</th><th>요금제명</th><th>호스팅형 연</th><th>설치형 연</th><th>설치형 구축비</th><th>기본 사용자</th><th>추가 1인 연</th><th></th></tr></thead>
       <tbody>${c.plans.map(planRow).join('')}</tbody></table></div></section>
     <section class="panel"><header><h2>유료 옵션</h2><button class="btn sm" id="addopt">옵션 추가</button></header>
-      <div class="table-wrap"><table class="edit" id="opts"><thead><tr><th>옵션명</th><th>적용 제품</th><th>금액</th><th>과금</th><th></th></tr></thead>
+      <div class="table-wrap"><table class="edit" id="opts"><thead><tr><th>옵션명</th><th>적용 제품</th><th>금액</th><th>과금</th><th title="계약에서 이 옵션을 고르면 라이선스 발급 때 켜지는 ERP 기능">켜는 기능</th><th></th></tr></thead>
       <tbody>${c.options.map(optRow).join('')}</tbody></table></div></section>
     <section class="panel"><header><h2>공급자 정보 · 과금 정책</h2></header><form id="pvf" class="body"><div class="form-grid">
       ${[['name', '상호'], ['bizNo', '사업자등록번호'], ['ceo', '대표자'], ['phone', '대표 전화'], ['email', '청구 담당 이메일'], ['bank', '입금 계좌 (은행·계좌·예금주)'], ['address', '주소']].map(([k, l]) => `<label class="f${k === 'address' ? ' wide' : ''}">${l}<input name="${k}" value="${esc(pv[k] ?? '')}" /></label>`).join('')}

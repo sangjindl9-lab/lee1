@@ -6,7 +6,7 @@ const crypto = require('crypto');
 const { createPool, migrate } = require('../lib/db');
 const { buildApp } = require('../server');
 const L = require('../lib/license');
-const { addMonths } = require('../lib/crm');
+const { addMonths, licenseFromContract, DEFAULT_CONFIG } = require('../lib/crm');
 
 const DB = process.env.TEST_DATABASE_URL ?? 'postgresql://postgres:devpass@127.0.0.1:5432/portal_test';
 const PW = 'test-admin-password-1';
@@ -122,6 +122,39 @@ test('이음ERP 계약 체결 후 기존 발급 기능으로 라이선스 발급
   assert.equal((await call(`/contracts/${k.id}/license`, { method: 'POST', json: { licenseRowId: lic.body.id } })).status, 200);
   assert.equal((await call('/contracts/' + k.id)).body.licenseRowId, lic.body.id);
   assert.equal((await call('/contracts/' + k.id)).body.customer.hasLicense, true);
+});
+
+test('입금을 동시에 넣어도 총액과 입금 내역이 같이 남는다', async () => {
+  const inv = (await call('/invoices', { method: 'POST', json: { customerId: cust, period: '동시 입금 시험', issueDate: start, dueDate: L.addDays(start, 10), supply: 100000 } })).body;
+  await Promise.all([1, 2, 3, 4].map((n) => call(`/invoices/${inv.id}/pay`, { method: 'POST', json: { amount: 10000 * n, date: start } })));
+  const got = (await call('/invoices?customerId=' + cust)).body.find((x) => x.id === inv.id);
+  assert.equal(got.paid, 100000);
+  assert.equal(got.payments.length, 4);
+});
+
+test('계약대로 라이선스 발급: 요금제·판매 옵션(공무지원 묶음·AI)·저장 용량이 라이선스에 들어가고, 고객 맞춤 모듈은 유지', async () => {
+  const cfg = { ...DEFAULT_CONFIG, options: [...DEFAULT_CONFIG.options, { id: 'x-ai', name: 'AI 도우미', price: 100000, once: false, product: '이음ERP', grant: 'ai' }] };
+  const v = licenseFromContract({ planId: 'erp-pro', options: ['opt-gongmu', 'storage10', 'x-ai', 'taxinv'] }, cfg, ['samwoo-cable', 'jajae'], ['geomcheuk', 'gongjung', 'sajindaeji', 'chakgong', 'jajae', 'ai']);
+  assert.deepEqual(v.modules.sort(), ['ai', 'geomcheuk', 'gongjung', 'samwoo-cable']);
+  assert.equal(v.storageGB, 11);
+  assert.equal(v.plan, 'pro');
+  // API: 새 고객 + 체결 계약 → 계약대로 발급
+  const c2 = (await call('/customers', { method: 'POST', json: { name: '한빛전기', bizRegNo: '220-81-62517', deployment: 'HOSTED' } })).body.id;
+  const r = await call('/contracts', { method: 'POST', json: { customerId: c2, product: '이음ERP', deployment: 'HOSTED', planId: 'erp-pro', seats: 30, options: ['opt-gongmu', 'storage10'], startsOn: start, endsOn: L.oneYearFrom(start), billMethod: '월 분납' } });
+  await call(`/contracts/${r.body.id}/sign`, { method: 'POST', json: { who: 'provider', name: '김세인', image: SIG, agree: true } });
+  await call(`/contracts/${r.body.id}/sign`, { method: 'POST', json: { who: 'customer', name: '한빛 대표', image: SIG, agree: true } });
+  // 청구 일정: 두 번 동시에 눌러도 한 번만
+  const sch = await Promise.all([call(`/contracts/${r.body.id}/invoices`, { method: 'POST' }), call(`/contracts/${r.body.id}/invoices`, { method: 'POST' })]);
+  assert.deepEqual(sch.map((x) => x.status).sort(), [201, 400]);
+  assert.equal((await call('/invoices?customerId=' + c2)).body.length, 12);
+  const l = await call(`/contracts/${r.body.id}/issue-license`, { method: 'POST' });
+  assert.equal(l.status, 201);
+  const p = L.verify(l.body.licenseText, crypto.createPublicKey(privateKey));
+  assert.ok(p.modules.includes('geomcheuk') && p.modules.includes('gongjung'));
+  assert.equal(p.storageMB, 11 * 1024);
+  assert.equal(p.edition, 'pro');
+  assert.equal(p.maxUsers, 30);
+  assert.equal((await call(`/contracts/${r.body.id}/issue-license`, { method: 'POST' })).status, 400, '같은 계약으로 두 번 발급 안 됨');
 });
 
 test('갱신 계약은 다음 날부터 1년, 1회성 비용 제외 / 해지하면 고객 단계가 해지로', async () => {

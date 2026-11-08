@@ -49,9 +49,12 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
     const want = Buffer.from(hash, 'base64url');
     return given.length === want.length && crypto.timingSafeEqual(given, want);
   };
+  // 비밀번호·세션 버전은 잠깐(5초)만 기억한다 — 발급 사이트를 여러 대 띄워도 다른 서버의 비밀번호 변경·전체 로그아웃이 곧바로 반영되게
   let authCache = null;
+  let authAt = 0;
   const auth = async () => {
-    if (authCache) return authCache;
+    if (authCache && Date.now() - authAt < 5_000) return authCache;
+    authAt = Date.now();
     const rows = (await pool.query(`select key, value from portal_setting where key in ('admin_password', 'session_version')`)).rows;
     const m = Object.fromEntries(rows.map((r) => [r.key, r.value]));
     authCache = { stored: m.admin_password ?? null, ver: Number(m.session_version ?? 0), changedAt: null };
@@ -510,7 +513,22 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
     res.json({ ok: true });
   }));
 
-  require('./lib/crm')(admin, { q, audit, wrap, bad, loadCustomer });
+  // 여러 문장을 한 묶음으로 — 중간에 실패하면 모두 되돌린다
+  const tx = async (fn) => {
+    const c = await pool.connect();
+    try {
+      await c.query('begin');
+      const r = await fn((text, params) => c.query(text, params));
+      await c.query('commit');
+      return r;
+    } catch (e) {
+      await c.query('rollback').catch(() => undefined);
+      throw e;
+    } finally {
+      c.release();
+    }
+  };
+  require('./lib/crm')(admin, { q, tx, audit, wrap, bad, loadCustomer, issueLicense, optionModules: OPTION_MODULES });
 
   // ── 고객 서버(호스팅형) 자동 개설 ─────────────────────────────────
   //  비밀값(고객 DB 비밀번호·암호화 키·관리자 임시 비밀번호·Railway 토큰)은 판매자 서명키에서 만든 키로 암호화해 저장
