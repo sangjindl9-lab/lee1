@@ -256,7 +256,35 @@
       list.append(row);
     }
   }
-  function showHome() { renderHome(); $('eum-home').hidden = false; }
+  // ── 홈 배너(자체 광고): store/banners.json 을 받아 상단·하단 자리에 표시 ──
+  const BANNER_BASE = 'https://raw.githubusercontent.com/sangjindl9-lab/lee1/eum-hwp/';
+  let bannersLoadedAt = 0;
+  async function loadBanners() {
+    if (Date.now() - bannersLoadedAt < 10 * 60 * 1000) return;
+    bannersLoadedAt = Date.now();
+    let data;
+    try {
+      const r = await fetch(BANNER_BASE + 'store/banners.json?t=' + Date.now(), { cache: 'no-store' });
+      if (!r.ok) return;
+      data = await r.json();
+    } catch (e) { return; }
+    for (const slot of ['top', 'bottom']) {
+      const box = $('eum-ad-' + slot);
+      const b = (data.banners || []).find((x) => x.slot === slot);
+      box.textContent = '';
+      box.hidden = !(b && b.enabled && b.image);
+      if (box.hidden) continue;
+      const img = el('img'); img.alt = b.title || '광고';
+      img.src = /^https?:/.test(b.image) ? b.image : BANNER_BASE + b.image;
+      img.onerror = () => { box.hidden = true; };
+      if (b.link) {
+        const a = el('a'); a.href = b.link; a.target = '_blank'; a.rel = 'noopener';
+        a.append(img); box.append(a);
+      } else box.append(img);
+    }
+  }
+
+  function showHome() { renderHome(); loadBanners(); $('eum-home').hidden = false; }
   function hideHome() { $('eum-home').hidden = true; refreshBar(); }
 
   // ── 더보기 메뉴 ───────────────────────────────────────────
@@ -410,7 +438,9 @@
     acts.append(bOpen, bNew);
     const sec = el('h2', null, '최근 문서');
     const list = el('div'); list.id = 'eum-recents';
-    home.append(head, acts, sec, list);
+    const adTop = el('div', 'eum-ad'); adTop.id = 'eum-ad-top'; adTop.hidden = true;
+    const adBottom = el('div', 'eum-ad'); adBottom.id = 'eum-ad-bottom'; adBottom.hidden = true;
+    home.append(head, adTop, acts, sec, list, adBottom);
     document.body.append(home);
 
     const about = el('div'); about.id = 'eum-about'; about.hidden = true;
@@ -429,6 +459,7 @@
     document.body.append(askBox);
 
     renderHome();
+    loadBanners();
     setMode('view');
 
     if (native) {

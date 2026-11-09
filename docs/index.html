@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>이음과 문서 — 배너 관리</title>
+<style>
+  :root { --blue: #0038bb; --line: #dde3ec; --sub: #667085; --bg: #f4f6fa; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: #1a1f2b; font: 15px/1.5 system-ui, -apple-system, "Pretendard", "Noto Sans KR", sans-serif; }
+  main { max-width: 640px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 22px; margin: 0 0 4px; color: var(--blue); }
+  .sub { color: var(--sub); font-size: 13px; margin: 0 0 20px; }
+  .card { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 14px; }
+  .card h2 { font-size: 15px; margin: 0 0 12px; display: flex; align-items: center; justify-content: space-between; }
+  label { display: block; font-size: 13px; color: var(--sub); margin: 10px 0 4px; }
+  input[type=text], input[type=url], input[type=password] { width: 100%; height: 40px; border: 1px solid var(--line); border-radius: 8px; padding: 0 10px; font: inherit; }
+  .prev { width: 100%; max-height: 120px; object-fit: cover; border-radius: 8px; border: 1px dashed var(--line); background: var(--bg); display: block; }
+  .prev[hidden] { display: none; }
+  .empty { color: var(--sub); font-size: 13px; padding: 24px; text-align: center; border: 1px dashed var(--line); border-radius: 8px; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  button { height: 40px; padding: 0 16px; border-radius: 8px; border: 1px solid var(--line); background: #fff; font: inherit; font-weight: 700; cursor: pointer; }
+  button.primary { background: var(--blue); color: #fff; border-color: var(--blue); }
+  button:disabled { opacity: .5; cursor: default; }
+  .switch { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 400; }
+  .msg { margin-top: 12px; font-size: 13px; color: var(--sub); white-space: pre-line; }
+  .msg.err { color: #b42318; }
+  #tokenCard[hidden], #editor[hidden] { display: none; }
+  small { color: var(--sub); }
+</style>
+</head>
+<body>
+<main>
+  <h1>이음과 문서 — 배너 관리</h1>
+  <p class="sub">홈 화면 상단·하단에 들어가는 자체 배너를 켜고 끄고 바꿉니다. 저장하면 앱에는 최대 5분 안에 반영됩니다.</p>
+
+  <section class="card" id="tokenCard">
+    <h2>GitHub 토큰</h2>
+    <p class="sub" style="margin:0 0 8px">저장소 <b>sangjindl9-lab/lee1</b>에 쓸 수 있는 Fine-grained 토큰(권한: Contents → Read and write)을 한 번 넣어 두면 이 브라우저에 저장됩니다.</p>
+    <input type="password" id="token" placeholder="github_pat_…" autocomplete="off">
+    <div class="row" style="margin-top:10px">
+      <button class="primary" id="btnLogin">불러오기</button>
+      <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener"><small>토큰 만들기 ↗</small></a>
+    </div>
+    <div class="msg" id="tokenMsg"></div>
+  </section>
+
+  <div id="editor" hidden>
+    <section class="card" data-slot="top"></section>
+    <section class="card" data-slot="bottom"></section>
+    <div class="row">
+      <button class="primary" id="btnSave">저장</button>
+      <button id="btnReload">다시 불러오기</button>
+      <button id="btnLogout">토큰 지우기</button>
+    </div>
+    <div class="msg" id="saveMsg"></div>
+  </div>
+</main>
+
+<script>
+(() => {
+  const OWNER = 'sangjindl9-lab', REPO = 'lee1', BRANCH = 'eum-hwp';
+  const JSON_PATH = 'store/banners.json', IMG_DIR = 'store/banners';
+  const RAW = `https://raw.githubusercontent.com/${OWNER}/${REPO}/${BRANCH}/`;
+  const API = `https://api.github.com/repos/${OWNER}/${REPO}/contents/`;
+  const NAMES = { top: '상단 배너 (앱 이름 아래)', bottom: '하단 배너 (최근 문서 아래)' };
+  const $ = (id) => document.getElementById(id);
+  const TOKEN_KEY = 'eum.banner.token';
+
+  let token = localStorage.getItem(TOKEN_KEY) || '';
+  let sha = null;
+  let state = { top: null, bottom: null };   // {enabled, image, link, title, newFile?}
+
+  const headers = () => ({ Authorization: 'Bearer ' + token, Accept: 'application/vnd.github+json' });
+  const b64utf8 = (s) => btoa(unescape(encodeURIComponent(s)));
+  const utf8b64 = (b) => decodeURIComponent(escape(atob(b.replace(/\n/g, ''))));
+  const fileToB64 = (f) => new Promise((ok, no) => {
+    const r = new FileReader();
+    r.onload = () => ok(String(r.result).split(',')[1]);
+    r.onerror = no; r.readAsDataURL(f);
+  });
+
+  async function gh(path, opts) {
+    const r = await fetch(API + path, { ...opts, headers: { ...headers(), ...(opts && opts.headers) } });
+    if (!r.ok) {
+      let m = r.status + ' ' + r.statusText;
+      try { m += ' — ' + (await r.json()).message; } catch (e) {}
+      throw new Error(m);
+    }
+    return r.json();
+  }
+
+  async function load() {
+    const j = await gh(`${JSON_PATH}?ref=${BRANCH}&t=${Date.now()}`);
+    sha = j.sha;
+    const data = JSON.parse(utf8b64(j.content));
+    for (const slot of ['top', 'bottom']) {
+      const b = (data.banners || []).find((x) => x.slot === slot) || {};
+      state[slot] = { enabled: !!b.enabled, image: b.image || '', link: b.link || '', title: b.title || '', newFile: null };
+    }
+    render();
+  }
+
+  function render() {
+    for (const slot of ['top', 'bottom']) {
+      const s = state[slot];
+      const card = document.querySelector(`[data-slot="${slot}"]`);
+      card.innerHTML = `
+        <h2>${NAMES[slot]}
+          <span class="switch"><input type="checkbox" data-k="enabled" ${s.enabled ? 'checked' : ''}> 표시</span>
+        </h2>
+        <img class="prev" alt="" ${s.image ? '' : 'hidden'}>
+        <div class="empty" ${s.image ? 'hidden' : ''}>이미지가 없습니다. 가로로 긴 그림(예: 1200×300)을 올리세요.</div>
+        <div class="row" style="margin-top:8px">
+          <input type="file" accept="image/*" data-k="file">
+          <button data-k="clear" ${s.image ? '' : 'disabled'}>이미지 지우기</button>
+        </div>
+        <label>눌렀을 때 열 주소 (비워 두면 눌러도 아무 일 없음)</label>
+        <input type="url" data-k="link" value="${esc(s.link)}" placeholder="https://…">
+        <label>설명 (화면 낭독용)</label>
+        <input type="text" data-k="title" value="${esc(s.title)}" placeholder="예: 이음ERP 안내">`;
+      const img = card.querySelector('.prev');
+      if (s.newFile) img.src = URL.createObjectURL(s.newFile);
+      else if (s.image) img.src = /^https?:/.test(s.image) ? s.image : RAW + s.image + '?t=' + Date.now();
+      card.querySelector('[data-k=enabled]').onchange = (e) => { s.enabled = e.target.checked; };
+      card.querySelector('[data-k=link]').oninput = (e) => { s.link = e.target.value.trim(); };
+      card.querySelector('[data-k=title]').oninput = (e) => { s.title = e.target.value.trim(); };
+      card.querySelector('[data-k=file]').onchange = (e) => {
+        const f = e.target.files[0]; if (!f) return;
+        if (f.size > 1.5 * 1024 * 1024) { alert('이미지는 1.5MB 이하로 올려 주세요.'); e.target.value = ''; return; }
+        s.newFile = f; s.image = s.image || 'pending'; render();
+      };
+      card.querySelector('[data-k=clear]').onclick = () => { s.newFile = null; s.image = ''; s.enabled = false; render(); };
+    }
+  }
+  const esc = (v) => String(v).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+
+  async function save() {
+    const btn = $('btnSave'); btn.disabled = true;
+    const msg = $('saveMsg'); msg.className = 'msg'; msg.textContent = '저장 중…';
+    try {
+      for (const slot of ['top', 'bottom']) {
+        const s = state[slot];
+        if (!s.newFile) continue;
+        const ext = (s.newFile.name.split('.').pop() || 'png').toLowerCase().replace(/[^a-z0-9]/g, '') || 'png';
+        const path = `${IMG_DIR}/${slot}-${Date.now()}.${ext}`;
+        await gh(path, { method: 'PUT', body: JSON.stringify({
+          message: `배너 이미지 (${slot})`, branch: BRANCH, content: await fileToB64(s.newFile) }) });
+        s.image = path; s.newFile = null;
+      }
+      const out = { banners: ['top', 'bottom'].map((slot) => {
+        const s = state[slot];
+        return { slot, enabled: s.enabled && !!s.image, image: s.image, link: s.link, title: s.title };
+      }) };
+      const res = await gh(JSON_PATH, { method: 'PUT', body: JSON.stringify({
+        message: '배너 설정 변경', branch: BRANCH, sha, content: b64utf8(JSON.stringify(out, null, 2) + '\n') }) });
+      sha = res.content.sha;
+      msg.textContent = '저장했습니다. 앱에는 최대 5분 안에 반영됩니다(앱을 다시 켜면 바로 확인 가능).';
+      render();
+    } catch (e) {
+      msg.className = 'msg err'; msg.textContent = '저장 실패: ' + e.message + '\n다른 곳에서 먼저 바뀌었으면 「다시 불러오기」 후 다시 저장하세요.';
+    }
+    btn.disabled = false;
+  }
+
+  async function login() {
+    const t = $('token').value.trim();
+    if (!t) return;
+    token = t;
+    $('tokenMsg').className = 'msg'; $('tokenMsg').textContent = '확인 중…';
+    try {
+      await load();
+      localStorage.setItem(TOKEN_KEY, token);
+      $('tokenCard').hidden = true; $('editor').hidden = false;
+    } catch (e) {
+      token = '';
+      $('tokenMsg').className = 'msg err'; $('tokenMsg').textContent = '불러오지 못했습니다: ' + e.message;
+    }
+  }
+
+  $('btnLogin').onclick = login;
+  $('token').onkeydown = (e) => { if (e.key === 'Enter') login(); };
+  $('btnSave').onclick = save;
+  $('btnReload').onclick = () => load().catch((e) => { $('saveMsg').className = 'msg err'; $('saveMsg').textContent = e.message; });
+  $('btnLogout').onclick = () => { localStorage.removeItem(TOKEN_KEY); location.reload(); };
+
+  if (token) { $('token').value = token; login(); }
+})();
+</script>
+</body>
+</html>

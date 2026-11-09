@@ -105,6 +105,11 @@ html.eum-view #editor-area { grid-template-columns: 0 minmax(0, 1fr) !important;
 .eum-act-primary { background: var(--eum-blue); border-color: var(--eum-blue); color: #fff; }
 .eum-act-primary:active { background: var(--eum-blue-press); }
 #eum-home h2 { margin: 0 0 8px; font-size: 13px; font-weight: 700; color: var(--eum-sub); }
+.eum-ad { margin: 18px 0 0; border-radius: 12px; overflow: hidden; background: #fff; border: 1px solid var(--eum-line); }
+.eum-ad[hidden] { display: none; }
+.eum-ad a { display: block; }
+.eum-ad img { display: block; width: 100%; height: auto; max-height: 120px; object-fit: cover; }
+#eum-ad-bottom { margin-top: 24px; }
 #eum-recents { background: #fff; border: 1px solid var(--eum-line); border-radius: 12px; overflow: hidden; }
 .eum-row { display: flex; align-items: stretch; width: 100%; border: 0; border-bottom: 1px solid var(--eum-line); background: #fff; }
 .eum-row:last-child { border-bottom: 0; }
