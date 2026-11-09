@@ -382,8 +382,10 @@ function serverPanel(c) {
     ${j.status === 'DONE' ? `<dl class="dl" style="margin-bottom:12px">
         <div><dt>접속 주소</dt><dd><a href="${esc(j.url)}" target="_blank" rel="noopener">${esc(j.url)}</a></dd></div>
         <div><dt>관리자 아이디</dt><dd class="mono">${esc(j.adminId)}</dd></div>
-        <div><dt>개설 완료</dt><dd class="small">${dt(j.finishedAt)}</dd></div></dl>
-      <div class="row"><a class="btn primary" href="#/customers/${c.id}/delivery">납품서 보기 · 인쇄</a><button class="btn" id="srvredeploy" title="우리 ERP에 반영된 최신 코드를 이 고객 서버에만 배포합니다. 다른 고객은 그대로입니다 (2~5분, 데이터는 그대로)">이 고객만 최신 코드로 배포</button><button class="btn" id="srvaccess" title="고객 비밀번호 없이 공급사 지원 계정(ss-vendor)으로 들어갑니다. 고객 ERP 감사 로그에 남습니다">고객 ERP 접속</button></div>`
+        <div><dt>개설 완료</dt><dd class="small">${dt(j.finishedAt)}</dd></div>
+        <div><dt>파일·백업 저장소 키</dt><dd>${j.storage === 'dedicated' ? '<span class="badge ok">고객 전용</span>' : j.storageSplit?.status === 'RUNNING' ? '<span class="badge">분리 중…</span>' : '<span class="badge warn">공용 키 사용 중</span>'}</dd></div></dl>
+      ${j.storageSplit?.status === 'FAILED' ? `<div class="note seal" style="margin-bottom:10px">저장소 키 분리 실패: ${esc(j.storageSplit.error)}</div>` : ''}
+      <div class="row"><a class="btn primary" href="#/customers/${c.id}/delivery">납품서 보기 · 인쇄</a><button class="btn" id="srvredeploy" title="우리 ERP에 반영된 최신 코드를 이 고객 서버에만 배포합니다. 다른 고객은 그대로입니다 (2~5분, 데이터는 그대로)">이 고객만 최신 코드로 배포</button><button class="btn" id="srvaccess" title="고객 비밀번호 없이 공급사 지원 계정(ss-vendor)으로 들어갑니다. 고객 ERP 감사 로그에 남습니다">고객 ERP 접속</button>${j.storage !== 'dedicated' && j.storageSplit?.status !== 'RUNNING' ? '<button class="btn" id="srvsplit" title="이 고객만 쓰는 파일·백업 버킷을 만들고, 공용 버킷의 이 고객 폴더를 복사한 뒤 이 고객 서버의 저장소 키만 바꿉니다 (서버가 한 번 다시 시작됩니다)">이 고객 저장소 키 분리</button>' : ''}</div>`
     : `${j.url && j.status === 'RUNNING' ? `<div class="addr"><span class="muted small">접속 주소 (설치 중 — 보통 5~10분 뒤 접속됨)</span><div class="row"><a class="mono" href="${esc(j.url)}" target="_blank" rel="noopener">${esc(j.url)}</a><button type="button" class="btn sm" id="cpurl">복사</button><a class="btn sm primary" href="#/customers/${c.id}/delivery">납품서</a></div><span class="small muted">관리자 아이디 <b class="mono">${esc(j.adminId)}</b></span></div>` : ''}
       <ul style="list-style:none;padding:0;margin:0 0 10px;display:grid;gap:4px">${list}</ul>
       ${j.status === 'RUNNING' ? '<p class="small muted" style="margin:0">처음 설치는 보통 5~10분 걸립니다. 이 화면을 닫아도 계속 진행됩니다.</p>' : ''}
@@ -413,9 +415,14 @@ function bindServerPanel(c) {
   if (r) r.onclick = async () => {
     try { await api(`/customers/${c.id}/server/retry`, { method: 'POST' }); pageCustomer(c.id); } catch (err) { toast(err.message, 'error'); }
   };
+  const sp = document.getElementById('srvsplit');
+  if (sp) sp.onclick = async () => {
+    if (!confirm(`${c.name} 전용 파일·백업 저장소를 만들고 저장소 키를 바꿀까요?\n공용 저장소의 이 고객 파일을 복사한 뒤 고객 서버가 한 번 다시 시작됩니다 (2~5분 접속이 잠깐 끊길 수 있음). 공용 저장소의 원본은 지우지 않습니다.`)) return;
+    try { await api(`/customers/${c.id}/storage-split`, { method: 'POST' }); toast('저장소 키 분리를 시작했습니다'); pageCustomer(c.id); } catch (err) { toast(err.message, 'error'); }
+  };
   const cu = document.getElementById('cpurl');
   if (cu) cu.onclick = () => copy(c.server.url, '접속 주소를 복사했습니다');
-  if (c.server?.status === 'RUNNING') {
+  if (c.server?.status === 'RUNNING' || c.server?.storageSplit?.status === 'RUNNING') {
     pollTimer = setTimeout(() => { if (location.hash === '#/customers/' + c.id) pageCustomer(c.id); }, c.server.url ? 10_000 : 3_000);
   }
 }
@@ -862,7 +869,8 @@ async function claudeForUpdate(notes, latest) {
 // ── 설정 ───────────────────────────────────────────────────────
 async function pageSettings() {
   loading('settings');
-  const [me, rw, gh, fs, bk] = await Promise.all([api('/me'), api('/railway'), api('/github'), api('/files-storage'), api('/backup-status')]);
+  const [me, rw, gh, fs, bk, sk] = await Promise.all([api('/me'), api('/railway'), api('/github'), api('/files-storage'), api('/backup-status'), api('/storage-keys')]);
+  const sharedKeys = sk.rows.filter((r) => r.storage !== 'dedicated');
   shell('settings', `
     <div class="page-head"><div><h1>설정</h1><p>관리자 비밀번호와 판매자 서명키 정보입니다.</p></div></div>
     <section class="panel"><header><h2>관리자 비밀번호 변경</h2><span class="muted small">${me.passwordChangedAt ? '마지막 변경 ' + dt(me.passwordChangedAt) : '처음 받은 비밀번호 사용 중'}</span></header>
@@ -888,13 +896,13 @@ async function pageSettings() {
       </form>
     </section>
     <section class="panel"><header><h2>백업</h2>${bk.configured ? (bk.last?.ok ? '<span class="badge ok">정상</span>' : bk.last ? '<span class="badge seal">실패</span>' : '<span class="badge">첫 백업 대기</span>') : '<span class="badge warn">외부 백업 저장소 없음</span>'}</header><div class="body">
-      <p class="muted" style="margin-top:0">이 사이트(고객·라이선스·계약·청구·요청 대장)는 매일 새벽 4시에 다른 지역(암스테르담) 저장소로 백업되고 60일 보관됩니다. 새로 개설하는 호스팅 고객 서버도 매일 DB와 첨부파일 사본이 같은 저장소의 고객별 폴더로 복사됩니다.</p>
+      <p class="muted" style="margin-top:0">이 사이트(고객·라이선스·계약·청구·요청 대장)는 매일 새벽 4시에 다른 지역(암스테르담) 저장소로 백업되고 60일 보관됩니다. 호스팅 고객 서버의 DB와 첨부파일 사본은 고객마다 따로 만든 백업 버킷(아래 '고객별 저장소 키')으로 매일 복사됩니다.</p>
       ${bk.last ? `<p style="margin:0 0 10px" class="${bk.last.ok ? '' : 'tone-seal'}">${dt(bk.last.at)} — ${esc(bk.last.message)}</p>` : ''}
       <div class="row end"><button class="btn" id="bknow" ${bk.configured ? '' : 'disabled'}>지금 백업</button></div>
     </div></section>
     <section class="panel"><header><h2>고객 파일 저장소 (사진·첨부)</h2>${fs.connected ? `<span class="badge ok">연결됨 · ${esc(fs.bucket)}${fs.source === 'env' ? ' · 자동' : ''}</span>` : '<span class="badge warn">연결 안 됨 — 고객 서버 디스크에 저장</span>'}</header>
       <form id="fsf" class="body" autocomplete="off">
-        <p class="muted" style="margin-top:0">새로 개설하는 호스팅형 고객 서버의 사진·첨부파일을 이 저장소(S3 호환 버킷)에 고객별 폴더(<span class="mono">customers/사업자번호/</span>)로 저장합니다. 기본은 발급 사이트 프로젝트의 버킷이 자동으로 연결되어 있고, 다른 저장소(Cloudflare R2 등)로 바꿀 때만 아래에 입력하세요. 키는 암호화되어 저장되고 다시 화면에 나오지 않습니다.</p>
+        <p class="muted" style="margin-top:0">예전에 개설한 호스팅형 고객 서버(공용 키)의 사진·첨부파일이 이 저장소(S3 호환 버킷)의 고객별 폴더(<span class="mono">customers/사업자번호/</span>)에 있습니다. 새로 개설하는 서버는 고객 전용 버킷을 쓰고, 저장소 키 분리 때 이 저장소에서 그 고객 폴더를 복사해 갑니다. 기본은 발급 사이트 프로젝트의 버킷이 자동으로 연결되어 있고, 다른 저장소(Cloudflare R2 등)로 바꿀 때만 아래에 입력하세요. 키는 암호화되어 저장되고 다시 화면에 나오지 않습니다.</p>
         <div class="form-grid">
           <label class="f">Endpoint<input name="endpoint" value="${esc(fs.endpoint ?? 'https://t3.storageapi.dev')}" required /></label>
           <label class="f">Bucket Name<input name="bucket" value="${esc(fs.bucket ?? '')}" placeholder="eum-files-…" required /></label>
@@ -904,6 +912,11 @@ async function pageSettings() {
         <div class="row end" style="margin-top:12px"><button class="btn primary">저장</button></div>
       </form>
     </section>
+    <section class="panel"><header><h2>고객별 저장소 키</h2>${sharedKeys.length ? `<span class="badge warn">공용 키 ${sharedKeys.length}곳</span>` : '<span class="badge ok">모두 고객 전용</span>'}</header><div class="body">
+      <p class="muted" style="margin-top:0">새로 개설하는 호스팅형 고객 서버는 고객마다 따로 만든 파일·백업 버킷과 그 버킷 전용 키를 받습니다. 아래 고객은 예전에 공용 키(모든 고객이 같은 키, 고객별 폴더만 다름)로 개설됐습니다. 고객 화면 › 고객 전용 서버 › <b>이 고객 저장소 키 분리</b>를 누르면 그 고객만 바뀝니다. 설치형 고객에게는 저장소 키를 주지 않습니다.</p>
+      ${sk.storageProject ? '' : '<div class="note warn" style="margin-bottom:10px">고객 전용 버킷을 만들 Railway 프로젝트를 알 수 없어, 새 고객 서버는 저장소 없이(서버 디스크) 개설됩니다. 환경변수 STORAGE_PROJECT_ID · STORAGE_ENVIRONMENT_ID 를 넣어 주세요.</div>'}
+      ${sharedKeys.length ? `<ul style="margin:0;padding-left:18px">${sharedKeys.map((r) => `<li><a href="#/customers/${r.id}">${esc(r.name)}</a>${r.split?.status === 'RUNNING' ? ' <span class="small muted">분리 중</span>' : r.split?.status === 'FAILED' ? ' <span class="small tone-seal">분리 실패</span>' : ''}</li>`).join('')}</ul>` : ''}
+    </div></section>
     <section class="panel"><header><h2>GitHub 연결 (수정 요청 → 이슈)</h2>${gh.connected ? `<span class="badge ok">연결됨${gh.source === 'env' ? ' · 환경변수' : ''}</span>` : '<span class="badge warn">연결 안 됨</span>'}</header>
       <form id="ghf" class="body" autocomplete="off">
         <p class="muted" style="margin-top:0">고객 수정 요청을 <span class="mono">${esc(gh.repo)}</span> 저장소 이슈로 남깁니다. GitHub → Settings → Developer settings → <b>Fine-grained tokens</b>에서 이 저장소만 선택하고 권한은 <b>Issues: Read and write</b>, <b>Contents: Read and write</b>(첨부 파일을 <span class="mono">requests</span> 브랜치에 올림) 두 가지만 준 토큰을 만들어 붙여 넣으세요.</p>

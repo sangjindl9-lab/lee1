@@ -10,11 +10,12 @@ const R = require('../lib/railway');
 
 const DB = process.env.TEST_DATABASE_URL ?? 'postgresql://postgres:devpass@127.0.0.1:5432/portal_test2';
 const PW = 'test-admin-password-1';
-let pool, server, base, rail, railUrl, ghs, ghUrl, cookie = '';
+let pool, server, base, rail, railUrl, ghs, ghUrl, s3s, cookie = '';
 const issues = []; // 가짜 GitHub 이슈 저장
 const calls = [];
 let failOnce = null; // 이 mutation 이름이 처음 불릴 때 오류
 let deployStatus = 'SUCCESS';
+let onRailway = null; // 가짜 Railway 가 불릴 때마다 (이름)
 let srcSha = 'aaa1111'; // 우리 ERP(개발 서버)의 최신 배포 커밋
 const { privateKey } = crypto.generateKeyPairSync('ed25519');
 
@@ -25,6 +26,7 @@ function fakeRailway(req, res) {
     const { query, variables } = JSON.parse(raw);
     const name = (query.match(/\{\s*(\w+)/) ?? [])[1];
     calls.push({ name, variables, auth: req.headers.authorization });
+    if (onRailway) onRailway(name);
     res.setHeader('content-type', 'application/json');
     if (failOnce && name === failOnce) {
       failOnce = null;
@@ -42,8 +44,42 @@ function fakeRailway(req, res) {
       deployments: { deployments: { edges: [{ node: { id: 'dep-1', status: deployStatus, createdAt: new Date().toISOString(), meta: { commitHash: srcSha, commitMessage: `수정 ${srcSha}\n\n본문` } } }] } },
       serviceInstanceDeployV2: { serviceInstanceDeployV2: 'dep-2' },
       serviceInstanceRedeploy: { serviceInstanceRedeploy: true },
+      bucketCreate: { bucketCreate: { id: 'bkt-' + variables.input?.name, name: variables.input?.name } },
+      environmentPatchCommit: { environmentPatchCommit: 'commit-1' },
+      bucketS3Credentials: { bucketS3Credentials: [{ accessKeyId: 'ak-' + variables.b, secretAccessKey: 'sk-' + variables.b, endpoint: 'https://storage.railway.app', bucketName: variables.b + '-x', region: 'auto', urlStyle: 'path' }] },
     }[name];
     res.end(JSON.stringify(data ? { data } : { errors: [{ message: 'unknown ' + name }] }));
+  });
+}
+
+// 가짜 S3 (경로 방식 /버킷/키) — 접근 키마다 쓸 수 있는 버킷이 정해져 있다
+const objects = new Map(); // 'bucket/key' -> Buffer
+const keyBucket = (ak) => (ak === 'ak-test' ? 'eum-files-test' : ak === 'bk-shared' ? 'shared-backup' : ak.startsWith('ak-bkt-') ? ak.slice(3) + '-x' : null);
+const s3Calls = [];
+function fakeS3(req, res) {
+  const chunks = [];
+  req.on('data', (c) => chunks.push(c));
+  req.on('end', () => {
+    const u = new URL(req.url, 'http://x');
+    const [, bucket, ...rest] = u.pathname.split('/');
+    const key = decodeURIComponent(rest.join('/'));
+    const ak = ((req.headers.authorization ?? '').match(/Credential=([^/]+)\//) ?? [])[1] ?? '';
+    s3Calls.push({ method: req.method, bucket, key, ak });
+    if (keyBucket(ak) !== bucket) { res.statusCode = 403; return res.end('<Error><Code>AccessDenied</Code></Error>'); }
+    if (req.method === 'GET' && !key) {
+      const prefix = u.searchParams.get('prefix') ?? '';
+      const list = [...objects.keys()].filter((k) => k.startsWith(`${bucket}/${prefix}`)).map((k) => k.slice(bucket.length + 1));
+      res.setHeader('content-type', 'application/xml');
+      return res.end(`<?xml version="1.0" encoding="UTF-8"?><ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Name>${bucket}</Name><Prefix>${prefix}</Prefix><KeyCount>${list.length}</KeyCount><MaxKeys>1000</MaxKeys><IsTruncated>false</IsTruncated>${list.map((k) => `<Contents><Key>${k}</Key><LastModified>2026-11-01T00:00:00.000Z</LastModified><Size>${objects.get(`${bucket}/${k}`).length}</Size></Contents>`).join('')}</ListBucketResult>`);
+    }
+    if (req.method === 'GET') {
+      const b = objects.get(`${bucket}/${key}`);
+      if (!b) { res.statusCode = 404; return res.end('<Error><Code>NoSuchKey</Code></Error>'); }
+      res.setHeader('content-length', b.length);
+      return res.end(b);
+    }
+    if (req.method === 'PUT') { objects.set(`${bucket}/${key}`, Buffer.concat(chunks)); return res.end(); }
+    res.statusCode = 400; res.end();
   });
 }
 
@@ -105,10 +141,15 @@ before(async () => {
   ghs = http.createServer(fakeGithub);
   await new Promise((r) => ghs.listen(0, '127.0.0.1', r));
   ghUrl = `http://127.0.0.1:${ghs.address().port}`;
+  s3s = http.createServer(fakeS3);
+  await new Promise((r) => s3s.listen(0, '127.0.0.1', r));
+  // 공용 외부 백업 저장소 (예전 고객이 같이 쓰던 키)
+  Object.assign(process.env, { BACKUP_S3_BUCKET: 'shared-backup', BACKUP_S3_ENDPOINT: 'https://backup.example', BACKUP_S3_ACCESS_KEY_ID: 'bk-shared', BACKUP_S3_SECRET_ACCESS_KEY: 'bk-shared-secret' });
   pool = createPool(DB);
   await pool.query('drop schema public cascade; create schema public;');
   await migrate(pool);
-  const app = buildApp({ pool, privateKey, adminPassword: PW, sessionSecret: 'y'.repeat(40), railwayEndpoint: railUrl, railwaySleep: () => new Promise((r) => setTimeout(r, 5)), railwayWaitMs: 2000, githubEndpoint: ghUrl, githubTokenEnv: '', publicUrl: 'https://license.example' });
+  const app = buildApp({ pool, privateKey, adminPassword: PW, sessionSecret: 'y'.repeat(40), railwayEndpoint: railUrl, railwaySleep: () => new Promise((r) => setTimeout(r, 5)), railwayWaitMs: 2000, githubEndpoint: ghUrl, githubTokenEnv: '', publicUrl: 'https://license.example',
+    storagePlace: { projectId: 'license-proj', environmentId: 'license-env' }, s3Options: { endpoint: `http://127.0.0.1:${s3s.address().port}`, forcePathStyle: true } });
   server = await new Promise((r) => { const s = app.listen(0, '127.0.0.1', () => r(s)); });
   server.app = app;
   base = `http://127.0.0.1:${server.address().port}`;
@@ -118,6 +159,7 @@ after(async () => {
   server.close();
   rail.close();
   ghs.close();
+  s3s.close();
   await pool.end();
 });
 
@@ -220,9 +262,21 @@ test('서버 개설: 실패하면 그 단계부터 다시 이어서, 끝나면 �
   assert.equal(app.DATABASE_URL, '${{Postgres.DATABASE_URL}}');
   assert.match(app.APP_ENCRYPTION_KEY, /^[0-9a-f]{64}$/);
   assert.equal(app.DEMO_DATA, undefined, '예시 데이터 없이 시작');
-  assert.equal(app.S3_BUCKET, 'eum-files-test', '파일 저장소가 연결돼 있으면 고객 서버에 넣어 준다');
+  // 새 고객 서버는 고객 전용 버킷(첨부: 싱가포르, 백업: 암스테르담)과 그 버킷 키만 받는다 — 공용 키는 넣지 않는다
+  const bc = calls.filter((x) => x.name === 'bucketCreate').map((x) => x.variables.input);
+  assert.deepEqual(bc, [{ projectId: 'license-proj', name: 'files-2148839612' }, { projectId: 'license-proj', name: 'backup-2148839612' }]);
+  const patches = calls.filter((x) => x.name === 'environmentPatchCommit').map((x) => [x.variables.e, x.variables.patch]);
+  assert.deepEqual(patches, [['license-env', { buckets: { 'bkt-files-2148839612': { region: 'sin', isCreated: true } } }], ['license-env', { buckets: { 'bkt-backup-2148839612': { region: 'ams', isCreated: true } } }]]);
+  assert.equal(app.S3_BUCKET, 'bkt-files-2148839612-x');
+  assert.equal(app.S3_ACCESS_KEY_ID, 'ak-bkt-files-2148839612');
+  assert.equal(app.S3_FORCE_PATH_STYLE, 'true');
   assert.equal(app.S3_PREFIX, 'customers/2148839612/');
-  assert.equal(app.S3_SECRET_ACCESS_KEY, 'sk-test');
+  assert.equal(app.BACKUP_S3_BUCKET, 'bkt-backup-2148839612-x');
+  assert.equal(app.BACKUP_S3_ACCESS_KEY_ID, 'ak-bkt-backup-2148839612');
+  assert.ok(!JSON.stringify(app).includes('sk-test') && !JSON.stringify(app).includes('bk-shared'), '공용 키는 고객 서버에 넣지 않는다');
+  assert.equal(c.server.storage, 'dedicated');
+  const jobRow = (await pool.query('select data::text from server_job where customer_id = $1', [id])).rows[0].data;
+  assert.ok(!jobRow.includes('sk-bkt-'), '고객 버킷 비밀 키는 발급 사이트 DB 에 남기지 않는다');
   const upd = calls.filter((x) => x.name === 'serviceInstanceUpdate').map((x) => x.variables.input);
   assert.deepEqual(upd.slice(0, 2).map((x) => x.region), ['asia-southeast1-eqsg3a', 'asia-southeast1-eqsg3a']);
   assert.deepEqual(upd[2], { watchPatterns: ['.eum-release-only'] }, '개설 뒤에는 push 자동 배포를 끄고 버전 배포로만');
@@ -381,7 +435,8 @@ test('업데이트: 수정 전부 완료 → 새 버전, 버전 배포(자동 �
   assert.deepEqual(mine.find((x) => x.name === 'serviceInstanceUpdate').variables.input, { watchPatterns: ['.eum-release-only'] });
   const vars = mine.find((x) => x.name === 'variableCollectionUpsert').variables.input.variables;
   assert.equal(vars.APP_VERSION, '1.1.0');
-  assert.equal(vars.S3_PREFIX, 'customers/2148839612/', '예전에 개설한 서버도 배포할 때 파일 저장소 설정을 받는다');
+  assert.equal(vars.S3_PREFIX, 'customers/2148839612/', '배포할 때도 파일 저장소 설정을 받는다');
+  assert.equal(vars.S3_ACCESS_KEY_ID, 'ak-bkt-files-2148839612', '전용 버킷 고객은 배포할 때도 자기 키만');
   assert.equal(mine.find((x) => x.name === 'serviceInstanceDeployV2').variables.c, 'bbb2222');
   u = (await call('/api/admin/updates')).body;
   assert.equal(u.customers.find((c) => c.id === id).version, '1.1.0');
@@ -394,4 +449,97 @@ test('업데이트: 수정 전부 완료 → 새 버전, 버전 배포(자동 �
   assert.equal(calls.slice(c1).find((x) => x.name === 'serviceInstanceDeployV2').variables.c, 'aaa1111');
   assert.equal((await call('/api/admin/updates')).body.customers.find((c) => c.id === id).version, '1.0.0');
   assert.equal((await call('/api/admin/updates/deploy', { method: 'POST', json: { version: '9.9.9' } })).status, 404);
+});
+
+test('예전(공용 키) 고객: 누를 때만 저장소 키 분리 — 전용 버킷 생성, 그 고객 폴더만 복사, 그 고객 서버 설정만 변경', async () => {
+  const BIZ = '1058100003';
+  const lid = (await call('/api/admin/customers', { method: 'POST', json: { name: '예전고객', bizRegNo: BIZ, deployment: 'HOSTED' } })).body.id;
+  await call(`/api/admin/customers/${lid}/licenses`, { method: 'POST', json: { kind: 'NEW', maxUsers: 5 } });
+  // 이 기능 전에 공용 키로 개설된 서버 (버킷 ID 없음)
+  await pool.query(`insert into server_job(customer_id, status, step, input, data, secrets) values ($1,'DONE','done',$2,$3,'x')`,
+    [lid, { companyName: '예전고객', bizRegNo: BIZ, companyCode: 'OL', adminId: 'admin', projectName: 'erp-ol-0003' }, { projectId: 'proj-old', environmentId: 'env-old', appServiceId: 'svc-old', domain: 'old.up.railway.app' }]);
+  objects.set(`eum-files-test/customers/${BIZ}/photo/a.jpg`, Buffer.from('사진A'));
+  objects.set(`shared-backup/customers/${BIZ}/db/20261101.dump`, Buffer.from('덤프'));
+  objects.set('eum-files-test/customers/9999999999/b.jpg', Buffer.from('다른 고객'));
+
+  let sk = (await call('/api/admin/storage-keys')).body;
+  assert.equal(sk.rows.find((r) => r.id === lid).storage, 'shared', '공용 키를 쓰는 고객으로 보인다');
+  assert.equal(sk.rows.find((r) => r.id === id).storage, 'dedicated');
+  assert.equal((await call('/api/admin/customers/' + lid)).body.server.storage, 'shared');
+
+  // 분리 전 배포는 지금처럼 공용 키 (예전 고객이 그대로 작동)
+  let c0 = calls.length;
+  assert.equal((await call('/api/admin/updates/deploy', { method: 'POST', json: { version: '1.1.0', customerIds: [lid] } })).status, 202);
+  await server.app.locals.idleRollout();
+  let vars = calls.slice(c0).find((x) => x.name === 'variableCollectionUpsert').variables.input.variables;
+  assert.equal(vars.S3_ACCESS_KEY_ID, 'ak-test');
+  assert.equal(vars.BACKUP_S3_ACCESS_KEY_ID, 'bk-shared');
+  assert.equal(calls.slice(c0).filter((x) => x.name === 'bucketCreate').length, 0, '배포만으로는 버킷을 만들지 않는다');
+
+  // 재시작하는 사이 공용 버킷에 올라온 파일도 옮겨진다
+  onRailway = (name) => { if (name === 'serviceInstanceRedeploy') { objects.set(`eum-files-test/customers/${BIZ}/photo/late.jpg`, Buffer.from('늦게')); onRailway = null; } };
+  c0 = calls.length;
+  assert.equal((await call(`/api/admin/customers/${lid}/storage-split`, { method: 'POST' })).status, 202);
+  await server.app.locals.idleSplit();
+  const mine = calls.slice(c0);
+  assert.deepEqual(mine.filter((x) => x.name === 'bucketCreate').map((x) => x.variables.input.name), [`files-${BIZ}`, `backup-${BIZ}`]);
+  const up = mine.find((x) => x.name === 'variableCollectionUpsert').variables.input;
+  assert.equal(up.serviceId, 'svc-old', '그 고객 서버의 설정만 바꾼다');
+  assert.equal(up.variables.S3_ACCESS_KEY_ID, `ak-bkt-files-${BIZ}`);
+  assert.equal(up.variables.BACKUP_S3_ACCESS_KEY_ID, `ak-bkt-backup-${BIZ}`);
+  assert.equal(up.variables.S3_PREFIX, `customers/${BIZ}/`);
+  assert.ok(mine.some((x) => x.name === 'serviceInstanceRedeploy' && x.variables.s === 'svc-old'));
+  assert.equal(String(objects.get(`bkt-files-${BIZ}-x/customers/${BIZ}/photo/a.jpg`)), '사진A');
+  assert.equal(String(objects.get(`bkt-files-${BIZ}-x/customers/${BIZ}/photo/late.jpg`)), '늦게');
+  assert.equal(String(objects.get(`bkt-backup-${BIZ}-x/customers/${BIZ}/db/20261101.dump`)), '덤프');
+  assert.ok(![...objects.keys()].some((k) => k.startsWith(`bkt-files-${BIZ}-x/customers/9999999999`)), '다른 고객 폴더는 복사하지 않는다');
+  assert.ok(objects.has(`eum-files-test/customers/${BIZ}/photo/a.jpg`), '공용 버킷 원본은 지우지 않는다');
+  let srv = (await call('/api/admin/customers/' + lid)).body.server;
+  assert.equal(srv.storage, 'dedicated');
+  assert.equal(srv.storageSplit.status, 'DONE');
+  assert.equal(srv.storageSplit.copied, 3);
+  assert.equal((await call(`/api/admin/customers/${lid}/storage-split`, { method: 'POST' })).status, 400, '이미 분리됨');
+  assert.ok((await pool.query(`select 1 from audit_log where action = 'STORAGE_SPLIT_DONE'`)).rowCount > 0);
+
+  // 분리 뒤 배포는 그 고객 키만
+  c0 = calls.length;
+  await call('/api/admin/updates/deploy', { method: 'POST', json: { version: '1.1.0', customerIds: [lid] } });
+  await server.app.locals.idleRollout();
+  vars = calls.slice(c0).find((x) => x.name === 'variableCollectionUpsert').variables.input.variables;
+  assert.equal(vars.S3_ACCESS_KEY_ID, `ak-bkt-files-${BIZ}`);
+  sk = (await call('/api/admin/storage-keys')).body;
+  assert.equal(sk.rows.find((r) => r.id === lid).storage, 'dedicated');
+});
+
+test('저장소 키 분리가 실패하면 공용 키를 그대로 쓰고, 다시 누르면 만든 버킷은 다시 만들지 않는다', async () => {
+  const BIZ = '1058100018';
+  const fid = (await call('/api/admin/customers', { method: 'POST', json: { name: '분리실패', bizRegNo: BIZ, deployment: 'HOSTED' } })).body.id;
+  await pool.query(`insert into server_job(customer_id, status, step, input, data, secrets) values ($1,'DONE','done',$2,$3,'x')`,
+    [fid, { companyName: '분리실패', bizRegNo: BIZ, companyCode: 'FA', adminId: 'admin' }, { projectId: 'proj-f', environmentId: 'env-f', appServiceId: 'svc-f' }]);
+  failOnce = 'bucketS3Credentials';
+  await call(`/api/admin/customers/${fid}/storage-split`, { method: 'POST' });
+  await server.app.locals.idleSplit();
+  let srv = (await call('/api/admin/customers/' + fid)).body.server;
+  assert.equal(srv.storageSplit.status, 'FAILED');
+  assert.equal(srv.storage, 'shared', '실패하면 아직 공용 — 배포 때도 공용 키');
+  const c0 = calls.length;
+  assert.equal((await call(`/api/admin/customers/${fid}/storage-split`, { method: 'POST' })).status, 202);
+  await server.app.locals.idleSplit();
+  assert.equal(calls.slice(c0).filter((x) => x.name === 'bucketCreate').length, 0);
+  assert.equal((await call('/api/admin/customers/' + fid)).body.server.storage, 'dedicated');
+});
+
+test('설치형 고객에게는 어떤 저장소 키도 주지 않는다', async () => {
+  const BIZ = '1058100022';
+  const oid = (await call('/api/admin/customers', { method: 'POST', json: { name: '설치형2', bizRegNo: BIZ, deployment: 'ONPREM' } })).body.id;
+  // 호스팅으로 개설했다가 설치형으로 바꾼 경우
+  await pool.query(`insert into server_job(customer_id, status, step, input, data, secrets) values ($1,'DONE','done',$2,$3,'x')`,
+    [oid, { companyName: '설치형2', bizRegNo: BIZ, companyCode: 'OP', adminId: 'admin' }, { projectId: 'proj-o', environmentId: 'env-o', appServiceId: 'svc-o' }]);
+  assert.equal((await call(`/api/admin/customers/${oid}/storage-split`, { method: 'POST' })).status, 400);
+  assert.ok(!(await call('/api/admin/storage-keys')).body.rows.some((r) => r.id === oid));
+  const c0 = calls.length;
+  await call('/api/admin/updates/deploy', { method: 'POST', json: { version: '1.1.0', customerIds: [oid] } });
+  await server.app.locals.idleRollout();
+  const vars = calls.slice(c0).find((x) => x.name === 'variableCollectionUpsert').variables.input.variables;
+  assert.deepEqual(Object.keys(vars).filter((k) => /S3_/.test(k)), [], '공용 키도 전용 키도 넣지 않는다');
 });

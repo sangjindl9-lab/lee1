@@ -7,6 +7,7 @@
  *   LICENSE_PRIVATE_KEY  판매자 서명 비밀키 (Ed25519 PEM 을 base64 로 인코딩). 유출되면 누구나 라이선스를 만들 수 있다
  *   ADMIN_PASSWORD       처음 관리자 비밀번호 (화면 '설정'에서 바꾸면 그 뒤로는 바뀐 비밀번호만 쓰임)
  *   SESSION_SECRET       로그인 쿠키 서명용 무작위 문자열 (32자 이상)
+ *   STORAGE_PROJECT_ID / STORAGE_ENVIRONMENT_ID  (선택) 고객 전용 버킷을 만들 Railway 프로젝트·환경. 없으면 이 사이트의 프로젝트
  *   PORT                 기본 8080
  */
 const crypto = require('crypto');
@@ -31,7 +32,13 @@ const TRIAL_STORAGE_MB = 5 * 1024;
 const TRIAL_KEEP_DAYS = 30;
 const OPTION_MODULES = ['geomcheuk', 'gongjung', 'sajindaeji', 'chakgong', 'jajae', 'ai'];
 
-function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpoint, railwaySleep, railwayWaitMs, githubEndpoint, githubTokenEnv = env('GITHUB_TOKEN'), publicUrl = env('PUBLIC_URL', 'https://admin.ieumerp.kr'), cfToken = env('CF_API_TOKEN'), cfEndpoint, customerZone = env('CUSTOMER_DOMAIN', 'ieumerp.kr') }) {
+/** 고객 전용 버킷을 만들 Railway 프로젝트·환경 — 따로 정하지 않으면 발급 사이트 자신의 프로젝트(Railway 가 넣어 주는 RAILWAY_PROJECT_ID) */
+const envStoragePlace = () => {
+  const [p, e] = env('STORAGE_PROJECT_ID') ? [env('STORAGE_PROJECT_ID'), env('STORAGE_ENVIRONMENT_ID')] : [env('RAILWAY_PROJECT_ID'), env('RAILWAY_ENVIRONMENT_ID')];
+  return p && e ? { projectId: p, environmentId: e } : null;
+};
+
+function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpoint, railwaySleep, railwayWaitMs, githubEndpoint, githubTokenEnv = env('GITHUB_TOKEN'), publicUrl = env('PUBLIC_URL', 'https://admin.ieumerp.kr'), cfToken = env('CF_API_TOKEN'), cfEndpoint, customerZone = env('CUSTOMER_DOMAIN', 'ieumerp.kr'), storagePlace = envStoragePlace(), s3Options }) {
   const publicKey = crypto.createPublicKey(privateKey);
   const publicPem = L.publicKeyPem(privateKey);
   // ── 관리자 비밀번호 ──
@@ -568,6 +575,17 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
     const e = process.env;
     return e.BACKUP_S3_BUCKET && e.BACKUP_S3_ACCESS_KEY_ID ? { endpoint: e.BACKUP_S3_ENDPOINT, bucket: e.BACKUP_S3_BUCKET, region: e.BACKUP_S3_REGION || 'auto', accessKeyId: e.BACKUP_S3_ACCESS_KEY_ID, secretAccessKey: e.BACKUP_S3_SECRET_ACCESS_KEY } : null;
   };
+  /** 고객 전용 버킷을 쓰는지 — 새로 개설한 서버이거나 키 분리를 끝낸 서버. 분리 중·실패면 아직 공용 */
+  const storageMode = (j) => (j.data?.filesBucketId && (!j.data.storageSplit || j.data.storageSplit.status === 'DONE') ? 'dedicated' : 'shared');
+  /**
+   * 배포할 때 고객 서버에 넣을 저장소 설정 — 전용 버킷이 있는 고객은 그 키만, 예전 고객(분리 전)은 지금처럼 공용 키 + 고객 폴더.
+   * 설치형으로 바뀐 고객에게는 아무 키도 넣지 않는다 (공용 키가 고객사 서버로 나가지 않게)
+   */
+  const storageVarsFor = async (gql, j, deployment) => {
+    if (deployment !== 'HOSTED') return {};
+    if (storageMode(j) === 'dedicated') return R.storageVars(await R.customerStorage(gql, j.data), j.input.bizRegNo);
+    return R.storageVars({ s3: await filesConf(), backup: backupConf() }, j.input.bizRegNo);
+  };
   admin.get('/backup-status', wrap(async (req, res) => {
     const last = await setting('portal_backup_last');
     res.json({ configured: B.configured(), last: last ? JSON.parse(last) : null });
@@ -623,6 +641,7 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
     status: j.status, step: j.step, error: j.error, createdAt: j.created_at, finishedAt: j.finished_at,
     url: j.status === 'DONE' && c?.server_url ? String(c.server_url).replace(/\/+$/, '') : j.data?.customDomain ? `https://${j.data.customDomain}` : j.data?.domain ? `https://${j.data.domain}` : null, adminId: j.input.adminId, companyCode: j.input.companyCode,
     projectId: j.data?.projectId ?? null, projectName: j.input?.projectName ?? null,
+    storage: storageMode(j), storageSplit: j.data?.storageSplit ?? null,
     steps: R.STEPS.map(([key, label]) => ({ key, label })),
   });
   const loadJob = async (customerId) => (await q('select * from server_job where customer_id = $1', [customerId])).rows[0] ?? null;
@@ -648,8 +667,7 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
         branch: env('ERP_BRANCH', 'ss-erp'),
         dockerfilePath: 'deploy/render/Dockerfile',
         licenseServerUrl: publicUrl,
-        s3: await filesConf(),
-        backup: backupConf(),
+        storagePlace,
         sleep: railwaySleep,
         waitTimeoutMs: railwayWaitMs,
         onStep: (step, data) => q('update server_job set step = $2, data = $3, updated_at = now() where customer_id = $1', [customerId, step, data]),
@@ -961,10 +979,80 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
     const sha = latest.meta.commitHash;
     const rel = await releases();
     const version = rel.find((r) => r.commit_sha === sha)?.version ?? `${rel[0]?.version ?? '0.0.0'}+${sha.slice(0, 7)}`;
-    await R.deployVersion(gql, j.data, version, sha, R.storageVars({ s3: await filesConf(), backup: backupConf() }, j.input.bizRegNo));
+    await R.deployVersion(gql, j.data, version, sha, await storageVarsFor(gql, j, c.deployment));
     audit(req, 'REDEPLOY', `고객 서버 최신 코드 배포 ${c.name} (${version})`);
     void finishDeploy(gql, j, c.id, null).then((st) => st === 'SUCCESS' && q(`update customer set erp_version = $2, erp_version_at = now() where id = $1`, [c.id, version])).catch(() => undefined);
     res.status(202).json({ ok: true, version });
+  }));
+
+  // ── 고객 저장소 키 분리 (예전에 공용 키로 개설한 고객) ──────────────────
+  //  누를 때만: 고객 전용 버킷 2개를 만들고 → 공용 버킷의 그 고객 폴더(첨부·백업)를 복사 → 그 고객 서버의 S3 설정만 바꿔 재시작
+  //  → 바뀌는 사이 공용 버킷에 올라온 파일을 한 번 더 복사. 공용 버킷의 원본은 지우지 않는다. 몇 번을 눌러도 이미 한 것은 건너뛴다
+  const splitting = new Set();
+  async function runSplit(customerId, name) {
+    splitting.add(customerId);
+    const j = await loadJob(customerId);
+    const d = j.data;
+    const save = () => q('update server_job set data = $2, updated_at = now() where customer_id = $1', [customerId, d]);
+    try {
+      const gql = R.client((await railwayConf()).token, railwayEndpoint);
+      await R.ensureCustomerBuckets(gql, d.storagePlace ?? storagePlace, d, j.input.bizRegNo, save);
+      const mine = await R.customerStorage(gql, d);
+      const shared = { s3: await filesConf(), backup: backupConf() };
+      const prefix = `customers/${j.input.bizRegNo}/`;
+      let copied = 0;
+      const copyAll = async () => {
+        for (const k of ['s3', 'backup']) if (shared[k]) copied += await B.copyPrefix(shared[k], mine[k], prefix, s3Options);
+      };
+      await copyAll();
+      await gql(`mutation($input: VariableCollectionUpsertInput!) { variableCollectionUpsert(input: $input) }`, {
+        input: { projectId: d.projectId, environmentId: d.environmentId, serviceId: d.appServiceId, variables: R.storageVars(mine, j.input.bizRegNo), skipDeploys: true },
+      });
+      await redeployOne(gql, j);
+      const deadline = Date.now() + (railwayWaitMs ?? 20 * 60_000);
+      let st = 'BUILDING';
+      while (Date.now() < deadline && !['SUCCESS', 'FAILED', 'CRASHED'].includes(st)) {
+        await (railwaySleep ?? ((ms) => new Promise((r) => setTimeout(r, ms))))(15_000);
+        st = await deployStatus(gql, j).catch(() => 'UNKNOWN');
+      }
+      if (st !== 'SUCCESS') throw new Error(`새 키로 다시 시작하지 못했습니다 (${st}). Railway 배포 로그를 확인한 뒤 다시 눌러 주세요`);
+      await copyAll();
+      d.storageSplit = { status: 'DONE', at: new Date().toISOString(), copied };
+      await q('insert into audit_log(action, summary) values ($1,$2)', ['STORAGE_SPLIT_DONE', `고객 저장소 키 분리 완료 ${name} (복사 ${copied}개)`]);
+    } catch (e) {
+      console.error('고객 저장소 키 분리 실패', e);
+      d.storageSplit = { status: 'FAILED', at: new Date().toISOString(), error: String(e.message).slice(0, 500) };
+      await q('insert into audit_log(action, summary) values ($1,$2)', ['STORAGE_SPLIT_FAIL', `고객 저장소 키 분리 실패 ${name}: ${String(e.message).slice(0, 200)}`]).catch(() => undefined);
+    } finally {
+      await save().catch(() => undefined);
+      splitting.delete(customerId);
+    }
+  }
+  app.locals.idleSplit = async () => { while (splitting.size) await new Promise((r) => setTimeout(r, 20)); };
+
+  admin.post('/customers/:id/storage-split', wrap(async (req, res) => {
+    const c = await loadCustomer(req.params.id);
+    if (c.deployment !== 'HOSTED') throw bad('호스팅형 고객만 저장소 키를 나눌 수 있습니다 (설치형에는 저장소 키를 주지 않습니다)');
+    const j = await loadJob(c.id);
+    if (!j || j.status !== 'DONE') throw bad('이 사이트에서 개설을 마친 서버만 저장소 키를 나눌 수 있습니다');
+    if (storageMode(j) === 'dedicated') throw bad('이미 고객 전용 저장소 키를 쓰고 있습니다');
+    if (splitting.has(c.id)) throw bad('이미 진행 중입니다');
+    if (!(await railwayConf()).token) throw bad('먼저 설정 > Railway 연결을 마쳐 주세요');
+    if (!j.data?.storagePlace && !storagePlace) throw bad('고객 전용 버킷을 만들 Railway 프로젝트를 알 수 없습니다 (환경변수 STORAGE_PROJECT_ID · STORAGE_ENVIRONMENT_ID)');
+    j.data.storageSplit = { status: 'RUNNING', at: new Date().toISOString() };
+    await q('update server_job set data = $2, updated_at = now() where customer_id = $1', [c.id, j.data]);
+    audit(req, 'STORAGE_SPLIT', `고객 저장소 키 분리 시작 ${c.name}`);
+    void runSplit(c.id, c.name);
+    res.status(202).json({ ok: true });
+  }));
+
+  /** 아직 공용 저장소 키를 쓰는 고객 서버 목록 */
+  admin.get('/storage-keys', wrap(async (req, res) => {
+    const rows = await doneJobs();
+    res.json({
+      storageProject: !!storagePlace,
+      rows: rows.filter((j) => j.deployment === 'HOSTED').map((j) => ({ id: j.customer_id, name: j.customer_name, storage: storageMode(j), split: j.data?.storageSplit ?? null })),
+    });
   }));
 
   const rolling = { current: null };
@@ -993,7 +1081,7 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
     })().catch((e) => { console.error('배포 실패', e); rolling.current = null; });
     return ro.id;
   }
-  const doneJobs = async (ids) => (await q(`select j.*, c.name as customer_name from server_job j join customer c on c.id = j.customer_id where j.status = 'DONE' ${ids ? 'and c.id = any($1)' : ''} order by c.name`, ids ? [ids] : [])).rows;
+  const doneJobs = async (ids) => (await q(`select j.*, c.name as customer_name, c.deployment from server_job j join customer c on c.id = j.customer_id where j.status = 'DONE' ${ids ? 'and c.id = any($1)' : ''} order by c.name`, ids ? [ids] : [])).rows;
 
   admin.post('/rollouts', wrap(async (req, res) => {
     const id = await startRollout(req, await doneJobs(), { scope: 'ALL', label: '고객 서버 전체 재배포' }, redeployOne);
@@ -1089,7 +1177,7 @@ function buildApp({ pool, privateKey, adminPassword, sessionSecret, railwayEndpo
     const ids = Array.isArray(req.body?.customerIds) && req.body.customerIds.length ? req.body.customerIds.map(String) : null;
     const jobs = await doneJobs(ids);
     const id = await startRollout(req, jobs, { scope: ids ? 'SOME' : 'ALL', version: r.version, label: `버전 ${r.version} 배포` },
-      async (gql, j) => R.deployVersion(gql, j.data, r.version, r.commit_sha, R.storageVars({ s3: await filesConf(), backup: backupConf() }, j.input.bizRegNo)),
+      async (gql, j) => R.deployVersion(gql, j.data, r.version, r.commit_sha, await storageVarsFor(gql, j, j.deployment)),
       (j) => q(`update customer set erp_version = $2, erp_version_at = now() where id = $1`, [j.customer_id, r.version]));
     res.status(202).json({ id });
   }));

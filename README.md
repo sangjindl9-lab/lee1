@@ -24,6 +24,7 @@
 | `PUBLIC_URL` | 이 사이트 주소 (고객 서버가 라이선스를 받으러 오는 곳). 기본 `https://ss-license-production.up.railway.app` |
 | `RAILWAY_API_TOKEN` / `RAILWAY_WORKSPACE_ID` | (선택) 고객 서버 자동 개설용. 화면 **설정 > Railway 연결**에서 넣어도 됨 |
 | `RAILWAY_REGION` | 고객 서버 위치. 기본 `asia-southeast1-eqsg3a` (싱가포르) |
+| `STORAGE_PROJECT_ID` / `STORAGE_ENVIRONMENT_ID` | (선택) 고객 전용 파일·백업 버킷을 만들 Railway 프로젝트·환경. 없으면 이 사이트가 떠 있는 프로젝트(Railway 가 넣어 주는 `RAILWAY_PROJECT_ID`·`RAILWAY_ENVIRONMENT_ID`). 둘 다 없으면 새 고객 서버는 저장소 키 없이(서버 디스크) 개설 |
 
 비밀키에 대응하는 공개키는 SS-ERP `apps/api/src/license/license.service.ts` 의 `VENDOR_PUBLIC_KEY` 와 같아야 합니다.
 
