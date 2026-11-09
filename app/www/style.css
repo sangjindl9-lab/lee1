@@ -12,6 +12,10 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 /* 상단 바 */
 .bar { display: flex; align-items: center; gap: 6px; height: calc(52px + var(--sat)); padding: var(--sat) 8px 0; background: var(--grad); color: #fff; flex: none; box-shadow: 0 2px 8px rgba(59,15,196,.35); }
 .bar .title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; }
+.kind { flex: none; font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 10px; background: rgba(255,255,255,.22); }
+.kind:empty { display: none; }
+.kind.pdf { background: #e53935; }
+.kind.cad { background: #1e6fe8; }
 .iconbtn { width: 40px; height: 40px; border-radius: 20px; font-size: 22px; line-height: 40px; text-align: center; }
 .iconbtn:active { background: rgba(255,255,255,.2); }
 #back { font-size: 30px; }

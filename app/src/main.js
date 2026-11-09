@@ -43,16 +43,28 @@ async function forgetMenu(r) {
 async function openUri(uri, name) {
   if (current && current.dirty() && !(await confirmBox('저장하지 않은 변경 내용이 있습니다. 버리고 열까요?', '버리기'))) return;
   if (current) { current.destroy(); current = null; }
+  stage.reset();
   $('home').hidden = true; $('viewer').hidden = false;
   $('title').textContent = name;
+  $('kind').textContent = '';
+  $('save').hidden = true;
   $('tools').innerHTML = '';
+  $('content').innerHTML = ''; $('labels').innerHTML = '';
   setHint('파일을 읽는 중…');
   try {
     const bytes = await files.readFile(uri);
+    // 파일 종류는 이름이 아니라 내용으로 판단한다(파일 관리자에서 넘어올 때 이름에 확장자가 없을 수 있음).
+    const kind = detectKind(bytes, name);
+    if (!kind) throw new Error('PDF, DWG, DXF 파일이 아닙니다.');
+    if (kind === 'dxf' && !/\.dxf$/i.test(name)) name += '.dxf';
+    if (kind === 'dwg' && !/\.dwg$/i.test(name)) name += '.dwg';
     ctx = { stage, content: $('content'), labelLayer: $('labels'), tools: $('tools'), setHint, name, uri };
-    const isCad = /\.(dwg|dxf)$/i.test(name);
+    const isCad = kind !== 'pdf';
     $('stage').classList.toggle('dark', isCad);
+    $('kind').textContent = isCad ? 'CAD 보기' : 'PDF 편집';
+    $('kind').className = 'kind ' + (isCad ? 'cad' : 'pdf');
     current = isCad ? await openCad(bytes, ctx) : await openPdf(bytes, ctx);
+    $('save').hidden = current.type !== 'pdf';
     files.remember(uri, name);
   } catch (e) {
     console.error(e);
@@ -62,10 +74,20 @@ async function openUri(uri, name) {
   }
 }
 
+/** 파일 머리글로 종류 판단: PDF(%PDF), DWG(AC10xx), DXF(글자 파일에 SECTION/HEADER). 못 알아보면 확장자로. */
+function detectKind(bytes, name) {
+  const head = String.fromCharCode(...bytes.subarray(0, 6));
+  if (head.startsWith('%PDF')) return 'pdf';
+  if (/^AC1\d{3}/.test(head)) return 'dwg';
+  const text = new TextDecoder('latin1').decode(bytes.subarray(0, 4096));
+  if (/\b(SECTION|HEADER|ENTITIES|ACADVER)\b/.test(text) && /^\s*0\s*$/m.test(text)) return 'dxf';
+  const m = /\.(pdf|dwg|dxf)$/i.exec(name);
+  return m ? m[1].toLowerCase() : null;
+}
+
 async function pickAndOpen() {
   const f = await files.pickOpen('*/*');
   if (!f) return;
-  if (!/\.(pdf|dwg|dxf)$/i.test(f.name)) { toast('PDF, DWG, DXF 파일만 열 수 있습니다'); return; }
   openUri(f.uri, f.name);
 }
 
@@ -97,6 +119,4 @@ files.onBack(() => {
 });
 files.onLaunch((f) => openUri(f.uri, f.name));
 
-// 저장 버튼은 PDF 에서만
-new MutationObserver(() => { $('save').hidden = !(current && current.type === 'pdf'); }).observe($('tools'), { childList: true });
 showHome();

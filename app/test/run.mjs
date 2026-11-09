@@ -55,6 +55,7 @@ await shot('00-home');
 // ── PDF ──
 await open(join(samples, 'sample.pdf'));
 await shot('10-pdf-open');
+console.log('pdf tools:', (await page.locator('#tools .tool').allInnerTexts()).map(t=>t.replace(/\s+/g,'')).join(','), '| kind:', await page.locator('#kind').textContent(), '| save hidden:', await page.locator('#save').isHidden());
 await tool('펜'); await drag(120, 300, 260, 360); await drag(260, 360, 150, 420);
 await tool('형광펜'); await drag(100, 125, 300, 125);
 await tool('글'); await tap(100, 500); await dialog(['메모 테스트\n둘째 줄', 14]);
@@ -89,9 +90,13 @@ const [dl] = await Promise.all([page.waitForEvent('download'), page.click('#save
 await dl.saveAs(join(out, 'saved.pdf'));
 console.log('saved.pdf', statSync(join(out, 'saved.pdf')).size, 'bytes');
 await page.waitForTimeout(500);
-await page.click('#back'); await page.waitForTimeout(300);
-if (await page.locator('.sheet').count()) await page.click('.sheet-item:has-text("저장하지 않고")');
-await page.waitForTimeout(300);
+await goHome();
+async function goHome() {
+  await page.click('#back'); await page.waitForTimeout(400);
+  if (await page.locator('.sheet').count()) await page.click('.sheet-item:has-text("저장하지 않고")');
+  else if (await page.locator('.dialog').count()) await page.click('.dialog .btn.primary');
+  await page.waitForTimeout(400);
+}
 
 // ── DWG ──
 await open(join(samples, 'example_2000.dwg'));
@@ -100,13 +105,14 @@ await tool('레이어'); await shot('21-dwg-layers'); await page.click('.sheet-c
 await tool('거리'); await tap(120, 300); await tap(260, 380); await tool('완료');
 console.log('dwg measure:', await page.locator('.mlabel').first().textContent());
 await shot('22-dwg-measure');
-await page.click('#back'); await page.waitForTimeout(300);
+console.log('dwg tools:', (await page.locator('#tools .tool').allInnerTexts()).map(t=>t.replace(/\s+/g,'')).join(','), '| kind:', await page.locator('#kind').textContent(), '| save hidden:', await page.locator('#save').isHidden());
+await goHome();
 
 // ── DXF ──
 for (const [i, f] of ['wipeout_door.dxf', 'text.dxf', 'Leader.dxf'].entries()) {
   await open(join(samples, f));
   await shot('3' + i + '-' + f.replace('.dxf', ''));
-  await page.click('#back'); await page.waitForTimeout(300);
+  await goHome();
 }
 
 console.log('page errors:', errors.length);

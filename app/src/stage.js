@@ -139,6 +139,8 @@ export function createStage(stage, content) {
     setDrawHandler(h) { drawHandler = h; },
     setTapHandler(h) { tapHandler = h; },
     onChange(h) { changeHandlers.push(h); },
+    /** 문서를 닫을 때: 이전 문서가 걸어 둔 처리기를 모두 떼어 낸다(다음 문서와 섞이지 않게). */
+    reset() { changeHandlers = []; drawHandler = null; tapHandler = null; gesture = null; pointers.clear(); },
     /** 화면에 보이는 내용 영역(내용 좌표). */
     visibleRect() {
       const r = stage.getBoundingClientRect();
