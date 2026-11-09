@@ -9,68 +9,43 @@
 </head>
 <body>
 <header class="top">
-  <div class="brand"><img src="icon.png" alt=""><div><b>관급자재 구매요청서 자동작성</b><small>나라장터 쇼핑몰 검색 → 업체 선택 → 원본 엑셀 양식 그대로 출력</small></div></div>
-  <nav>
-    <a href="#s2">① 공사개요</a><a href="#s3">② 품목</a><a href="#s4">③ 나라장터 검색</a><a href="#s5">④ 업체 선택</a>
-  </nav>
-  <button class="ghost" data-a="reset" style="background:#fff">🗑 새로 작성</button>
+  <div class="brand"><img src="icon.png" alt=""><div><b>관급자재 구매요청서</b><small>나라장터 검색 → 업체 선택 → 원본 양식 엑셀</small></div></div>
+  <div class="proj">
+    <label for="projSel">공사</label>
+    <select id="projSel"></select>
+    <button class="ghost sm" data-a="newProj" title="새 공사 만들기">＋ 새 공사</button>
+    <button class="ghost sm" data-a="copyProj" title="지금 공사를 복사해서 새 공사로">복사</button>
+    <button class="ghost sm" data-a="delProj" title="이 공사 삭제">삭제</button>
+    <span class="sep"></span>
+    <button class="ghost sm" data-a="backup" title="모든 공사를 파일로 저장">백업 저장</button>
+    <label class="ghost sm filebtn" title="백업 파일 불러오기">불러오기<input type="file" id="restoreInput" accept=".json"></label>
+  </div>
   <button class="primary" data-a="build">📄 엑셀 출력</button>
 </header>
 
+<ol class="steps">
+  <li><b>1</b> 공사개요 입력</li>
+  <li><b>2</b> 품목 추가</li>
+  <li><b>3</b> 품목을 누르고 검색(또는 상품주소 붙여넣기) → 업체 [선택]</li>
+  <li><b>4</b> 엑셀 출력</li>
+</ol>
+
 <main>
-  <section class="card" id="s2">
-    <h2>① 공사 개요 <small>엑셀 업로드 없이, 여기 입력한 내용과 나라장터 검색 결과로 원본 양식 그대로 출력합니다.</small></h2>
+  <details class="card" id="overview" open>
+    <summary><h2>공사 개요 <small id="ovSummary"></small></h2></summary>
     <div class="grid" id="project"></div>
-  </section>
+  </details>
 
-  <section class="card" id="s3">
-    <h2>② 품목 <small>최대 20개. 자재 종류는 무엇이든 됩니다 — 직접 입력하거나 ③ 검색 결과에서 [담기]로 추가하세요.</small></h2>
-    <div class="tblwrap"><table class="items"><thead><tr>
-      <th>#</th><th>자재명</th><th>규격</th><th>단위</th><th>설계수량</th><th>금회수량</th><th>설계단가</th>
-      <th>나라장터 검색어</th><th>포함 단어 필터 <i title="쉼표로 구분. 품목명에 모두 들어 있는 제품만 보여줍니다. 비우면 전체.">?</i></th><th></th>
-    </tr></thead><tbody id="items"></tbody></table></div>
-    <div class="row">
-      <button class="ghost" data-a="add">+ 품목 추가</button>
-      <button class="ghost" data-a="reset">🗑 전체 비우고 새로 작성</button>
-      <span class="grow"></span>
-      <button data-a="searchAll">🔍 품목 전체 검색</button>
-      <button data-a="auto">공통업체 3곳 자동선택</button>
-    </div>
-  </section>
+  <div class="work">
+    <aside class="card itemsCol">
+      <h2>품목 <small id="itemCount"></small></h2>
+      <div id="itemList"></div>
+      <button class="ghost wide" data-a="addItem">＋ 품목 추가</button>
+    </aside>
 
-  <section class="card" id="s4">
-    <h2>③ 나라장터 쇼핑몰 바로 검색 <small>아무 자재나 검색해서 품목에 담을 수 있습니다.</small></h2>
-    <div class="paste">
-      <div><b>🔗 상품 주소로 등록</b> <small class="muted">나라장터 쇼핑몰에서 직접 찾은 상품 화면 → <b>[공유]</b> → <b>[URL복사]</b> 한 주소를 붙여넣으세요. 한 품목의 업체 주소를 하나씩 또는 여러 개(줄바꿈) 넣으면 모두 같은 품목의 1·2·3…번 업체로 들어갑니다. 다음 자재는 [✚ 다음 품목 시작]을 누른 뒤 넣으세요. (물품식별번호 8자리도 가능)</small></div>
-      <div class="row"><textarea id="pasteBox" rows="3" placeholder="https://shop.g2b.go.kr/link/GMSF001_01/?ctrtItemMngNo=0024C0405_1450000525"></textarea>
-      <button id="pasteBtn">주소로 등록</button></div>
-      <div class="row cur"><span id="curTarget" class="grow"></span><button type="button" class="ghost" id="nextItem">✚ 다음 품목 시작</button></div>
-    </div>
-    <form class="row" id="freeForm">
-      <input id="freeKw" placeholder="예) LED 터널등 200W, 분전반, 케이블트레이 300×60, 가로등주 8m" autocomplete="off">
-      <select id="freeSort"><option value="CTRT_UPRC_ASC">가격 낮은순</option><option value="EVNT_DSCNT_RATE_DESC">쇼핑몰 기본순</option></select>
-      <input id="freeFilter" placeholder="포함 단어 필터 (선택)" style="max-width:220px">
-      <button>검색</button>
-    </form>
-    <div id="facets" class="facets"></div>
-    <div class="row" id="freeBar">
-      <span id="freeInfo" class="muted"></span><span class="grow"></span>
-      <label>검색 결과를 담을 품목 <select id="freeTarget"></select></label>
-    </div>
-    <div class="tblwrap tall"><table class="res"><thead><tr><th></th><th>사진</th><th>업체(제조사)</th><th>물품식별번호</th><th>품목명·규격</th><th>단가</th><th>단위</th><th>본사</th><th>인증</th></tr></thead><tbody id="freeRes"></tbody></table></div>
-    <div class="row center"><button class="ghost" id="freeMore" hidden>다음 100건 더 보기</button></div>
-  </section>
-
-  <section class="card" id="s5">
-    <h2>④ 업체 선택 <small>1~3번은 모든 품목에서 같은 업체로 맞춰야 조사표가 맞습니다. 4~7번은 비교표에만 추가로 들어갑니다.</small></h2>
-    <div id="picks"></div>
-  </section>
+    <section class="card editor" id="editor"></section>
+  </div>
 </main>
-
-<footer class="bottom">
-  <span class="muted">출력: 구매요청서 · 구매내역현황 · 관급단가 비교표(외형도 포함) · 단가및인증현황조사 — 원본 양식 서식 그대로</span>
-  <button class="primary" data-a="build">📄 엑셀 출력</button>
-</footer>
 
 <div class="busy" id="busy" hidden><div class="spin"></div><span></span></div>
 <div class="toast" id="toast" hidden></div>
