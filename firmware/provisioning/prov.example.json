@@ -1,0 +1,10 @@
+{
+  "device_id": "SB-a1b2c3d4e5f6",
+  "cmd_secret": "<64 hex chars from POST /smartboxes provisioning.cmd_secret>",
+  "mqtt_host": "mqtt.example.com",
+  "mqtt_port": 8883,
+  "ca_cert_pem": "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----\n",
+  "client_cert_pem": "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----\n",
+  "client_key_pem": "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n",
+  "ntp_servers": ["pool.ntp.org", "time.google.com"]
+}

@@ -1,0 +1,71 @@
+# EUM SMART VMS PRO — 단일 서버 설치 (내부망)
+# 1) cp .env.example .env 후 값 수정
+# 2) docker compose run --rm init        # 인증서 생성(최초 1회)
+# 3) docker compose up -d
+name: eum-smart-vms
+
+services:
+  db:
+    image: timescale/timescaledb:latest-pg16   # 납품 시 검증한 버전 태그로 고정할 것
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: eum
+      POSTGRES_USER: eum
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD 필요}
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U eum -d eum"]
+      interval: 10s
+      retries: 10
+
+  init:
+    image: eum-smart-vms:0.1.0
+    profiles: ["init"]
+    user: "0"
+    environment:
+      DATA_DIR: /data
+      BROKER_HOSTS: ${BROKER_HOSTS:?BROKER_HOSTS 필요}
+    volumes:
+      - appdata:/data
+      - brokercerts:/broker
+    # 브로커에는 CA 개인키·마스터키를 주지 않고 필요한 3개 파일만 복사
+    command: ["sh", "-c", "node dist/tools/init-pki.js && chown -R 10001 /data && cp /data/pki/ca.crt /data/pki/broker.crt /data/pki/broker.key /broker/ && chown -R 1883:1883 /broker && chmod 600 /broker/broker.key"]
+
+  mqtt:
+    image: eclipse-mosquitto:2
+    restart: unless-stopped
+    ports:
+      - "8883:8883"
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./mosquitto/acl:/mosquitto/config/acl:ro
+      - brokercerts:/certs/pki:ro
+    depends_on: [db]
+
+  server:
+    image: eum-smart-vms:0.1.0
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://eum:${DB_PASSWORD}@db:5432/eum
+      DATA_DIR: /data
+      MQTT_URL: mqtts://mqtt:8883
+      MQTT_PUBLIC_HOST: ${MQTT_PUBLIC_HOST:?MQTT_PUBLIC_HOST 필요}
+      MQTT_PUBLIC_PORT: "8883"
+      MASTER_KEY: ${MASTER_KEY:?MASTER_KEY 필요(openssl rand -hex 32)}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET 필요}
+      BOOTSTRAP_ADMIN_USER: ${BOOTSTRAP_ADMIN_USER:-}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
+      TRUST_PROXY: ${TRUST_PROXY:-false}
+    ports:
+      - "${HTTP_BIND:-127.0.0.1}:3000:3000"   # 외부 공개는 기관 승인된 리버스 프록시(TLS)를 통해서만
+    volumes:
+      - appdata:/data
+    depends_on:
+      db: { condition: service_healthy }
+      mqtt: { condition: service_started }
+
+volumes:
+  dbdata:
+  appdata:
+  brokercerts:

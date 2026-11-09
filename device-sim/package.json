@@ -1,0 +1,1 @@
+{ "name": "eum-device-sim", "version": "0.1.0", "private": true, "main": "sim.js", "dependencies": { "mqtt": "^5.10.0" } }

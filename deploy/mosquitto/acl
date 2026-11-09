@@ -1,0 +1,16 @@
+# 관제서버 (인증서 CN = eum-server)
+user eum-server
+topic read eum/v1/+/status
+topic read eum/v1/+/hello
+topic read eum/v1/+/telemetry
+topic read eum/v1/+/event
+topic read eum/v1/+/ack
+topic write eum/v1/+/cmd
+
+# 장치: 자기 ID 토픽만 (%u = 인증서 CN = 장치 ID)
+pattern write eum/v1/%u/status
+pattern write eum/v1/%u/hello
+pattern write eum/v1/%u/telemetry
+pattern write eum/v1/%u/event
+pattern write eum/v1/%u/ack
+pattern read eum/v1/%u/cmd

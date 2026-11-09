@@ -1,0 +1,9 @@
+node_modules/
+dist/
+server/data/
+*.log
+.env
+dist-offline/
+tests/test-results.json
+firmware/.pio/
+firmware/data/prov.json
