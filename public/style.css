@@ -65,3 +65,6 @@ tr.on{background:#fff7e6}
 @media (max-width:900px){.work{grid-template-columns:1fr}.itemsCol{position:static;max-height:none}.steps{display:none}.proj select{min-width:0;flex:1}}
 .proj label[for]{color:#fff;flex-direction:row}
 .fields label{text-align:left}
+.ubar{margin-top:12px;background:#f6f9ff;border:1px dashed #7d9fdc;border-radius:8px;padding:9px 11px}
+.ubar label{font-size:14px;font-weight:bold;color:var(--b)}.ubar label small{font-weight:normal;color:var(--mut);font-size:12px}
+.ubar .row{display:flex;gap:6px;margin-top:6px}.ubar input{flex:1;min-width:200px;font:13px Consolas,monospace;padding:8px 10px}

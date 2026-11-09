@@ -149,9 +149,15 @@
         </tr>`).join('')}</tbody></table>` : '<p class="muted">아직 없습니다. 아래에서 검색하거나 상품 주소를 붙여넣고 [선택]을 누르세요.</p>'}
       </div>
 
+      <form class="ubar" id="uform">
+        <label for="ubox">🔗 상품 주소로 추가 <small>나라장터 쇼핑몰 상품 화면 → [공유] → [URL복사] 한 주소를 붙여넣으세요. 넣을 때마다 이 품목의 다음 업체로 들어갑니다.</small></label>
+        <div class="row"><input id="ubox" autocomplete="off" placeholder="https://shop.g2b.go.kr/link/GMSF001_01/?ctrtItemMngNo=…  (여러 개는 띄어서 붙여넣기)">
+        <button>주소로 추가</button></div>
+      </form>
+
       <form class="sbar" id="sform">
-        <input id="sbox" autocomplete="off" placeholder="검색어 (예: 케이블트레이 150×60, LED 터널등, 디젤발전기)  또는  나라장터 상품 주소(공유→URL복사)" value="${esc(R(it.id).kw || it.kw || guessKw(it))}">
-        <button>검색 / 등록</button>
+        <input id="sbox" autocomplete="off" placeholder="🔍 나라장터 검색어 (예: 케이블트레이 150×60, LED 터널등, 디젤발전기)" value="${esc(R(it.id).kw || it.kw || guessKw(it))}">
+        <button>검색</button>
         <button type="button" class="ghost" data-a="auto3" title="필터된 결과에서 싼 순서로 서로 다른 업체 3곳 자동 선택">싼 업체 3곳 자동</button>
       </form>
       <div id="resultArea"></div>`;
@@ -200,9 +206,9 @@
     if (!it.spec) { const p = String(r.nm).split(',').map((s) => s.trim()); it.spec = p[3] || ''; }
     return true;
   }
-  async function searchOrAdd() {
+  async function searchOrAdd(text) {
     const it = curItem(); if (!it) return;
-    const text = $('#sbox').value.trim(); if (!text) return toast('검색어나 상품 주소를 넣어 주세요.');
+    if (!text) return toast('검색어나 상품 주소를 넣어 주세요.');
     const st = R(it.id);
     try {
       if (isAddr(text)) {
@@ -215,8 +221,8 @@
           if (addPick(it, x.item)) ok.push(`${short(x.item.co)} ${x.item.price.toLocaleString()}원` + (x.partial ? ' (본사·인증 확인 필요)' : ''));
           else bad.push(`${short(x.item.co)}: 이미 선택했거나 업체 칸이 찼습니다.`);
         }
-        $('#sbox').value = st.kw || '';
         save(); renderItems(); renderEditor();
+        if (!ok.length) $('#ubox').value = text; // 실패하면 입력한 주소를 남겨 둠
         toast((ok.length ? `✔ ${ok.length}곳 등록 (지금 ${it.picks.length}곳)\n• ${ok.join('\n• ')}` : '') + (bad.length ? `${ok.length ? '\n\n' : ''}✖ ${bad.join('\n✖ ')}` : ''), 9000);
         return;
       }
@@ -375,7 +381,14 @@
       save(); renderItems(); const y = scrollY; renderEditor(); scrollTo(0, y);
     }
   });
-  document.addEventListener('submit', (e) => { if (e.target.id === 'sform') { e.preventDefault(); searchOrAdd(); } });
+  document.addEventListener('submit', (e) => {
+    if (e.target.id === 'sform') { e.preventDefault(); searchOrAdd($('#sbox').value.trim()); }
+    if (e.target.id === 'uform') {
+      e.preventDefault(); const t = $('#ubox').value.trim();
+      if (t && !isAddr(t)) return toast('나라장터 상품 주소가 아닙니다. 상품 화면에서 [공유] → [URL복사] 한 주소를 넣어 주세요. (검색어는 아래 검색칸에)', 7000);
+      searchOrAdd(t);
+    }
+  });
 
   // ───────────── 기타 ─────────────
   function busy(msg) { const b = $('#busy'); b.hidden = !msg; b.querySelector('span').textContent = msg; }
