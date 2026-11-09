@@ -74,7 +74,8 @@
   const colNum = (c) => { let n = 0; for (const ch of c) n = n * 26 + (ch.charCodeAt(0) - 64); return n; };
   const colStr = (n) => { let s = ''; while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = (n - m - 1) / 26; } return s; };
   const splitRef = (ref) => { const m = /^([A-Z]+)(\d+)$/.exec(ref); return [m[1], +m[2]]; };
-  const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  // 엑셀 XML에 못 들어가는 제어문자는 빼고 넣음 (넣으면 엑셀 '복구' 창이 뜸)
+  const esc = (s) => String(s).replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   const unesc = (s) => String(s).replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCodePoint(parseInt(h, 16))).replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(+d)).replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
   const attr = (tag, name) => { const m = new RegExp('\\s' + name + '="([^"]*)"').exec(tag); return m ? m[1] : null; };
 
@@ -347,7 +348,7 @@
       const k0 = g.idx[0];
       const title = gi === 0 && P.group ? P.group : items[k0].name;
       sh.set(S.title, `관급자재(${title}) 조달단가 및 인증현황 조사표`);
-      ['H', 'S', 'AB'].forEach((col, j) => sh.setFormula(col + '3', `${cmpQ}!D${5 + C.blockHeight * k0 + j}`));
+      ['H', 'S', 'AB'].forEach((col, j) => { const ref = `${cmpQ}!D${5 + C.blockHeight * k0 + j}`; sh.setFormula(col + '3', `IF(${ref}="","",${ref})`); });
       for (let j = 0; j < LAYOUT.maxItems; j++) {
         const r = S.firstRow + j, k = g.idx[j], it = items[k];
         sh.setHidden(r, !it);
@@ -376,9 +377,9 @@
           const minIdx = pr.indexOf(Math.min(...pr));
           const pc = S.companies.map((x) => x.price + r);
           const keep = minIdx === 0 ? [pc[1], pc[2]] : minIdx === 1 ? [pc[0], pc[2]] : [pc[0], pc[1]];
-          sh.setFormula(S.cols.avg + r, `TRUNC(AVERAGE(${keep.join(',')}),0)`);
+          sh.setFormula(S.cols.avg + r, `IFERROR(TRUNC(AVERAGE(${keep.join(',')}),0),0)`);
         } else {
-          sh.setFormula(S.cols.avg + r, `IF(A${r}="","",TRUNC(AVERAGE(${S.companies.map((x) => x.price + r).join(',')}),0))`);
+          sh.setFormula(S.cols.avg + r, `IF(A${r}="","",IFERROR(TRUNC(AVERAGE(${S.companies.map((x) => x.price + r).join(",")}),0),0))`);
           warnings.push(`${k + 1}번 품목(${it.name} ${it.spec || ''}): 업체가 3곳이 아니라서 평균단가를 선택된 업체 평균으로 계산했습니다.`);
         }
       }
@@ -393,13 +394,13 @@
       const cols = T.cols;
       if (it) {
         sta.set(cols.name + r, it.name); sta.set(cols.spec + r, it.spec); sta.set(cols.unit + r, it.unit);
-        if (it.qtyTotal !== '' && it.qtyTotal != null) sta.set(cols.qtyTotal + r, toNum(it.qtyTotal));
-        if (it.qtyRound !== '' && it.qtyRound != null) sta.set(cols.qtyRound + r, toNum(it.qtyRound));
-        if (it.designPrice !== '' && it.designPrice != null) sta.set(cols.designPrice + r, toNum(it.designPrice));
+        sta.set(cols.qtyTotal + r, numOrNull(it.qtyTotal));
+        sta.set(cols.qtyRound + r, numOrNull(it.qtyRound));
+        sta.set(cols.designPrice + r, numOrNull(it.designPrice));
         if (surRowOf[k]) { const q = `'${surRowOf[k].name.replace(/'/g, "''")}'`; sta.setFormula('O' + r, `IF(A${r}="","",${q}!BF${surRowOf[k].row})`); }
         const nowF = sta.getFormula(cols.qtyNow + r);
-        if (it.qtyNow !== '' && it.qtyNow != null && !(nowF && /^G\d+$/.test(nowF) && toNum(it.qtyNow) === toNum(it.qtyRound)))
-          sta.set(cols.qtyNow + r, toNum(it.qtyNow));
+        if (!(nowF && /^G\d+$/.test(nowF) && toNum(it.qtyNow) === toNum(it.qtyRound)))
+          sta.set(cols.qtyNow + r, numOrNull(it.qtyNow));
       } else {
         [cols.name, cols.spec, cols.unit, cols.qtyTotal, cols.qtyRound, cols.designPrice, cols.qtyNow].forEach((c) => sta.clear(c + r));
       }
@@ -443,8 +444,9 @@
           S.companies.forEach((sc, ci) => {
             const co = v.cs[ci], amtCol = ['J', 'T', 'AD'][ci];
             sh.cache(sc.no + r, co ? n(co.no) || String(co.no) : '');
-            sh.cache(sc.price + r, co ? v.pr[ci] : '');
-            const amt = co ? tr(v.qN * v.pr[ci]) : '';
+            const hasPr = co && numOrNull(co.price) != null; // 단가 칸이 비면 엑셀 수식도 빈칸
+            sh.cache(sc.price + r, hasPr ? v.pr[ci] : '');
+            const amt = hasPr ? tr(v.qN * v.pr[ci]) : '';
             sh.cache(amtCol + r, amt); if (amt !== '') sums[ci] += amt;
             const keys = co ? certKeysOf(co.certs) : new Set();
             cnt[ci] += sc.certKeys.filter((key) => keys.has(key)).length;
@@ -599,6 +601,9 @@
     }
     return { project, items, sheets: book.sheets.filter((s) => !s.hidden).map((s) => s.name) };
   }
+
+  // 숫자가 아니면 빈칸(엑셀에서 0으로 계산) — 문자열이 들어가면 #VALUE! 가 남
+  function numOrNull(v) { const x = toNum(v); return typeof x === 'number' && isFinite(x) ? x : null; }
 
   function toNum(v) {
     if (typeof v === 'number') return v;

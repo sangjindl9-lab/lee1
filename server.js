@@ -15,7 +15,10 @@ function send(res, code, body, type = 'application/json; charset=utf-8', extra =
   res.end(typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body));
 }
 function readBody(req) {
-  return new Promise((ok, no) => { let d = ''; req.on('data', (c) => { d += c; if (d.length > 1e6) req.destroy(); }); req.on('end', () => ok(d)); req.on('error', no); });
+  return new Promise((ok, no) => { let d = ''; req.on('data', (c) => { d += c; if (d.length > 1e6) { no(Object.assign(new Error('요청이 너무 큽니다.'), { code: 413 })); req.destroy(); } }); req.on('end', () => ok(d)); req.on('error', no); });
+}
+async function readJson(req) {
+  try { return JSON.parse((await readBody(req)) || '{}'); } catch (e) { throw Object.assign(new Error(e.code === 413 ? e.message : '잘못된 요청입니다.'), { code: e.code || 400 }); }
 }
 // 나라장터 연결이 가끔 끊기므로 한 번 더 시도
 async function fetchRetry(url, opt, tries = 2) {
@@ -117,11 +120,11 @@ const server = http.createServer(async (req, res) => {
   try {
     const u = new URL(req.url, 'http://x');
     if (u.pathname === '/api/search' && req.method === 'POST') {
-      const q = JSON.parse((await readBody(req)) || '{}');
-      return send(res, 200, await shopSearch(q));
+      const q = await readJson(req);
+      return send(res, 200, await shopSearch({ keyword: q.keyword, page: Math.min(Math.max(+q.page || 1, 1), 10), sort: q.sort === 'EVNT_DSCNT_RATE_DESC' ? q.sort : 'CTRT_UPRC_ASC' }));
     }
     if (u.pathname === '/api/resolve' && req.method === 'POST') {
-      const q = JSON.parse((await readBody(req)) || '{}');
+      const q = await readJson(req);
       const tokens = String(q.text || '').split(/[\s,]+/).map((x) => x.trim()).filter(Boolean).slice(0, 30);
       const out = [];
       for (const tk of tokens) { try { out.push(await resolveOne(tk)); } catch (e) { out.push({ input: tk, error: e.message }); } }
@@ -129,18 +132,22 @@ const server = http.createServer(async (req, res) => {
     }
     if (u.pathname === '/api/img') {
       const src = u.searchParams.get('src') || '';
-      if (!/^\/static\/[\w\-./%]+\.(jpe?g|png|gif|bmp|webp)$/i.test(src)) return send(res, 400, { error: 'bad src' });
+      if (!/^\/static\/[\w\-/]+(\.[\w\-]+)*\.(jpe?g|png|gif|bmp|webp)$/i.test(src) || src.includes('..')) return send(res, 400, { error: 'bad src' });
       const r = await fetchRetry(SHOP + src, { headers: { 'User-Agent': UA, Referer: SHOP + '/' } });
       if (!r.ok) return send(res, r.status, { error: 'img ' + r.status });
-      return send(res, 200, Buffer.from(await r.arrayBuffer()), r.headers.get('content-type') || 'image/jpeg', { 'Cache-Control': 'public, max-age=86400' });
+      const ct = r.headers.get('content-type') || 'image/jpeg';
+      if (!/^image\//i.test(ct)) return send(res, 415, { error: 'not image' });
+      return send(res, 200, Buffer.from(await r.arrayBuffer()), ct, { 'Cache-Control': 'public, max-age=86400' });
     }
     if (u.pathname === '/api/health') return send(res, 200, { ok: true });
-    let p = path.normalize(decodeURIComponent(u.pathname)).replace(/^([/\\])+/, '');
+    let dp; try { dp = decodeURIComponent(u.pathname); } catch { return send(res, 400, '잘못된 주소', 'text/plain; charset=utf-8'); }
+    let p = path.normalize(dp).replace(/^([/\\])+/, '');
     if (!p || p.endsWith('/')) p += 'index.html';
     const f = path.join(PUB, p);
-    if (!f.startsWith(PUB) || !fs.existsSync(f) || fs.statSync(f).isDirectory()) return send(res, 404, '없는 페이지', 'text/plain; charset=utf-8');
+    if (!f.startsWith(PUB + path.sep) || !fs.existsSync(f) || fs.statSync(f).isDirectory()) return send(res, 404, '없는 페이지', 'text/plain; charset=utf-8');
     send(res, 200, fs.readFileSync(f), TYPES[path.extname(f)] || 'application/octet-stream', { 'Cache-Control': 'no-cache' });
   } catch (e) {
+    if (e.code === 400 || e.code === 413) return send(res, e.code, { error: e.message });
     console.error(e);
     send(res, 502, { error: e.message || String(e) });
   }

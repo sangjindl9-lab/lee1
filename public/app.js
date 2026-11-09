@@ -108,7 +108,7 @@
   const PF = [['name', '공사명'], ['type', '주요공종'], ['materials', '관급자재품목'], ['period', '공사기간'], ['location', '공사위치'], ['round', '차수 (예: 4차)'], ['group', '조사표 제목 자재명']];
   function renderProjects() {
     const ps = Object.values(DB.projects).sort((a, b) => b.updated - a.updated);
-    $('#projSel').innerHTML = ps.map((p) => `<option value="${p.id}" ${p.id === DB.current ? 'selected' : ''}>${esc(p.project.name || '(공사명 없음)')} · 품목 ${p.items.filter((i) => i.name || i.picks.length).length}</option>`).join('');
+    $('#projSel').innerHTML = ps.map((p) => `<option value="${esc(p.id)}" ${p.id === DB.current ? 'selected' : ''}>${esc(p.project.name || '(공사명 없음)')} · 품목 ${p.items.filter((i) => i.name || i.picks.length).length}</option>`).join('');
   }
   function renderOverview() {
     const P = cur().project;
@@ -121,7 +121,7 @@
     $('#itemCount').textContent = `${its.length}개 (최대 ${MAX_ITEMS})`;
     $('#itemList').innerHTML = its.map((it, i) => {
       const n = it.picks.length;
-      return `<div class="it ${it.id === selId ? 'on' : ''}" data-sel="${it.id}">
+      return `<div class="it ${it.id === selId ? 'on' : ''}" data-sel="${esc(it.id)}">
         <span class="no">${i + 1}</span>
         <div class="nm"><b>${esc(it.name || '(자재명 미입력)')}</b><small>${esc(it.spec || '')}</small></div>
         <span class="badge ${n >= 3 ? 'ok' : n ? 'mid' : ''}">업체 ${n}</span>
@@ -142,7 +142,7 @@
         <div class="ph"><b>선택한 업체</b> <span class="${it.picks.length >= 3 ? 'ok' : 'warn'}">${it.picks.length}곳${it.picks.length < 3 ? ' — 조사표에는 3곳이 필요합니다' : ''}</span></div>
         ${it.picks.length ? `<table class="ptbl"><tbody>${it.picks.map((r, i) => `<tr>
           <td class="slot">${i + 1}번</td><td>${r.img ? `<img src="${imgUrl(r.img)}" alt="">` : ''}</td>
-          <td><b>${esc(r.co)}</b><br><span class="muted">${esc(r.loc || '')}</span></td><td>${r.no}</td>
+          <td><b>${esc(r.co)}</b><br><span class="muted">${esc(r.loc || '')}</span></td><td>${esc(r.no)}</td>
           <td class="nm">${esc(r.nm)}</td><td class="num">${r.price.toLocaleString()}<small> / ${esc(r.unit)}</small></td>
           <td class="cert">${r.certs.map((c) => `<span>${esc(c)}</span>`).join('')}</td>
           <td class="acts"><button class="ghost xs" data-a="up" data-i="${i}" ${i ? '' : 'disabled'}>▲</button><button class="ghost xs" data-a="down" data-i="${i}" ${i < it.picks.length - 1 ? '' : 'disabled'}>▼</button><button class="ghost xs" data-a="rm" data-i="${i}">✕</button></td>
@@ -181,7 +181,7 @@
       <div class="tblwrap"><table class="res"><thead><tr><th></th><th>사진</th><th>업체(제조사)</th><th>물품식별번호</th><th>품목명·규격</th><th>단가</th><th>본사</th><th>인증</th></tr></thead><tbody>
       ${shown.slice(0, 300).map((r) => { const s = picked.get(r.no + '|' + r.price); return `<tr class="${s ? 'on' : ''}">
         <td>${s ? `<button class="sm" data-a="unpick" data-k="${esc(r.no + '|' + r.price)}">✓ ${s}번</button>` : `<button class="ghost sm" data-a="pick" data-k="${esc(r.no + '|' + r.price)}">선택</button>`}</td>
-        <td>${r.img ? `<img loading="lazy" src="${imgUrl(r.img)}" alt="">` : ''}</td><td>${esc(r.co)}</td><td>${r.no}</td>
+        <td>${r.img ? `<img loading="lazy" src="${imgUrl(r.img)}" alt="">` : ''}</td><td>${esc(r.co)}</td><td>${esc(r.no)}</td>
         <td class="nm">${esc(r.nm)}<br><span class="muted">${esc(r.cls || '')}</span></td><td class="num">${r.price.toLocaleString()}<small> / ${esc(r.unit)}</small></td>
         <td>${esc(r.loc)}</td><td class="cert">${r.certs.map((c) => `<span>${esc(c)}</span>`).join('')}</td></tr>`; }).join('') || '<tr><td colspan="8" class="muted">필터에 맞는 제품이 없습니다.</td></tr>'}
       </tbody></table></div>`;
@@ -255,7 +255,10 @@
     if (none >= 0) { selId = its[none].id; renderItems(); renderEditor(); return toast(`${items().indexOf(its[none]) + 1}번 품목에 선택한 업체가 없습니다.`); }
     const P = cur().project;
     const summary = its.map((it, i) => `${i + 1}. ${it.name} ${it.spec || ''} — ${it.picks.map((r) => short(r.co)).join(', ')}`).join('\n');
-    if (!confirm(`[${P.name || '공사명 없음'}]\n아래 품목으로 출력합니다.\n\n${summary}`)) return;
+    const isNum = (v) => String(v ?? '').replace(/,/g, '').trim() !== '' && isFinite(+String(v).replace(/,/g, ''));
+    const bad = its.map((it, i) => [i + 1, it, [['금회수량', it.qtyNow], ['설계수량', it.qtyTotal], ['설계단가', it.designPrice]].filter(([, v]) => !isNum(v)).map(([k]) => k)]).filter(([, , ks]) => ks.length);
+    const warn = bad.length ? `\n\n※ 숫자가 비었거나 숫자가 아닌 칸 (0으로 계산됨):\n${bad.map(([n, it, ks]) => `${n}. ${it.name}: ${ks.join(', ')}`).join('\n')}` : '';
+    if (!confirm(`[${P.name || '공사명 없음'}]\n아래 품목으로 출력합니다.\n\n${summary}${warn}`)) return;
     const checkedAt = nowStr();
     try {
       const data = { project: P, items: [] };
@@ -289,7 +292,7 @@
   function addProject() {
     const name = prompt('새 공사명을 입력하세요', ''); if (name === null) return;
     const c = cur(); // 아무것도 안 넣은 빈 공사는 정리
-    if (c && !c.project.name && !c.items.some((i) => i.name || i.picks.length)) delete DB.projects[c.id];
+    if (c && !Object.values(c.project).some((v) => String(v || '').trim()) && !c.items.some((i) => i.name || i.spec || i.picks.length)) delete DB.projects[c.id];
     const p = newProject(name.trim()); DB.projects[p.id] = p; switchProject(p.id);
     toast('새 공사를 만들었습니다. 이전 공사는 위 [공사] 목록에서 언제든 다시 열 수 있습니다.');
   }
@@ -311,9 +314,21 @@
     try {
       const d = JSON.parse(await file.text());
       if (!d.projects) throw new Error('백업 파일 형식이 아닙니다.');
-      let n = 0; for (const [id, p] of Object.entries(d.projects)) { DB.projects[id] = p; n++; }
-      DB.current = d.current && DB.projects[d.current] ? d.current : DB.current;
-      selId = null; save(); renderAll(); toast(`공사 ${n}개를 불러왔습니다.`);
+      const okP = (p) => p && typeof p === 'object' && p.project && typeof p.project === 'object' && Array.isArray(p.items) &&
+        p.items.every((it) => it && typeof it === 'object' && Array.isArray(it.picks) && it.picks.every((r) => r && typeof r.price === 'number' && Array.isArray(r.certs)));
+      const list = Object.values(d.projects);
+      if (!list.length || !list.every(okP)) throw new Error('백업 파일 내용이 올바르지 않습니다.');
+      let n = 0; const idMap = {};
+      for (const p of list) {
+        const q = JSON.parse(JSON.stringify(p));
+        if (!q.id || DB.projects[q.id]) { // 이미 있는 공사는 덮어쓰지 않고 따로 추가
+          q.id = uid(); q.items.forEach((it) => (it.id = uid()));
+          q.project.name = (q.project.name || '공사') + ' (불러옴)';
+        }
+        q.updated = Date.now(); idMap[p.id] = q.id; DB.projects[q.id] = q; n++;
+      }
+      DB.current = idMap[d.current] || Object.values(idMap)[0];
+      selId = null; save(); renderAll(); toast(`공사 ${n}개를 불러왔습니다. 기존 공사는 그대로 있고, 같은 공사는 "(불러옴)"을 붙여 따로 추가했습니다.`, 7000);
     } catch (e) { toast('불러오기 실패: ' + e.message, 8000); }
   }
 
@@ -372,6 +387,7 @@
   function nowStr() { const d = new Date(), p = (n) => String(n).padStart(2, '0'); return `${d.getFullYear()}.${p(d.getMonth() + 1)}.${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; }
   function debounce(f, ms) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => f(...a), ms); }; }
 
+  addEventListener('pagehide', () => { try { localStorage.setItem(KEY, JSON.stringify(DB)); } catch {} });
   renderAll();
   getTemplate().catch(() => {});
   window.GWJ = { db: () => DB, res: RES, sel: () => selId };
