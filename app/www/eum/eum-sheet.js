@@ -35,38 +35,47 @@
   const MAIN_NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
   /** <x:workbook xmlns:x=…> 처럼 접두어를 붙여 쓴 XML 을 ExcelJS 가 읽는 기본 네임스페이스 형태로 바꾼다. 바뀐 게 없으면 null */
   function unprefix(xml) {
-    const m = xml.match(new RegExp(`xmlns:([A-Za-z_][\\w.-]*)="${MAIN_NS}"`));
+    const m = xml.match(new RegExp(`xmlns:([A-Za-z_]\\w*)="${MAIN_NS}"`));
     if (!m || xml.includes(`xmlns="${MAIN_NS}"`)) return null;
     const p = m[1];
     return xml.replace(m[0], `xmlns="${MAIN_NS}"`).replace(new RegExp(`<(/?)${p}:`, 'g'), '<$1');
   }
 
+  /** workbook.xml 의 <sheet> 이름을 순서대로 */
+  // (원본과 ExcelJS 가 &amp;·&apos; 등을 다르게 이스케이프할 수 있어 풀어서 비교한다)
+  const unescapeXml = (s) => s.replace(/&(amp|lt|gt|quot|apos|#(\d+));/g, (m, k, d) => d ? String.fromCharCode(+d) : { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" }[k]);
+  const sheetNames = (xml) => [...xml.matchAll(/<sheet\b[^>]*\bname="([^"]*)"/g)].map((m) => unescapeXml(m[1]));
+
   /** 떼어 낸 부분을 S.keep 에 두고, 가벼워진 파일 바이트를 돌려준다 */
   async function detach(bytes) {
+    S.keep = null;
     const zip = await JSZip.loadAsync(bytes);
+    if (!zip.file(WB_XML)) throw new Error('지원하지 않는 엑셀 파일 구조입니다.');
     let xml = await zip.file(WB_XML).async('string');
     // 일부 생성 도구가 만든 파일(접두어 네임스페이스)은 그대로 읽으면 "reading 'sheets'" 오류가 난다
     // 같은 도구는 시트 관계(rels)의 Target 도 "/xl/…" 절대 경로로 쓰는데, ExcelJS 는 "../…" 상대 경로만 알아본다.
-    let fixed = false;
+    // workbook.xml 이 접두어형일 때만 나머지 xml 도 검사한다(큰 시트 xml 을 괜히 문자열로 읽지 않게).
+    const prefixed = unprefix(xml);
+    let fixed = prefixed != null;
+    if (fixed) xml = prefixed;
     for (const p of Object.keys(zip.files)) {
-      if (!p.startsWith('xl/') || p.startsWith('xl/externalLinks/')) continue;
+      if (zip.files[p].dir || p === WB_XML || !p.startsWith('xl/') || p.startsWith('xl/externalLinks/')) continue;
       let u = null;
       if (p.startsWith('xl/worksheets/_rels/')) {
         const s = await zip.file(p).async('string');
         if (s.includes('Target="/xl/')) u = s.replace(/Target="\/xl\//g, 'Target="../');
-      } else if (p.endsWith('.xml')) u = unprefix(p === WB_XML ? xml : await zip.file(p).async('string'));
+      } else if (prefixed != null && p.endsWith('.xml')) u = unprefix(await zip.file(p).async('string'));
       if (u == null) continue;
       fixed = true;
-      if (p === WB_XML) xml = u; else zip.file(p, u);
+      zip.file(p, u);
     }
     const names = (xml.match(NAMES_RE) || [''])[0], extRefs = (xml.match(EXTREF_RE) || [''])[0];
-    S.keep = null;
     if (!names && !extRefs) {
       if (!fixed) return bytes;
       zip.file(WB_XML, xml);
       return zip.generateAsync({ type: 'uint8array' });
     }
-    const keep = { names, extRefs, ext: {}, rels: '', types: '' };
+    const keep = { names, extRefs, sheetNames: sheetNames(xml), ext: {}, rels: '', types: '' };
     if (extRefs) {
       keep.rels = await zip.file(WB_RELS).async('string');
       keep.types = await zip.file(CTYPES).async('string');
@@ -100,9 +109,18 @@
       for (const ov of keep.types.match(/<Override\b[^>]*PartName="\/xl\/externalLinks\/[^"]*"[^>]*\/>/g) || []) if (!types.includes(ov)) addT += ov;
       zip.file(CTYPES, types.replace('</Types>', addT + '</Types>'));
     }
+    // ExcelJS 는 차트시트·매크로시트를 버리므로 시트 순서가 바뀌면 localSheetId(시트 인덱스)를 이름 기준으로 다시 매긴다
+    let names = keep.names;
+    const now = sheetNames(xml);
+    if (now.join('\n') !== keep.sheetNames.join('\n')) {
+      names = names.replace(/<definedName\b[^>]*?\blocalSheetId="(\d+)"[^>]*?(?:\/>|>[\s\S]*?<\/definedName>)/g, (m, i) => {
+        const j = now.indexOf(keep.sheetNames[i]);
+        return j < 0 ? '' : m.replace(`localSheetId="${i}"`, `localSheetId="${j}"`);
+      });
+    }
     // 스키마 순서: sheets → externalReferences → definedNames → calcPr
-    const at = xml.search(/<calcPr\b|<oleSize\b|<customWorkbookViews\b|<pivotCaches\b|<\/workbook>/);
-    xml = xml.slice(0, at) + extRefs + keep.names + xml.slice(at);
+    const at = xml.search(/<calcPr\b|<\/workbook>/);
+    xml = xml.slice(0, at) + extRefs + names + xml.slice(at);
     zip.file(WB_XML, xml);
     return zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' });
   }
@@ -430,7 +448,7 @@
     // 매크로 파일(xlsm)은 매크로를 보존할 수 없으므로 원본을 덮어쓰지 않는다.
     if (!/\.xlsx$/i.test(S.name)) { toast('매크로 파일은 xlsx로 따로 저장합니다.'); return saveAs(); }
     if (!S.confirmed) {
-      if (!confirm('원본 파일에 덮어씁니다.\n셀 값·서식·수식은 유지되지만 차트·피벗 표·매크로는 이 앱이 다루지 못해 빠질 수 있습니다.\n\n덮어쓸까요? (취소하면 「다른 이름으로 저장」을 쓰세요)')) return;
+      if (!confirm('원본 파일에 덮어씁니다.\n셀 값·서식·수식은 유지되지만 차트·그림·도형·피벗 표·매크로는 이 앱이 다루지 못해 빠질 수 있습니다.\n\n덮어쓸까요? (취소하면 「다른 이름으로 저장」을 쓰세요)')) return;
       S.confirmed = true;
     }
     try {

@@ -275,16 +275,17 @@
   let bannersLoadedAt = 0;
   async function loadBanners() {
     if (Date.now() - bannersLoadedAt < 10 * 60 * 1000) return;
-    bannersLoadedAt = Date.now();
     let list;
     try {
       const r = await fetch(ADS_BASE + '/api/banners?app=eum-docs', { cache: 'no-store' });
       if (!r.ok) return;
       list = await r.json();
     } catch (e) { return; }
+    if (!Array.isArray(list)) return;
+    bannersLoadedAt = Date.now(); // 실패하면 다음 홈 진입 때 다시 받는다
     for (const slot of ['top', 'bottom']) {
       const box = $('eum-ad-' + slot);
-      const b = (list || []).find((x) => x.slot === slot);
+      const b = list.find((x) => x && typeof x === 'object' && x.slot === slot);
       box.textContent = '';
       box.hidden = !(b && b.image);
       if (box.hidden) continue;
