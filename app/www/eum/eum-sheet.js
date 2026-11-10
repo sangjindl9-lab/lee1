@@ -32,13 +32,35 @@
   const EXTREF_RE = /<externalReferences>[\s\S]*?<\/externalReferences>/;
   const WB_XML = 'xl/workbook.xml', WB_RELS = 'xl/_rels/workbook.xml.rels', CTYPES = '[Content_Types].xml';
 
+  const MAIN_NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
+  /** <x:workbook xmlns:x=…> 처럼 접두어를 붙여 쓴 XML 을 ExcelJS 가 읽는 기본 네임스페이스 형태로 바꾼다. 바뀐 게 없으면 null */
+  function unprefix(xml) {
+    const m = xml.match(new RegExp(`xmlns:([A-Za-z_][\\w.-]*)="${MAIN_NS}"`));
+    if (!m || xml.includes(`xmlns="${MAIN_NS}"`)) return null;
+    const p = m[1];
+    return xml.replace(m[0], `xmlns="${MAIN_NS}"`).replace(new RegExp(`<(/?)${p}:`, 'g'), '<$1');
+  }
+
   /** 떼어 낸 부분을 S.keep 에 두고, 가벼워진 파일 바이트를 돌려준다 */
   async function detach(bytes) {
     const zip = await JSZip.loadAsync(bytes);
-    const xml = await zip.file(WB_XML).async('string');
+    let xml = await zip.file(WB_XML).async('string');
+    // 일부 생성 도구가 만든 파일(접두어 네임스페이스)은 그대로 읽으면 "reading 'sheets'" 오류가 난다
+    let fixed = false;
+    for (const p of Object.keys(zip.files)) {
+      if (!p.startsWith('xl/') || !p.endsWith('.xml') || p.startsWith('xl/externalLinks/')) continue;
+      const u = unprefix(p === WB_XML ? xml : await zip.file(p).async('string'));
+      if (u == null) continue;
+      fixed = true;
+      if (p === WB_XML) xml = u; else zip.file(p, u);
+    }
     const names = (xml.match(NAMES_RE) || [''])[0], extRefs = (xml.match(EXTREF_RE) || [''])[0];
     S.keep = null;
-    if (!names && !extRefs) return bytes;
+    if (!names && !extRefs) {
+      if (!fixed) return bytes;
+      zip.file(WB_XML, xml);
+      return zip.generateAsync({ type: 'uint8array' });
+    }
     const keep = { names, extRefs, ext: {}, rels: '', types: '' };
     if (extRefs) {
       keep.rels = await zip.file(WB_RELS).async('string');
