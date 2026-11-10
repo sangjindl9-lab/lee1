@@ -118,3 +118,9 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 
 #toast { position: fixed; left: 50%; bottom: calc(90px + var(--sab)); transform: translate(-50%, 20px); background: rgba(59,15,196,.94); color: #fff; padding: 10px 16px; border-radius: 10px; font-size: 13px; max-width: 90vw; opacity: 0; transition: .2s; z-index: 60; pointer-events: none; }
 #toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+/* 배너 광고 자리 */
+.ad-slot:empty { display: none; }
+.banner { position: relative; display: block; width: 100%; aspect-ratio: 4 / 1; border-radius: 14px; overflow: hidden; background: #fff; border: 1px solid var(--line); box-shadow: 0 1px 4px rgba(0,0,0,.06); }
+.banner img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.ad-tag { position: absolute; right: 6px; bottom: 6px; font-size: 10px; padding: 1px 6px; border-radius: 6px; background: rgba(0,0,0,.45); color: #fff; }

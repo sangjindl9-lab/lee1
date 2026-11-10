@@ -4,6 +4,7 @@ import { createStage } from './stage.js';
 import * as files from './files.js';
 import { openPdf } from './pdfview.js';
 import { openCad } from './cadview.js';
+import { renderBanners } from './banners.js';
 
 const stage = createStage($('stage'), $('content'));
 let current = null; // 열린 문서 컨트롤러
@@ -13,6 +14,7 @@ function setHint(t) { $('hint').textContent = t; $('hint').hidden = !t; }
 function showHome() {
   $('viewer').hidden = true; $('home').hidden = false;
   renderRecents();
+  renderBanners({ top: $('ad-top'), bottom: $('ad-bottom') });
 }
 function renderRecents() {
   const list = $('recents');
