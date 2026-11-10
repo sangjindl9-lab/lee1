@@ -260,7 +260,9 @@ button.eum-row { border-bottom: 1px solid var(--eum-line); }
 .eum-tabs button { flex: 0 0 auto; border: 0; border-right: 1px solid var(--eum-line); background: none; padding: 0 16px; font: inherit; color: var(--eum-sub); }
 .eum-tabs button.on { background: #fff; color: #1d8f4e; font-weight: 700; box-shadow: inset 0 -3px 0 #1d8f4e; }
 
-.eum-sheet-loading { display: none; position: absolute; inset: var(--eum-bar-h) 0 0 0; place-items: center; background: #fff; color: var(--eum-sub); font-size: 15px; }
+.eum-sheet-loading { display: none; position: absolute; inset: var(--eum-bar-h) 0 0 0; place-items: center; align-content: center; gap: 12px; background: #fff; color: var(--eum-sub); font-size: 15px; }
+.eum-prog { width: min(70vw, 320px); height: 8px; border-radius: 4px; background: #e5e7eb; overflow: hidden; }
+.eum-prog b { display: block; height: 100%; width: 0; background: var(--eum-blue); transition: width 0.2s; }
 #eum-sheet.eum-loading .eum-sheet-loading { display: grid; }
 #eum-smenu { position: fixed; inset: 0; z-index: 950; background: rgba(15, 23, 42, 0.25); }
 

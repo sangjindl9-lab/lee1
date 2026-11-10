@@ -4,13 +4,13 @@
  */
 (function () {
   'use strict';
-  const { native, toast, remember, el, blobToB64, b64ToBytes } = window.EumShell;
+  const { native, toast, remember, el, blobToB64, b64ToBytes, progressBox } = window.EumShell;
   const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
   const CHUNK = 150;            // 한 번에 그리는 행 수
   const EPOCH = Date.UTC(1899, 11, 30);
 
   const S = { wb: null, ws: null, uri: null, name: '', dirty: false, edit: false, sel: null, undo: [], confirmed: false, tds: new Map(), rendered: 0, rows: 0, cols: 0, covered: null, zoom: 1 };
-  let root, grid, table, tbody, fxAddr, fxInput, tabs, titleEl, modeBtn, menu;
+  let root, grid, table, tbody, fxAddr, fxInput, tabs, titleEl, modeBtn, menu, loading;
 
   // ── 라이브러리 ────────────────────────────────────────────
   let libs = null;
@@ -21,8 +21,63 @@
       s.src = src; s.onload = resolve; s.onerror = () => reject(new Error(src + ' 불러오기 실패'));
       document.head.append(s);
     });
-    libs = Promise.all(['eum/lib/exceljs.min.js', 'eum/lib/ssf.js', 'eum/lib/formula-parser.min.js'].map(one));
+    libs = Promise.all(['eum/lib/exceljs.min.js', 'eum/lib/ssf.js', 'eum/lib/formula-parser.min.js', 'eum/lib/jszip.min.js'].map(one));
     return libs;
+  }
+
+  // ── 이름 정의·외부 연결 보존 ───────────────────────────────
+  // 옛 내역서에는 이름 정의가 수천 개 들어 있는 경우가 있고, ExcelJS 는 이를 읽다가 메모리를 다 써 앱이 죽는다.
+  // 그래서 열 때는 workbook.xml 에서 <definedNames>·<externalReferences> 를 떼어 두고, 저장할 때 원본 그대로 다시 붙인다.
+  const NAMES_RE = /<definedNames>[\s\S]*?<\/definedNames>/;
+  const EXTREF_RE = /<externalReferences>[\s\S]*?<\/externalReferences>/;
+  const WB_XML = 'xl/workbook.xml', WB_RELS = 'xl/_rels/workbook.xml.rels', CTYPES = '[Content_Types].xml';
+
+  /** 떼어 낸 부분을 S.keep 에 두고, 가벼워진 파일 바이트를 돌려준다 */
+  async function detach(bytes) {
+    const zip = await JSZip.loadAsync(bytes);
+    const xml = await zip.file(WB_XML).async('string');
+    const names = (xml.match(NAMES_RE) || [''])[0], extRefs = (xml.match(EXTREF_RE) || [''])[0];
+    S.keep = null;
+    if (!names && !extRefs) return bytes;
+    const keep = { names, extRefs, ext: {}, rels: '', types: '' };
+    if (extRefs) {
+      keep.rels = await zip.file(WB_RELS).async('string');
+      keep.types = await zip.file(CTYPES).async('string');
+      for (const p of Object.keys(zip.files)) if (p.startsWith('xl/externalLinks/') && !zip.files[p].dir) keep.ext[p] = await zip.file(p).async('uint8array');
+    }
+    S.keep = keep;
+    zip.file(WB_XML, xml.replace(NAMES_RE, '').replace(EXTREF_RE, ''));
+    return zip.generateAsync({ type: 'uint8array' });
+  }
+
+  /** ExcelJS 가 쓴 파일에 떼어 둔 이름 정의·외부 연결을 되돌린다 */
+  async function reattach(buf) {
+    const keep = S.keep;
+    if (!keep) return buf;
+    const zip = await JSZip.loadAsync(buf);
+    let xml = (await zip.file(WB_XML).async('string')).replace(NAMES_RE, '').replace(EXTREF_RE, '');
+    let extRefs = keep.extRefs;
+    if (extRefs) {
+      // 외부 연결 부품과 관계(rels)·콘텐츠 형식을 되살린다. 관계 ID 는 ExcelJS 가 쓴 것과 겹치지 않게 새로 붙인다.
+      for (const [p, data] of Object.entries(keep.ext)) zip.file(p, data);
+      const relRe = /<Relationship\b[^>]*Target="[^"]*externalLinks\/[^"]*"[^>]*\/>/g;
+      let rels = await zip.file(WB_RELS).async('string'), add = '', n = 0;
+      for (const rel of keep.rels.match(relRe) || []) {
+        const oldId = (rel.match(/\bId="([^"]+)"/) || [])[1];
+        const newId = 'rIdExt' + (++n);
+        add += rel.replace(/\bId="[^"]+"/, `Id="${newId}"`);
+        extRefs = extRefs.replace(new RegExp(`r:id="${oldId}"`, 'g'), `r:id="${newId}"`);
+      }
+      zip.file(WB_RELS, rels.replace('</Relationships>', add + '</Relationships>'));
+      let types = await zip.file(CTYPES).async('string'), addT = '';
+      for (const ov of keep.types.match(/<Override\b[^>]*PartName="\/xl\/externalLinks\/[^"]*"[^>]*\/>/g) || []) if (!types.includes(ov)) addT += ov;
+      zip.file(CTYPES, types.replace('</Types>', addT + '</Types>'));
+    }
+    // 스키마 순서: sheets → externalReferences → definedNames → calcPr
+    const at = xml.search(/<calcPr\b|<oleSize\b|<customWorkbookViews\b|<pivotCaches\b|<\/workbook>/);
+    xml = xml.slice(0, at) + extRefs + keep.names + xml.slice(at);
+    zip.file(WB_XML, xml);
+    return zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' });
   }
 
   // ── 값·표시 ───────────────────────────────────────────────
@@ -287,10 +342,16 @@
     root.classList.add('eum-loading');
     titleEl.textContent = name;
     try {
+      await loading.set(5, '준비하는 중');
       await loadLibs();
+      await loading.set(15, '파일을 읽는 중');
       const r = await native.read({ uri });
+      await loading.set(35, '파일을 검사하는 중');
+      const bytes = await detach(b64ToBytes(r.data));
+      await loading.set(50, '시트를 읽는 중');
       const wb = new ExcelJS.Workbook();
-      await wb.xlsx.load(b64ToBytes(r.data).buffer);
+      await wb.xlsx.load(bytes.buffer);
+      await loading.set(85, '화면을 그리는 중');
       Object.assign(S, { wb, uri, name, undo: [], confirmed: false });
       tabs.textContent = '';
       const visible = wb.worksheets.filter((w) => w.state !== 'hidden' && w.state !== 'veryHidden');
@@ -305,6 +366,7 @@
       setEdit(false);
       setDirty(false);
       showSheet(visible[0]);
+      await loading.set(100, '완료');
       remember(uri, name);
       return true;
     } catch (e) {
@@ -318,7 +380,7 @@
 
   async function write(uri) {
     S.wb.calcProperties.fullCalcOnLoad = true; // 엑셀에서 열 때 수식을 다시 계산하게 한다
-    const buf = await S.wb.xlsx.writeBuffer();
+    const buf = await reattach(await S.wb.xlsx.writeBuffer());
     await native.write({ uri, data: await blobToB64(new Blob([buf])) });
   }
   async function saveAs() {
@@ -414,7 +476,7 @@
     grid.addEventListener('touchend', (e) => { if (e.touches.length < 2) d0 = 0; }, { passive: true });
 
     tabs = el('div', 'eum-tabs');
-    const loading = el('div', 'eum-sheet-loading', '엑셀 파일을 여는 중…');
+    loading = progressBox('eum-sheet-loading');
 
     menu = el('div'); menu.id = 'eum-smenu'; menu.hidden = true;
     const sheet = el('div', 'eum-menu-sheet');

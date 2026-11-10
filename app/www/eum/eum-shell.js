@@ -199,6 +199,20 @@
     toast.timer = setTimeout(() => t.classList.remove('show'), 2600);
   }
 
+  /** 불러오기 진행률 상자: box.set(퍼센트, 설명) — 화면이 실제로 갱신되도록 한 프레임 기다린다 */
+  function progressBox(className) {
+    const box = el('div', className);
+    const bar = el('div', 'eum-prog'); const fill = el('b'); bar.append(fill);
+    const label = el('span', null, '');
+    box.append(bar, label);
+    box.set = async (pct, text) => {
+      fill.style.width = Math.max(0, Math.min(100, pct)) + '%';
+      label.textContent = `${text} ${Math.round(pct)}%`;
+      await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
+    };
+    return box;
+  }
+
   function setMode(next) {
     mode = next;
     document.documentElement.classList.toggle('eum-view', mode === 'view');
@@ -465,7 +479,7 @@
     setMode('view');
 
     if (native) {
-      window.EumShell = { native, toast, remember, el, blobToB64, b64ToBytes, showHome };
+      window.EumShell = { native, toast, remember, el, blobToB64, b64ToBytes, showHome, progressBox };
       const load = (src) => new Promise((resolve) => {
         const js = document.createElement('script');
         js.src = src; js.onload = resolve;

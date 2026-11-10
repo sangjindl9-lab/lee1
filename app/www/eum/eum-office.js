@@ -5,7 +5,7 @@
  */
 (function () {
   'use strict';
-  const { native, toast, remember, el, blobToB64, b64ToBytes } = window.EumShell;
+  const { native, toast, remember, el, blobToB64, b64ToBytes, progressBox } = window.EumShell;
   const NS = {
     docx: { ns: 'http://schemas.openxmlformats.org/wordprocessingml/2006/main', p: 'p', r: 'r', t: 't', mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' },
     pptx: { ns: 'http://schemas.openxmlformats.org/drawingml/2006/main', p: 'p', r: 'r', t: 't', mime: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' },
@@ -13,7 +13,7 @@
   const XML_HEAD = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n';
 
   const S = { kind: null, zip: null, uri: null, name: '', dirty: false, edit: false, parts: new Map(), slides: [], undo: [], map: new Map(), zoom: 1, fit: 1, pv: null };
-  let root, view, titleEl, modeBtn, menu, sheet;
+  let root, view, titleEl, modeBtn, menu, sheet, loading;
 
   // ── 라이브러리 ────────────────────────────────────────────
   const loaded = {};
@@ -261,15 +261,20 @@
     titleEl.textContent = name;
     view.textContent = '';
     try {
+      await loading.set(5, '준비하는 중');
       await lib('jszip.min.js');
       await lib(kind === 'docx' ? 'docx-preview.min.js' : 'pptx-preview.umd.js');
+      await loading.set(15, '파일을 읽는 중');
       const r = await native.read({ uri });
+      await loading.set(40, '문서를 푸는 중');
       const zip = await JSZip.loadAsync(b64ToBytes(r.data));
       Object.assign(S, { kind, zip, uri, name, parts: new Map(), undo: [], slides: [], zoom: 1, pv: null });
       if (kind === 'pptx') await loadSlides();
       setDirty(false);
       S.edit = false; modeBtn.textContent = '편집';
+      await loading.set(60, '화면을 그리는 중');
       await render();
+      await loading.set(100, '완료');
       remember(uri, name);
       return true;
     } catch (e) {
@@ -343,7 +348,7 @@
     }, { passive: false });
     view.addEventListener('touchend', (e) => { if (e.touches.length < 2) d0 = 0; }, { passive: true });
 
-    const loading = el('div', 'eum-sheet-loading', '문서를 여는 중…');
+    loading = progressBox('eum-sheet-loading');
     menu = el('div', 'eum-pop'); menu.hidden = true;
     const pop = el('div', 'eum-menu-sheet');
     for (const [label, fn] of [['다른 이름으로 저장', saveAs], ['공유', share]]) {
