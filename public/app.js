@@ -54,6 +54,8 @@
     return { list: out.filter((x) => (seen.has(x.no + '|' + x.price) ? false : seen.add(x.no + '|' + x.price))).sort((a, b) => a.price - b.price), total };
   }
   const imgUrl = (src) => (src ? '/api/img?src=' + encodeURIComponent(src) : '');
+  // 나라장터 쇼핑몰 상품 원본 화면 링크 (상품 화면 [공유]→[URL복사]와 같은 주소)
+  const shopLink = (r) => (r.mng ? `<a class="shop" href="https://shop.g2b.go.kr/link/GMSF001_01/?ctrtItemMngNo=${encodeURIComponent(r.mng)}" target="_blank" rel="noopener noreferrer" title="나라장터 쇼핑몰에서 원본 보기">${esc(r.nm)} ↗</a>` : esc(r.nm));
   const isAddr = (t) => /ctrtItemMngNo=|shop\.g2b\.go\.kr/i.test(t) || /^\s*\d{8}(\s+\d{8})*\s*$/.test(t);
 
   // ───────────── 검색어 추정 ─────────────
@@ -143,7 +145,7 @@
         ${it.picks.length ? `<table class="ptbl"><tbody>${it.picks.map((r, i) => `<tr>
           <td class="slot">${i + 1}번</td><td>${r.img ? `<img src="${imgUrl(r.img)}" alt="">` : ''}</td>
           <td><b>${esc(r.co)}</b><br><span class="muted">${esc(r.loc || '')}</span></td><td>${esc(r.no)}</td>
-          <td class="nm">${esc(r.nm)}</td><td class="num">${r.price.toLocaleString()}<small> / ${esc(r.unit)}</small></td>
+          <td class="nm">${shopLink(r)}</td><td class="num">${r.price.toLocaleString()}<small> / ${esc(r.unit)}</small></td>
           <td class="cert">${r.certs.map((c) => `<span>${esc(c)}</span>`).join('')}</td>
           <td class="acts"><button class="ghost xs" data-a="up" data-i="${i}" ${i ? '' : 'disabled'}>▲</button><button class="ghost xs" data-a="down" data-i="${i}" ${i < it.picks.length - 1 ? '' : 'disabled'}>▼</button><button class="ghost xs" data-a="rm" data-i="${i}">✕</button></td>
         </tr>`).join('')}</tbody></table>` : '<p class="muted">아직 없습니다. 아래에서 검색하거나 상품 주소를 붙여넣고 [선택]을 누르세요.</p>'}
@@ -188,7 +190,7 @@
       ${shown.slice(0, 300).map((r) => { const s = picked.get(r.no + '|' + r.price); return `<tr class="${s ? 'on' : ''}">
         <td>${s ? `<button class="sm" data-a="unpick" data-k="${esc(r.no + '|' + r.price)}">✓ ${s}번</button>` : `<button class="ghost sm" data-a="pick" data-k="${esc(r.no + '|' + r.price)}">선택</button>`}</td>
         <td>${r.img ? `<img loading="lazy" src="${imgUrl(r.img)}" alt="">` : ''}</td><td>${esc(r.co)}</td><td>${esc(r.no)}</td>
-        <td class="nm">${esc(r.nm)}<br><span class="muted">${esc(r.cls || '')}</span></td><td class="num">${r.price.toLocaleString()}<small> / ${esc(r.unit)}</small></td>
+        <td class="nm">${shopLink(r)}<br><span class="muted">${esc(r.cls || '')}</span></td><td class="num">${r.price.toLocaleString()}<small> / ${esc(r.unit)}</small></td>
         <td>${esc(r.loc)}</td><td class="cert">${r.certs.map((c) => `<span>${esc(c)}</span>`).join('')}</td></tr>`; }).join('') || '<tr><td colspan="8" class="muted">필터에 맞는 제품이 없습니다.</td></tr>'}
       </tbody></table></div>`;
   }
