@@ -46,10 +46,15 @@
     const zip = await JSZip.loadAsync(bytes);
     let xml = await zip.file(WB_XML).async('string');
     // 일부 생성 도구가 만든 파일(접두어 네임스페이스)은 그대로 읽으면 "reading 'sheets'" 오류가 난다
+    // 같은 도구는 시트 관계(rels)의 Target 도 "/xl/…" 절대 경로로 쓰는데, ExcelJS 는 "../…" 상대 경로만 알아본다.
     let fixed = false;
     for (const p of Object.keys(zip.files)) {
-      if (!p.startsWith('xl/') || !p.endsWith('.xml') || p.startsWith('xl/externalLinks/')) continue;
-      const u = unprefix(p === WB_XML ? xml : await zip.file(p).async('string'));
+      if (!p.startsWith('xl/') || p.startsWith('xl/externalLinks/')) continue;
+      let u = null;
+      if (p.startsWith('xl/worksheets/_rels/')) {
+        const s = await zip.file(p).async('string');
+        if (s.includes('Target="/xl/')) u = s.replace(/Target="\/xl\//g, 'Target="../');
+      } else if (p.endsWith('.xml')) u = unprefix(p === WB_XML ? xml : await zip.file(p).async('string'));
       if (u == null) continue;
       fixed = true;
       if (p === WB_XML) xml = u; else zip.file(p, u);
