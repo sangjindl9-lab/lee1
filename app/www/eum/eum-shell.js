@@ -256,29 +256,31 @@
       list.append(row);
     }
   }
-  // ── 홈 배너(자체 광고): store/banners.json 을 받아 상단·하단 자리에 표시 ──
-  const BANNER_BASE = 'https://raw.githubusercontent.com/sangjindl9-lab/lee1/eum-hwp/';
+  // ── 홈 배너(자체 광고): 통합 광고 서버에서 받아 상단·하단 자리에 표시. 켜진 배너가 없으면 자리 숨김 ──
+  const ADS_BASE = 'https://ads-production-a599.up.railway.app';
   let bannersLoadedAt = 0;
   async function loadBanners() {
     if (Date.now() - bannersLoadedAt < 10 * 60 * 1000) return;
     bannersLoadedAt = Date.now();
-    let data;
+    let list;
     try {
-      const r = await fetch(BANNER_BASE + 'store/banners.json?t=' + Date.now(), { cache: 'no-store' });
+      const r = await fetch(ADS_BASE + '/api/banners?app=eum-docs', { cache: 'no-store' });
       if (!r.ok) return;
-      data = await r.json();
+      list = await r.json();
     } catch (e) { return; }
     for (const slot of ['top', 'bottom']) {
       const box = $('eum-ad-' + slot);
-      const b = (data.banners || []).find((x) => x.slot === slot);
+      const b = (list || []).find((x) => x.slot === slot);
       box.textContent = '';
-      box.hidden = !(b && b.enabled && b.image);
+      box.hidden = !(b && b.image);
       if (box.hidden) continue;
       const img = el('img'); img.alt = b.title || '광고';
-      img.src = /^https?:/.test(b.image) ? b.image : BANNER_BASE + b.image;
+      img.src = /^https?:/.test(b.image) ? b.image : ADS_BASE + b.image;
       img.onerror = () => { box.hidden = true; };
+      img.onload = () => { fetch(ADS_BASE + '/api/banners/' + b.id + '/imp', { method: 'POST' }).catch(() => {}); };
       if (b.link) {
         const a = el('a'); a.href = b.link; a.target = '_blank'; a.rel = 'noopener';
+        a.onclick = () => { fetch(ADS_BASE + '/api/banners/' + b.id + '/click', { method: 'POST' }).catch(() => {}); };
         a.append(img); box.append(a);
       } else box.append(img);
     }

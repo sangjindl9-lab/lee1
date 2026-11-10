@@ -1,6 +1,0 @@
-{
-  "banners": [
-    { "slot": "top", "enabled": false, "image": "", "link": "", "title": "" },
-    { "slot": "bottom", "enabled": false, "image": "", "link": "", "title": "" }
-  ]
-}
