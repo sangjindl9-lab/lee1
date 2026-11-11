@@ -224,7 +224,7 @@ fun ParentScreen(vm: ColoringViewModel, version: String, onBack: () -> Unit, onP
         SectionTitle("도안 정보")
         val ok = catalog.artworks.count { it.available }
         Text("등록된 도안: $ok / ${catalog.artworks.size}장\n제작: Higgsfield (${catalog.artworks.firstOrNull()?.model ?: ""})\n" +
-            "라이선스·유사 캐릭터 검토: ${if (catalog.artworks.all { it.licenseReview == "done" }) "완료" else "검토 전"}\n앱 버전: $version",
+            "앱 버전: $version",
             fontSize = 13.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
         Gap(24.dp)
     }

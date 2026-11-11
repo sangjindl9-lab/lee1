@@ -94,6 +94,7 @@ fun ColoringScreen(vm: ColoringViewModel, speaker: Speaker, onExit: () -> Unit) 
 
     var canvas by remember { mutableStateOf<ColoringView?>(null) }
     var askExit by remember { mutableStateOf(false) }
+    var askDiscard by remember { mutableStateOf(false) }
     var askClear by remember { mutableStateOf(false) }
     var showMore by remember { mutableStateOf(false) }
     var showAuto by remember { mutableStateOf(false) }
@@ -127,7 +128,7 @@ fun ColoringScreen(vm: ColoringViewModel, speaker: Speaker, onExit: () -> Unit) 
     // 화면을 떠나거나 앱이 뒤로 갈 때 바로 저장 (강제 종료 대비)
     val owner = LocalLifecycleOwner.current
     DisposableEffect(owner) {
-        val obs = LifecycleEventObserver { _, ev -> if (ev == Lifecycle.Event.ON_STOP) vm.saveNow(silent = true) }
+        val obs = LifecycleEventObserver { _, ev -> if (ev == Lifecycle.Event.ON_PAUSE || ev == Lifecycle.Event.ON_STOP) vm.saveNow(silent = true) }
         owner.lifecycle.addObserver(obs)
         onDispose { owner.lifecycle.removeObserver(obs) }
     }
@@ -209,8 +210,17 @@ fun ColoringScreen(vm: ColoringViewModel, speaker: Speaker, onExit: () -> Unit) 
         if (vm.celebrate) Celebration(settings.reduceMotion) { vm.celebrate = false }
     }
 
-    if (askExit) ConfirmDialog("그만할까요?", "지금까지 칠한 그림은 저장돼요.", "네, 나갈래요", "더 칠할래요",
-        onYes = { askExit = false; vm.close(onExit) }, onNo = { askExit = false })
+    if (askExit) AlertDialog(onDismissRequest = { askExit = false }, title = { Text("그만할까요?") }, confirmButton = {}, dismissButton = {},
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("그림을 저장할까요, 지울까요?")
+                Button(onClick = { askExit = false; vm.close(onExit) }, modifier = Modifier.fillMaxWidth()) { Text("💾 저장하고 나가기", fontSize = 17.sp) }
+                Button(onClick = { askExit = false; askDiscard = true }, modifier = Modifier.fillMaxWidth()) { Text("🗑 지우고 나가기", fontSize = 17.sp) }
+                TextButton(onClick = { askExit = false }, modifier = Modifier.fillMaxWidth()) { Text("🎨 계속 칠하기", fontSize = 17.sp) }
+            }
+        })
+    if (askDiscard) ConfirmDialog("정말 지울까요?", "이 그림에 칠한 것이 모두 사라져요. 되돌릴 수 없어요.", "지우기", "아니요",
+        onYes = { askDiscard = false; vm.discard(onExit) }, onNo = { askDiscard = false; askExit = true })
     if (askClear) ConfirmDialog("모두 지울까요?", "칠한 색과 스티커가 모두 지워져요. ('취소' 버튼으로 되돌릴 수 있어요.)", "모두 지우기", "아니요",
         onYes = { askClear = false; engine.clearAll(); refresh() }, onNo = { askClear = false })
     if (showMore) AlertDialog(onDismissRequest = { showMore = false }, title = { Text("더보기") }, confirmButton = {},

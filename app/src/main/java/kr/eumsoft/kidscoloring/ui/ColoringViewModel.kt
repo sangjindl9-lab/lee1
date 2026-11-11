@@ -28,6 +28,7 @@ import kr.eumsoft.kidscoloring.engine.PaintEngine
 import java.io.IOException
 
 const val AUTOSAVE_MS = 15_000L
+const val QUICK_SAVE_MS = 2_000L
 
 class ColoringViewModel(app: Application) : AndroidViewModel(app) {
     val repo = (app as EumApp).repo
@@ -124,7 +125,14 @@ class ColoringViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun edited() { rev++ }
+    private var quickSave: Job? = null
+
+    /** 그림이 바뀔 때마다 부른다. 손을 뗀 뒤 2초 안에 저장해서 앱이 갑자기 꺼져도 방금 칠한 것까지 남는다. */
+    fun edited() {
+        rev++
+        quickSave?.cancel()
+        quickSave = viewModelScope.launch { delay(QUICK_SAVE_MS); save(silent = true) }
+    }
 
     fun onFilled() {
         val e = engine ?: return
@@ -182,7 +190,18 @@ class ColoringViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** 이 그림을 지우고 색칠 화면을 닫는다 */
+    fun discard(onDone: () -> Unit) {
+        viewModelScope.launch {
+            val id = projectId
+            release()
+            saveLock.withLock { if (id != 0L) repo.deleteProject(id) }
+            onDone()
+        }
+    }
+
     private fun release() {
+        quickSave?.cancel(); quickSave = null
         autosave?.cancel(); autosave = null
         engine = null
         paintBitmap?.recycle(); paintBitmap = null

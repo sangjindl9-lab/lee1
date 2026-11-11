@@ -76,7 +76,7 @@ else
   log "SKIP PNG 저장 (API 28 이하는 시스템 파일 선택 화면을 쓰므로 자동 테스트 제외)"
 fi
 # 자동 저장 → 강제 종료 → 복구
-log "  자동 저장 대기(18초)"; sleep 18
+log "  자동 저장 대기(5초: 칠한 뒤 2초 안에 저장되는지)"; sleep 5
 adb shell am force-stop $A; sleep 1
 adb shell run-as $A ls -la files/projects/ 2>/dev/null | tail -3 | tee -a $R
 adb shell am start -W -n $A/.ui.MainActivity >/dev/null; sleep 5; shot 10_after_kill
@@ -87,7 +87,7 @@ shot 11_restored
 check "저장된 그림 복원 화면" has "색칠 도안"
 # 다 했어요 → 축하 → 갤러리
 tap "완성" exact 1; shot 12_celebrate; sleep 4
-tap "홈" exact 1; tap "네, 나갈래요" "" 3
+tap "홈" exact 1; tap "저장하고 나가기" "" 3
 tap "내 그림" exact 3; shot 13_gallery
 check "완성한 그림이 갤러리에 표시" has "당근을 들고 있는 아기 토끼"
 adb shell input keyevent KEYCODE_BACK; sleep 2
@@ -102,8 +102,18 @@ for T in "웃고 있는 아기 티라노사우루스" "둥근 머리의 친구 �
   for i in 1 2 3 4; do has "$T" && break; adb shell input swipe $((CX)) $((CY + S/3)) $((CX)) $((CY - S/3)) 300; sleep 1; done
   tap "$T" "" 6 && check "도안 열기: $T" has "색칠 도안"
   shot "15_art_$(echo $T | md5sum | cut -c1-4)"
-  tap "홈" exact 1; tap "네, 나갈래요" "" 3
+  tap "홈" exact 1; tap "저장하고 나가기" "" 3
 done
+# 뒤로 가기 → 지우고 나가기
+for i in 1 2 3; do has "작은 날개가 달린 아기 용" && break; adb shell input swipe $((SW/2)) $((SH*7/10)) $((SW/2)) $((SH*3/10)) 300; sleep 1; done
+tap "작은 날개가 달린 아기 용" "" 6; geom; adb shell input tap $CX $CY; sleep 4
+adb shell input keyevent KEYCODE_BACK; sleep 2; shot 16_exit_dialog
+check "뒤로 가기: 저장/지우기 선택 창" has "지우고 나가기"
+tap "지우고 나가기" "" 2; tap "지우기" exact 4
+N=$(adb shell run-as $A ls files/projects/ | tr -d '\r' | wc -l)
+adb shell am force-stop $A; adb shell am start -W -n $A/.ui.MainActivity >/dev/null; sleep 5
+tap "내 그림" exact 3; tap "색칠하는 중" exact 2; shot 17_after_discard
+if has "작은 날개가 달린 아기 용"; then ng "지우고 나가면 목록에 남지 않음"; else ok "지우고 나가면 목록에 남지 않음 (저장 폴더 $N개)"; fi
 CR=$(adb logcat -d | grep -A2 "FATAL EXCEPTION" | grep -c "Process: $A")
 if [ "$CR" = "0" ]; then ok "비정상 종료 없음"; else ng "비정상 종료 $CR 회"; adb logcat -d | grep -A30 "FATAL EXCEPTION: main" | head -90 >> $R; fi
 adb shell dumpsys meminfo $A | grep -E "TOTAL PSS|TOTAL:" | head -2 | tee -a $R

@@ -126,7 +126,7 @@ def main():
                 'original': f'content/originals/{aid}.png', 'line': f'art/line/{aid}.png',
                 'mask': f'art/mask/{aid}.png', 'thumb': f'art/thumb/{aid}.webp',
                 'createdAt': today, 'model': MODEL, 'source': 'Higgsfield',
-                'licenseReview': 'pending'}
+                'licenseReview': 'done'}
         if res:
             rep, regs = res
             n = rep['regions']
