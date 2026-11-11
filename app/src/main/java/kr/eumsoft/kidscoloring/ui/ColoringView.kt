@@ -44,8 +44,8 @@ object Render {
 
     fun draw(c: Canvas, size: Int, paint: Bitmap?, line: Bitmap?, stickers: List<Sticker>) {
         c.drawRect(0f, 0f, size.toFloat(), size.toFloat(), white)
-        paint?.let { c.drawBitmap(it, 0f, 0f, bmpPaint) }
-        line?.let { c.drawBitmap(it, 0f, 0f, linePaint) }
+        paint?.let { if (!it.isRecycled) c.drawBitmap(it, 0f, 0f, bmpPaint) }
+        line?.let { if (!it.isRecycled) c.drawBitmap(it, 0f, 0f, linePaint) }
         for (s in stickers) sticker(c, s)
     }
 
@@ -193,6 +193,7 @@ class ColoringView(ctx: Context) : View(ctx) {
     fun sync() {
         val e = engine ?: return
         val b = paintBitmap ?: return
+        if (b.isRecycled) return
         e.consumeDirty()?.let { r -> b.setPixels(e.paint, r[1] * e.w + r[0], e.w, r[0], r[1], r[2] - r[0] + 1, r[3] - r[1] + 1) }
         invalidate()
     }
