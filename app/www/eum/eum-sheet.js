@@ -145,6 +145,8 @@
     for (const [name, d] of Object.entries(keep.drawings)) {
       const part = paths[name];
       if (!part) continue;
+      if (d.doc) d.xml = new XMLSerializer().serializeToString(d.doc); // 편집한 도형·그림 반영
+      if (!types.includes(`PartName="/${d.path}"`)) addT += `<Override PartName="/${d.path}" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>`;
       zip.file(d.path, d.xml);
       if (d.rels) zip.file(relsOf(d.path), d.rels);
       const relsPath = relsOf(part), relsFile = zip.file(relsPath);
@@ -163,6 +165,10 @@
     for (const df of keep.types.match(/<Default\b[^>]*\/>/g) || []) {
       const ext = (df.match(/Extension="([^"]+)"/) || [])[1];
       if (ext && !new RegExp(`Extension="${ext}"`, 'i').test(types)) addT += df;
+    }
+    for (const p of Object.keys(keep.parts)) { // 앱에서 새로 넣은 그림의 확장자
+      const ext = p.startsWith('xl/media/') && p.split('.').pop();
+      if (ext && !new RegExp(`Extension="${ext}"`, 'i').test(types + addT)) addT += `<Default Extension="${ext}" ContentType="image/${ext}"/>`;
     }
     if (addT) zip.file(CTYPES, types.replace('</Types>', addT + '</Types>'));
     // ExcelJS 는 차트시트·매크로시트를 버리므로 시트 순서가 바뀌면 localSheetId(시트 인덱스)를 이름 기준으로 다시 매긴다
@@ -281,28 +287,50 @@
     }
   }
 
-  // ── 그림·도형 표시 ────────────────────────────────────────
+  // ── 그림·도형 표시·편집 ──────────────────────────────────
   // 떼어 둔 drawing XML 의 앵커(시작 셀 + EMU 오프셋 + 크기)를 읽어 격자 위에 겹쳐 놓는다. 글 상자·사각형·그림은
-  // 모양대로, 차트는 자리만 표시한다. 편집은 지원하지 않는다(저장 때 원본 그대로 보존).
+  // 모양대로, 차트는 자리만 표시한다. 편집 모드에서는 옮기기·크기 조절·글 수정·삭제·사진 넣기·글 상자 넣기를
+  // XML 에 바로 반영하고, 저장 때 그 XML 을 그대로 쓴다.
   const PX = 9525; // 1px = 9525 EMU
   // 생성 도구에 따라 xdr:·a: 접두어를 쓰기도, 기본 네임스페이스로 쓰기도 하므로 네임스페이스로 찾는다
   const NS = { xdr: 'http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing', a: 'http://schemas.openxmlformats.org/drawingml/2006/main', r: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships' };
   const q = (node, tag) => { const [ns, name] = tag.split(':'); return node.getElementsByTagNameNS(NS[ns], name)[0]; };
   const all = (node, tag) => { const [ns, name] = tag.split(':'); return [...node.getElementsByTagNameNS(NS[ns], name)]; };
   const color = (node) => { const c = node && q(node, 'a:srgbClr'); return c ? '#' + c.getAttribute('val') : ''; };
+  const XDR_ROOT = `<xdr:wsDr xmlns:xdr="${NS.xdr}" xmlns:a="${NS.a}"></xdr:wsDr>`;
+  const parseXml = (xml) => new DOMParser().parseFromString(xml, 'text/xml');
+  let shapeSel = null, shapeBar, shapeSheet;
+
+  /** 이 시트의 drawing (없으면 새로 만든다) — 편집할 때만 호출 */
+  function drawingFor(sheetName) {
+    if (!S.keep) S.keep = { names: '', extRefs: '', drawings: {}, sheetNames: S.wb.worksheets.map((w) => w.name), parts: {}, rels: '', types: '' };
+    let d = S.keep.drawings[sheetName];
+    if (!d) {
+      const n = Object.keys(S.keep.drawings).length + 1;
+      d = S.keep.drawings[sheetName] = { path: `xl/drawings/drawingEum${n}.xml`, xml: XDR_ROOT, rels: '' };
+    }
+    if (!d.rels) d.rels = '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>';
+    if (!d.doc) d.doc = parseXml(d.xml);
+    return d;
+  }
+  const mediaOf = (d) => {
+    const out = {};
+    for (const m of d.rels.matchAll(/<Relationship\b[^>]*\/>/g)) {
+      const id = (m[0].match(/\bId="([^"]+)"/) || [])[1], t = (m[0].match(/\bTarget="([^"]+)"/) || [])[1];
+      if (id && t) out[id] = t.startsWith('/') ? t.slice(1) : 'xl/' + t.replace(/^\.\.\//, '');
+    }
+    return out;
+  };
 
   function loadShapes(sheetName) {
     layer.textContent = '';
     S.shapes = [];
+    selectShape(null);
     const d = S.keep && S.keep.drawings[sheetName];
     if (!d) return;
-    const doc = new DOMParser().parseFromString(d.xml, 'text/xml');
-    const media = {};
-    for (const m of d.rels.matchAll(/<Relationship\b[^>]*\/>/g)) {
-      const id = (m[0].match(/\bId="([^"]+)"/) || [])[1], t = (m[0].match(/\bTarget="([^"]+)"/) || [])[1];
-      if (id && t) media[id] = t.startsWith('/') ? t.slice(1) : 'xl/' + t.replace(/^\.\.\//, '');
-    }
-    for (const a of doc.documentElement.children) {
+    if (!d.doc) d.doc = parseXml(d.xml);
+    const media = mediaOf(d);
+    for (const a of [...d.doc.documentElement.children]) {
       if (!/Anchor$/.test(a.localName)) continue;
       const from = q(a, 'xdr:from');
       if (!from) continue;
@@ -310,14 +338,14 @@
       if (!body || body.localName === 'cxnSp') continue;
       const xfrm = q(body, 'a:xfrm'), ext = (xfrm && q(xfrm, 'a:ext')) || q(a, 'xdr:ext');
       const box = el('div', 'eum-shape');
-      let w = ext ? +ext.getAttribute('cx') / PX : 0, h = ext ? +ext.getAttribute('cy') / PX : 0;
+      const w = ext ? +ext.getAttribute('cx') / PX : 0, h = ext ? +ext.getAttribute('cy') / PX : 0;
       if (body.localName === 'pic') {
         const blip = q(body, 'a:blip'), path = blip && media[blip.getAttributeNS(NS.r, 'embed')];
         const bytes = path && S.keep.parts[path];
         if (bytes) { const img = el('img'); img.src = URL.createObjectURL(new Blob([bytes])); box.append(img); }
       } else if (body.localName === 'graphicFrame') {
         box.classList.add('eum-shape-chart');
-        box.textContent = '차트 (이 앱에서는 표시만 생략되고 저장 시 보존됩니다)';
+        box.textContent = '차트 (표시만 생략, 저장 시 보존)';
       } else {
         const sp = q(body, 'xdr:spPr');
         const fill = sp && [...sp.children].find((n) => n.localName === 'solidFill' || n.localName === 'noFill');
@@ -346,26 +374,185 @@
           box.append(line);
         }
       }
-      S.shapes.push({ r: +q(from, 'xdr:row').textContent + 1, c: +q(from, 'xdr:col').textContent + 1,
-        dx: +q(from, 'xdr:colOff').textContent / PX, dy: +q(from, 'xdr:rowOff').textContent / PX, w, h, box, placed: false });
+      const sh = { anchor: a, body, r: +q(from, 'xdr:row').textContent + 1, c: +q(from, 'xdr:col').textContent + 1,
+        dx: +q(from, 'xdr:colOff').textContent / PX, dy: +q(from, 'xdr:rowOff').textContent / PX, w, h, box, placed: false };
+      box.onpointerdown = (e) => startDrag(e, sh, false);
+      S.shapes.push(sh);
     }
   }
 
+  const colLeft = (c) => { let x = 0; const cols = table.querySelectorAll('colgroup col'); for (let i = 0; i < c && i < cols.length; i++) x += parseFloat(cols[i].style.width) || 0; return x; };
+
   /** 시작 행이 화면에 그려진 도형을 제자리에 놓는다 (appendRows 뒤마다) */
   function placeShapes() {
-    const cols = table.querySelectorAll('colgroup col');
     for (const sh of S.shapes) {
       const tr = tbody.rows[sh.r - 1];
       if (sh.placed || !tr) continue;
-      let left = 0;
-      for (let i = 0; i < sh.c && i < cols.length; i++) left += parseFloat(cols[i].style.width) || 0;
-      sh.box.style.left = (left + sh.dx) + 'px';
+      sh.box.style.left = (colLeft(sh.c) + sh.dx) + 'px';
       sh.box.style.top = (tr.offsetTop + sh.dy) + 'px';
       sh.box.style.width = sh.w + 'px';
       sh.box.style.height = sh.h + 'px';
       layer.append(sh.box);
       sh.placed = true;
     }
+  }
+
+  /** 표 안의 px 좌표 → 셀 앵커 */
+  function anchorAt(x, y) {
+    const cols = table.querySelectorAll('colgroup col');
+    let c = 1, left = parseFloat(cols[0].style.width) || 40;
+    while (c < cols.length - 1 && left + (parseFloat(cols[c].style.width) || 0) <= x) left += parseFloat(cols[c++].style.width) || 0;
+    let r = 1;
+    for (let i = 1; i < tbody.rows.length && tbody.rows[i].offsetTop <= y; i++) r = i + 1;
+    const tr = tbody.rows[r - 1];
+    return { r, c, dx: Math.max(0, x - left), dy: Math.max(0, y - (tr ? tr.offsetTop : 0)) };
+  }
+
+  /** 도형의 위치·크기를 XML 앵커에 쓴다 (한 칸 기준 oneCellAnchor 로 통일) */
+  function writeAnchor(sh) {
+    const doc = sh.anchor.ownerDocument;
+    if (sh.anchor.localName !== 'oneCellAnchor') {
+      const one = doc.createElementNS(NS.xdr, 'xdr:oneCellAnchor');
+      for (const ch of [...sh.anchor.children]) if (ch.localName !== 'to' && ch.localName !== 'ext') one.append(ch);
+      sh.anchor.replaceWith(one);
+      sh.anchor = one;
+    }
+    const from = q(sh.anchor, 'xdr:from');
+    const set = (tag, v) => { q(from, tag).textContent = String(Math.round(v)); };
+    set('xdr:col', sh.c - 1); set('xdr:row', sh.r - 1); set('xdr:colOff', sh.dx * PX); set('xdr:rowOff', sh.dy * PX);
+    let ext = [...sh.anchor.children].find((n) => n.localName === 'ext');
+    if (!ext) { ext = doc.createElementNS(NS.xdr, 'xdr:ext'); from.after(ext); }
+    ext.setAttribute('cx', Math.round(sh.w * PX)); ext.setAttribute('cy', Math.round(sh.h * PX));
+    const xfrm = q(sh.body, 'a:xfrm'), xe = xfrm && q(xfrm, 'a:ext'), xo = xfrm && q(xfrm, 'a:off');
+    if (xe) { xe.setAttribute('cx', Math.round(sh.w * PX)); xe.setAttribute('cy', Math.round(sh.h * PX)); }
+    if (xo) { xo.setAttribute('x', Math.round((colLeft(sh.c) - 40 + sh.dx) * PX)); xo.setAttribute('y', Math.round((tbody.rows[sh.r - 1].offsetTop + sh.dy) * PX)); }
+    setDirty(true);
+  }
+
+  function selectShape(sh) {
+    if (shapeSel) { shapeSel.box.classList.remove('sel'); const h = shapeSel.box.querySelector('.eum-shape-h'); if (h) h.remove(); }
+    shapeSel = sh;
+    if (shapeBar) shapeBar.hidden = !sh;
+    if (!sh) return;
+    sh.box.classList.add('sel');
+    const h = el('div', 'eum-shape-h');
+    h.onpointerdown = (e) => startDrag(e, sh, true);
+    sh.box.append(h);
+    shapeBar.querySelector('.eum-shape-text').hidden = sh.body.localName !== 'sp';
+  }
+
+  /** 손가락으로 끌어 옮기기(resize=false) 또는 오른쪽 아래 손잡이로 크기 조절(resize=true) */
+  function startDrag(e, sh, resize) {
+    if (!S.edit) return;
+    e.preventDefault(); e.stopPropagation();
+    commit();
+    if (shapeSel !== sh) selectShape(sh);
+    const x0 = e.clientX, y0 = e.clientY, left0 = parseFloat(sh.box.style.left), top0 = parseFloat(sh.box.style.top), w0 = sh.w, h0 = sh.h;
+    let moved = false;
+    const target = e.currentTarget;
+    target.setPointerCapture(e.pointerId);
+    target.onpointermove = (ev) => {
+      const dx = (ev.clientX - x0) / S.zoom, dy = (ev.clientY - y0) / S.zoom;
+      if (Math.abs(dx) + Math.abs(dy) > 3) moved = true;
+      if (!moved) return;
+      if (resize) { sh.w = Math.max(16, w0 + dx); sh.h = Math.max(16, h0 + dy); sh.box.style.width = sh.w + 'px'; sh.box.style.height = sh.h + 'px'; }
+      else { sh.box.style.left = Math.max(40, left0 + dx) + 'px'; sh.box.style.top = Math.max(0, top0 + dy) + 'px'; }
+    };
+    target.onpointerup = target.onpointercancel = () => {
+      target.onpointermove = target.onpointerup = target.onpointercancel = null;
+      if (!moved) return;
+      if (!resize) Object.assign(sh, anchorAt(parseFloat(sh.box.style.left), parseFloat(sh.box.style.top)));
+      writeAnchor(sh);
+    };
+  }
+
+  function askText(title, text) {
+    return new Promise((resolve) => {
+      shapeSheet.textContent = '';
+      const card = el('div', 'eum-edit-card'), list = el('div', 'eum-edit-list');
+      const a = document.createElement('textarea'); a.value = text; a.rows = 4; list.append(a);
+      const acts = el('div', 'eum-edit-acts'), cancel = el('button', null, '취소'), ok = el('button', 'eum-edit-ok', '확인');
+      const done = (v) => { shapeSheet.hidden = true; resolve(v); };
+      cancel.onclick = () => done(null); ok.onclick = () => done(a.value);
+      acts.append(cancel, ok); card.append(el('h3', null, title), list, acts); shapeSheet.append(card);
+      shapeSheet.hidden = false; a.focus();
+    });
+  }
+
+  /** 글 상자의 글을 바꾼다 — 첫 문단·첫 글자의 서식을 그대로 물려받는다 */
+  async function editShapeText() {
+    const sh = shapeSel;
+    if (!sh) return;
+    const paras = all(sh.body, 'a:p');
+    const cur = paras.map((p) => all(p, 'a:t').map((t) => t.textContent).join('')).join('\n');
+    const v = await askText('글 상자 내용', cur);
+    if (v == null || v === cur) return;
+    const doc = sh.anchor.ownerDocument, txBody = q(sh.body, 'xdr:txBody') || q(sh.body, 'a:txBody') || paras[0].parentNode;
+    const pPr = paras[0] && q(paras[0], 'a:pPr'), rPr = paras[0] && (q(paras[0], 'a:rPr') || q(paras[0], 'a:endParaRPr'));
+    for (const p of paras) p.remove();
+    for (const line of v.split('\n')) {
+      const p = doc.createElementNS(NS.a, 'a:p'), r = doc.createElementNS(NS.a, 'a:r'), t = doc.createElementNS(NS.a, 'a:t');
+      if (pPr) p.append(pPr.cloneNode(true));
+      if (rPr) { const c = rPr.cloneNode(true); if (c.localName === 'endParaRPr') { const n = doc.createElementNS(NS.a, 'a:rPr'); for (const at of c.attributes) n.setAttribute(at.name, at.value); r.append(n); } else r.append(c); }
+      t.textContent = line; r.append(t); p.append(r); txBody.append(p);
+    }
+    setDirty(true);
+    loadShapes(S.ws.name); placeShapes();
+    selectShape(S.shapes.find((x) => x.anchor === sh.anchor) || null);
+  }
+
+  function deleteShape() {
+    const sh = shapeSel;
+    if (!sh) return;
+    selectShape(null);
+    sh.anchor.remove(); sh.box.remove();
+    S.shapes = S.shapes.filter((x) => x !== sh);
+    setDirty(true);
+  }
+
+  /** 지금 보이는 화면의 왼쪽 위 셀 — 새 도형을 놓을 자리 */
+  const visibleAnchor = () => anchorAt(grid.scrollLeft / S.zoom + 60, grid.scrollTop / S.zoom + 40);
+
+  function addAnchor(d, innerXml, w, h) {
+    const at = visibleAnchor();
+    const off = S.shapes.filter((x) => x.r === at.r && x.c === at.c).length * 24 * PX; // 같은 자리에 겹치지 않게 비켜 놓는다
+    const id = all(d.doc, 'xdr:cNvPr').length + 1;
+    const xml = `<xdr:oneCellAnchor xmlns:xdr="${NS.xdr}" xmlns:a="${NS.a}" xmlns:r="${NS.r}"><xdr:from><xdr:col>${at.c - 1}</xdr:col><xdr:colOff>${off}</xdr:colOff><xdr:row>${at.r - 1}</xdr:row><xdr:rowOff>${off}</xdr:rowOff></xdr:from><xdr:ext cx="${w * PX}" cy="${h * PX}"/>${innerXml.replace(/__ID__/g, id).replace(/__CX__/g, w * PX).replace(/__CY__/g, h * PX)}<xdr:clientData/></xdr:oneCellAnchor>`;
+    const node = d.doc.importNode(parseXml(xml).documentElement, true);
+    d.doc.documentElement.append(node);
+    setDirty(true);
+    loadShapes(S.ws.name); placeShapes();
+    selectShape(S.shapes.find((x) => x.anchor === node) || null);
+  }
+
+  async function addTextBox() {
+    const v = await askText('새 글 상자', '');
+    if (v == null) return;
+    if (!S.edit) setEdit(true);
+    const d = drawingFor(S.ws.name);
+    const paras = v.split('\n').map((l) => `<a:p><a:pPr algn="ctr"/><a:r><a:rPr lang="ko-KR" sz="1100"/><a:t>${l.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</a:t></a:r></a:p>`).join('');
+    addAnchor(d, `<xdr:sp macro="" textlink=""><xdr:nvSpPr><xdr:cNvPr id="__ID__" name="TextBox __ID__"/><xdr:cNvSpPr txBox="1"/></xdr:nvSpPr><xdr:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="__CX__" cy="__CY__"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill><a:ln w="9525"><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:ln></xdr:spPr><xdr:txBody><a:bodyPr wrap="square" anchor="ctr"/><a:lstStyle/>${paras}</xdr:txBody></xdr:sp>`, 200, 60);
+  }
+
+  async function addImage() {
+    try {
+      const r = await native.pickOpen();
+      if (!r || !r.uri) return;
+      const ext = (r.name || '').split('.').pop().toLowerCase();
+      const mime = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', bmp: 'image/bmp' }[ext];
+      if (!mime) { toast('png·jpg·gif·bmp 그림 파일을 골라 주세요.'); return; }
+      const bytes = b64ToBytes((await native.read({ uri: r.uri })).data);
+      const img = new Image();
+      await new Promise((ok, no) => { img.onload = ok; img.onerror = no; img.src = URL.createObjectURL(new Blob([bytes], { type: mime })); });
+      if (!S.edit) setEdit(true);
+      const d = drawingFor(S.ws.name);
+      const n = Object.keys(S.keep.parts).filter((p) => p.startsWith('xl/media/imageEum')).length + 1;
+      const path = `xl/media/imageEum${n}.${ext === 'jpg' ? 'jpeg' : ext}`;
+      S.keep.parts[path] = bytes;
+      d.rels = d.rels.replace('</Relationships>', `<Relationship Id="rIdEum${n}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/${path.slice(9)}"/></Relationships>`);
+      const scale = Math.min(1, 300 / img.naturalWidth);
+      addAnchor(d, `<xdr:pic><xdr:nvPicPr><xdr:cNvPr id="__ID__" name="Picture __ID__"/><xdr:cNvPicPr><a:picLocks noChangeAspect="1"/></xdr:cNvPicPr></xdr:nvPicPr><xdr:blipFill><a:blip r:embed="rIdEum${n}"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill><xdr:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="__CX__" cy="__CY__"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></xdr:spPr></xdr:pic>`, Math.round(img.naturalWidth * scale), Math.round(img.naturalHeight * scale));
+    } catch (e) { toast('그림을 넣지 못했습니다: ' + (e && e.message || e)); }
   }
 
   // ── 그리기 ────────────────────────────────────────────────
@@ -523,7 +710,7 @@
     root.classList.toggle('eum-sheet-edit', on);
     fxInput.readOnly = !on;
     modeBtn.textContent = on ? '완료' : '편집';
-    if (!on) fxInput.blur();
+    if (!on) { fxInput.blur(); selectShape(null); }
   }
 
   // ── 열기·저장 ─────────────────────────────────────────────
@@ -593,7 +780,7 @@
     // 매크로 파일(xlsm)은 매크로를 보존할 수 없으므로 원본을 덮어쓰지 않는다.
     if (!/\.xlsx$/i.test(S.name)) { toast('매크로 파일은 xlsx로 따로 저장합니다.'); return saveAs(); }
     if (!S.confirmed) {
-      if (!confirm('원본 파일에 덮어씁니다.\n셀 값·서식·수식은 유지되지만 차트·그림·도형·피벗 표·매크로는 이 앱이 다루지 못해 빠질 수 있습니다.\n\n덮어쓸까요? (취소하면 「다른 이름으로 저장」을 쓰세요)')) return;
+      if (!confirm('원본 파일에 덮어씁니다.\n셀 값·서식·수식·그림·도형·차트는 유지되지만 피벗 표·매크로는 이 앱이 다루지 못해 빠질 수 있습니다.\n\n덮어쓸까요? (취소하면 「다른 이름으로 저장」을 쓰세요)')) return;
       S.confirmed = true;
     }
     try {
@@ -675,7 +862,7 @@
 
     menu = el('div'); menu.id = 'eum-smenu'; menu.hidden = true;
     const sheet = el('div', 'eum-menu-sheet');
-    for (const [label, fn] of [['다른 이름으로 저장', saveAs], ['공유', share]]) {
+    for (const [label, fn] of [['사진 넣기', addImage], ['글 상자 넣기', addTextBox], ['다른 이름으로 저장', saveAs], ['공유', share]]) {
       const b = el('button', null, label);
       b.onclick = () => { menu.hidden = true; fn(); };
       sheet.append(b);
@@ -683,7 +870,13 @@
     menu.append(sheet);
     menu.onclick = (e) => { if (e.target === menu) menu.hidden = true; };
 
-    root.append(bar, fx, grid, tabs, loading, menu);
+    shapeBar = el('div', 'eum-shapebar'); shapeBar.hidden = true;
+    for (const [label, cls, fn] of [['글 수정', 'eum-shape-text', editShapeText], ['삭제', 'eum-shape-del', deleteShape], ['선택 해제', '', () => selectShape(null)]]) {
+      const b = el('button', cls || null, label); b.onclick = fn; shapeBar.append(b);
+    }
+    shapeSheet = el('div', 'eum-edit-sheet'); shapeSheet.hidden = true;
+
+    root.append(bar, fx, grid, tabs, loading, menu, shapeBar, shapeSheet);
     document.body.append(root);
   }
 

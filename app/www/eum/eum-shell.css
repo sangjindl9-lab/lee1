@@ -322,3 +322,12 @@ button.eum-row { border-bottom: 1px solid var(--eum-line); }
 .eum-shape { position: absolute; box-sizing: border-box; display: flex; flex-direction: column; justify-content: center; overflow: hidden; padding: 2px 4px; font-size: 10pt; line-height: 1.25; white-space: pre-wrap; word-break: break-all; }
 .eum-shape img { display: block; width: 100%; height: 100%; object-fit: fill; }
 .eum-shape-chart { border: 1px dashed #9aa3ae; background: #f8fafc; color: var(--eum-sub); font-size: 9pt; text-align: center; }
+/* 도형·그림 편집 */
+.eum-sheet-edit .eum-shape { pointer-events: auto; touch-action: none; cursor: move; }
+.eum-shape.sel { outline: 2px solid #1d8f4e; outline-offset: -1px; overflow: visible; }
+.eum-shape-h { position: absolute; right: -9px; bottom: -9px; width: 18px; height: 18px; border-radius: 50%; background: #1d8f4e; border: 2px solid #fff; box-shadow: 0 1px 3px rgba(0,0,0,.3); touch-action: none; cursor: nwse-resize; }
+.eum-shapebar { position: absolute; left: 50%; bottom: 60px; transform: translateX(-50%); z-index: 5; display: flex; gap: 6px; padding: 6px; border-radius: 12px; background: #1f2937; box-shadow: 0 4px 14px rgba(0,0,0,.25); }
+.eum-shapebar[hidden] { display: none; }
+.eum-shapebar button { border: 0; border-radius: 8px; padding: 8px 12px; background: #374151; color: #fff; font: 600 13px system-ui, sans-serif; }
+.eum-shapebar .eum-shape-del { background: #b91c1c; }
+.eum-shapebar button[hidden] { display: none; }
