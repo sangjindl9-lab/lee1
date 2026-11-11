@@ -18,13 +18,15 @@ tapx(){ for i in 1 2 3 4; do dump; p=$(python3 $D/ui.py $O/ui.xml find "$1" exac
   a=$(python3 $D/ui.py $O/ui.xml find "$2" exact) || a=$(python3 $D/ui.py $O/ui.xml find "$3" exact) || break; read ax ay <<< "$a"; adb shell input swipe $((SW*8/10)) $ay $((SW*4/10)) $ay 500; sleep 1; done; log "  (못 찾음: $1)"; return 1; }
 canvas(){ dump; python3 $D/ui.py $O/ui.xml bounds "색칠 도안"; }
 # 에뮬레이터 자체의 "응답 없음" 창(런처 등)이 뜨면 닫는다
-anr(){ if has "isn't responding"; then log "  (에뮬레이터 시스템 창 닫음: $(grep -o 'text="[^"]*responding"' $O/ui.xml | head -1))"; tap "Wait" "" 3; fi; }
+anr(){ if has "isn't responding"; then log "  (에뮬레이터 시스템 창 닫음: $(grep -o 'text="[^"]*responding"' $O/ui.xml | head -1))"; tap "Close app" "" 5; fi; }
 geom(){ B=$(canvas); read X1 Y1 X2 Y2 <<< "$B"; CX=$(((X1+X2)/2)); CY=$(((Y1+Y2)/2)); W=$((X2-X1)); H=$((Y2-Y1)); S=$((W<H?W:H)); }
 check(){ if "${@:2}"; then ok "$1"; else ng "$1"; fi; }
 
 log "== 환경: Android $(adb shell getprop ro.build.version.release | tr -d '\r') / API $(adb shell getprop ro.build.version.sdk | tr -d '\r') / $(adb shell wm size | tr -d '\r') / $(adb shell wm density | tr -d '\r') / $TAG"
 API=$(adb shell getprop ro.build.version.sdk | tr -d '\r')
 adb logcat -c
+# 에뮬레이터 런처 등의 "응답 없음" 창이 화면을 가리지 않게 한다 (앱 자체의 비정상 종료는 아래에서 logcat 으로 따로 확인)
+adb shell settings put global hide_error_dialogs 1
 adb install -r eum-kids-coloring.apk | tail -1 | tee -a $R
 log "요청 권한: $(adb shell dumpsys package $A | grep -A8 'requested permissions:' | grep 'android.permission' | tr -d ' \r' | tr '\n' ' ')"
 # 오프라인: 통신을 모두 끈 상태에서 진행
