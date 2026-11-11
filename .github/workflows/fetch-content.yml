@@ -1,0 +1,35 @@
+name: 키즈 컬러링 도안 원본 가져오기
+on:
+  push:
+    branches: [eum-kids-coloring]
+    paths: [content/sources.json]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Higgsfield 결과 이미지 내려받기
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.request
+          src = json.load(open('content/sources.json'))
+          os.makedirs('content/originals', exist_ok=True)
+          for k, u in src.items():
+              out = f'content/originals/{k}.png'
+              marker = out + '.url'
+              if os.path.exists(marker) and open(marker).read().strip() == u and os.path.exists(out):
+                  continue
+              urllib.request.urlretrieve(u, out)
+              open(marker, 'w').write(u)
+              print('fetched', k, os.path.getsize(out))
+          PY
+      - name: 커밋
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@users.noreply.github.com"
+          git add content/originals
+          git diff --cached --quiet || git commit -m "도안 원본 가져오기"
+          git push
