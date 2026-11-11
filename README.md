@@ -2,7 +2,7 @@
 
 Higgsfield 로 만든 오리지널 캐릭터 도안 30장을 색칠하는 어린이용 안드로이드 앱입니다. (스마트폰·태블릿, 오프라인)
 
-- 패키지: `kr.eumsoft.kidscoloring` / minSdk 26 / targetSdk 35
+- 패키지: `kr.eumsoft.kidscoloring` / minSdk 26 / targetSdk 36
 - Kotlin, Jetpack Compose(Material 3), Room, DataStore, Coroutines
 - 권한 없음 · 광고 없음 · 인터넷 사용 안 함
 
@@ -30,7 +30,7 @@ gradle testDebugUnitTest assembleDebug     # 단위 테스트 + 디버그 APK
 gradle bundleRelease                       # 릴리스 AAB (서명은 docs/RELEASE_SIGNING.md)
 ```
 
-(Gradle 8.9, JDK 17. Gradle wrapper 는 넣지 않았으므로 Android Studio 가 내려받는 Gradle 또는 설치된 `gradle` 을 씁니다.)
+(Gradle 8.11.1, JDK 17. Gradle wrapper 는 넣지 않았으므로 Android Studio 가 내려받는 Gradle 또는 설치된 `gradle` 을 씁니다.)
 
 `eum-kids-coloring` 브랜치에 push 하면 GitHub Actions 가 단위 테스트, APK/AAB 빌드, 에뮬레이터 테스트를 돌리고 릴리스에 올립니다.
 
