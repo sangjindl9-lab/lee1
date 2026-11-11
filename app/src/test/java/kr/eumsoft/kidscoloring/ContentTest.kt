@@ -6,7 +6,21 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
-import javax.imageio.ImageIO
+
+private class Img(val width: Int, val height: Int, val argb: IntArray, val hasAlpha: Boolean)
+
+/** 단위 테스트는 android.jar 로 컴파일되어 javax.imageio 를 직접 쓸 수 없으므로 리플렉션으로 부른다 (실행은 PC 의 JDK). */
+private fun readPng(f: File): Img {
+    val img = Class.forName("javax.imageio.ImageIO").getMethod("read", File::class.java).invoke(null, f)
+    val bi = Class.forName("java.awt.image.BufferedImage")
+    val int = Int::class.javaPrimitiveType
+    val w = bi.getMethod("getWidth").invoke(img) as Int
+    val h = bi.getMethod("getHeight").invoke(img) as Int
+    val argb = bi.getMethod("getRGB", int, int, int, int, IntArray::class.java, int, int).invoke(img, 0, 0, w, h, null, 0, w) as IntArray
+    val cm = bi.getMethod("getColorModel").invoke(img)
+    val alpha = Class.forName("java.awt.image.ColorModel").getMethod("hasAlpha").invoke(cm) as Boolean
+    return Img(w, h, argb, alpha)
+}
 
 /** 실제 앱에 들어가는 도안 30장을 검사한다 (JVM 에서 PNG 를 직접 읽는다). */
 class ContentTest {
@@ -31,9 +45,9 @@ class ContentTest {
         for (a in arts) {
             val id = a.getString("id")
             val n = a.getJSONArray("regions").length()
-            val img = ImageIO.read(File(assets, a.getString("mask")))
+            val img = readPng(File(assets, a.getString("mask")))
             assertEquals(id, size, img.width); assertEquals(id, size, img.height)
-            val rgb = img.getRGB(0, 0, size, size, null, 0, size)
+            val rgb = img.argb
             val mask = ShortArray(size * size) { (((rgb[it] shr 16) and 0xFF) or (rgb[it] and 0xFF00)).toShort() }
             val seen = BooleanArray(n + 1)
             for (v in mask) { val r = v.toInt() and 0xFFFF; assertTrue("$id 영역 번호 $r", r in 1..n); seen[r] = true }
@@ -56,10 +70,10 @@ class ContentTest {
 
     @Test fun `선화는 투명 배경의 검은 선이고 마스크와 크기가 같다`() {
         for (a in arts) {
-            val img = ImageIO.read(File(assets, a.getString("line")))
+            val img = readPng(File(assets, a.getString("line")))
             assertEquals(size, img.width); assertEquals(size, img.height)
-            assertTrue(a.getString("id"), img.colorModel.hasAlpha())
-            val corner = img.getRGB(2, 2) ushr 24
+            assertTrue(a.getString("id"), img.hasAlpha)
+            val corner = img.argb[2 * size + 2] ushr 24
             assertEquals(a.getString("id") + " 모서리는 비어 있어야 함", 0, corner)
         }
     }
