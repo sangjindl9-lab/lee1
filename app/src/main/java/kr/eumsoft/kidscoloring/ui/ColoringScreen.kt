@@ -149,16 +149,20 @@ fun ColoringScreen(vm: ColoringViewModel, speaker: Speaker, onExit: () -> Unit) 
         )
     }
     val topBar: @Composable () -> Unit = {
-        Row(Modifier.fillMaxWidth().background(Color.White).horizontalScroll(rememberScrollState()).padding(6.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-            BigButton("🏠", "홈") { askExit = true }
-            BigButton("💾", "저장") { vm.saveNow() }
-            BigButton("↩", "취소", enabled = rev >= 0 && engine.canUndo) { engine.undo(); refresh() }
-            BigButton("↪", "다시", enabled = rev >= 0 && engine.canRedo) { engine.redo(); refresh() }
-            BigButton("🔍", "화면 맞춤") { canvas?.fit() }
-            BigButton("👀", "미리보기") { preview = vm.thumbBitmap(1024)?.asImageBitmap() }
-            BigButton("🎉", "다 했어요") { vm.markComplete() }
-            BigButton("➕", "더보기") { showMore = true }
+        // 버튼 8개가 좁은 스마트폰 화면에도 한 줄에 다 보이도록 너비를 화면에 맞춘다
+        BoxWithConstraints(Modifier.fillMaxWidth().background(Color.White).padding(6.dp)) {
+            val bw = ((maxWidth - 4.dp * 7) / 8).coerceIn(38.dp, 64.dp)
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                val m = Modifier.width(bw)
+                BigButton("🏠", "홈", m, size = 48.dp) { askExit = true }
+                BigButton("💾", "저장", m, size = 48.dp) { vm.saveNow() }
+                BigButton("↩", "취소", m, enabled = rev >= 0 && engine.canUndo, size = 48.dp) { engine.undo(); refresh() }
+                BigButton("↪", "다시", m, enabled = rev >= 0 && engine.canRedo, size = 48.dp) { engine.redo(); refresh() }
+                BigButton("🔍", "맞춤", m, size = 48.dp) { canvas?.fit() }
+                BigButton("👀", "보기", m, size = 48.dp) { preview = vm.thumbBitmap(1024)?.asImageBitmap() }
+                BigButton("🎉", "완성", m, size = 48.dp) { vm.markComplete() }
+                BigButton("➕", "더보기", m, size = 48.dp) { showMore = true }
+            }
         }
     }
     val toolButtons: @Composable () -> Unit = {
@@ -169,7 +173,7 @@ fun ColoringScreen(vm: ColoringViewModel, speaker: Speaker, onExit: () -> Unit) 
         val wide = maxWidth > maxHeight
         if (wide) {
             // 태블릿·가로 화면: 왼쪽 도구, 가운데 도안, 오른쪽 색상, 위 저장·취소·다시·홈
-            val side = if (maxWidth >= 900.dp) 210.dp else 150.dp
+            val side = if (maxWidth >= 900.dp) 210.dp else 140.dp
             Column(Modifier.fillMaxSize()) {
                 topBar()
                 Row(Modifier.weight(1f)) {
@@ -250,13 +254,13 @@ private fun ToolOptions(vm: ColoringViewModel, settings: UserSettings) {
             Render.stickerNames.forEachIndexed { i, n -> BigButton(Render.stickerEmoji[i], n, selected = vm.stickerType == i, size = 48.dp) { vm.stickerType = i } }
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(if (t == Tool.STICKER) "크기" else "굵기", fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(34.dp))
+            Text(if (t == Tool.STICKER) "크기" else "굵기", fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1, modifier = Modifier.width(46.dp))
             Slider(vm.brushSize, { vm.brushSize = it }, valueRange = 6f..90f, modifier = Modifier.weight(1f).semantics { contentDescription = "붓 굵기" },
                 onValueChangeFinished = { vm.updateSettings { it.copy(brushSize = vm.brushSize) } })
         }
         if (t.brush != null && t != Tool.ERASER) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("진하기", fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(34.dp))
+                Text("진하기", fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1, modifier = Modifier.width(46.dp))
                 Slider(vm.opacity, { vm.opacity = it }, valueRange = 0.15f..1f, modifier = Modifier.weight(1f).semantics { contentDescription = "색 투명도" },
                     onValueChangeFinished = { vm.updateSettings { it.copy(opacity = vm.opacity) } })
             }

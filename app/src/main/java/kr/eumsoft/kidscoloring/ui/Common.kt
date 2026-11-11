@@ -84,11 +84,11 @@ fun BigButton(
             .alpha(if (enabled) 1f else 0.35f)
             .clickable(enabled = enabled, role = Role.Button, onClickLabel = label, onClick = onClick)
             .semantics { contentDescription = label }
-            .padding(horizontal = 6.dp, vertical = 4.dp),
+            .padding(horizontal = 2.dp, vertical = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
     ) {
         Text(emoji, fontSize = 22.sp)
-        Text(label, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Ink, maxLines = 1)
+        Text(label, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Ink, maxLines = 1, softWrap = false, modifier = Modifier.padding(horizontal = 3.dp))
     }
 }
 
@@ -123,7 +123,7 @@ fun ArtCard(repo: Repository, art: Artwork, width: Dp, onClick: () -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         ArtThumb(repo, art, Modifier.fillMaxWidth().border(2.dp, Color(0xFFBBDEFB), RoundedCornerShape(18.dp)))
-        Text(art.title, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis,
+        Text(art.title, fontSize = 13.sp, lineHeight = 17.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Center, modifier = Modifier.padding(top = 4.dp).height(38.dp))
         Text("★".repeat(art.difficulty) + "☆".repeat(3 - art.difficulty.coerceIn(1, 3)), fontSize = 12.sp, color = Sun)
     }

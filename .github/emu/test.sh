@@ -13,6 +13,9 @@ shot(){ adb exec-out screencap -p > $O/${TAG}_$1.png; }
 dump(){ adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1; adb pull /sdcard/ui.xml $O/ui.xml >/dev/null 2>&1; }
 has(){ dump; python3 $D/ui.py $O/ui.xml has "$1"; }
 tap(){ dump; p=$(python3 $D/ui.py $O/ui.xml find "$1" $2) || { log "  (못 찾음: $1)"; return 1; }; adb shell input tap $p; sleep ${3:-2}; }
+# 가로로 스크롤되는 줄(도구, 색상) 안의 항목: 안 보이면 anchor 가 있는 줄을 왼쪽으로 밀어 찾는다
+tapx(){ for i in 1 2 3 4; do dump; p=$(python3 $D/ui.py $O/ui.xml find "$1" exact) && { adb shell input tap $p; sleep 1; return 0; }
+  a=$(python3 $D/ui.py $O/ui.xml find "$2" exact) || a=$(python3 $D/ui.py $O/ui.xml find "$3" exact) || break; read ax ay <<< "$a"; adb shell input swipe $((ax+500)) $ay $((ax+150)) $ay 400; sleep 1; done; log "  (못 찾음: $1)"; return 1; }
 canvas(){ dump; python3 $D/ui.py $O/ui.xml bounds "색칠 도안"; }
 check(){ if "${@:2}"; then ok "$1"; else ng "$1"; fi; }
 
@@ -35,20 +38,20 @@ CX=$(((X1+X2)/2)); CY=$(((Y1+Y2)/2)); W=$((X2-X1)); H=$((Y2-Y1)); S=$((W<H?W:H))
 log "  캔버스 $B"
 # 영역 채우기: 가운데 근처 여러 곳
 adb shell input tap $((CX - S/5)) $((CY - S/6)); sleep 1
-tap "파랑" exact 1; adb shell input tap $((CX + S/12)) $((CY + S/5)); sleep 1
-tap "노랑" exact 1; adb shell input tap $((X1 + S/20 + (W-S)/2)) $((Y1 + S/20 + (H-S)/2)); sleep 1
+tapx "파랑" "빨강" "주황"; adb shell input tap $((CX + S/12)) $((CY + S/5)); sleep 1
+tapx "노랑" "빨강" "주황"; adb shell input tap $((X1 + S/20 + (W-S)/2)) $((Y1 + S/20 + (H-S)/2)); sleep 1
 shot 03_filled
 # 붓 (손가락)
-tap "붓" exact 1; tap "초록" exact 1
+tap "붓" exact 1; tapx "초록" "노랑" "파랑"
 adb shell input swipe $((CX - S/3)) $((CY + S/3)) $((CX + S/3)) $((CY + S/4)) 600; sleep 1
 # 스타일러스 입력 (에뮬레이션: 실제 S Pen 아님, 필압 없음)
-tap "크레용" exact 1; tap "보라" exact 1
+tap "크레용" exact 1; tapx "보라" "초록" "파랑"
 adb shell input stylus swipe $((CX - S/3)) $((CY - S/3)) $((CX + S/4)) $((CY - S/4)) 600; sleep 1
 shot 04_brush
 tap "취소" exact 1; shot 05_undo
 tap "다시" exact 1; shot 06_redo
 # 스티커
-tap "스티커" exact 1; adb shell input tap $((CX + S/3)) $((CY - S/3)); sleep 1
+tapx "스티커" "형광펜" "반짝이"; adb shell input tap $((CX + S/3)) $((CY - S/3)); sleep 1
 # 확대(두 손가락은 adb 로 못 하므로 생략) / 화면 회전
 adb shell settings put system accelerometer_rotation 0
 adb shell settings put system user_rotation 1; sleep 4; shot 07_rotated
@@ -78,7 +81,7 @@ tap "아기 토끼 이어서" "" 6 || tap "당근을 들고 있는 아기 토끼
 shot 11_restored
 check "저장된 그림 복원 화면" has "색칠 도안"
 # 다 했어요 → 축하 → 갤러리
-tap "다 했어요" exact 1; shot 12_celebrate; sleep 4
+tap "완성" exact 1; shot 12_celebrate; sleep 4
 tap "홈" exact 1; tap "네, 나갈래요" "" 3
 tap "내 그림" exact 3; shot 13_gallery
 check "완성한 그림이 갤러리에 표시" has "당근을 들고 있는 아기 토끼"
@@ -96,7 +99,7 @@ for T in "웃고 있는 아기 티라노사우루스" "둥근 머리의 친구 �
   shot "15_art_$(echo $T | md5sum | cut -c1-4)"
   tap "홈" exact 1; tap "네, 나갈래요" "" 3
 done
-CR=$(adb logcat -d | grep -c "FATAL EXCEPTION")
-if [ "$CR" = "0" ]; then ok "비정상 종료 없음"; else ng "비정상 종료 $CR 회"; adb logcat -d | grep -A25 "FATAL EXCEPTION" | head -80 >> $R; fi
+CR=$(adb logcat -d | grep -A2 "FATAL EXCEPTION" | grep -c "Process: $A")
+if [ "$CR" = "0" ]; then ok "비정상 종료 없음"; else ng "비정상 종료 $CR 회"; adb logcat -d | grep -A30 "FATAL EXCEPTION: main" | head -90 >> $R; fi
 adb shell dumpsys meminfo $A | grep -E "TOTAL PSS|TOTAL:" | head -2 | tee -a $R
 log "== 결과($TAG): PASS $PASS / FAIL $FAIL"
