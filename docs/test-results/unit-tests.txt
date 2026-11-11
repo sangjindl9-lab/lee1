@@ -1,0 +1,16 @@
+PASS ContentTest.도안 30장이 모두 등록되어 있고 파일이 빠지지 않았다
+PASS ContentTest.모든 마스크는 빈틈없이 영역 번호가 매겨져 있고 채우기가 새지 않는다
+PASS ContentTest.선화는 투명 배경의 검은 선이고 마스크와 크기가 같다
+PASS EngineTest.붓은 선 밖으로 안 나가기 모드에서 시작한 영역 안에만 칠한다
+PASS EngineTest.모든 붓 종류가 칠해지고 형광펜은 반투명이다
+PASS EngineTest.스티커 붙이기와 떼기, 전체 초기화, 복원
+PASS EngineTest.화면 밖 좌표는 무시한다
+PASS EngineTest.되돌리기 기록은 단계 수와 메모리 한도를 넘지 않는다
+PASS EngineTest.붓질 취소는 흔적을 남기지 않는다
+PASS EngineTest.같은 영역 색상 변경과 영역별 지우기
+PASS EngineTest.자유 붓과 지우개
+PASS EngineTest.필압이 약하면 선이 가늘다
+PASS EngineTest.채우기는 터치한 영역만 칠하고 밖으로 새지 않는다
+PASS EngineTest.자동 색칠은 빈 영역만 칠하고 바탕은 건너뛴다
+PASS EngineTest.실행 취소와 다시 실행
+TOTAL 15, FAILED 0
