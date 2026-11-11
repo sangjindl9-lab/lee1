@@ -57,13 +57,36 @@ public class EumFilesPlugin extends Plugin {
         call.resolve(file != null ? file : new JSObject());
     }
 
+    /**
+     * 다른 앱(카톡·파일 관리자)이 넘겨 준 주소는 그때만 열 수 있으므로, 파일을 앱 안(files/opened)에 복사해 두고
+     * 그 복사본의 주소를 돌려준다 → 최근 문서에서 다시 열 수 있다. 복사에 실패하면 원래 주소를 그대로 쓴다.
+     */
     private JSObject fileFromIntent(Intent intent) {
         if (intent == null || !Intent.ACTION_VIEW.equals(intent.getAction()) || intent.getData() == null) return null;
         Uri uri = intent.getData();
+        String name = displayName(uri);
         JSObject o = new JSObject();
-        o.put("uri", uri.toString());
-        o.put("name", displayName(uri));
+        o.put("name", name);
+        try (InputStream in = getContext().getContentResolver().openInputStream(uri)) {
+            File dir = new File(getContext().getFilesDir(), "opened");
+            dir.mkdirs();
+            cleanOld(dir);
+            File f = new File(dir, System.currentTimeMillis() + "_" + name.replaceAll("[\\/:*?\"<>|]", "_"));
+            try (FileOutputStream out = new FileOutputStream(f)) { out.write(readAll(in)); }
+            o.put("uri", Uri.fromFile(f).toString());
+            o.put("copied", true);
+        } catch (Exception e) {
+            o.put("uri", uri.toString());
+        }
         return o;
+    }
+
+    /** 30일 지난 복사본은 지운다. */
+    private static void cleanOld(File dir) {
+        File[] list = dir.listFiles();
+        if (list == null) return;
+        long limit = System.currentTimeMillis() - 30L * 24 * 3600 * 1000;
+        for (File f : list) if (f.lastModified() < limit) f.delete();
     }
 
     @PluginMethod
@@ -104,10 +127,15 @@ public class EumFilesPlugin extends Plugin {
         call.resolve(o);
     }
 
+    private InputStream open(Uri uri) throws Exception {
+        if ("file".equals(uri.getScheme())) return new java.io.FileInputStream(new File(uri.getPath()));
+        return getContext().getContentResolver().openInputStream(uri);
+    }
+
     @PluginMethod
     public void read(PluginCall call) {
         Uri uri = Uri.parse(call.getString("uri"));
-        try (InputStream in = getContext().getContentResolver().openInputStream(uri)) {
+        try (InputStream in = open(uri)) {
             JSObject o = new JSObject();
             o.put("data", Base64.encodeToString(readAll(in), Base64.NO_WRAP));
             o.put("name", displayName(uri));
@@ -121,7 +149,7 @@ public class EumFilesPlugin extends Plugin {
     public void write(PluginCall call) {
         Uri uri = Uri.parse(call.getString("uri"));
         byte[] bytes = Base64.decode(call.getString("data"), Base64.DEFAULT);
-        try (OutputStream out = getContext().getContentResolver().openOutputStream(uri, "wt")) {
+        try (OutputStream out = "file".equals(uri.getScheme()) ? new FileOutputStream(new File(uri.getPath())) : getContext().getContentResolver().openOutputStream(uri, "wt")) {
             out.write(bytes);
             call.resolve();
         } catch (Exception e) {
@@ -144,7 +172,7 @@ public class EumFilesPlugin extends Plugin {
     public void share(PluginCall call) {
         Uri src = Uri.parse(call.getString("uri"));
         String name = call.getString("name", "문서.pdf");
-        try (InputStream in = getContext().getContentResolver().openInputStream(src)) {
+        try (InputStream in = open(src)) {
             File dir = new File(getContext().getCacheDir(), "share");
             dir.mkdirs();
             File f = new File(dir, name);
@@ -184,6 +212,8 @@ public class EumFilesPlugin extends Plugin {
             } catch (Exception ignored) {}
         }
         String last = uri.getLastPathSegment();
-        return last == null ? "문서.pdf" : last.substring(last.lastIndexOf('/') + 1);
+        if (last == null) return "문서.pdf";
+        last = Uri.decode(last);
+        return last.substring(last.lastIndexOf('/') + 1);
     }
 }

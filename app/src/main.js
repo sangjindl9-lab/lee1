@@ -119,6 +119,6 @@ files.onBack(() => {
   if (Date.now() - lastBackAt < 2000) files.exitApp();
   else { lastBackAt = Date.now(); toast('한 번 더 누르면 앱을 종료합니다'); }
 });
-files.onLaunch((f) => openUri(f.uri, f.name));
+files.onLaunch((f) => { if (f.copied) toast('다른 앱에서 넘어온 파일은 복사본으로 엽니다. 저장하면 위치를 고르게 됩니다.', 3500); openUri(f.uri, f.name); });
 
 showHome();

@@ -524,7 +524,8 @@ export async function openPdf(bytes, ctx) {
   return {
     type: 'pdf',
     dirty: () => state.dirty,
-    save: () => save({ uri: ctx.uri, name: ctx.name }),
+    // 다른 앱에서 넘어온 파일은 앱 안의 복사본이라 원본 위치에 쓸 수 없다 → 저장 위치를 고르게 한다.
+    save() { return ctx.uri.startsWith('file://') ? this.saveAs() : save({ uri: ctx.uri, name: ctx.name }); },
     async saveAs() {
       const t = await files.pickSave(ctx.name);
       if (!t) return false;
