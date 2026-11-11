@@ -69,3 +69,5 @@ tr.on{background:#fff7e6}
 .ubar label{font-size:14px;font-weight:bold;color:var(--b)}.ubar label small{font-weight:normal;color:var(--mut);font-size:12px}
 .ubar .row{display:flex;gap:6px;margin-top:6px}.ubar input{flex:1;min-width:200px;font:13px Consolas,monospace;padding:8px 10px}
 a.shop{color:#1f4fa3;text-decoration:none}a.shop:hover{text-decoration:underline}
+.sync{font-size:12px;padding:4px 10px;border-radius:12px;cursor:pointer;white-space:nowrap;background:rgba(255,255,255,.15)}
+.sync.ok{background:#dcfce7;color:#166534}.sync.busy{background:#fef9c3;color:#854d0e}.sync.err{background:#fee2e2;color:#991b1b}

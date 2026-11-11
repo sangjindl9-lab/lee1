@@ -28,7 +28,70 @@
     } catch {}
     return { current: p.id, projects: { [p.id]: p } };
   }
-  const save = debounce(() => { const P = cur(); if (P) P.updated = Date.now(); try { localStorage.setItem(KEY, JSON.stringify(DB)); } catch (e) { toast('브라우저 저장공간이 부족합니다. [백업 저장] 후 안 쓰는 공사를 지워 주세요.', 9000); } }, 300);
+  const writeLocal = () => { try { localStorage.setItem(KEY, JSON.stringify(DB)); } catch (e) { toast('브라우저 저장공간이 부족합니다. [백업 저장] 후 안 쓰는 공사를 지워 주세요.', 9000); } };
+  const persist = debounce(writeLocal, 300);          // 이 브라우저에만 (선택한 공사 등)
+  function save(id) {                                 // 공사 내용이 바뀜 → 브라우저 + 서버 저장
+    const P = id ? DB.projects[id] : cur();
+    if (P) { P.updated = Date.now(); dirty.add(P.id); }
+    persist(); schedulePush();
+  }
+
+  // ───────────── 서버 저장 (Railway) ─────────────
+  const dirty = new Set(), gone = new Set();         // 서버로 보낼 공사 / 서버에서 지울 공사
+  const SYNC = { key: lsGet('gwj_key'), ok: false, busy: false, timer: null };
+  function lsGet(k) { try { return localStorage.getItem(k) || ''; } catch { return ''; } }
+  const hasContent = (p) => Object.values(p.project || {}).some((v) => String(v || '').trim()) || (p.items || []).some((i) => i.name || i.spec || (i.picks || []).length);
+  function syncState(text, cls) { const el = $('#sync'); if (el) { el.textContent = text; el.className = 'sync ' + cls; } }
+  async function apiP(method, sub, body, keepalive) {
+    const r = await fetch('/api/projects' + sub, { method, keepalive, headers: { 'Content-Type': 'application/json', 'x-app-key': SYNC.key }, body: body ? JSON.stringify(body) : undefined });
+    if (r.status === 401) throw Object.assign(new Error('접속 코드'), { auth: true });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || '서버 오류 ' + r.status);
+    return j;
+  }
+  function schedulePush() { if (!SYNC.ok) return; clearTimeout(SYNC.timer); SYNC.timer = setTimeout(push, 600); syncState('저장 중…', 'busy'); }
+  async function push() {
+    if (!SYNC.ok) return;
+    if (SYNC.busy) return schedulePush();
+    SYNC.busy = true;
+    try {
+      for (const id of [...gone]) { await apiP('DELETE', '/' + id); gone.delete(id); }
+      for (const id of [...dirty]) {
+        const p = DB.projects[id]; dirty.delete(id);
+        if (p) { try { await apiP('PUT', '/' + id, p); } catch (e) { dirty.add(id); throw e; } }
+      }
+      syncState('서버 저장됨 ✓', 'ok');
+    } catch (e) {
+      syncState(e.auth ? '접속 코드 필요 — 눌러서 입력' : '서버 저장 실패 — 10초 뒤 다시 시도', 'err');
+      if (!e.auth) setTimeout(push, 10000);
+    } finally { SYNC.busy = false; }
+  }
+  async function pull(first) {
+    try {
+      const { projects } = await apiP('GET', '');
+      SYNC.ok = true;
+      const srv = {}; for (const p of projects) srv[p.id] = p;
+      for (const [id, p] of Object.entries(srv)) {
+        const l = DB.projects[id];
+        if (!dirty.has(id) && (!l || (p.updated || 0) > (l.updated || 0))) DB.projects[id] = p;
+      }
+      if (first) for (const [id, l] of Object.entries(DB.projects)) {
+        if (srv[id]) continue;
+        if (hasContent(l)) dirty.add(id);                                // 이 브라우저에만 있던 공사 → 서버로 올림
+        else if (Object.keys(srv).length) delete DB.projects[id];        // 빈 공사는 정리
+      }
+      if (!Object.keys(DB.projects).length) { const p = newProject(); DB.projects[p.id] = p; }
+      if (!DB.projects[DB.current]) DB.current = Object.values(DB.projects).sort((a, b) => b.updated - a.updated)[0].id;
+      writeLocal(); renderAll();
+      if (dirty.size || gone.size) { syncState('저장 중…', 'busy'); push(); } else syncState('서버 저장됨 ✓', 'ok');
+    } catch (e) {
+      if (e.auth) {
+        const k = prompt('회사 접속 코드를 입력하세요.\n(한 번 입력하면 이 브라우저에 기억됩니다)', '');
+        if (k) { SYNC.key = k.trim(); try { localStorage.setItem('gwj_key', SYNC.key); } catch {} return pull(first); }
+        syncState('접속 코드 필요 — 눌러서 입력', 'err');
+      } else syncState('서버 연결 실패 — 이 브라우저에만 저장 중', 'err');
+    }
+  }
   const cur = () => DB.projects[DB.current];
   const items = () => cur().items;
   let selId = null;                 // 지금 작업 중인 품목
@@ -296,22 +359,22 @@
   }
 
   // ───────────── 공사 관리 ─────────────
-  function switchProject(id) { DB.current = id; selId = null; save(); renderAll(); }
+  function switchProject(id) { DB.current = id; selId = null; persist(); renderAll(); }
   function addProject() {
     const name = prompt('새 공사명을 입력하세요', ''); if (name === null) return;
     const c = cur(); // 아무것도 안 넣은 빈 공사는 정리
-    if (c && !Object.values(c.project).some((v) => String(v || '').trim()) && !c.items.some((i) => i.name || i.spec || i.picks.length)) delete DB.projects[c.id];
-    const p = newProject(name.trim()); DB.projects[p.id] = p; switchProject(p.id);
+    if (c && !hasContent(c)) { delete DB.projects[c.id]; gone.add(c.id); dirty.delete(c.id); }
+    const p = newProject(name.trim()); DB.projects[p.id] = p; save(p.id); switchProject(p.id);
     toast('새 공사를 만들었습니다. 이전 공사는 위 [공사] 목록에서 언제든 다시 열 수 있습니다.');
   }
   function copyProject() {
     const src = cur(); const p = JSON.parse(JSON.stringify(src)); p.id = uid(); p.project.name = (src.project.name || '공사') + ' (복사)';
-    p.items.forEach((it) => (it.id = uid())); p.updated = Date.now(); DB.projects[p.id] = p; switchProject(p.id);
+    p.items.forEach((it) => (it.id = uid())); DB.projects[p.id] = p; save(p.id); switchProject(p.id);
   }
   function deleteProject() {
     const P = cur();
     if (!confirm(`"${P.project.name || '공사명 없음'}" 공사를 삭제할까요?\n(되돌릴 수 없습니다. 필요하면 먼저 [백업 저장]을 하세요)`)) return;
-    delete DB.projects[P.id];
+    delete DB.projects[P.id]; gone.add(P.id); dirty.delete(P.id); schedulePush();
     if (!Object.keys(DB.projects).length) { const p = newProject(); DB.projects[p.id] = p; }
     switchProject(Object.values(DB.projects).sort((a, b) => b.updated - a.updated)[0].id);
   }
@@ -333,10 +396,10 @@
           q.id = uid(); q.items.forEach((it) => (it.id = uid()));
           q.project.name = (q.project.name || '공사') + ' (불러옴)';
         }
-        q.updated = Date.now(); idMap[p.id] = q.id; DB.projects[q.id] = q; n++;
+        q.updated = Date.now(); idMap[p.id] = q.id; DB.projects[q.id] = q; dirty.add(q.id); n++;
       }
       DB.current = idMap[d.current] || Object.values(idMap)[0];
-      selId = null; save(); renderAll(); toast(`공사 ${n}개를 불러왔습니다. 기존 공사는 그대로 있고, 같은 공사는 "(불러옴)"을 붙여 따로 추가했습니다.`, 7000);
+      selId = null; persist(); schedulePush(); renderAll(); toast(`공사 ${n}개를 불러왔습니다. 기존 공사는 그대로 있고, 같은 공사는 "(불러옴)"을 붙여 따로 추가했습니다.`, 7000);
     } catch (e) { toast('불러오기 실패: ' + e.message, 8000); }
   }
 
@@ -402,8 +465,14 @@
   function nowStr() { const d = new Date(), p = (n) => String(n).padStart(2, '0'); return `${d.getFullYear()}.${p(d.getMonth() + 1)}.${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; }
   function debounce(f, ms) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => f(...a), ms); }; }
 
-  addEventListener('pagehide', () => { try { localStorage.setItem(KEY, JSON.stringify(DB)); } catch {} });
+  addEventListener('pagehide', () => {
+    writeLocal();
+    if (SYNC.ok) for (const id of dirty) { const p = DB.projects[id]; if (p) apiP('PUT', '/' + id, p, true).catch(() => {}); } // 창을 닫아도 서버로 마저 보냄
+  });
+  addEventListener('focus', () => { if (SYNC.ok && !dirty.size && !SYNC.busy) pull(false); }); // 다른 PC에서 바꾼 내용 반영
+  $('#sync').addEventListener('click', () => { if (!SYNC.ok) { SYNC.key = ''; pull(true); } else push(); });
   renderAll();
+  pull(true);
   getTemplate().catch(() => {});
   window.GWJ = { db: () => DB, res: RES, sel: () => selId };
 })();

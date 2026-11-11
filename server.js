@@ -7,6 +7,12 @@ const path = require('path');
 const PORT = process.env.PORT || 3000;
 const SHOP = process.env.SHOP_BASE || 'https://shop.g2b.go.kr';
 const PUB = path.join(__dirname, 'public');
+// 공사 자료 저장 폴더 (Railway 볼륨: DATA_DIR=/data). 공사 1개 = 파일 1개
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
+const PROJ_DIR = path.join(DATA_DIR, 'projects'), TRASH_DIR = path.join(DATA_DIR, 'trash');
+fs.mkdirSync(PROJ_DIR, { recursive: true }); fs.mkdirSync(TRASH_DIR, { recursive: true });
+const APP_KEY = process.env.APP_PASSWORD || ''; // 회사 접속 코드 (비우면 검사 안 함)
+const idOk = (id) => /^[a-z0-9]{6,40}$/.test(id);
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.png': 'image/png', '.json': 'application/json', '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' };
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36';
 
@@ -140,6 +146,29 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, Buffer.from(await r.arrayBuffer()), ct, { 'Cache-Control': 'public, max-age=86400' });
     }
     if (u.pathname === '/api/health') return send(res, 200, { ok: true });
+    if (u.pathname.startsWith('/api/projects')) {
+      if (APP_KEY && req.headers['x-app-key'] !== APP_KEY) return send(res, 401, { error: '접속 코드가 맞지 않습니다.' });
+      const id = decodeURIComponent(u.pathname.slice('/api/projects/'.length));
+      if (u.pathname === '/api/projects' && req.method === 'GET') {
+        const list = [];
+        for (const f of fs.readdirSync(PROJ_DIR)) if (f.endsWith('.json')) { try { list.push(JSON.parse(fs.readFileSync(path.join(PROJ_DIR, f), 'utf8'))); } catch {} }
+        return send(res, 200, { projects: list });
+      }
+      if (!idOk(id)) return send(res, 400, { error: '잘못된 공사 번호' });
+      const file = path.join(PROJ_DIR, id + '.json');
+      if (req.method === 'PUT') {
+        const p = await readJson(req);
+        if (!p || p.id !== id || typeof p.project !== 'object' || !Array.isArray(p.items)) return send(res, 400, { error: '공사 자료 형식이 올바르지 않습니다.' });
+        const tmp = file + '.tmp';
+        fs.writeFileSync(tmp, JSON.stringify(p)); fs.renameSync(tmp, file); // 중간에 끊겨도 파일이 깨지지 않게
+        return send(res, 200, { ok: true, updated: p.updated });
+      }
+      if (req.method === 'DELETE') {
+        if (fs.existsSync(file)) fs.renameSync(file, path.join(TRASH_DIR, `${id}-${Date.now()}.json`)); // 바로 지우지 않고 휴지통으로
+        return send(res, 200, { ok: true });
+      }
+      return send(res, 405, { error: 'method' });
+    }
     let dp; try { dp = decodeURIComponent(u.pathname); } catch { return send(res, 400, '잘못된 주소', 'text/plain; charset=utf-8'); }
     let p = path.normalize(dp).replace(/^([/\\])+/, '');
     if (!p || p.endsWith('/')) p += 'index.html';
