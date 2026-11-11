@@ -13,12 +13,12 @@ export const DOCS = [
 ];
 
 // 한 서류 = 한 묶음. 머리·꼬리 빈칸은 인쇄할 때 페이지마다 반복되어 위·아래 여백이 된다.
-function Pg({ land, children }) {
+function Pg({ land, co, children }) {
   return (
     <section className={'pr-page' + (land ? ' pr-land' : '')}>
       <table className="pr-frame">
         <thead><tr><td className="pr-sp-top" /></tr></thead>
-        <tfoot><tr><td className="pr-sp-bot" /></tr></tfoot>
+        <tfoot><tr><td className="pr-sp-bot"><div className="pr-co">{co}</div></td></tr></tfoot>
         <tbody><tr><td>{children}</td></tr></tbody>
       </table>
     </section>
@@ -43,7 +43,7 @@ function EstimateDoc({ p, r }) {
   const direct = cs.DM + cs.DL + cs.ME;
   const date = e.date || new Date().toISOString().slice(0, 10);
   return (
-    <Pg>
+    <Pg co={p.company}>
       <h1 className="pr-title-big">견 적 서</h1>
       <div className="pr-est-top">
         <div>
@@ -83,7 +83,7 @@ function EstimateDoc({ p, r }) {
 
 function CostDoc({ p, cs, label }) {
   return (
-    <Pg>
+    <Pg co={p.company}>
       <Head p={p} title={`${label} 원가계산서`} sub={p.client ? `발주처 : ${p.client}` : ''} />
       <table className="pr-tbl">
         <thead><tr><th className="pr-g">비 목</th><th>구 분</th><th className="pr-amt">금 액</th><th>산출근거</th></tr></thead>
@@ -103,7 +103,7 @@ function CostDoc({ p, cs, label }) {
 
 function SumDoc({ p, cs, label }) {
   return (
-    <Pg>
+    <Pg co={p.company}>
       <Head p={p} title={`${label} 공종별 집계표`} />
       <table className="pr-tbl">
         <thead><tr><th className="pr-no">No</th><th>공 종</th><th>재료비</th><th>노무비</th><th>경 비</th><th>합 계</th></tr></thead>
@@ -119,7 +119,7 @@ function SumDoc({ p, cs, label }) {
 function BillDoc({ p, factor, label }) {
   const secs = sectionTotals(p, factor);
   return (
-    <Pg land>
+    <Pg land co={p.company}>
       <Head p={p} title={`${label}내역서`} />
       <table className="pr-tbl pr-bill">
         <thead>
@@ -149,7 +149,7 @@ function UnitDoc({ p, factor }) {
   const used = p.units;
   if (!used.length) return null;
   return (
-    <Pg>
+    <Pg co={p.company}>
       <Head p={p} title="일위대가표" />
       {used.map((u) => {
         const c = unitCost(p, u);
@@ -186,7 +186,6 @@ export function PrintArea({ p, job, pdf }) {
       {job.docs.includes('sum') && <SumDoc p={p} cs={cs} label={label} />}
       {job.docs.includes('bill') && <BillDoc p={pp} factor={factor} label={label} />}
       {job.docs.includes('unit') && <UnitDoc p={p} factor={1} />}
-      {!pdf && <div className="pr-footer">{p.company}</div>}
     </div>
   );
 }

@@ -342,7 +342,7 @@ td.adj { color: var(--accent); }
 .pr-hangul { font-size: 10pt; margin-top: 2mm; }
 .pr-frame { width: 100%; border-collapse: collapse; }
 .pr-frame > thead > tr > td, .pr-frame > tfoot > tr > td, .pr-frame > tbody > tr > td { padding: 0; border: 0; }
-.pr-footer { display: none; }
+.pr-co { display: none; }
 
 /* 인쇄: 브라우저 머리글·바닥글(제목·주소)이 나오지 않도록 여백 0, 여백은 반복되는 머리·꼬리 칸으로 만든다 */
 @page { size: A4 portrait; margin: 0; }
@@ -360,7 +360,8 @@ td.adj { color: var(--accent); }
   .pr-page { padding: 0 12mm; }
   .pr-sp-top { height: 12mm; }
   .pr-sp-bot { height: 16mm; }
-  .pr-footer { display: block; position: fixed; left: 0; right: 0; bottom: 6mm; text-align: center; font: 600 9pt 'IBM Plex Sans KR', 'Malgun Gothic', sans-serif; color: #333; }
+  .pr-sp-bot { vertical-align: bottom; }
+  .pr-co { display: block; padding-bottom: 6mm; text-align: center; font: 600 9pt 'IBM Plex Sans KR', 'Malgun Gothic', sans-serif; color: #333; }
 }
 
 /* PDF 내보내기용 화면 밖 렌더링 */
