@@ -20,7 +20,7 @@ from prompts import P, MODEL, MODEL_PARAMS, CATEGORIES, full_prompt
 
 SIZE = 1536          # 앱용 작업 해상도
 THUMB = 384
-FIT = 0.94         # 도안을 캔버스의 94% 크기로 넣는다
+FIT = 0.90         # 도안을 캔버스의 90% 크기로 넣는다
 MIN_REGION = 220     # 이보다 작은 영역(px)은 이웃 영역에 합친다 (터치하기 어려운 조각)
 GAP_CLOSE = 5        # 미세한 틈 자동 보정: 선 끝 사이 이 정도(px) 틈은 메운다
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -43,9 +43,17 @@ def process(aid):
     rep['midgray_ratio'] = float(((gray > 90) & (gray < 200)).mean())
     # 2) 흑백 선화 정리
     rep['touches_border'] = bool((gray[:8] < 128).any() or (gray[-8:] < 128).any() or (gray[:, :8] < 128).any() or (gray[:, -8:] < 128).any())
+    # 그림이 있는 부분만 잘라 정사각형으로 맞춘 뒤 캔버스의 FIT 크기로 넣는다 (도안마다 크기가 비슷해지고 흰 여백이 생긴다)
+    ys, xs = np.nonzero(gray < 128)
+    x0, x1, y0, y1 = xs.min(), xs.max() + 1, ys.min(), ys.max() + 1
+    side = max(x1 - x0, y1 - y0)
+    sq = np.full((side, side), 255, np.uint8)
+    ox, oy = (side - (x1 - x0)) // 2, (side - (y1 - y0)) // 2
+    sq[oy:oy + y1 - y0, ox:ox + x1 - x0] = gray[y0:y1, x0:x1]
     inner = int(SIZE * FIT)
-    small = cv2.resize(gray, (inner, inner), interpolation=cv2.INTER_AREA)
-    gray = np.full((SIZE, SIZE), 255, np.uint8)      # 흰 여백을 둘러 그림이 화면 끝에 붙지 않게 한다
+    rep['scale'] = round(float(inner) / float(side), 3)
+    small = cv2.resize(sq, (inner, inner), interpolation=cv2.INTER_AREA if inner < side else cv2.INTER_CUBIC)
+    gray = np.full((SIZE, SIZE), 255, np.uint8)
     o = (SIZE - inner) // 2
     gray[o:o + inner, o:o + inner] = small
     dark = 255 - gray.astype(np.int32)
@@ -122,7 +130,7 @@ def main():
         if res:
             rep, regs = res
             n = rep['regions']
-            item['difficulty'] = 1 if n <= 32 else (2 if n <= 55 else 3)
+            item['difficulty'] = 1 if n <= 26 else (2 if n <= 40 else 3)
             item['regions'] = regs
             item['background'] = rep['background_region']
             report[aid] = rep

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <!-- 웃는 별 -->
+    <path android:fillColor="#FFD54F" android:strokeColor="#37474F" android:strokeWidth="3" android:strokeLineJoin="round"
+        android:pathData="M50,28 L57,44 L74,46 L61,58 L65,75 L50,66 L35,75 L39,58 L26,46 L43,44 Z" />
+    <path android:fillColor="#37474F" android:pathData="M44,51 a2.5,2.5 0 1,0 5,0 a2.5,2.5 0 1,0 -5,0 M52,51 a2.5,2.5 0 1,0 5,0 a2.5,2.5 0 1,0 -5,0" />
+    <path android:strokeColor="#37474F" android:strokeWidth="2.5" android:strokeLineCap="round" android:fillColor="#00000000" android:pathData="M45,58 Q50.5,63 56,58" />
+    <!-- 크레용 -->
+    <path android:fillColor="#EC407A" android:strokeColor="#37474F" android:strokeWidth="3" android:strokeLineJoin="round"
+        android:pathData="M66,70 L80,56 L86,62 L72,76 Z" />
+    <path android:fillColor="#FFFFFF" android:strokeColor="#37474F" android:strokeWidth="3" android:strokeLineJoin="round"
+        android:pathData="M66,70 L72,76 L62,80 Z" />
+</vector>
