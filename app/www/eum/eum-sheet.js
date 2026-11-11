@@ -9,8 +9,8 @@
   const CHUNK = 150;            // 한 번에 그리는 행 수
   const EPOCH = Date.UTC(1899, 11, 30);
 
-  const S = { wb: null, ws: null, uri: null, name: '', dirty: false, edit: false, sel: null, undo: [], confirmed: false, tds: new Map(), rendered: 0, rows: 0, cols: 0, covered: null, zoom: 1 };
-  let root, grid, table, tbody, fxAddr, fxInput, tabs, titleEl, modeBtn, menu, loading;
+  const S = { wb: null, ws: null, uri: null, name: '', dirty: false, edit: false, sel: null, undo: [], confirmed: false, tds: new Map(), rendered: 0, rows: 0, cols: 0, covered: null, zoom: 1, shapes: [], keep: null };
+  let root, grid, wrap, table, tbody, fxAddr, fxInput, tabs, titleEl, modeBtn, menu, loading, layer;
 
   // ── 라이브러리 ────────────────────────────────────────────
   let libs = null;
@@ -46,6 +46,21 @@
   const unescapeXml = (s) => s.replace(/&(amp|lt|gt|quot|apos|#(\d+));/g, (m, k, d) => d ? String.fromCharCode(+d) : { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" }[k]);
   const sheetNames = (xml) => [...xml.matchAll(/<sheet\b[^>]*\bname="([^"]*)"/g)].map((m) => unescapeXml(m[1]));
 
+  /** 시트 이름 → 시트 부품 경로 (workbook.xml 과 그 rels 로) */
+  async function sheetPaths(zip, xml) {
+    const rels = await zip.file(WB_RELS).async('string');
+    const target = {};
+    for (const m of rels.matchAll(/<Relationship\b[^>]*\/>/g)) {
+      const id = (m[0].match(/\bId="([^"]+)"/) || [])[1], t = (m[0].match(/\bTarget="([^"]+)"/) || [])[1];
+      if (id && t) target[id] = t.startsWith('/') ? t.slice(1) : 'xl/' + t;
+    }
+    const out = {};
+    for (const m of xml.matchAll(/<sheet\b[^>]*\bname="([^"]*)"[^>]*\br:id="([^"]+)"/g)) out[unescapeXml(m[1])] = target[m[2]];
+    return out;
+  }
+  const relsOf = (part) => part.replace(/([^/]+)$/, '_rels/$1.rels');
+  const DRAW_DIRS = ['xl/drawings/', 'xl/charts/', 'xl/media/', 'xl/embeddings/'];
+
   /** 떼어 낸 부분을 S.keep 에 두고, 가벼워진 파일 바이트를 돌려준다 */
   async function detach(bytes) {
     S.keep = null;
@@ -69,33 +84,53 @@
       fixed = true;
       zip.file(p, u);
     }
-    const names = (xml.match(NAMES_RE) || [''])[0], extRefs = (xml.match(EXTREF_RE) || [''])[0];
-    if (!names && !extRefs) {
-      if (!fixed) return bytes;
-      zip.file(WB_XML, xml);
-      return zip.generateAsync({ type: 'uint8array' });
+    // 그림·도형·차트: ExcelJS 는 이해하지 못해 저장할 때 버리므로, 시트에서 떼어 두고 저장할 때 원본 그대로 붙인다.
+    const drawings = {};
+    for (const [name, part] of Object.entries(await sheetPaths(zip, xml))) {
+      const relsFile = zip.file(relsOf(part));
+      if (!relsFile) continue;
+      const rels = await relsFile.async('string');
+      const rel = (rels.match(/<Relationship\b[^>]*Type="[^"]*\/drawing"[^>]*\/>/) || [])[0];
+      if (!rel) continue;
+      const id = rel.match(/\bId="([^"]+)"/)[1], t = rel.match(/\bTarget="([^"]+)"/)[1];
+      const path = t.startsWith('/') ? t.slice(1) : 'xl/' + t.replace(/^\.\.\//, '');
+      if (!zip.file(path)) continue;
+      const drels = zip.file(relsOf(path));
+      drawings[name] = { path, xml: await zip.file(path).async('string'), rels: drels ? await drels.async('string') : '' };
+      zip.file(relsOf(part), rels.replace(rel, ''));
+      zip.file(part, (await zip.file(part).async('string')).replace(new RegExp(`<drawing\\b[^>]*r:id="${id}"[^>]*/>`), ''));
+      fixed = true;
     }
-    const keep = { names, extRefs, sheetNames: sheetNames(xml), ext: {}, rels: '', types: '' };
-    if (extRefs) {
+    const names = (xml.match(NAMES_RE) || [''])[0], extRefs = (xml.match(EXTREF_RE) || [''])[0];
+    const keep = { names, extRefs, drawings, sheetNames: sheetNames(xml), parts: {}, rels: '', types: '' };
+    const hasDraw = Object.keys(drawings).length > 0;
+    if (extRefs || hasDraw) {
       keep.rels = await zip.file(WB_RELS).async('string');
       keep.types = await zip.file(CTYPES).async('string');
-      for (const p of Object.keys(zip.files)) if (p.startsWith('xl/externalLinks/') && !zip.files[p].dir) keep.ext[p] = await zip.file(p).async('uint8array');
+      for (const p of Object.keys(zip.files)) {
+        if (zip.files[p].dir) continue;
+        if (p.startsWith('xl/externalLinks/') || (hasDraw && DRAW_DIRS.some((d) => p.startsWith(d)))) keep.parts[p] = await zip.file(p).async('uint8array');
+      }
+      // 그림(media)을 남겨 두면 ExcelJS 가 자기 식으로 다시 써서 겹치므로 통째로 뺀다
+      for (const p of Object.keys(keep.parts)) if (!p.startsWith('xl/externalLinks/')) zip.remove(p);
     }
-    S.keep = keep;
+    if (names || extRefs || hasDraw) S.keep = keep;
+    if (!fixed && !names && !extRefs) return bytes;
     zip.file(WB_XML, xml.replace(NAMES_RE, '').replace(EXTREF_RE, ''));
     return zip.generateAsync({ type: 'uint8array' });
   }
 
-  /** ExcelJS 가 쓴 파일에 떼어 둔 이름 정의·외부 연결을 되돌린다 */
+  /** ExcelJS 가 쓴 파일에 떼어 둔 이름 정의·외부 연결·그림을 되돌린다 */
   async function reattach(buf) {
     const keep = S.keep;
     if (!keep) return buf;
     const zip = await JSZip.loadAsync(buf);
     let xml = (await zip.file(WB_XML).async('string')).replace(NAMES_RE, '').replace(EXTREF_RE, '');
     let extRefs = keep.extRefs;
+    let types = await zip.file(CTYPES).async('string'), addT = '';
+    for (const [p, data] of Object.entries(keep.parts)) zip.file(p, data);
     if (extRefs) {
       // 외부 연결 부품과 관계(rels)·콘텐츠 형식을 되살린다. 관계 ID 는 ExcelJS 가 쓴 것과 겹치지 않게 새로 붙인다.
-      for (const [p, data] of Object.entries(keep.ext)) zip.file(p, data);
       const relRe = /<Relationship\b[^>]*Target="[^"]*externalLinks\/[^"]*"[^>]*\/>/g;
       let rels = await zip.file(WB_RELS).async('string'), add = '', n = 0;
       for (const rel of keep.rels.match(relRe) || []) {
@@ -105,10 +140,31 @@
         extRefs = extRefs.replace(new RegExp(`r:id="${oldId}"`, 'g'), `r:id="${newId}"`);
       }
       zip.file(WB_RELS, rels.replace('</Relationships>', add + '</Relationships>'));
-      let types = await zip.file(CTYPES).async('string'), addT = '';
-      for (const ov of keep.types.match(/<Override\b[^>]*PartName="\/xl\/externalLinks\/[^"]*"[^>]*\/>/g) || []) if (!types.includes(ov)) addT += ov;
-      zip.file(CTYPES, types.replace('</Types>', addT + '</Types>'));
     }
+    const paths = await sheetPaths(zip, xml);
+    for (const [name, d] of Object.entries(keep.drawings)) {
+      const part = paths[name];
+      if (!part) continue;
+      zip.file(d.path, d.xml);
+      if (d.rels) zip.file(relsOf(d.path), d.rels);
+      const relsPath = relsOf(part), relsFile = zip.file(relsPath);
+      const rels = relsFile ? await relsFile.async('string') : '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>';
+      const target = '../' + d.path.replace(/^xl\//, '');
+      zip.file(relsPath, rels.replace('</Relationships>', `<Relationship Id="rIdDrw" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="${target}"/></Relationships>`));
+      // 스키마 순서: … pageSetup → headerFooter → drawing → legacyDrawing → tableParts → extLst
+      let sx = await zip.file(part).async('string');
+      const at = sx.search(/<legacyDrawing\b|<legacyDrawingHF\b|<picture\b|<oleObjects\b|<controls\b|<webPublishItems\b|<tableParts\b|<extLst\b|<\/worksheet>/);
+      sx = sx.slice(0, at) + '<drawing r:id="rIdDrw"/>' + sx.slice(at);
+      if (!sx.includes('xmlns:r=')) sx = sx.replace('<worksheet ', '<worksheet xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" ');
+      zip.file(part, sx);
+    }
+    // 콘텐츠 형식: 되살린 부품의 Override 와 그림 확장자 Default 를 원본에서 가져온다
+    for (const ov of keep.types.match(/<Override\b[^>]*PartName="\/xl\/(externalLinks|drawings|charts|media|embeddings)\/[^"]*"[^>]*\/>/g) || []) if (!types.includes(ov)) addT += ov;
+    for (const df of keep.types.match(/<Default\b[^>]*\/>/g) || []) {
+      const ext = (df.match(/Extension="([^"]+)"/) || [])[1];
+      if (ext && !new RegExp(`Extension="${ext}"`, 'i').test(types)) addT += df;
+    }
+    if (addT) zip.file(CTYPES, types.replace('</Types>', addT + '</Types>'));
     // ExcelJS 는 차트시트·매크로시트를 버리므로 시트 순서가 바뀌면 localSheetId(시트 인덱스)를 이름 기준으로 다시 매긴다
     let names = keep.names;
     const now = sheetNames(xml);
@@ -225,6 +281,93 @@
     }
   }
 
+  // ── 그림·도형 표시 ────────────────────────────────────────
+  // 떼어 둔 drawing XML 의 앵커(시작 셀 + EMU 오프셋 + 크기)를 읽어 격자 위에 겹쳐 놓는다. 글 상자·사각형·그림은
+  // 모양대로, 차트는 자리만 표시한다. 편집은 지원하지 않는다(저장 때 원본 그대로 보존).
+  const PX = 9525; // 1px = 9525 EMU
+  // 생성 도구에 따라 xdr:·a: 접두어를 쓰기도, 기본 네임스페이스로 쓰기도 하므로 네임스페이스로 찾는다
+  const NS = { xdr: 'http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing', a: 'http://schemas.openxmlformats.org/drawingml/2006/main', r: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships' };
+  const q = (node, tag) => { const [ns, name] = tag.split(':'); return node.getElementsByTagNameNS(NS[ns], name)[0]; };
+  const all = (node, tag) => { const [ns, name] = tag.split(':'); return [...node.getElementsByTagNameNS(NS[ns], name)]; };
+  const color = (node) => { const c = node && q(node, 'a:srgbClr'); return c ? '#' + c.getAttribute('val') : ''; };
+
+  function loadShapes(sheetName) {
+    layer.textContent = '';
+    S.shapes = [];
+    const d = S.keep && S.keep.drawings[sheetName];
+    if (!d) return;
+    const doc = new DOMParser().parseFromString(d.xml, 'text/xml');
+    const media = {};
+    for (const m of d.rels.matchAll(/<Relationship\b[^>]*\/>/g)) {
+      const id = (m[0].match(/\bId="([^"]+)"/) || [])[1], t = (m[0].match(/\bTarget="([^"]+)"/) || [])[1];
+      if (id && t) media[id] = t.startsWith('/') ? t.slice(1) : 'xl/' + t.replace(/^\.\.\//, '');
+    }
+    for (const a of doc.documentElement.children) {
+      if (!/Anchor$/.test(a.localName)) continue;
+      const from = q(a, 'xdr:from');
+      if (!from) continue;
+      const body = [...a.children].find((n) => ['sp', 'pic', 'graphicFrame', 'grpSp', 'cxnSp'].includes(n.localName));
+      if (!body || body.localName === 'cxnSp') continue;
+      const xfrm = q(body, 'a:xfrm'), ext = (xfrm && q(xfrm, 'a:ext')) || q(a, 'xdr:ext');
+      const box = el('div', 'eum-shape');
+      let w = ext ? +ext.getAttribute('cx') / PX : 0, h = ext ? +ext.getAttribute('cy') / PX : 0;
+      if (body.localName === 'pic') {
+        const blip = q(body, 'a:blip'), path = blip && media[blip.getAttributeNS(NS.r, 'embed')];
+        const bytes = path && S.keep.parts[path];
+        if (bytes) { const img = el('img'); img.src = URL.createObjectURL(new Blob([bytes])); box.append(img); }
+      } else if (body.localName === 'graphicFrame') {
+        box.classList.add('eum-shape-chart');
+        box.textContent = '차트 (이 앱에서는 표시만 생략되고 저장 시 보존됩니다)';
+      } else {
+        const sp = q(body, 'xdr:spPr');
+        const fill = sp && [...sp.children].find((n) => n.localName === 'solidFill' || n.localName === 'noFill');
+        const ln = sp && q(sp, 'a:ln');
+        box.style.background = fill && fill.localName === 'solidFill' ? color(fill) : (body.localName === 'sp' ? '#fff' : '');
+        if (ln && !q(ln, 'a:noFill')) box.style.border = `${Math.max(1, Math.round((+ln.getAttribute('w') || 9525) / 12700))}px solid ${color(ln) || '#000'}`;
+        const geom = q(sp || body, 'a:prstGeom'), prst = geom && geom.getAttribute('prst');
+        if (prst === 'roundRect') box.style.borderRadius = '8px';
+        if (prst === 'ellipse') box.style.borderRadius = '50%';
+        const bp = q(body, 'a:bodyPr'), anchor = bp && bp.getAttribute('anchor');
+        box.style.justifyContent = anchor === 't' ? 'flex-start' : anchor === 'b' ? 'flex-end' : 'center';
+        for (const para of all(body, 'a:p')) {
+          const line = el('div');
+          const pPr = q(para, 'a:pPr'), algn = pPr && pPr.getAttribute('algn');
+          line.style.textAlign = algn === 'ctr' ? 'center' : algn === 'r' ? 'right' : 'left';
+          for (const run of all(para, 'a:r')) {
+            const t = q(run, 'a:t'), rPr = q(run, 'a:rPr'), span = el('span', null, t ? t.textContent : '');
+            if (rPr) {
+              if (rPr.getAttribute('b') === '1') span.style.fontWeight = '700';
+              if (rPr.getAttribute('i') === '1') span.style.fontStyle = 'italic';
+              if (rPr.getAttribute('sz')) span.style.fontSize = (+rPr.getAttribute('sz') / 100) + 'pt';
+              if (color(rPr)) span.style.color = color(rPr);
+            }
+            line.append(span);
+          }
+          box.append(line);
+        }
+      }
+      S.shapes.push({ r: +q(from, 'xdr:row').textContent + 1, c: +q(from, 'xdr:col').textContent + 1,
+        dx: +q(from, 'xdr:colOff').textContent / PX, dy: +q(from, 'xdr:rowOff').textContent / PX, w, h, box, placed: false });
+    }
+  }
+
+  /** 시작 행이 화면에 그려진 도형을 제자리에 놓는다 (appendRows 뒤마다) */
+  function placeShapes() {
+    const cols = table.querySelectorAll('colgroup col');
+    for (const sh of S.shapes) {
+      const tr = tbody.rows[sh.r - 1];
+      if (sh.placed || !tr) continue;
+      let left = 0;
+      for (let i = 0; i < sh.c && i < cols.length; i++) left += parseFloat(cols[i].style.width) || 0;
+      sh.box.style.left = (left + sh.dx) + 'px';
+      sh.box.style.top = (tr.offsetTop + sh.dy) + 'px';
+      sh.box.style.width = sh.w + 'px';
+      sh.box.style.height = sh.h + 'px';
+      layer.append(sh.box);
+      sh.placed = true;
+    }
+  }
+
   // ── 그리기 ────────────────────────────────────────────────
   const argb = (c) => (c && c.argb ? '#' + c.argb.slice(2) : '');
   const BORDER = { thin: '1px solid', hair: '1px dotted', dotted: '1px dotted', dashed: '1px dashed', medium: '2px solid', thick: '3px solid', double: '3px double' };
@@ -290,6 +433,7 @@
     }
     tbody.append(frag);
     S.rendered = end;
+    placeShapes();
   }
 
   function showSheet(ws) {
@@ -319,6 +463,7 @@
     const thead = document.createElement('thead'); thead.append(head);
     tbody = document.createElement('tbody');
     table.append(cg, thead, tbody);
+    loadShapes(ws.name);
     appendRows();
     grid.scrollTo(0, 0);
     for (const b of tabs.children) b.classList.toggle('on', b.dataset.id === String(ws.id));
@@ -407,7 +552,7 @@
         b.onclick = () => { commit(); showSheet(ws); };
         tabs.append(b);
       }
-      S.zoom = 1; table.style.zoom = 1;
+      S.zoom = 1; wrap.style.zoom = 1;
       setEdit(false);
       setDirty(false);
       showSheet(visible[0]);
@@ -468,6 +613,8 @@
     root.hidden = true;
     Object.assign(S, { wb: null, ws: null, dirty: false, undo: [] });
     if (table) table.textContent = '';
+    if (layer) layer.textContent = '';
+    S.shapes = [];
   }
 
   // ── 화면 만들기 ───────────────────────────────────────────
@@ -496,8 +643,11 @@
     fx.append(fxAddr, fxInput, ok);
 
     grid = el('div', 'eum-grid');
+    wrap = el('div', 'eum-sheet-wrap');
     table = el('table');
-    grid.append(table);
+    layer = el('div', 'eum-shapes');
+    wrap.append(table, layer);
+    grid.append(wrap);
     grid.onclick = (e) => {
       const td = e.target.closest('td');
       if (!td) return;
@@ -516,7 +666,7 @@
       if (e.touches.length !== 2 || !d0) return;
       e.preventDefault();
       S.zoom = Math.max(0.4, Math.min(3, z0 * dist(e.touches) / d0));
-      table.style.zoom = S.zoom;
+      wrap.style.zoom = S.zoom;
     }, { passive: false });
     grid.addEventListener('touchend', (e) => { if (e.touches.length < 2) d0 = 0; }, { passive: true });
 

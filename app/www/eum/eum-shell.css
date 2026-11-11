@@ -315,3 +315,10 @@ button.eum-row { border-bottom: 1px solid var(--eum-line); }
 #eum-ask[hidden] { display: none; }
 .eum-ask-card { width: 100%; max-width: 340px; background: #fff; border-radius: 16px; padding: 22px 18px 16px; color: var(--eum-ink); font: 15px/1.5 system-ui, -apple-system, "Pretendard", "Noto Sans KR", sans-serif; }
 .eum-ask-card p { margin: 0 0 6px; white-space: pre-line; }
+
+/* 엑셀 그림·도형 겹쳐 보이기 */
+.eum-sheet-wrap { position: relative; width: max-content; }
+.eum-shapes { position: absolute; inset: 0; pointer-events: none; z-index: 1; }
+.eum-shape { position: absolute; box-sizing: border-box; display: flex; flex-direction: column; justify-content: center; overflow: hidden; padding: 2px 4px; font-size: 10pt; line-height: 1.25; white-space: pre-wrap; word-break: break-all; }
+.eum-shape img { display: block; width: 100%; height: 100%; object-fit: fill; }
+.eum-shape-chart { border: 1px dashed #9aa3ae; background: #f8fafc; color: var(--eum-sub); font-size: 9pt; text-align: center; }
