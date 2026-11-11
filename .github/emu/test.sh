@@ -15,8 +15,11 @@ has(){ dump; python3 $D/ui.py $O/ui.xml has "$1"; }
 tap(){ dump; p=$(python3 $D/ui.py $O/ui.xml find "$1" $2) || { log "  (못 찾음: $1)"; return 1; }; adb shell input tap $p; sleep ${3:-2}; }
 # 가로로 스크롤되는 줄(도구, 색상) 안의 항목: 안 보이면 anchor 가 있는 줄을 왼쪽으로 밀어 찾는다
 tapx(){ for i in 1 2 3 4; do dump; p=$(python3 $D/ui.py $O/ui.xml find "$1" exact) && { adb shell input tap $p; sleep 1; return 0; }
-  a=$(python3 $D/ui.py $O/ui.xml find "$2" exact) || a=$(python3 $D/ui.py $O/ui.xml find "$3" exact) || break; read ax ay <<< "$a"; adb shell input swipe $((ax+500)) $ay $((ax+150)) $ay 400; sleep 1; done; log "  (못 찾음: $1)"; return 1; }
+  a=$(python3 $D/ui.py $O/ui.xml find "$2" exact) || a=$(python3 $D/ui.py $O/ui.xml find "$3" exact) || break; read ax ay <<< "$a"; adb shell input swipe $((SW*8/10)) $ay $((SW*4/10)) $ay 500; sleep 1; done; log "  (못 찾음: $1)"; return 1; }
 canvas(){ dump; python3 $D/ui.py $O/ui.xml bounds "색칠 도안"; }
+# 에뮬레이터 자체의 "응답 없음" 창(런처 등)이 뜨면 닫는다
+anr(){ if has "isn't responding"; then log "  (에뮬레이터 시스템 창 닫음: $(grep -o 'text="[^"]*responding"' $O/ui.xml | head -1))"; tap "Wait" "" 3; fi; }
+geom(){ B=$(canvas); read X1 Y1 X2 Y2 <<< "$B"; CX=$(((X1+X2)/2)); CY=$(((Y1+Y2)/2)); W=$((X2-X1)); H=$((Y2-Y1)); S=$((W<H?W:H)); }
 check(){ if "${@:2}"; then ok "$1"; else ng "$1"; fi; }
 
 log "== 환경: Android $(adb shell getprop ro.build.version.release | tr -d '\r') / API $(adb shell getprop ro.build.version.sdk | tr -d '\r') / $(adb shell wm size | tr -d '\r') / $(adb shell wm density | tr -d '\r') / $TAG"
@@ -26,15 +29,15 @@ adb install -r eum-kids-coloring.apk | tail -1 | tee -a $R
 log "요청 권한: $(adb shell dumpsys package $A | grep -A8 'requested permissions:' | grep 'android.permission' | tr -d ' \r' | tr '\n' ' ')"
 # 오프라인: 통신을 모두 끈 상태에서 진행
 adb shell svc wifi disable; adb shell svc data disable
-adb shell am start -W -n $A/.ui.MainActivity >/dev/null; sleep 6; shot 01_home
+read SW SH < <(adb shell wm size | tr -d '\r' | grep -o '[0-9]*x[0-9]*' | tail -1 | tr x ' ')
+sleep 15; anr
+adb shell am start -W -n $A/.ui.MainActivity >/dev/null; sleep 6; anr; anr; shot 01_home
 check "앱 설치 후 실행 (오프라인)" has "오늘의 추천 그림"
 check "카테고리 표시: 동물 친구들" has "동물 친구들"
 
 tap "당근을 들고 있는 아기 토끼" "" 6; shot 02_coloring
-B=$(canvas)
+anr; geom
 if [ -n "$B" ]; then ok "도안 열기 / 색칠 화면 표시"; else ng "도안 열기"; fi
-read X1 Y1 X2 Y2 <<< "$B"
-CX=$(((X1+X2)/2)); CY=$(((Y1+Y2)/2)); W=$((X2-X1)); H=$((Y2-Y1)); S=$((W<H?W:H))
 log "  캔버스 $B"
 # 영역 채우기: 가운데 근처 여러 곳
 adb shell input tap $((CX - S/5)) $((CY - S/6)); sleep 1
@@ -42,7 +45,7 @@ tapx "파랑" "빨강" "주황"; adb shell input tap $((CX + S/12)) $((CY + S/5)
 tapx "노랑" "빨강" "주황"; adb shell input tap $((X1 + S/20 + (W-S)/2)) $((Y1 + S/20 + (H-S)/2)); sleep 1
 shot 03_filled
 # 붓 (손가락)
-tap "붓" exact 1; tapx "초록" "노랑" "파랑"
+tap "붓" exact 1; tapx "초록" "노랑" "파랑"; geom; log "  캔버스(붓 도구) $B"
 adb shell input swipe $((CX - S/3)) $((CY + S/3)) $((CX + S/3)) $((CY + S/4)) 600; sleep 1
 # 스타일러스 입력 (에뮬레이션: 실제 S Pen 아님, 필압 없음)
 tap "크레용" exact 1; tapx "보라" "초록" "파랑"
