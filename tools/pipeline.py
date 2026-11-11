@@ -16,10 +16,11 @@ import numpy as np
 import cv2
 
 sys.path.insert(0, os.path.dirname(__file__))
-from prompts import P, S, MODEL, MODEL_PARAMS, CATEGORIES
+from prompts import P, MODEL, MODEL_PARAMS, CATEGORIES, full_prompt
 
 SIZE = 1536          # 앱용 작업 해상도
 THUMB = 384
+FIT = 0.94         # 도안을 캔버스의 94% 크기로 넣는다
 MIN_REGION = 220     # 이보다 작은 영역(px)은 이웃 영역에 합친다 (터치하기 어려운 조각)
 GAP_CLOSE = 5        # 미세한 틈 자동 보정: 선 끝 사이 이 정도(px) 틈은 메운다
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -41,7 +42,12 @@ def process(aid):
     gray = cv2.cvtColor(src, cv2.COLOR_BGR2GRAY)
     rep['midgray_ratio'] = float(((gray > 90) & (gray < 200)).mean())
     # 2) 흑백 선화 정리
-    gray = cv2.resize(gray, (SIZE, SIZE), interpolation=cv2.INTER_AREA)
+    rep['touches_border'] = bool((gray[:8] < 128).any() or (gray[-8:] < 128).any() or (gray[:, :8] < 128).any() or (gray[:, -8:] < 128).any())
+    inner = int(SIZE * FIT)
+    small = cv2.resize(gray, (inner, inner), interpolation=cv2.INTER_AREA)
+    gray = np.full((SIZE, SIZE), 255, np.uint8)      # 흰 여백을 둘러 그림이 화면 끝에 붙지 않게 한다
+    o = (SIZE - inner) // 2
+    gray[o:o + inner, o:o + inner] = small
     dark = 255 - gray.astype(np.int32)
     alpha = np.clip((dark - 40) * 255 // 150, 0, 255).astype(np.uint8)   # 연한 얼룩 제거 + 선은 진하게
     line = alpha > 110
@@ -128,7 +134,7 @@ def main():
               open(os.path.join(OUT, 'catalog.json'), 'w'), ensure_ascii=False, separators=(',', ':'))
     json.dump(report, open(os.path.join(ROOT, 'content', 'report.json'), 'w'), ensure_ascii=False, indent=1)
     # 프롬프트/제작 기록
-    rec = [{'id': a, 'title': t, 'prompt': s + ' ' + S, 'model': MODEL, 'params': MODEL_PARAMS,
+    rec = [{'id': a, 'title': t, 'prompt': full_prompt(a, s), 'model': MODEL, 'params': MODEL_PARAMS,
             'createdAt': today, 'resultUrl': sources.get(a)} for a, t, _c, _d, s in P]
     json.dump(rec, open(os.path.join(ROOT, 'content', 'prompts.json'), 'w'), ensure_ascii=False, indent=1)
     ok = sum(1 for a in arts if a['available'])

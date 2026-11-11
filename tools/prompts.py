@@ -35,6 +35,12 @@ P = [
 ("a29","눈이 달린 노란 굴착기","vehicles",2,"A cute cartoon excavator digger with big friendly eyes on its cabin, a smiling mouth, a jointed arm with a big bucket scooping, caterpillar tracks drawn with a few large segments, a small pile of dirt, 3/4 view."),
 ("a30","웃고 있는 작은 기차","vehicles",2,"A cute little steam train engine with a smiling face on its round front, a funnel puffing three large round smoke clouds, one small wagon behind, big wheels, on a short piece of track, 3/4 view."),
 ]
+# 처음 생성본이 가장자리에서 잘려 여백 문구를 덧붙여 다시 생성한 도안
+M = ("The whole drawing is zoomed out and small enough to fit entirely inside the canvas, with a wide empty white margin on all four sides; "
+"nothing touches or is cut off by the image edges.")
+RETRY = {"a03", "a04", "a06", "a07", "a09", "a10", "a11", "a13", "a18", "a19", "a22", "a23", "a27", "a30"}
+def full_prompt(aid, subject):
+    return subject + " " + S + (" " + M if aid in RETRY else "")
 MODEL = "gpt_image_2_6 (Higgsfield / GPT Image 2.6)"
 MODEL_PARAMS = {"aspect_ratio": "1:1", "quality": "medium", "resolution": "2k"}
 CATEGORIES = [
