@@ -2,7 +2,7 @@
 import { LibreDwg, Dwg_File_Type } from '@mlightcad/libredwg-web';
 import { SvgConverter } from '../node_modules/@mlightcad/libredwg-web/lib/svg/svgConverter.js';
 import { DxfParser } from '@mlightcad/dxf-json';
-import { el, menu, ask, toast } from './ui.js';
+import { el, menu, ask, toast, confirmBox } from './ui.js';
 import { createMeasure, svgEl } from './measure.js';
 
 const NOMINAL = 4000; // 도면 전체를 이 픽셀 폭 안에 놓고 무대에서 확대·축소한다.
@@ -58,7 +58,35 @@ async function parse(bytes, name) {
   for (const b of db.tables.BLOCK_RECORD.entries) walk(b.entities);
   const layers = db.tables.LAYER.entries.map((l) => ({ name: l.name, colorIndex: l.colorIndex }));
   const units = db.header && (db.header.INSUNITS ?? db.header.$INSUNITS);
-  return { svg, layers, entityLayer, units };
+  // 외부 참조(xref) 블록: 내용이 다른 DWG 파일에 있어 이 파일만으로는 그릴 수 없다. (블록 플래그 4 = xref)
+  const xrefs = db.tables.BLOCK_RECORD.entries.filter((b) => (b.flags & 4) && !(b.entities || []).length).map((b) => b.name);
+  return { svg, layers, entityLayer, units, xrefs };
+}
+
+/**
+ * 실제로 그려진 요소들로 보기 영역을 정한다(변환기의 viewBox 는 빈 xref 삽입·원점 잔재 때문에 엉뚱하게 커질 때가 있음).
+ * 요소 95% 가 모여 있는 묶음을 기준으로 잡아, 원점 근처의 잔재 한두 개 때문에 도면이 점처럼 작아지는 일을 막는다.
+ * 돌려주는 값은 viewBox 좌표(도면 y 뒤집힘).
+ */
+function contentBox(svgRoot) {
+  // 구조: svg > g(y 뒤집기) > g#*Model_Space > g(엔티티)...
+  const main = svgRoot.querySelector(':scope > g > g') || svgRoot.querySelector(':scope > g');
+  if (!main) return null;
+  const boxes = [];
+  for (const g of main.children) {
+    let b;
+    try { b = g.getBBox(); } catch { continue; }
+    if (!isFinite(b.width) || !isFinite(b.height) || (b.width === 0 && b.height === 0)) continue;
+    boxes.push({ x: b.x, y: -(b.y + b.height), w: b.width, h: b.height, cx: b.x + b.width / 2, cy: -(b.y + b.height / 2) });
+  }
+  if (!boxes.length) return null;
+  const med = (a) => { const s = [...a].sort((p, q) => p - q); return s[Math.floor(s.length / 2)]; };
+  const mx = med(boxes.map((b) => b.cx)), my = med(boxes.map((b) => b.cy));
+  boxes.sort((a, b) => Math.hypot(a.cx - mx, a.cy - my) - Math.hypot(b.cx - mx, b.cy - my));
+  const keep = boxes.length < 10 ? boxes : boxes.slice(0, Math.ceil(boxes.length * 0.95));
+  const x0 = Math.min(...keep.map((b) => b.x)), y0 = Math.min(...keep.map((b) => b.y));
+  const x1 = Math.max(...keep.map((b) => b.x + b.w)), y1 = Math.max(...keep.map((b) => b.y + b.h));
+  return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
 }
 
 /**
@@ -67,7 +95,7 @@ async function parse(bytes, name) {
 export async function openCad(bytes, ctx) {
   const { stage, content, labelLayer, tools, setHint } = ctx;
   setHint('도면을 읽는 중…');
-  const { svg, layers, entityLayer, units } = await parse(bytes, ctx.name);
+  const { svg, layers, entityLayer, units, xrefs } = await parse(bytes, ctx.name);
 
   // SVG 넣기 — 검은 바탕에 맞게 검은 선은 밝게, 선 굵기는 화면 기준 1px 로.
   const holder = el('div', 'cad');
@@ -77,7 +105,9 @@ export async function openCad(bytes, ctx) {
     .replace(/fill="#000000"/g, 'fill="#e6e6e6"')
     .replace('stroke-width="0.1%"', 'stroke-width="1"');
   const svgRoot = holder.querySelector('svg');
-  const vb = svgRoot.viewBox.baseVal;
+  content.innerHTML = '';
+  content.appendChild(holder); // getBBox 를 쓰려면 화면에 붙어 있어야 한다
+  const vb = contentBox(svgRoot) || svgRoot.viewBox.baseVal;
   if (!vb.width || !vb.height) throw new Error('도면에 그릴 내용이 없습니다(모델 공간이 비어 있음).');
   const pad = Math.max(vb.width, vb.height) * 0.02;
   const vbox = { x: vb.x - pad, y: vb.y - pad, w: vb.width + pad * 2, h: vb.height + pad * 2 };
@@ -91,10 +121,9 @@ export async function openCad(bytes, ctx) {
   const og = svgEl('g', {});
   overlay.appendChild(og);
   holder.appendChild(overlay);
-  content.innerHTML = '';
-  content.appendChild(holder);
   stage.setContentSize(pxW, pxH);
   stage.fit();
+  if (xrefs.length) setTimeout(() => confirmBox(`외부 참조(xref) 도면 ${xrefs.length}개가 이 파일에 포함되어 있지 않아 그 부분은 표시되지 않습니다: ${xrefs.join(', ')}\n\n원본 CAD에서 xref를 결합(bind)해 저장한 파일을 열면 전체가 보입니다.`, '닫기'), 400);
   const unitsPerPx = vbox.w / pxW; // 내용 좌표 1px = 도면 단위 몇 개
 
   // 레이어 ↔ 요소

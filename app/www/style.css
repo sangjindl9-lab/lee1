@@ -100,7 +100,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .sheet-cancel { justify-content: center; color: var(--muted); margin-top: 4px; border-top: 1px solid var(--line); border-radius: 0; }
 .sheet-sep { height: 1px; background: var(--line); margin: 4px 8px; }
 .dialog { width: 100%; max-width: 420px; background: #fff; border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
-.dialog-title { font-weight: 700; font-size: 16px; }
+.dialog-title { font-weight: 700; font-size: 16px; white-space: pre-line; }
 .dialog-row { display: flex; flex-direction: column; gap: 4px; }
 .dialog-label { font-size: 12px; color: var(--muted); }
 .dialog input, .dialog textarea, .dialog select { width: 100%; padding: 10px; font: inherit; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--text); }
