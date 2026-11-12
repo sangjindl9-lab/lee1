@@ -1,4 +1,5 @@
 // DWG·DXF 보기: libredwg(WASM)·dxf-json 으로 읽어 SVG 로 그린다. 레이어 켜고 끄기, 거리·면적 측정.
+import { t } from './i18n.js';
 import { LibreDwg, Dwg_File_Type } from '@mlightcad/libredwg-web';
 import { SvgConverter } from '../node_modules/@mlightcad/libredwg-web/lib/svg/svgConverter.js';
 import { DxfParser } from '@mlightcad/dxf-json';
@@ -7,7 +8,7 @@ import { createMeasure, svgEl } from './measure.js';
 
 const NOMINAL = 4000; // 도면 전체를 이 픽셀 폭 안에 놓고 무대에서 확대·축소한다.
 const UNIT_MM = { 1: 25.4, 2: 304.8, 4: 1, 5: 10, 6: 1000 };
-const UNIT_NAME = { 1: '인치', 2: '피트', 4: 'mm', 5: 'cm', 6: 'm' };
+const UNIT_NAME = { 1: t('인치'), 2: t('피트'), 4: 'mm', 5: 'cm', 6: 'm' };
 let libredwg = null;
 
 // 한 요소(예: 깨진 TABLE)에서 오류가 나도 도면 전체가 안 열리는 일은 없게 한다.
@@ -48,7 +49,7 @@ async function parse(bytes, name) {
   } else {
     if (!libredwg) libredwg = await LibreDwg.create('.');
     const ptr = libredwg.dwg_read_data(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength), Dwg_File_Type.DWG);
-    if (ptr == null) throw new Error('DWG 파일을 읽지 못했습니다.');
+    if (ptr == null) throw new Error(t('DWG 파일을 읽지 못했습니다.'));
     db = libredwg.convert(ptr);
     libredwg.dwg_free(ptr);
   }
@@ -94,7 +95,7 @@ function contentBox(svgRoot) {
  */
 export async function openCad(bytes, ctx) {
   const { stage, content, labelLayer, tools, setHint } = ctx;
-  setHint('도면을 읽는 중…');
+  setHint(t('도면을 읽는 중…'));
   const { svg, layers, entityLayer, units, xrefs } = await parse(bytes, ctx.name);
 
   // SVG 넣기 — 검은 바탕에 맞게 검은 선은 밝게, 선 굵기는 화면 기준 1px 로.
@@ -108,7 +109,7 @@ export async function openCad(bytes, ctx) {
   content.innerHTML = '';
   content.appendChild(holder); // getBBox 를 쓰려면 화면에 붙어 있어야 한다
   const vb = contentBox(svgRoot) || svgRoot.viewBox.baseVal;
-  if (!vb.width || !vb.height) throw new Error('도면에 그릴 내용이 없습니다(모델 공간이 비어 있음).');
+  if (!vb.width || !vb.height) throw new Error(t('도면에 그릴 내용이 없습니다(모델 공간이 비어 있음).'));
   const pad = Math.max(vb.width, vb.height) * 0.02;
   const vbox = { x: vb.x - pad, y: vb.y - pad, w: vb.width + pad * 2, h: vb.height + pad * 2 };
   svgRoot.setAttribute('viewBox', `${vbox.x} ${vbox.y} ${vbox.w} ${vbox.h}`);
@@ -123,7 +124,7 @@ export async function openCad(bytes, ctx) {
   holder.appendChild(overlay);
   stage.setContentSize(pxW, pxH);
   stage.fit();
-  if (xrefs.length) setTimeout(() => confirmBox(`외부 참조(xref) 도면 ${xrefs.length}개가 이 파일에 포함되어 있지 않아 그 부분은 표시되지 않습니다: ${xrefs.join(', ')}\n\n원본 CAD에서 xref를 결합(bind)해 저장한 파일을 열면 전체가 보입니다.`, '닫기'), 400);
+  if (xrefs.length) setTimeout(() => confirmBox(t('외부 참조(xref) 도면 {n}개가 이 파일에 포함되어 있지 않아 그 부분은 표시되지 않습니다: {names}\n\n원본 CAD에서 xref를 결합(bind)해 저장한 파일을 열면 전체가 보입니다.', { n: xrefs.length, names: xrefs.join(', ') }), t('닫기')), 400);
   const unitsPerPx = vbox.w / pxW; // 내용 좌표 1px = 도면 단위 몇 개
 
   // 레이어 ↔ 요소
@@ -191,24 +192,24 @@ export async function openCad(bytes, ctx) {
   function updateTools() {
     tools.innerHTML = '';
     const m = measure.mode;
-    tools.appendChild(btn('보기', '✋', () => { measure.setMode(null); updateTools(); }, !m ? 'on' : ''));
-    tools.appendChild(btn('거리', '📏', () => { measure.setMode('distance'); updateTools(); }, m === 'distance' ? 'on' : ''));
-    tools.appendChild(btn('면적', '⬠', () => { measure.setMode('area'); updateTools(); }, m === 'area' ? 'on' : ''));
+    tools.appendChild(btn(t('보기'), '✋', () => { measure.setMode(null); updateTools(); }, !m ? 'on' : ''));
+    tools.appendChild(btn(t('거리'), '📏', () => { measure.setMode('distance'); updateTools(); }, m === 'distance' ? 'on' : ''));
+    tools.appendChild(btn(t('면적'), '⬠', () => { measure.setMode('area'); updateTools(); }, m === 'area' ? 'on' : ''));
     if (m) {
-      tools.appendChild(btn('완료', '✓', () => { measure.finish(); updateTools(); }));
-      tools.appendChild(btn('되돌리기', '↶', () => { if (!measure.undo()) toast('지울 측정이 없습니다'); }));
+      tools.appendChild(btn(t('완료'), '✓', () => { measure.finish(); updateTools(); }));
+      tools.appendChild(btn(t('되돌리기'), '↶', () => { if (!measure.undo()) toast(t('지울 측정이 없습니다')); }));
     } else {
-      tools.appendChild(btn('레이어', '☰', showLayers));
-      tools.appendChild(btn('맞춤', '⤢', () => stage.fit()));
-      tools.appendChild(btn('단위', unitName, pickUnit));
+      tools.appendChild(btn(t('레이어'), '☰', showLayers));
+      tools.appendChild(btn(t('맞춤'), '⤢', () => stage.fit()));
+      tools.appendChild(btn(t('단위'), unitName, pickUnit));
     }
-    setHint(m === 'distance' ? '점을 차례로 누르세요 · 끝점 근처는 자동으로 붙습니다 · 완료로 끝내기'
-      : m === 'area' ? '면적을 둘러싸는 꼭짓점을 차례로 누른 뒤 완료' : '');
+    setHint(m === 'distance' ? t('점을 차례로 누르세요 · 끝점 근처는 자동으로 붙습니다 · 완료로 끝내기')
+      : m === 'area' ? t('면적을 둘러싸는 꼭짓점을 차례로 누른 뒤 완료') : '');
   }
   async function showLayers() {
     const items = layerList.map((name) => ({ label: (hidden.has(name) ? '☐ ' : '☑ ') + name, name }));
-    if (!items.length) return toast('레이어 정보가 없습니다');
-    const pick = await menu([{ label: '모두 켜기', icon: '◉', all: true }, '-', ...items], '레이어');
+    if (!items.length) return toast(t('레이어 정보가 없습니다'));
+    const pick = await menu([{ label: t('모두 켜기'), icon: '◉', all: true }, '-', ...items], t('레이어'));
     if (!pick) return;
     if (pick.all) hidden.clear();
     else if (hidden.has(pick.name)) hidden.delete(pick.name); else hidden.add(pick.name);
@@ -216,33 +217,33 @@ export async function openCad(bytes, ctx) {
     if (!pick.all) showLayers();
   }
   async function pickUnit() {
-    const r = await ask('도면 1단위의 길이', [{ name: 'u', type: 'select', value: String(unitMm), options: [
-      { label: 'mm (일반 건축·전기 도면)', value: '1' }, { label: 'cm', value: '10' }, { label: 'm', value: '1000' }, { label: '인치', value: '25.4' }, { label: '피트', value: '304.8' },
+    const r = await ask(t('도면 1단위의 길이'), [{ name: 'u', type: 'select', value: String(unitMm), options: [
+      { label: t('mm (일반 건축·전기 도면)'), value: '1' }, { label: 'cm', value: '10' }, { label: 'm', value: '1000' }, { label: t('인치'), value: '25.4' }, { label: t('피트'), value: '304.8' },
     ] }]);
     if (!r) return;
     unitMm = Number(r.u);
-    unitName = { 1: 'mm', 10: 'cm', 1000: 'm', 25.4: '인치', 304.8: '피트' }[unitMm];
+    unitName = { 1: 'mm', 10: 'cm', 1000: 'm', 25.4: t('인치'), 304.8: t('피트') }[unitMm];
     measure.relabel();
     updateTools();
   }
   updateTools();
-  toast(`도면 단위: ${unitName} (단위 버튼으로 변경)`);
+  toast(t('도면 단위: {u} (단위 버튼으로 변경)', { u: unitName }));
 
   return {
     type: 'cad',
     dirty: () => false,
     async more() {
       const pick = await menu([
-        { label: '측정 모두 지우기', icon: '🧹', id: 'clear' },
-        { label: '도면 정보', icon: 'ℹ', id: 'info' },
+        { label: t('측정 모두 지우기'), icon: '🧹', id: 'clear' },
+        { label: t('도면 정보'), icon: 'ℹ', id: 'info' },
       ]);
       if (!pick) return;
       if (pick.id === 'clear') measure.clear();
       if (pick.id === 'info') await ask(ctx.name, [
-        { name: 'a', label: '크기(도면 단위)', value: `${vb.width.toFixed(1)} × ${vb.height.toFixed(1)} ${unitName}` },
-        { name: 'b', label: '레이어 수', value: String(layerList.length) },
-        { name: 'c', label: '요소 수', value: String(entityLayer.size) },
-      ], '닫기');
+        { name: 'a', label: t('크기(도면 단위)'), value: `${vb.width.toFixed(1)} × ${vb.height.toFixed(1)} ${unitName}` },
+        { name: 'b', label: t('레이어 수'), value: String(layerList.length) },
+        { name: 'c', label: t('요소 수'), value: String(entityLayer.size) },
+      ], t('닫기'));
     },
     destroy() { measure.clear(); content.innerHTML = ''; labelLayer.innerHTML = ''; stage.setTapHandler(null); stage.setDrawHandler(null); },
   };

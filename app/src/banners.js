@@ -1,4 +1,5 @@
 // 홈 화면 배너 광고. 서버(ads/)에서 켜 둔 배너가 있을 때만 자리가 보인다. 서버가 안 되면 조용히 숨긴다.
+import { t } from './i18n.js';
 import { el } from './ui.js';
 
 const ADS_URL = 'https://ads-production-a599.up.railway.app';
@@ -43,10 +44,10 @@ export async function renderBanners(slots) {
     if (b.bg) a.style.background = b.bg;
     const img = el('img');
     img.src = ADS_URL + b.image;
-    img.alt = b.title || '광고';
+    img.alt = b.title || t('광고');
     img.loading = 'lazy';
     a.appendChild(img);
-    a.appendChild(el('span', 'ad-tag', '광고'));
+    a.appendChild(el('span', 'ad-tag', t('광고')));
     a.onclick = (e) => { hit(b.id, 'click'); if (!b.link) e.preventDefault(); };
     host.appendChild(a);
     if (!shown.has(b.id)) { shown.add(b.id); hit(b.id, 'imp'); }

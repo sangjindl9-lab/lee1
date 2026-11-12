@@ -1,4 +1,5 @@
 // 휴대폰 파일 열기·저장·공유. 안드로이드에서는 EumFiles 플러그인, 브라우저(테스트)에서는 <input type=file>/다운로드.
+import { t } from './i18n.js';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 
 export const isNative = Capacitor.isNativePlatform();
@@ -48,14 +49,14 @@ export async function readFile(uri) {
     return b64ToBytes(r.data);
   }
   const f = browserFiles.get(uri);
-  if (!f) throw new Error('파일을 다시 열어 주세요.');
+  if (!f) throw new Error(t('파일을 다시 열어 주세요.'));
   return new Uint8Array(await f.arrayBuffer());
 }
 
 /** 같은 위치에 덮어쓰기 */
 export async function writeFile(uri, bytes, name) {
   if (native) return native.write({ uri, data: bytesToB64(bytes) });
-  download(bytes, name || '문서.pdf');
+  download(bytes, name || t('문서.pdf'));
 }
 
 /** 저장 위치 고르기 → { uri, name } (취소하면 null) */
@@ -73,7 +74,7 @@ export async function pickSave(name, mime = 'application/pdf') {
 
 export async function share(uri, name) {
   if (native) return native.share({ uri, name });
-  alert('브라우저에서는 공유할 수 없습니다. 안드로이드 앱에서 사용하세요.');
+  alert(t('브라우저에서는 공유할 수 없습니다. 안드로이드 앱에서 사용하세요.'));
 }
 
 /** 다른 앱에서 "이음뷰어로 열기"로 넘어온 파일을 받는다. */

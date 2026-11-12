@@ -1,4 +1,5 @@
 // 작은 화면 부품: 토스트, 아래 메뉴, 입력 대화상자.
+import { t } from './i18n.js';
 export const $ = (id) => document.getElementById(id);
 export function el(tag, cls, text) {
   const e = document.createElement(tag);
@@ -30,7 +31,7 @@ export function menu(items, title) {
       b.onclick = () => { close(); resolve(it); if (it.onClick) it.onClick(); };
       sheet.appendChild(b);
     }
-    const cancel = el('button', 'sheet-item sheet-cancel', '취소');
+    const cancel = el('button', 'sheet-item sheet-cancel', t('취소'));
     cancel.onclick = () => { close(); resolve(null); };
     sheet.appendChild(cancel);
     back.appendChild(sheet);
@@ -45,7 +46,7 @@ export function menu(items, title) {
  * 입력 대화상자. fields: [{ name, label, value, type: 'text'|'textarea'|'number'|'select'|'color', options, placeholder }]
  * 확인하면 { name: value } 를, 취소하면 null 을 돌려준다.
  */
-export function ask(title, fields, okLabel = '확인') {
+export function ask(title, fields, okLabel = t('확인')) {
   return new Promise((resolve) => {
     const back = el('div', 'backdrop center');
     const box = el('div', 'dialog');
@@ -73,7 +74,7 @@ export function ask(title, fields, okLabel = '확인') {
       first = first || inp;
     }
     const btns = el('div', 'dialog-btns');
-    const c = el('button', 'btn', '취소');
+    const c = el('button', 'btn', t('취소'));
     const ok = el('button', 'btn primary', okLabel);
     c.onclick = () => { back.remove(); resolve(null); };
     ok.onclick = () => {
@@ -91,7 +92,7 @@ export function ask(title, fields, okLabel = '확인') {
   });
 }
 
-export async function confirmBox(msg, okLabel = '확인') {
+export async function confirmBox(msg, okLabel = t('확인')) {
   return (await ask(msg, [], okLabel)) != null;
 }
 

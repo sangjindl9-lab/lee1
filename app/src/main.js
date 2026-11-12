@@ -1,4 +1,5 @@
 // 이음뷰어 — 홈(열기·최근 문서)과 뷰어 화면 전환.
+import { t, applyStatic } from './i18n.js';
 import { $, el, toast, menu, confirmBox } from './ui.js';
 import { createStage } from './stage.js';
 import * as files from './files.js';
@@ -38,12 +39,12 @@ function renderRecents() {
   }
 }
 async function forgetMenu(r) {
-  const p = await menu([{ label: '목록에서 지우기', icon: '✕', danger: true }], r.name);
+  const p = await menu([{ label: t('목록에서 지우기'), icon: '✕', danger: true }], r.name);
   if (p) { files.forget(r.uri); renderRecents(); }
 }
 
 async function openUri(uri, name) {
-  if (current && current.dirty() && !(await confirmBox('저장하지 않은 변경 내용이 있습니다. 버리고 열까요?', '버리기'))) return;
+  if (current && current.dirty() && !(await confirmBox(t('저장하지 않은 변경 내용이 있습니다. 버리고 열까요?'), t('버리기')))) return;
   if (current) { current.destroy(); current = null; }
   stage.reset();
   $('home').hidden = true; $('viewer').hidden = false;
@@ -52,25 +53,25 @@ async function openUri(uri, name) {
   $('save').hidden = true;
   $('tools').innerHTML = '';
   $('content').innerHTML = ''; $('labels').innerHTML = '';
-  setHint('파일을 읽는 중…');
+  setHint(t('파일을 읽는 중…'));
   try {
     const bytes = await files.readFile(uri);
     // 파일 종류는 이름이 아니라 내용으로 판단한다(파일 관리자에서 넘어올 때 이름에 확장자가 없을 수 있음).
     const kind = detectKind(bytes, name);
-    if (!kind) throw new Error('PDF, DWG, DXF 파일이 아닙니다.');
+    if (!kind) throw new Error(t('PDF, DWG, DXF 파일이 아닙니다.'));
     if (kind === 'dxf' && !/\.dxf$/i.test(name)) name += '.dxf';
     if (kind === 'dwg' && !/\.dwg$/i.test(name)) name += '.dwg';
     ctx = { stage, content: $('content'), labelLayer: $('labels'), tools: $('tools'), setHint, name, uri };
     const isCad = kind !== 'pdf';
     $('stage').classList.toggle('dark', isCad);
-    $('kind').textContent = isCad ? 'CAD 보기' : 'PDF 편집';
+    $('kind').textContent = isCad ? t('CAD 보기') : t('PDF 편집');
     $('kind').className = 'kind ' + (isCad ? 'cad' : 'pdf');
     current = isCad ? await openCad(bytes, ctx) : await openPdf(bytes, ctx);
     $('save').hidden = current.type !== 'pdf';
     files.remember(uri, name);
   } catch (e) {
     console.error(e);
-    toast('열 수 없습니다: ' + (e.message || e), 5000);
+    toast(t('열 수 없습니다: ') + (e.message || e), 5000);
     files.forget(uri);
     showHome();
   }
@@ -102,10 +103,10 @@ $('save').onclick = () => current && current.save && current.save();
 async function goBack() {
   if (!current) return showHome();
   if (current.dirty()) {
-    const p = await menu([{ label: '저장하고 닫기', icon: '💾', id: 'save' }, { label: '저장하지 않고 닫기', icon: '✕', id: 'discard', danger: true }], '변경 내용이 있습니다. 문서를 닫을까요?');
+    const p = await menu([{ label: t('저장하고 닫기'), icon: '💾', id: 'save' }, { label: t('저장하지 않고 닫기'), icon: '✕', id: 'discard', danger: true }], t('변경 내용이 있습니다. 문서를 닫을까요?'));
     if (!p) return;
     if (p.id === 'save' && !(await current.save())) return;
-  } else if (!(await confirmBox('문서를 닫고 홈으로 갈까요?', '닫기'))) return;
+  } else if (!(await confirmBox(t('문서를 닫고 홈으로 갈까요?'), t('닫기')))) return;
   current.destroy(); current = null;
   showHome();
 }
@@ -117,8 +118,9 @@ files.onBack(() => {
   if (open) { open.remove(); return; }
   if (!$('viewer').hidden) { goBack(); return; }
   if (Date.now() - lastBackAt < 2000) files.exitApp();
-  else { lastBackAt = Date.now(); toast('한 번 더 누르면 앱을 종료합니다'); }
+  else { lastBackAt = Date.now(); toast(t('한 번 더 누르면 앱을 종료합니다')); }
 });
-files.onLaunch((f) => { if (f.copied) toast('다른 앱에서 넘어온 파일은 복사본으로 엽니다. 저장하면 위치를 고르게 됩니다.', 3500); openUri(f.uri, f.name); });
+files.onLaunch((f) => { if (f.copied) toast(t('다른 앱에서 넘어온 파일은 복사본으로 엽니다. 저장하면 위치를 고르게 됩니다.'), 3500); openUri(f.uri, f.name); });
 
+applyStatic();
 showHome();

@@ -1,3 +1,4 @@
+import { t } from './i18n.js';
 // PDF 보기·편집: pdf.js 로 쪽을 그리고, 겹침 SVG 에 주석·측정·글자 고치기·양식 값을 그린다.
 // 편집 내용은 "쪽 표시 좌표(지금 회전 상태, 1pt = 1px)" 로 저장하고, 저장할 때 pdfsave.js 가 PDF 좌표로 바꾼다.
 import * as pdfjs from 'pdfjs-dist';
@@ -9,8 +10,8 @@ import * as files from './files.js';
 pdfjs.GlobalWorkerOptions.workerSrc = './pdf.worker.js';
 const GAP = 12;
 const PT_MM = 25.4 / 72;
-const COLORS = [['#e53935', '빨강'], ['#1e88e5', '파랑'], ['#43a047', '초록'], ['#000000', '검정'], ['#fb8c00', '주황'], ['#8e24aa', '보라']];
-const HL_COLORS = [['#ffeb3b', '노랑'], ['#69f0ae', '연두'], ['#80d8ff', '하늘'], ['#ff80ab', '분홍']];
+const COLORS = [['#e53935', t('빨강')], ['#1e88e5', t('파랑')], ['#43a047', t('초록')], ['#000000', t('검정')], ['#fb8c00', t('주황')], ['#8e24aa', t('보라')]];
+const HL_COLORS = [['#ffeb3b', t('노랑')], ['#69f0ae', t('연두')], ['#80d8ff', t('하늘')], ['#ff80ab', t('분홍')]];
 
 async function loadDoc(bytes) {
   const pdf = await pdfjs.getDocument({ data: bytes.slice(), cMapUrl: './cmaps/', cMapPacked: true, standardFontDataUrl: './standard_fonts/' }).promise;
@@ -19,7 +20,7 @@ async function loadDoc(bytes) {
 
 export async function openPdf(bytes, ctx) {
   const { stage, content, labelLayer, tools, setHint } = ctx;
-  setHint('문서를 여는 중…');
+  setHint(t('문서를 여는 중…'));
   const docs = [await loadDoc(bytes)];
   const state = { docs, pages: [], formValues: {}, mmPerPt: null, dirty: false };
   const dpr = Math.min(3, window.devicePixelRatio || 1);
@@ -236,29 +237,29 @@ export async function openPdf(bytes, ctx) {
     mmPerUnit: () => state.mmPerPt,
     async askScale(pg, p1, p2) {
       const d = Math.hypot(p2.x - p1.x, p2.y - p1.y);
-      const r = await ask('이 두 점 사이의 실제 길이', [{ name: 'mm', label: '실제 길이 (mm)', type: 'number', placeholder: '예: 3000' }]);
+      const r = await ask(t('이 두 점 사이의 실제 길이'), [{ name: 'mm', label: t('실제 길이 (mm)'), type: 'number', placeholder: t('예: 3000') }]);
       if (!r || !(r.mm > 0)) return false;
       state.mmPerPt = r.mm / d;
       measure.relabel();
-      toast('축척이 정해졌습니다. 이제 점을 찍어 재세요.');
+      toast(t('축척이 정해졌습니다. 이제 점을 찍어 재세요.'));
       return true;
     },
     onChange() { state.dirty = true; updateTools(); },
   });
   async function setScaleByRatio() {
-    const r = await ask('도면 축척', [{ name: 'n', label: '1 : N (예: 100)', type: 'number', value: 100 }]);
+    const r = await ask(t('도면 축척'), [{ name: 'n', label: t('1 : N (예: 100)'), type: 'number', value: 100 }]);
     if (!r || !(r.n > 0)) return;
     state.mmPerPt = PT_MM * r.n;
     measure.relabel();
-    toast(`축척 1:${r.n} 로 잽니다`);
+    toast(t('축척 1:{n} 로 잽니다', { n: r.n }));
   }
 
   // ── 도구 ──
   function addEdit(pg, ed) { pg.edits.push(ed); undoStack.push({ pg, ed }); state.dirty = true; drawEdits(pg); }
   function undo() {
-    if (mode === 'measure') { if (!measure.undo()) toast('되돌릴 것이 없습니다'); return; }
+    if (mode === 'measure') { if (!measure.undo()) toast(t('되돌릴 것이 없습니다')); return; }
     const u = undoStack.pop();
-    if (!u) { toast('되돌릴 것이 없습니다'); return; }
+    if (!u) { toast(t('되돌릴 것이 없습니다')); return; }
     if (u.form) { if (u.prev === undefined) delete state.formValues[u.form]; else state.formValues[u.form] = u.prev; for (const pg of state.pages) drawEdits(pg); return; }
     const i = u.pg.edits.lastIndexOf(u.ed);
     if (i >= 0) u.pg.edits.splice(i, 1);
@@ -272,7 +273,7 @@ export async function openPdf(bytes, ctx) {
     const l = local(pg, pt);
     if (mode === 'measure') return measure.addPoint(pt);
     if (mode === 'text') {
-      const r = await ask('글 넣기', [{ name: 't', type: 'textarea', placeholder: '내용' }, { name: 's', label: '글자 크기(pt)', type: 'number', value: textSize }]);
+      const r = await ask(t('글 넣기'), [{ name: 't', type: 'textarea', placeholder: t('내용') }, { name: 's', label: t('글자 크기(pt)'), type: 'number', value: textSize }]);
       if (!r || !r.t.trim()) return;
       textSize = r.s || 12;
       addEdit(pg, { type: 'text', x: l.x, y: l.y, text: r.t, size: textSize, color });
@@ -284,22 +285,22 @@ export async function openPdf(bytes, ctx) {
       const blob = new Blob([bytes], { type: mime });
       const dataUrl = await new Promise((res) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.readAsDataURL(blob); });
       const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = dataUrl; });
-      const r = await ask('이미지 크기', [{ name: 'mm', label: '가로 길이(mm)', type: 'number', value: 30 }]);
+      const r = await ask(t('이미지 크기'), [{ name: 'mm', label: t('가로 길이(mm)'), type: 'number', value: 30 }]);
       if (!r || !(r.mm > 0)) return;
       const w = r.mm / PT_MM, h = w * img.height / img.width;
       addEdit(pg, { type: 'image', x: l.x - w / 2, y: l.y - h / 2, w, h, dataUrl, bytes, mime });
     } else if (mode === 'textfix') {
       const texts = await loadTexts(pg);
       const hit = texts.find((t) => l.x >= t.x - 2 && l.x <= t.x + t.w + 2 && l.y >= t.y - 2 && l.y <= t.y + t.h + 2);
-      if (!hit) { toast('글자 위를 누르세요'); return; }
-      const r = await ask('글자 고치기', [{ name: 't', value: hit.str, type: 'text' }]);
+      if (!hit) { toast(t('글자 위를 누르세요')); return; }
+      const r = await ask(t('글자 고치기'), [{ name: 't', value: hit.str, type: 'text' }]);
       if (!r) return;
       addEdit(pg, { type: 'textfix', x: hit.x, y: hit.y, w: hit.w, h: hit.h, text: r.t, color: '#000000' });
     } else if (mode === 'form') {
       const ws = await loadWidgets(pg);
       const w = ws.find((t) => l.x >= t.x && l.x <= t.x + t.w && l.y >= t.y && l.y <= t.y + t.h);
-      if (!w) { toast('입력란 위를 누르세요'); return; }
-      if (w.readOnly) { toast('읽기 전용 칸입니다'); return; }
+      if (!w) { toast(t('입력란 위를 누르세요')); return; }
+      if (w.readOnly) { toast(t('읽기 전용 칸입니다')); return; }
       const prev = state.formValues[w.name];
       let v;
       if (w.checkBox) v = !(prev !== undefined ? prev : (w.value && w.value !== 'Off'));
@@ -362,45 +363,45 @@ export async function openPdf(bytes, ctx) {
     const sw = (c) => `<span class="swatch" style="background:${c}"></span>`;
     if (mode === 'measure') {
       const mm = measure.mode;
-      tools.appendChild(btn('나가기', '←', () => setMode(null)));
-      tools.appendChild(btn('거리', '📏', () => { measure.setMode('distance'); updateTools(); }, mm === 'distance' ? 'on' : ''));
-      tools.appendChild(btn('면적', '⬠', () => { measure.setMode('area'); updateTools(); }, mm === 'area' ? 'on' : ''));
-      tools.appendChild(btn('완료', '✓', () => { measure.finish(); updateTools(); }));
-      tools.appendChild(btn('되돌리기', '↶', undo));
-      tools.appendChild(btn('축척', '1:N', setScaleByRatio));
-      setHint(state.mmPerPt == null ? '축척을 모릅니다 → "축척" 버튼으로 1:N 을 넣거나, 길이를 아는 두 점을 먼저 누르세요'
-        : mm === 'area' ? '꼭짓점을 차례로 누른 뒤 완료' : '점을 차례로 누르세요 · 완료로 끝내기');
+      tools.appendChild(btn(t('나가기'), '←', () => setMode(null)));
+      tools.appendChild(btn(t('거리'), '📏', () => { measure.setMode('distance'); updateTools(); }, mm === 'distance' ? 'on' : ''));
+      tools.appendChild(btn(t('면적'), '⬠', () => { measure.setMode('area'); updateTools(); }, mm === 'area' ? 'on' : ''));
+      tools.appendChild(btn(t('완료'), '✓', () => { measure.finish(); updateTools(); }));
+      tools.appendChild(btn(t('되돌리기'), '↶', undo));
+      tools.appendChild(btn(t('축척'), '1:N', setScaleByRatio));
+      setHint(state.mmPerPt == null ? t('축척을 모릅니다 → "축척" 버튼으로 1:N 을 넣거나, 길이를 아는 두 점을 먼저 누르세요')
+        : mm === 'area' ? t('꼭짓점을 차례로 누른 뒤 완료') : t('점을 차례로 누르세요 · 완료로 끝내기'));
       return;
     }
-    tools.appendChild(btn('보기', '✋', () => setMode(null), mode == null ? 'on' : ''));
-    tools.appendChild(btn('펜', '✎', () => setMode('ink'), on('ink')));
-    tools.appendChild(btn('형광펜', '▬', () => setMode('highlight'), on('highlight')));
-    tools.appendChild(btn('글', 'T', () => setMode('text'), on('text')));
-    tools.appendChild(btn('도형', { rect: '▭', ellipse: '◯', line: '╱', arrow: '➚' }[shape], async () => {
+    tools.appendChild(btn(t('보기'), '✋', () => setMode(null), mode == null ? 'on' : ''));
+    tools.appendChild(btn(t('펜'), '✎', () => setMode('ink'), on('ink')));
+    tools.appendChild(btn(t('형광펜'), '▬', () => setMode('highlight'), on('highlight')));
+    tools.appendChild(btn(t('글'), 'T', () => setMode('text'), on('text')));
+    tools.appendChild(btn(t('도형'), { rect: '▭', ellipse: '◯', line: '╱', arrow: '➚' }[shape], async () => {
       if (mode !== 'shape') return setMode('shape');
-      const p = await menu([{ label: '사각형', id: 'rect', icon: '▭' }, { label: '타원', id: 'ellipse', icon: '◯' }, { label: '직선', id: 'line', icon: '╱' }, { label: '화살표', id: 'arrow', icon: '➚' }], '도형');
+      const p = await menu([{ label: t('사각형'), id: 'rect', icon: '▭' }, { label: t('타원'), id: 'ellipse', icon: '◯' }, { label: t('직선'), id: 'line', icon: '╱' }, { label: t('화살표'), id: 'arrow', icon: '➚' }], t('도형'));
       if (p) { shape = p.id; updateTools(); }
     }, on('shape')));
-    tools.appendChild(btn('이미지', '🖼', () => setMode('image'), on('image')));
-    tools.appendChild(btn('글자고치기', '✐', () => setMode('textfix'), on('textfix')));
-    tools.appendChild(btn('양식', '☑', () => setMode('form'), on('form')));
-    tools.appendChild(btn('측정', '📏', () => setMode('measure'), on('measure')));
-    tools.appendChild(btn('쪽', '▤', pagesPanel));
-    if (['ink', 'text', 'shape'].includes(mode)) tools.appendChild(btn('색', sw(color), async () => {
-      const p = await menu(COLORS.map(([c, n]) => ({ label: n, icon: sw(c), c })), '색');
+    tools.appendChild(btn(t('이미지'), '🖼', () => setMode('image'), on('image')));
+    tools.appendChild(btn(t('글자고치기'), '✐', () => setMode('textfix'), on('textfix')));
+    tools.appendChild(btn(t('양식'), '☑', () => setMode('form'), on('form')));
+    tools.appendChild(btn(t('측정'), '📏', () => setMode('measure'), on('measure')));
+    tools.appendChild(btn(t('쪽'), '▤', pagesPanel));
+    if (['ink', 'text', 'shape'].includes(mode)) tools.appendChild(btn(t('색'), sw(color), async () => {
+      const p = await menu(COLORS.map(([c, n]) => ({ label: n, icon: sw(c), c })), t('색'));
       if (p) { color = p.c; updateTools(); }
     }));
-    if (mode === 'highlight') tools.appendChild(btn('색', sw(hlColor), async () => {
-      const p = await menu(HL_COLORS.map(([c, n]) => ({ label: n, icon: sw(c), c })), '형광 색');
+    if (mode === 'highlight') tools.appendChild(btn(t('색'), sw(hlColor), async () => {
+      const p = await menu(HL_COLORS.map(([c, n]) => ({ label: n, icon: sw(c), c })), t('형광 색'));
       if (p) { hlColor = p.c; updateTools(); }
     }));
-    if (['ink', 'highlight', 'shape'].includes(mode)) tools.appendChild(btn('굵기', String(width), async () => {
-      const p = await menu([1, 2, 4, 6].map((w) => ({ label: w + 'pt', w })), '굵기');
+    if (['ink', 'highlight', 'shape'].includes(mode)) tools.appendChild(btn(t('굵기'), String(width), async () => {
+      const p = await menu([1, 2, 4, 6].map((w) => ({ label: w + 'pt', w })), t('굵기'));
       if (p) { width = p.w; updateTools(); }
     }));
-    if (mode) tools.appendChild(btn('되돌리기', '↶', undo));
-    setHint({ ink: '한 손가락으로 그립니다 · 두 손가락으로 이동·확대', highlight: '한 손가락으로 칠합니다', text: '글을 넣을 자리를 누르세요', shape: '한 손가락으로 끌어 그립니다 · 도형 버튼을 다시 누르면 종류 선택',
-      image: '이미지를 넣을 자리를 누르세요(도장·서명 등)', textfix: '고칠 글자를 누르세요(흰 상자로 덮고 새 글자를 씁니다)', form: '입력란을 누르세요' }[mode] || '');
+    if (mode) tools.appendChild(btn(t('되돌리기'), '↶', undo));
+    setHint(t({ ink: '한 손가락으로 그립니다 · 두 손가락으로 이동·확대', highlight: '한 손가락으로 칠합니다', text: '글을 넣을 자리를 누르세요', shape: '한 손가락으로 끌어 그립니다 · 도형 버튼을 다시 누르면 종류 선택',
+      image: '이미지를 넣을 자리를 누르세요(도장·서명 등)', textfix: '고칠 글자를 누르세요(흰 상자로 덮고 새 글자를 씁니다)', form: '입력란을 누르세요' }[mode] || ''));
   }
   // 메뉴 아이콘에 HTML(색 견본)을 쓰므로 menu 의 아이콘 칸은 innerHTML 로
   updateTools();
@@ -410,15 +411,15 @@ export async function openPdf(bytes, ctx) {
     const back = el('div', 'backdrop');
     const panel = el('div', 'panel');
     const head = el('div', 'panel-head');
-    head.appendChild(el('span', null, `쪽 관리 (${state.pages.length}쪽)`));
-    const close = el('button', 'btn', '닫기');
+    head.appendChild(el('span', null, t('쪽 관리 ({n}쪽)', { n: state.pages.length })));
+    const close = el('button', 'btn', t('닫기'));
     close.onclick = () => back.remove();
     head.appendChild(close);
     panel.appendChild(head);
     const list = el('div', 'panel-list');
     panel.appendChild(list);
     const foot = el('div', 'panel-foot');
-    const ins = el('button', 'btn', 'PDF 끼워넣기');
+    const ins = el('button', 'btn', t('PDF 끼워넣기'));
     ins.onclick = async () => {
       const f = await files.pickOpen('application/pdf');
       if (!f) return;
@@ -427,23 +428,23 @@ export async function openPdf(bytes, ctx) {
         docs.push(d);
         for (let i = 0; i < d.pdf.numPages; i++) state.pages.push(await makePage(docs.length - 1, i));
         state.dirty = true; layout(); renderVisible(); refresh();
-        toast(`${d.pdf.numPages}쪽을 끝에 넣었습니다. 순서는 ↑↓ 로 옮기세요.`);
-      } catch (e) { toast('PDF 를 열 수 없습니다: ' + e.message); }
+        toast(t('{n}쪽을 끝에 넣었습니다. 순서는 ↑↓ 로 옮기세요.', { n: d.pdf.numPages }));
+      } catch (e) { toast(t('PDF 를 열 수 없습니다: ') + e.message); }
     };
-    const ext = el('button', 'btn', '일부 쪽만 저장(나누기)');
+    const ext = el('button', 'btn', t('일부 쪽만 저장(나누기)'));
     ext.onclick = async () => {
-      const r = await ask('저장할 쪽', [{ name: 'r', label: '예: 1-3,5', placeholder: '1-3,5', value: '1-' + state.pages.length }]);
+      const r = await ask(t('저장할 쪽'), [{ name: 'r', label: t('예: 1-3,5'), placeholder: '1-3,5', value: '1-' + state.pages.length }]);
       if (!r) return;
       const idx = parseRange(r.r, state.pages.length);
-      if (!idx.length) return toast('쪽 범위가 잘못됐습니다');
-      const target = await files.pickSave(ctx.name.replace(/\.pdf$/i, '') + '_일부.pdf');
+      if (!idx.length) return toast(t('쪽 범위가 잘못됐습니다'));
+      const target = await files.pickSave(ctx.name.replace(/\.pdf$/i, '') + t('_일부') + '.pdf');
       if (!target) return;
-      setHint('저장 중…');
+      setHint(t('저장 중…'));
       try {
         const bytes = await extractPages(state, idx, await fontBytes());
         await files.writeFile(target.uri, bytes, target.name);
-        toast('저장했습니다: ' + target.name);
-      } catch (e) { toast('저장 실패: ' + e.message); }
+        toast(t('저장했습니다: ') + target.name);
+      } catch (e) { toast(t('저장 실패: ') + e.message); }
       setHint('');
     };
     foot.append(ins, ext);
@@ -453,18 +454,18 @@ export async function openPdf(bytes, ctx) {
     requestAnimationFrame(() => back.classList.add('show'));
     function refresh() {
       list.innerHTML = '';
-      head.firstChild.textContent = `쪽 관리 (${state.pages.length}쪽)`;
+      head.firstChild.textContent = t('쪽 관리 ({n}쪽)', { n: state.pages.length });
       state.pages.forEach((pg, i) => {
         const row = el('div', 'prow');
         const th = el('canvas', 'thumb');
         row.appendChild(th);
         thumb(pg, th);
-        row.appendChild(el('span', 'pname', `${i + 1}쪽`));
+        row.appendChild(el('span', 'pname', t('{n}쪽', { n: i + 1 })));
         const b = (t, fn) => { const x = el('button', 'btn small', t); x.onclick = fn; row.appendChild(x); };
         b('↑', () => { if (i > 0) { state.pages.splice(i - 1, 0, state.pages.splice(i, 1)[0]); after(); } });
         b('↓', () => { if (i < state.pages.length - 1) { state.pages.splice(i + 1, 0, state.pages.splice(i, 1)[0]); after(); } });
         b('⟳', () => { rotatePage(pg); after(); });
-        b('✕', async () => { if (state.pages.length === 1) return toast('마지막 쪽은 지울 수 없습니다'); if (await confirmBox(`${i + 1}쪽을 지울까요?`, '지우기')) { state.pages.splice(i, 1); after(); } });
+        b('✕', async () => { if (state.pages.length === 1) return toast(t('마지막 쪽은 지울 수 없습니다')); if (await confirmBox(t('{n}쪽을 지울까요?', { n: i + 1 }), t('지우기'))) { state.pages.splice(i, 1); after(); } });
         list.appendChild(row);
       });
     }
@@ -507,16 +508,16 @@ export async function openPdf(bytes, ctx) {
   }
 
   async function save(target) {
-    setHint('저장 중…');
+    setHint(t('저장 중…'));
     try {
       const bytes = await exportPdf(state, measure.items, measure.labelFor, await fontBytes());
       await files.writeFile(target.uri, bytes, target.name);
       state.dirty = false;
-      toast('저장했습니다: ' + target.name);
+      toast(t('저장했습니다: ') + target.name);
       return true;
     } catch (e) {
       console.error(e);
-      toast('저장 실패: ' + e.message, 4000);
+      toast(t('저장 실패: ') + e.message, 4000);
       return false;
     } finally { setHint(''); updateTools(); }
   }
@@ -535,14 +536,14 @@ export async function openPdf(bytes, ctx) {
     },
     async more() {
       const pick = await menu([
-        { label: '저장', icon: '💾', id: 'save' },
-        { label: '다른 이름으로 저장', icon: '📄', id: 'saveas' },
-        { label: '공유', icon: '📤', id: 'share' },
+        { label: t('저장'), icon: '💾', id: 'save' },
+        { label: t('다른 이름으로 저장'), icon: '📄', id: 'saveas' },
+        { label: t('공유'), icon: '📤', id: 'share' },
         '-',
-        { label: '쪽 관리(회전·삭제·순서·합치기·나누기)', icon: '▤', id: 'pages' },
-        { label: '축척 정하기(1:N)', icon: '📐', id: 'scale' },
-        { label: '측정 모두 지우기', icon: '🧹', id: 'clear' },
-        { label: '폭 맞춤', icon: '⤢', id: 'fit' },
+        { label: t('쪽 관리(회전·삭제·순서·합치기·나누기)'), icon: '▤', id: 'pages' },
+        { label: t('축척 정하기(1:N)'), icon: '📐', id: 'scale' },
+        { label: t('측정 모두 지우기'), icon: '🧹', id: 'clear' },
+        { label: t('폭 맞춤'), icon: '⤢', id: 'fit' },
       ]);
       if (!pick) return;
       if (pick.id === 'save') await this.save();

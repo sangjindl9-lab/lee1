@@ -1,4 +1,5 @@
 // 거리·면적 측정. 점을 찍어 가며 선을 그리고, 값은 화면 크기 고정 라벨로 보여 준다.
+import { t } from './i18n.js';
 import { el, fmtLen, fmtArea } from './ui.js';
 
 export function polyLength(pts) {
@@ -41,10 +42,10 @@ export function createMeasure(opts) {
     const mm = opts.mmPerUnit(item.key);
     if (item.kind === 'area') {
       const a = polyArea(item.pts);
-      return mm ? fmtArea(a * mm * mm) : a.toFixed(1) + ' 단위²';
+      return mm ? fmtArea(a * mm * mm) : a.toFixed(1) + t(' 단위²');
     }
     const d = polyLength(item.pts);
-    return mm ? fmtLen(d * mm) : d.toFixed(1) + ' 단위';
+    return mm ? fmtLen(d * mm) : d.toFixed(1) + t(' 단위');
   }
   function anchor(item) {
     if (item.kind === 'area') {
@@ -97,7 +98,7 @@ export function createMeasure(opts) {
     if (opts.mmPerUnit(loc.key) == null && opts.askScale) {
       awaitingScale = { key: loc.key, kind: 'distance', pts: [{ x: loc.x, y: loc.y }], g: loc.g, origin: loc.origin, toContent: loc.toContent, markerR: loc.markerR };
       draw(awaitingScale);
-      awaitingScale.label.textContent = '기준 길이의 두 번째 점을 누르세요';
+      awaitingScale.label.textContent = t('기준 길이의 두 번째 점을 누르세요');
       return;
     }
     if (!cur || cur.key !== loc.key) {
