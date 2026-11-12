@@ -65,6 +65,15 @@ adb shell input tap $((CX - S/5)) $((CY - S/6)); sleep 1
 tapx "파랑" "빨강" "주황"; adb shell input tap $((CX + S/12)) $((CY + S/5)); sleep 1
 tapx "노랑" "빨강" "주황"; adb shell input tap $((X1 + S/20 + (W-S)/2)) $((Y1 + S/20 + (H-S)/2)); sleep 1
 shot 03_filled
+# 나만의 색 만들기(색 정밀 조정판)
+if tapx "＋ 나만의 색" "기본" "무지개"; then
+  sleep 1; shot 03b_color_picker
+  check "색 정밀 조정판 열림" has "이 색으로 칠하기"
+  tap "밝게 줄이기" exact 0.5; tap "밝게 줄이기" exact 0.5; tap "색깔 늘리기" exact 0.5
+  check "조금씩 조절 버튼 표시" has "선명하게 늘리기"
+  tap "이 색으로 칠하기" "" 1; adb shell input tap $((CX + S/4)) $((CY + S/4)); sleep 1; shot 03c_custom_color
+  if has "이 색으로 칠하기"; then ng "색을 고르면 조정판이 닫힘"; else ok "색을 고르면 조정판이 닫힘"; fi
+else ng "색 정밀 조정판 열림"; fi
 # 붓 (손가락)
 tap "붓" exact 1; tapx "초록" "노랑" "파랑"; geom; log "  캔버스(붓 도구) $B"
 adb shell input swipe $((CX - S/3)) $((CY + S/3)) $((CX + S/3)) $((CY + S/4)) 600; sleep 1
