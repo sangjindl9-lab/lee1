@@ -18,7 +18,7 @@ const server = createServer((req, res) => {
 }).listen(8765);
 
 const browser = await chromium.launch({ executablePath: process.env.CHROME || '/usr/bin/google-chrome', args: ['--no-sandbox'] });
-const page = await browser.newPage({ viewport: { width: 412, height: 915 }, deviceScaleFactor: 2, hasTouch: true, acceptDownloads: true });
+const page = await browser.newPage({ viewport: { width: 412, height: 915 }, deviceScaleFactor: 2, hasTouch: true, acceptDownloads: true, locale: 'ko-KR' });
 const errors = [];
 page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') console.log('[console]', m.type(), m.text().slice(0, 300)); });
 page.on('pageerror', (e) => { errors.push(e.message); console.log('[pageerror]', e.message); });
