@@ -1,12 +1,12 @@
 [title]
 EUM Kids Coloring : coloriage
 [short]
-30 dessins à colorier. Sans pub, hors ligne et sans danger pour les enfants.
+42 dessins à colorier. Sans pub, hors ligne et sans danger pour les enfants.
 [full]
-EUM Kids Coloring est une appli de coloriage pour les jeunes enfants, avec 30 dessins originaux.
+EUM Kids Coloring est une appli de coloriage pour les jeunes enfants, avec 42 dessins originaux.
 
-■ 30 dessins dans 5 thèmes
-Amis animaux, amis dinosaures, robots et espace, amis fantastiques et amis véhicules.
+■ 42 dessins dans 7 thèmes
+Amis animaux, Amis dinosaures, Robots et espace, Amis fantastiques, Amis véhicules, Amis personnages, Notre Terre.
 
 ■ Facile pour les petites mains
 · Touche une zone pour la remplir de couleur

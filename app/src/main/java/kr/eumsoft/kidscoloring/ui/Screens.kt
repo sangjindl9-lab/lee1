@@ -209,7 +209,7 @@ fun ParentScreen(vm: ColoringViewModel, version: String, onBack: () -> Unit, onP
         Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             ageLabels.forEachIndexed { i, l -> BigButton(if (i == 0) "🌈" else "★".repeat(i), tr(l), selected = s.ageFilter == i) { vm.updateSettings { it.copy(ageFilter = i) } } }
         }
-        Text(tr("도안 30장을 영역 수에 따라 세 단계로 나눈 것이며, 나이별로 도안이 따로 있는 것은 아닙니다."), fontSize = 12.sp, color = Color.Gray, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+        Text(tr("도안을 영역 수에 따라 세 단계로 나눈 것이며, 나이별로 도안이 따로 있는 것은 아닙니다."), fontSize = 12.sp, color = Color.Gray, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
         SectionTitle(tr("소리와 화면"))
         SettingRow(tr("효과음"), "", s.soundEnabled) { v -> vm.updateSettings { it.copy(soundEnabled = v) } }
         SettingRow(tr("진동"), "", s.vibrationEnabled) { v -> vm.updateSettings { it.copy(vibrationEnabled = v) } }

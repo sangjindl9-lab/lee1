@@ -1,12 +1,12 @@
 [title]
 EUM Kids Coloring: Mewarnai
 [short]
-30 gambar lucu untuk diwarnai. Tanpa iklan, offline, aman untuk anak.
+42 gambar lucu untuk diwarnai. Tanpa iklan, offline, aman untuk anak.
 [full]
-EUM Kids Coloring adalah aplikasi mewarnai untuk anak kecil dengan 30 gambar orisinal.
+EUM Kids Coloring adalah aplikasi mewarnai untuk anak kecil dengan 42 gambar orisinal.
 
-■ 30 gambar dalam 5 tema
-Teman hewan, teman dinosaurus, robot dan luar angkasa, teman fantasi, dan teman kendaraan.
+■ 42 gambar dalam 7 tema
+Teman hewan, Teman dinosaurus, Robot dan luar angkasa, Teman fantasi, Teman kendaraan, Teman manusia, Bumi kita.
 
 ■ Mudah untuk tangan kecil
 · Ketuk satu bagian untuk mengisinya dengan warna

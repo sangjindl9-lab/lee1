@@ -1,6 +1,6 @@
 # 이음 키즈 컬러링 (EUM KIDS COLORING PRO)
 
-Higgsfield 로 만든 오리지널 캐릭터 도안 30장을 색칠하는 어린이용 안드로이드 앱입니다. (스마트폰·태블릿, 오프라인)
+Higgsfield 로 만든 오리지널 도안 42장을 색칠하는 어린이용 안드로이드 앱입니다. (스마트폰·태블릿, 오프라인)
 
 - 패키지: `kr.eumsoft.kidscoloring` / minSdk 26 / targetSdk 36
 - Kotlin, Jetpack Compose(Material 3), Room, DataStore, Coroutines
@@ -16,7 +16,7 @@ Higgsfield 로 만든 오리지널 캐릭터 도안 30장을 색칠하는 어린
 | `app/src/main/java/.../data` | Room DB, DataStore 설정, 도안·작업 저장소 |
 | `app/src/main/java/.../ui` | 화면 (Compose), 캔버스 뷰, ViewModel |
 | `app/src/main/assets/art` | 앱용 도안: 선화 `line/`, 영역 마스크 `mask/`, 썸네일 `thumb/`, `catalog.json` |
-| `content/originals` | Higgsfield 원본 30장 (2048×2048) |
+| `content/originals` | Higgsfield 원본 42장 (2048×2048) |
 | `content/prompts.json` | 도안별 생성 프롬프트, 모델, 제작일, 결과 주소 |
 | `content/report.json` | 전처리 검수 결과 |
 | `tools/pipeline.py` | 원본 → 선화·마스크·썸네일·메타데이터 전처리 |

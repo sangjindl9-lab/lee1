@@ -22,18 +22,18 @@ private fun readPng(f: File): Img {
     return Img(w, h, argb, alpha)
 }
 
-/** 실제 앱에 들어가는 도안 30장을 검사한다 (JVM 에서 PNG 를 직접 읽는다). */
+/** 실제 앱에 들어가는 도안 42장을 검사한다 (JVM 에서 PNG 를 직접 읽는다). */
 class ContentTest {
     private val assets = File("src/main/assets")
     private val catalog = JSONObject(File(assets, "art/catalog.json").readText())
     private val arts = catalog.getJSONArray("artworks").let { a -> List(a.length()) { a.getJSONObject(it) } }
     private val size = catalog.getInt("size")
 
-    @Test fun `도안 30장이 모두 등록되어 있고 파일이 빠지지 않았다`() {
-        assertEquals(30, arts.size)
-        assertEquals(30, arts.map { it.getString("id") }.toSet().size)
+    @Test fun `도안 42장이 모두 등록되어 있고 파일이 빠지지 않았다`() {
+        assertEquals(42, arts.size)
+        assertEquals(42, arts.map { it.getString("id") }.toSet().size)
         val perCat = arts.groupingBy { it.getString("category") }.eachCount()
-        assertEquals(mapOf("animals" to 8, "dinos" to 6, "space" to 6, "fantasy" to 6, "vehicles" to 4), perCat)
+        assertEquals(mapOf("animals" to 8, "dinos" to 6, "space" to 6, "fantasy" to 6, "vehicles" to 4, "people" to 8, "earth" to 4), perCat)
         for (a in arts) {
             assertTrue(a.getString("id") + " 미등록", a.getBoolean("available"))
             for (k in listOf("line", "mask", "thumb")) assertTrue(a.getString(k), File(assets, a.getString(k)).length() > 500)

@@ -119,13 +119,18 @@ def process(aid):
 def main():
     today = datetime.date.today().isoformat()
     sources = json.load(open(os.path.join(ROOT, 'content', 'sources.json')))
+    # 이미 등록된 도안의 제작일은 그대로 둔다 (다시 돌려도 날짜가 바뀌지 않게)
+    try:
+        made = {r['id']: r.get('createdAt') for r in json.load(open(os.path.join(ROOT, 'content', 'prompts.json'))) if r.get('resultUrl')}
+    except (OSError, ValueError):
+        made = {}
     arts, report = [], {}
     for aid, title, cat, _diff, subject in P:
         res = process(aid)
         item = {'id': aid, 'title': title, 'category': cat, 'available': res is not None,
                 'original': f'content/originals/{aid}.png', 'line': f'art/line/{aid}.png',
                 'mask': f'art/mask/{aid}.png', 'thumb': f'art/thumb/{aid}.webp',
-                'createdAt': today, 'model': MODEL, 'source': 'Higgsfield',
+                'createdAt': made.get(aid) or today, 'model': MODEL, 'source': 'Higgsfield',
                 'licenseReview': 'done'}
         if res:
             rep, regs = res
@@ -143,10 +148,10 @@ def main():
     json.dump(report, open(os.path.join(ROOT, 'content', 'report.json'), 'w'), ensure_ascii=False, indent=1)
     # 프롬프트/제작 기록
     rec = [{'id': a, 'title': t, 'prompt': full_prompt(a, s), 'model': MODEL, 'params': MODEL_PARAMS,
-            'createdAt': today, 'resultUrl': sources.get(a)} for a, t, _c, _d, s in P]
+            'createdAt': made.get(a) or today, 'resultUrl': sources.get(a)} for a, t, _c, _d, s in P]
     json.dump(rec, open(os.path.join(ROOT, 'content', 'prompts.json'), 'w'), ensure_ascii=False, indent=1)
     ok = sum(1 for a in arts if a['available'])
-    print(f'{ok}/30 등록')
+    print(f'{ok}/{len(arts)} 등록')
     for a, r in report.items():
         print(a, r)
 

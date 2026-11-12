@@ -252,7 +252,8 @@ fun ColoringScreen(vm: ColoringViewModel, speaker: Speaker, onExit: () -> Unit) 
         pick(th.colors[0])
         if (engine.recolor(th.colors, art.background, System.nanoTime().toInt()) > 0) { refresh(); feedback() }
     }
-    if (showCustom) CustomColorDialog(vm.color, onDismiss = { showCustom = false }) { c -> showCustom = false; pick(c) }
+    if (showCustom) ColorPickerDialog(vm.color, onDismiss = { showCustom = false },
+        onFavorite = { c -> val a = c or (0xFF shl 24); if (a !in settings.favoriteColors) vm.toggleFavorite(a); toast(tr("좋아하는 색에 넣었어요")) }) { c -> showCustom = false; pick(c) }
     gate?.let { action -> ParentGate(onPass = { gate = null; action() }, onDismiss = { gate = null }) }
     preview?.let { img ->
         Dialog(onDismissRequest = { preview = null }) {
@@ -373,31 +374,6 @@ private fun ThemeDialog(title: String, desc: String, onDismiss: () -> Unit, onPi
                 }
             }
         })
-}
-
-/** 사용자 지정 색상 */
-@Composable
-private fun CustomColorDialog(initial: Int, onDismiss: () -> Unit, onPick: (Int) -> Unit) {
-    val hsv = remember { FloatArray(3).also { AColor.colorToHSV(initial, it) } }
-    var h by remember { mutableFloatStateOf(hsv[0]) }
-    var s by remember { mutableFloatStateOf(hsv[1]) }
-    var v by remember { mutableFloatStateOf(hsv[2]) }
-    val c = AColor.HSVToColor(floatArrayOf(h, s, v))
-    AlertDialog(onDismissRequest = onDismiss, title = { Text(tr("나만의 색 만들기")) },
-        text = {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Box(Modifier.size(72.dp).clip(CircleShape).background(Color(c)).border(2.dp, Ink, CircleShape))
-                Text(tr("%1\$s 느낌", tr(Palettes.nameOf(c))), fontSize = 13.sp)
-                Text(tr("색깔"), fontWeight = FontWeight.Bold, modifier = Modifier.fillMaxWidth())
-                Slider(h, { h = it }, valueRange = 0f..359f, modifier = Modifier.semantics { contentDescription = tr("색깔") })
-                Text(tr("선명하게"), fontWeight = FontWeight.Bold, modifier = Modifier.fillMaxWidth())
-                Slider(s, { s = it }, valueRange = 0f..1f, modifier = Modifier.semantics { contentDescription = tr("선명하게") })
-                Text(tr("밝게"), fontWeight = FontWeight.Bold, modifier = Modifier.fillMaxWidth())
-                Slider(v, { v = it }, valueRange = 0f..1f, modifier = Modifier.semantics { contentDescription = tr("밝게") })
-            }
-        },
-        confirmButton = { Button(onClick = { onPick(c) }) { Text(tr("이 색으로 칠하기")) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(tr("닫기")) } })
 }
 
 /** 완성 축하: 작은 별들이 떨어진다. '애니메이션 줄이기'를 켜면 움직이지 않는다. */

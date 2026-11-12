@@ -1,12 +1,12 @@
 [title]
 EUM Kids Coloring Book
 [short]
-30 cute pictures to color. No ads, works offline, safe for kids.
+42 cute pictures to color. No ads, works offline, safe for kids.
 [full]
-EUM Kids Coloring is a coloring book app for young children with 30 original pictures.
+EUM Kids Coloring is a coloring book app for young children with 42 original pictures.
 
-■ 30 pictures in 5 themes
-Animal friends, dinosaur friends, robots and space, fantasy friends and vehicle friends.
+■ 42 pictures in 7 themes
+Animal friends, Dinosaur friends, Robots and space, Fantasy friends, Vehicle friends, People friends, Our Earth.
 
 ■ Easy for little hands
 · Tap an area to fill it with color

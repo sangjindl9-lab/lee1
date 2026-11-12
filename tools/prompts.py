@@ -34,13 +34,31 @@ P = [
 ("a28","귀여운 경찰차","vehicles",1,"A cute rounded cartoon patrol car with a smiling face on its front, a light bar on the roof, a blank star-shaped emblem on the door and chunky wheels, 3/4 view. No words or numbers."),
 ("a29","눈이 달린 노란 굴착기","vehicles",2,"A cute cartoon excavator digger with big friendly eyes on its cabin, a smiling mouth, a jointed arm with a big bucket scooping, caterpillar tracks drawn with a few large segments, a small pile of dirt, 3/4 view."),
 ("a30","웃고 있는 작은 기차","vehicles",2,"A cute little steam train engine with a smiling face on its round front, a funnel puffing three large round smoke clouds, one small wagon behind, big wheels, on a short piece of track, 3/4 view."),
+# 2026-11-12 추가: 사람 친구들 8장, 지구 4장 (모두 여백 문구 M 을 붙여 생성)
+("a31","축구공을 차는 남자아이","people",1,"A cheerful young boy with short hair wearing a t-shirt, shorts and sneakers, kicking a big soccer ball with large panels, one arm raised, 3/4 view."),
+("a32","연을 날리는 여자아이","people",2,"A happy young girl with two pigtails wearing a simple dress and boots, holding the string of a big diamond-shaped kite with a bow tail flying above her, two large puffy clouds, 3/4 view."),
+("a33","그림을 그리는 여자아이","people",2,"A smiling young girl with a bob haircut wearing an apron, holding a big paintbrush and a round paint palette, standing next to an easel with a blank canvas, 3/4 view."),
+("a34","우산을 쓴 남자아이","people",2,"A happy young boy with curly hair wearing a raincoat and big rain boots, holding a large open umbrella with wide panels, a backpack on his back, three large raindrops and a puddle, 3/4 view."),
+("a35","청진기를 든 의사 선생님","people",2,"A friendly adult woman doctor with her hair in a bun, wearing a long doctor coat with two big pockets and a stethoscope around her neck, holding a clipboard with a blank page, waving one hand, front view."),
+("a36","냄비를 든 요리사 아저씨","people",2,"A friendly adult man chef with a moustache, wearing a tall chef hat, a double-buttoned chef jacket and an apron, holding a big cooking pot with a ladle and three large steam puffs, front view."),
+("a37","꽃에 물을 주는 할머니","people",2,"A kind smiling grandmother with round glasses and curly hair in a bun, wearing a cardigan and a long skirt, watering three large simple flowers in a planter box with a big watering can, 3/4 view."),
+("a38","기타를 치는 아빠","people",2,"A friendly adult man with short hair and a short beard, wearing a sweater and trousers, sitting on a simple stool and playing a large acoustic guitar, two big music notes floating beside him, front view."),
+("a39","웃는 얼굴의 지구","earth",1,"A cute round planet Earth character with a happy smiling face, the continents drawn as a few large simple outlined shapes, small arms and legs, waving one hand, with two large stars and a crescent moon beside it, front view."),
+("a40","지구 둘레에서 손을 잡은 어린이들","earth",3,"A big round planet Earth globe with the continents drawn as a few large simple outlined shapes, and four happy children (two boys and two girls with different hairstyles) standing around it holding hands, front view."),
+("a41","받침대 위의 지구본","earth",2,"A big classroom globe of planet Earth on a curved stand with a round base, the continents drawn as a few large simple outlined shapes, a small paper airplane flying around it and one large open book beside the base, 3/4 view. No writing on the book."),
+("a42","우주에서 본 지구와 달","earth",2,"Planet Earth seen from space with the continents drawn as a few large simple outlined shapes and three big swirly clouds, a smaller round moon with three large craters, a ringed planet, a small chubby rocket flying past and four large stars, front view."),
 ]
 # 처음 생성본이 가장자리에서 잘려 여백 문구를 덧붙여 다시 생성한 도안
 M = ("The whole drawing is zoomed out and small enough to fit entirely inside the canvas, with a wide empty white margin on all four sides; "
 "nothing touches or is cut off by the image edges.")
-RETRY = {"a03", "a04", "a06", "a07", "a09", "a10", "a11", "a13", "a18", "a19", "a22", "a23", "a27", "a30"}
+RETRY = {"a31", "a32", "a33", "a34", "a35", "a36", "a37", "a38", "a39", "a40", "a41", "a42", "a03", "a04", "a06", "a07", "a09", "a10", "a11", "a13", "a18", "a19", "a22", "a23", "a27", "a30"}
+# 얼굴이 없는 사물 도안(지구본, 우주에서 본 지구)은 캐릭터 문구를 뺀 공통 문구로 생성했다
+S_OBJECT = S.replace(" (eyes are simple outlined ovals with a small pupil)", "").replace(
+    "Original character design, chibi proportions, friendly smiling face, full figure fully visible and centered with white margin around it.",
+    "Original design, whole drawing fully visible and centered with white margin around it.")
+OBJECTS = {"a41", "a42"}
 def full_prompt(aid, subject):
-    return subject + " " + S + (" " + M if aid in RETRY else "")
+    return subject + " " + (S_OBJECT if aid in OBJECTS else S) + (" " + M if aid in RETRY else "")
 MODEL = "gpt_image_2_6 (Higgsfield / GPT Image 2.6)"
 MODEL_PARAMS = {"aspect_ratio": "1:1", "quality": "medium", "resolution": "2k"}
 CATEGORIES = [
@@ -49,4 +67,6 @@ CATEGORIES = [
     {"id": "space", "title": "로봇과 우주"},
     {"id": "fantasy", "title": "판타지 친구들"},
     {"id": "vehicles", "title": "탈것 친구들"},
+    {"id": "people", "title": "사람 친구들"},
+    {"id": "earth", "title": "우리 지구"},
 ]

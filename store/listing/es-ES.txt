@@ -1,12 +1,12 @@
 [title]
 EUM Kids Coloring: colorear
 [short]
-30 dibujos para colorear. Sin anuncios, sin internet y seguro para niños.
+42 dibujos para colorear. Sin anuncios, sin internet y seguro para niños.
 [full]
-EUM Kids Coloring es una app para colorear pensada para niños pequeños, con 30 dibujos originales.
+EUM Kids Coloring es una app para colorear pensada para niños pequeños, con 42 dibujos originales.
 
-■ 30 dibujos en 5 temas
-Amigos animales, amigos dinosaurios, robots y espacio, amigos de fantasía y amigos vehículos.
+■ 42 dibujos en 7 temas
+Amigos animales, Amigos dinosaurios, Robots y espacio, Amigos de fantasía, Amigos vehículos, Amigos personas, Nuestra Tierra.
 
 ■ Fácil para manos pequeñas
 · Toca una zona para rellenarla de color
