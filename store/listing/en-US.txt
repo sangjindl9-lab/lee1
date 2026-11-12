@@ -1,0 +1,32 @@
+[title]
+EUM Kids Coloring Book
+[short]
+30 cute pictures to color. No ads, works offline, safe for kids.
+[full]
+EUM Kids Coloring is a coloring book app for young children with 30 original pictures.
+
+■ 30 pictures in 5 themes
+Animal friends, dinosaur friends, robots and space, fantasy friends and vehicle friends.
+
+■ Easy for little hands
+· Tap an area to fill it with color
+· Brush, pencil, crayon, marker and glitter
+· "Stay inside the lines" keeps the color in its area
+· Stickers, undo and redo
+· Auto color and color ideas with matching color sets
+
+■ Made for phones and tablets
+· Works with a stylus (S Pen and others), including pen pressure
+· Pinch to zoom in on small areas
+
+■ Safe for children
+· No ads, no sign-up, no in-app purchases
+· Works offline and has no internet permission
+· Collects no data
+· Sharing and the parents menu open only after a grown-up check
+
+■ Keeps every picture
+· Saves automatically while your child colors
+· Finished pictures stay in "My art" and can be exported as photos
+
+The pictures were created with AI image generation (Higgsfield).

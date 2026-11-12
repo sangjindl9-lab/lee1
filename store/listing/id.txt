@@ -1,0 +1,32 @@
+[title]
+EUM Kids Coloring: Mewarnai
+[short]
+30 gambar lucu untuk diwarnai. Tanpa iklan, offline, aman untuk anak.
+[full]
+EUM Kids Coloring adalah aplikasi mewarnai untuk anak kecil dengan 30 gambar orisinal.
+
+■ 30 gambar dalam 5 tema
+Teman hewan, teman dinosaurus, robot dan luar angkasa, teman fantasi, dan teman kendaraan.
+
+■ Mudah untuk tangan kecil
+· Ketuk satu bagian untuk mengisinya dengan warna
+· Kuas, pensil, krayon, stabilo, dan gliter
+· "Tidak keluar garis" menjaga warna tetap di dalam bagiannya
+· Stiker, urung, dan ulang
+· Warna otomatis dan ide warna dengan kelompok warna yang serasi
+
+■ Untuk ponsel dan tablet
+· Mendukung pena (S Pen dan lainnya), termasuk tekanan pena
+· Cubit untuk memperbesar bagian yang kecil
+
+■ Aman untuk anak
+· Tanpa iklan, tanpa daftar akun, tanpa pembelian dalam aplikasi
+· Berjalan offline dan tidak punya izin internet
+· Tidak mengumpulkan data apa pun
+· Kirim dan menu orang tua hanya terbuka setelah cek orang tua
+
+■ Semua gambar tersimpan
+· Tersimpan otomatis selama anak mewarnai
+· Gambar yang selesai ada di "Gambarku" dan bisa diekspor sebagai foto
+
+Gambar dibuat dengan pembuatan gambar AI (Higgsfield).

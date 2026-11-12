@@ -5,6 +5,7 @@ Higgsfield 로 만든 오리지널 캐릭터 도안 30장을 색칠하는 어린
 - 패키지: `kr.eumsoft.kidscoloring` / minSdk 26 / targetSdk 36
 - Kotlin, Jetpack Compose(Material 3), Room, DataStore, Coroutines
 - 권한 없음 · 광고 없음 · 인터넷 사용 안 함
+- 11개 언어: 한국어, 영어, 일본어, 스페인어, 포르투갈어, 중국어(간체·번체), 독일어, 프랑스어, 인도네시아어, 힌디어 (그 밖의 기기 언어는 영어)
 
 ## 폴더
 
@@ -33,6 +34,14 @@ gradle bundleRelease                       # 릴리스 AAB (서명은 docs/RELEA
 (Gradle 8.11.1, JDK 17. Gradle wrapper 는 넣지 않았으므로 Android Studio 가 내려받는 Gradle 또는 설치된 `gradle` 을 씁니다.)
 
 `eum-kids-coloring` 브랜치에 push 하면 GitHub Actions 가 단위 테스트, APK/AAB 빌드, 에뮬레이터 테스트를 돌리고 릴리스에 올립니다.
+
+## 다국어
+
+- 코드에는 한국어 문장을 그대로 쓰고 `tr("문장")` 으로 감쌉니다. 값이 들어가는 문장은 `tr("%1\$s 열기", 이름)` 처럼 씁니다.
+- 번역은 `app/src/main/assets/i18n/<언어>.json` 에 `"한국어 문장": "번역"` 으로 넣습니다. 도안 제목·색 이름도 같은 파일에 있습니다.
+- 문장을 새로 넣고 번역을 빠뜨리면 단위 테스트(`I18nTest`)가 실패합니다.
+- 스토어 등록 문구는 `store/listing/<플레이 언어 코드>.txt` 에 있습니다.
+- 시험용: `adb shell am start -n kr.eumsoft.kidscoloring/.ui.MainActivity --es lang ja` 로 언어를 고정하고, `--es lang auto` 로 풉니다.
 
 ## 도안을 바꾸거나 추가할 때
 
