@@ -87,7 +87,8 @@ shot 11_restored
 check "저장된 그림 복원 화면" has "색칠 도안"
 # 다 했어요 → 축하 → 갤러리
 tap "완성" exact 1; shot 12_celebrate; sleep 4
-tap "홈" exact 1; tap "저장하고 나가기" "" 3
+tap "홈" exact 3; shot 12b_leave_completed
+if has "지우고 나가기"; then ng "완성한 그림은 묻지 않고 나감"; tap "저장하고 나가기" "" 3; else ok "완성한 그림은 묻지 않고 나감"; fi
 tap "내 그림" exact 3; shot 13_gallery
 check "완성한 그림이 갤러리에 표시" has "당근을 들고 있는 아기 토끼"
 adb shell input keyevent KEYCODE_BACK; sleep 2

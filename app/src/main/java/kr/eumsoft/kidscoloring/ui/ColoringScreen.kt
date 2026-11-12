@@ -134,7 +134,9 @@ fun ColoringScreen(vm: ColoringViewModel, speaker: Speaker, onExit: () -> Unit) 
     }
     LaunchedEffect(vm.message) { vm.message?.let { toast(it); vm.message = null } }
     LaunchedEffect(vm.celebrate) { if (vm.celebrate && settings.soundEnabled) Fx.cheer() }
-    BackHandler { askExit = true }
+    // 완성한 그림은 묻지 않고 저장한 뒤 바로 나간다. (지우기는 '내 그림'의 ⋯ 메뉴에서)
+    fun leave() { if (vm.completed) vm.close(onExit) else askExit = true }
+    BackHandler { leave() }
 
     val canvasBox: @Composable (Modifier) -> Unit = { mod ->
         AndroidView(
@@ -155,7 +157,7 @@ fun ColoringScreen(vm: ColoringViewModel, speaker: Speaker, onExit: () -> Unit) 
             val bw = ((maxWidth - 4.dp * 7) / 8).coerceIn(38.dp, 64.dp)
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
                 val m = Modifier.width(bw)
-                BigButton("🏠", "홈", m, size = 48.dp) { askExit = true }
+                BigButton("🏠", "홈", m, size = 48.dp) { leave() }
                 BigButton("💾", "저장", m, size = 48.dp) { vm.saveNow() }
                 BigButton("↩", "취소", m, enabled = rev >= 0 && engine.canUndo, size = 48.dp) { engine.undo(); refresh() }
                 BigButton("↪", "다시", m, enabled = rev >= 0 && engine.canRedo, size = 48.dp) { engine.redo(); refresh() }
