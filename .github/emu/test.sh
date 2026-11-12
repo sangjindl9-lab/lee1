@@ -33,22 +33,27 @@ log "요청 권한: $(adb shell dumpsys package $A | grep -A8 'requested permiss
 adb shell svc wifi disable; adb shell svc data disable
 read SW SH < <(adb shell wm size | tr -d '\r' | grep -o '[0-9]*x[0-9]*' | tail -1 | tr x ' ')
 sleep 15; anr
-# 다국어: 언어를 바꿔 가며 첫 화면과 색칠 화면이 그 언어로 나오는지 본다 (앱 실행 인텐트의 lang 값으로 언어 고정)
+# 다국어: 언어를 바꿔 가며 첫 화면·색칠 화면·완성 축하·색 조정판이 그 언어로 나오는지 보고,
+# 언어별 스토어 스크린샷(l10n_<언어>_1~4)을 찍는다. (앱 실행 인텐트의 lang 값으로 언어 고정)
 J=app/src/main/assets/i18n
 for L in en ja es pt zh-CN zh-TW de fr id hi; do
-  adb shell am force-stop $A
+  T(){ python3 -c "import json,sys;print(json.load(open('$J/$L.json'))[sys.argv[1]])" "$1"; }
+  adb shell am force-stop $A; adb shell pm clear $A >/dev/null
   adb shell am start -W -n $A/.ui.MainActivity --es lang $L >/dev/null; sleep 5; anr
-  T=$(python3 -c "import json,sys;print(json.load(open('$J/$L.json'))['오늘은 무엇을 색칠할까요?'])")
-  C=$(python3 -c "import json,sys;print(json.load(open('$J/$L.json'))['동물 친구들'])")
-  shot lang_${L}_home
-  if has "$T" && has "$C"; then ok "언어 $L: 첫 화면 번역 표시 ($T)"; else ng "언어 $L: 첫 화면 번역 표시 ($T)"; fi
-  case $L in en|ja|es|de|hi)
-    P=$(python3 -c "import json,sys;print(json.load(open('$J/$L.json'))['눌러서 색칠해요 🎨'])")
-    M=$(python3 -c "import json,sys;print(json.load(open('$J/$L.json'))['더보기'])")
-    tap "$P" "" 6; shot lang_${L}_coloring
-    if has "$M"; then ok "언어 $L: 색칠 화면 번역 표시 ($M)"; else ng "언어 $L: 색칠 화면 번역 표시 ($M)"; fi
-    tap "$M" exact 2; shot lang_${L}_more; adb shell input keyevent KEYCODE_BACK; sleep 1;;
-  esac
+  shot l10n_${L}_1
+  if has "$(T '오늘은 무엇을 색칠할까요?')" && has "$(T '동물 친구들')"; then ok "언어 $L: 첫 화면 번역 표시 ($(T '오늘은 무엇을 색칠할까요?'))"; else ng "언어 $L: 첫 화면 번역 표시"; fi
+  tap "$(T '눌러서 색칠해요 🎨')" "" 6
+  M=$(T '더보기')
+  if has "$M"; then ok "언어 $L: 색칠 화면 번역 표시 ($M)"; else ng "언어 $L: 색칠 화면 번역 표시 ($M)"; fi
+  tap "$M" exact 2; tap "$(T '✨ 자동 색칠')" "" 2; tap "$(T '무지개')" exact 1
+  shot l10n_${L}_3
+  if has "$(T '참 잘했어요!')"; then ok "언어 $L: 자동 색칠 뒤 완성 축하 표시"; else ng "언어 $L: 자동 색칠 뒤 완성 축하 표시"; fi
+  sleep 4; shot l10n_${L}_2
+  if tapx "$(T '＋ 나만의 색')" "$(T '기본')" "$(T '무지개')"; then
+    sleep 1; shot l10n_${L}_4
+    if has "$(T '이 색으로 칠하기')"; then ok "언어 $L: 색 조정판 번역 표시"; else ng "언어 $L: 색 조정판 번역 표시"; fi
+    tap "$(T '닫기')" exact 1
+  else ng "언어 $L: 색 조정판 열기"; fi
 done
 adb shell am force-stop $A; adb shell pm clear $A >/dev/null
 # 아래 기능 테스트는 한국어 화면으로 진행한다
