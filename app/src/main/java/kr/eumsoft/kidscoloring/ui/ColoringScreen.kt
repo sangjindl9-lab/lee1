@@ -234,14 +234,19 @@ fun ColoringScreen(vm: ColoringViewModel, speaker: Speaker, onExit: () -> Unit) 
                 Button(onClick = { showMore = false; gate = { share() } }, modifier = Modifier.fillMaxWidth()) { Text("📤 보내기 (보호자 확인)") }
             }
         })
-    if (showAuto) ThemeDialog("자동 색칠", "색 묶음을 고르면 아직 안 칠한 칸을 자동으로 칠해요.", onDismiss = { showAuto = false }) { th ->
+    if (showAuto) ThemeDialog("자동 색칠", "색 묶음을 고르면 안 칠한 칸을 자동으로 칠해요. 다 칠한 그림은 고른 색으로 다시 칠해요.", onDismiss = { showAuto = false }) { th ->
         showAuto = false
-        val n = engine.autoColor(th.colors, art.background, seed = (System.currentTimeMillis() % 97).toInt())
+        val seed = System.nanoTime().toInt()
+        var n = engine.autoColor(th.colors, art.background, seed)
+        if (n == 0) n = engine.recolor(th.colors, art.background, seed, onlyFilled = false)
         refresh()
-        if (n == 0) toast("이미 모두 칠했어요") else { feedback(); vm.onFilled() }
+        if (n > 0) { feedback(); vm.onFilled() }
     }
-    if (showSuggest) ThemeDialog("색칠 추천", "어울리는 색 묶음이에요. 고르면 색상판 맨 앞에 놓아 줄게요.", onDismiss = { showSuggest = false }) { th ->
-        showSuggest = false; suggested = th; pick(th.colors[0])
+    if (showSuggest) ThemeDialog("색칠 추천", "어울리는 색 묶음이에요. 고르면 칠해 둔 칸을 그 색으로 바꾸고, 색상판 맨 앞에도 놓아 줄게요. 또 누르면 색 배치가 바뀌어요.", onDismiss = { showSuggest = false }) { th ->
+        showSuggest = false; suggested = th
+        if (settings.selectedPalette != 0) vm.updateSettings { it.copy(selectedPalette = 0) }
+        pick(th.colors[0])
+        if (engine.recolor(th.colors, art.background, System.nanoTime().toInt()) > 0) { refresh(); feedback() }
     }
     if (showCustom) CustomColorDialog(vm.color, onDismiss = { showCustom = false }) { c -> showCustom = false; pick(c) }
     gate?.let { action -> ParentGate(onPass = { gate = null; action() }, onDismiss = { gate = null }) }

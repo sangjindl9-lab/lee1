@@ -127,6 +127,29 @@ class EngineTest {
         assertEquals(0, e.count(3) { it != 0 })
     }
 
+    @Test fun `자동 색칠은 색 묶음의 색을 고르게 쓴다`() {
+        // 색이 7개인 묶음(무지개·파스텔)에서 한 가지 색만 나오던 문제 방지
+        val pal = IntArray(7) { 0xFF000000.toInt() or (it + 1) }
+        val e = PaintEngine(70, 2, ShortArray(140) { (it % 70 / 5 + 1).toShort() }, 14, 1L shl 30, 40)
+        assertEquals(14, e.autoColor(pal, skipRegion = 0, seed = 5))
+        for (c in pal) assertEquals(2, (1..14).count { e.regionColor[it] == c })
+    }
+
+    @Test fun `색칠 추천은 칠한 칸만 다른 색으로 바꾸고 누를 때마다 달라진다`() {
+        val green = 0xFF00FF00.toInt()
+        val e = engine()
+        e.fillAt(5, 5, red); e.fillAt(50, 5, red)
+        assertEquals(2, e.recolor(intArrayOf(blue, green), skipRegion = 0, seed = 1))
+        assertEquals(setOf(blue, green), setOf(e.regionColor[1], e.regionColor[2]))
+        assertEquals(0, e.regionColor[3])
+        assertEquals(0, e.count(1) { it != e.regionColor[1] })
+        val first = e.regionColor.copyOf()
+        e.recolor(intArrayOf(blue, green), skipRegion = 0, seed = 1)
+        assertFalse(first.contentEquals(e.regionColor))
+        e.undo(); assertTrue(first.contentEquals(e.regionColor))
+        assertEquals(0, engine().recolor(intArrayOf(blue), skipRegion = 0))
+    }
+
     @Test fun `스티커 붙이기와 떼기, 전체 초기화, 복원`() {
         val e = engine()
         e.addSticker(Sticker(0, 10f, 10f, 8f, red))

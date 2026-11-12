@@ -149,24 +149,49 @@ class PaintEngine(
     }
 
     /** 아직 채우지 않은 영역을 팔레트 색으로 자동 채색. skipRegion(바탕)은 건너뛴다. */
-    fun autoColor(palette: IntArray, skipRegion: Int, seed: Int = 0): Int {
+    fun autoColor(palette: IntArray, skipRegion: Int, seed: Int = 0): Int =
+        applyPalette(palette, seed) { it != skipRegion && regionColor[it] == 0 }
+
+    /**
+     * 이미 칠한 영역을 색 묶음의 색으로 다시 칠한다. (onlyFilled=false 면 빈 영역까지 모두)
+     * 누를 때마다 seed 를 바꿔 부르면 색 배치가 달라진다. 돌려주는 값은 다시 칠한 영역 수.
+     */
+    fun recolor(palette: IntArray, skipRegion: Int, seed: Int = 0, onlyFilled: Boolean = true): Int =
+        applyPalette(palette, seed) { it != skipRegion && (!onlyFilled || regionColor[it] != 0) }
+
+    /**
+     * 고른 영역에 색 묶음을 고르게 나눠 칠한다. 넓은 영역부터 색을 한 바퀴씩 돌려 주므로
+     * 색마다 칠해지는 칸 수가 같고(많아야 1칸 차이), 묶음의 모든 색이 쓰인다.
+     */
+    private fun applyPalette(palette: IntArray, seed: Int, want: (Int) -> Boolean): Int {
         if (palette.isEmpty()) return 0
+        val area = IntArray(regionCount + 1)
+        for (m in mask) { val r = m.toInt() and 0xFFFF; if (r <= regionCount) area[r]++ }
+        val targets = (1..regionCount).filter { br[it] >= 0 && want(it) }
+            .sortedWith(compareByDescending<Int> { area[it] }.thenBy { it })
+        if (targets.isEmpty()) return 0
+        val colors = palette.map { it or (0xFF shl 24) }.distinct()
+        val pick = IntArray(regionCount + 1)
+        val rnd = java.util.Random(seed.toLong())
+        val order = colors.toMutableList()
+        var k = 0
+        while (k < targets.size) {
+            order.shuffle(rnd)
+            for (c in order) { if (k >= targets.size) break; pick[targets[k++]] = c }
+        }
+        // 지금 색과 똑같은 배치가 나오면 색을 한 칸씩 밀어서, 누르면 반드시 바뀌게 한다
+        if (colors.size > 1 && targets.all { pick[it] == regionColor[it] })
+            for (r in targets) pick[r] = colors[(colors.indexOf(pick[r]) + 1) % colors.size]
         val before = paint.copyOf()
         val rcBefore = regionColor.copyOf()
-        val pick = IntArray(regionCount + 1)
-        var n = 0
-        for (r in 1..regionCount) if (r != skipRegion && regionColor[r] == 0 && br[r] >= 0) {
-            pick[r] = palette[(r * 7 + seed).mod(palette.size)]; n++
-        }
-        if (n == 0) return 0
         for (i in paint.indices) {
-            val c = pick[mask[i].toInt() and 0xFFFF]
-            if (c != 0) paint[i] = c
+            val r = mask[i].toInt() and 0xFFFF
+            if (r <= regionCount) { val c = pick[r]; if (c != 0) paint[i] = c }
         }
-        for (r in 1..regionCount) if (pick[r] != 0) regionColor[r] = pick[r]
+        for (r in targets) regionColor[r] = pick[r]
         push(0, 0, w - 1, h - 1, before, rcBefore, stickers)
         markDirty(0, 0, w - 1, h - 1)
-        return n
+        return targets.size
     }
 
     fun clearAll() {
