@@ -36,7 +36,8 @@ sleep 15; anr
 # 다국어: 언어를 바꿔 가며 첫 화면·색칠 화면·완성 축하·색 조정판이 그 언어로 나오는지 보고,
 # 언어별 스토어 스크린샷(l10n_<언어>_1~4)을 찍는다. (앱 실행 인텐트의 lang 값으로 언어 고정)
 J=app/src/main/assets/i18n
-for L in en ja es pt zh-CN zh-TW de fr id hi; do
+# L10N_LANGS 로 언어를 고르고, L10N_ONLY 가 있으면 언어별 화면만 찍고 끝낸다 (스토어 스크린샷만 다시 찍을 때)
+for L in ${L10N_LANGS:-en ja es pt zh-CN zh-TW de fr id hi}; do
   T(){ python3 -c "import json,sys;print(json.load(open('$J/$L.json'))[sys.argv[1]])" "$1"; }
   adb shell am force-stop $A; adb shell pm clear $A >/dev/null
   adb shell am start -W -n $A/.ui.MainActivity --es lang $L >/dev/null; sleep 5; anr
@@ -56,6 +57,7 @@ for L in en ja es pt zh-CN zh-TW de fr id hi; do
   else ng "언어 $L: 색 조정판 열기"; fi
 done
 adb shell am force-stop $A; adb shell pm clear $A >/dev/null
+if [ -n "$L10N_ONLY" ]; then log "== 결과($TAG, 언어별 화면만): PASS $PASS / FAIL $FAIL"; exit 0; fi
 # 아래 기능 테스트는 한국어 화면으로 진행한다
 adb shell am start -W -n $A/.ui.MainActivity --es lang ko >/dev/null; sleep 6; anr; anr; shot 01_home
 check "앱 설치 후 실행 (오프라인)" has "오늘의 추천 그림"

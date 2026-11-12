@@ -4,6 +4,9 @@ on:
     branches: [eum-kids-coloring]
     paths: ['app/**', '*.kts', 'gradle.properties', '.github/workflows/eum-kids-coloring.yml', '.github/emu/**']
   workflow_dispatch:
+    inputs:
+      langs: { description: "언어별 화면을 찍을 언어 (비우면 전부)", required: false, default: "" }
+      l10n_only: { description: "값이 있으면 언어별 화면만 찍고 기능 테스트는 건너뜀", required: false, default: "" }
 permissions:
   contents: write
 jobs:
@@ -64,7 +67,7 @@ jobs:
   emulator:
     needs: build
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 75
     strategy:
       fail-fast: false
       matrix:
@@ -83,6 +86,9 @@ jobs:
           sudo udevadm trigger --name-match=kvm
       - name: 에뮬레이터 테스트
         uses: reactivecircus/android-emulator-runner@v2
+        env:
+          L10N_LANGS: ${{ github.event.inputs.langs }}
+          L10N_ONLY: ${{ github.event.inputs.l10n_only }}
         with:
           api-level: ${{ matrix.api }}
           target: ${{ matrix.target }}
