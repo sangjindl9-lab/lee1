@@ -332,7 +332,8 @@ private fun PalettePanel(vm: ColoringViewModel, settings: UserSettings, suggeste
                     modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(if (i == tab) Color(0xFF1E88E5) else Color(0xFFECEFF1))
                         .combinedClickableSimple(tr(n)) { vm.updateSettings { it.copy(selectedPalette = i) } }.padding(horizontal = 10.dp, vertical = 8.dp))
             }
-            Text(tr("＋ 나만의 색"), fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.White,
+            // 세로(태블릿) 색상판은 폭이 좁아 이 버튼이 옆으로 밀려 안 보이므로, 아래에 따로 크게 둔다
+            if (!vertical) Text(tr("＋ 나만의 색"), fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.White,
                 modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(Berry).combinedClickableSimple(tr("나만의 색 만들기"), onCustom).padding(horizontal = 10.dp, vertical = 8.dp))
         }
     }
@@ -340,6 +341,9 @@ private fun PalettePanel(vm: ColoringViewModel, settings: UserSettings, suggeste
     val hint = if (tab == 4) tr("색을 길게 누르면 여기에 모여요") else tr("쓴 색이 여기에 모여요")
     if (vertical) {
         tabs()
+        Text(tr("＋ 나만의 색"), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White, textAlign = TextAlign.Center,
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Berry)
+                .combinedClickableSimple(tr("나만의 색 만들기"), onCustom).padding(vertical = 9.dp))
         if (empty) Text(hint, fontSize = 13.sp, color = Color.Gray, modifier = Modifier.padding(8.dp))
         LazyVerticalGrid(GridCells.Adaptive(size + 6.dp), contentPadding = PaddingValues(4.dp)) {
             items(colors) { c -> Swatch(c, c.argb == vm.color, c.argb in settings.favoriteColors, settings.showColorNames, size, { onPick(c.argb) }, { vm.toggleFavorite(c.argb) }) }
