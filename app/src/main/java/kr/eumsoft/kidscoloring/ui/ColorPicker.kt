@@ -78,9 +78,9 @@ fun ColorPickerDialog(initial: Int, onDismiss: () -> Unit, onFavorite: (Int) -> 
                     Text(tr("%1\$s 느낌", tr(Palettes.nameOf(c))), fontSize = 13.sp, modifier = Modifier.widthIn(max = 96.dp))
                 }
                 Text(tr("네모와 무지개 띠를 눌러 색을 고르고, 아래에서 조금씩 조절해요."), fontSize = 12.sp, color = Color.Gray, modifier = Modifier.padding(vertical = 6.dp))
-                // 선명하게(가로) × 밝게(세로) 네모
+                // 선명하게(가로) × 밝게(세로) 네모. 높이를 고정해 태블릿의 넓은 창에서도 아래 조절 버튼이 한 화면에 보이게 한다
                 Canvas(
-                    Modifier.fillMaxWidth().aspectRatio(1.6f).clip(RoundedCornerShape(12.dp)).border(1.5.dp, Ink, RoundedCornerShape(12.dp))
+                    Modifier.fillMaxWidth().height(170.dp).clip(RoundedCornerShape(12.dp)).border(1.5.dp, Ink, RoundedCornerShape(12.dp))
                         .semantics { contentDescription = tr("색 고르기 판") }
                         .pointerInput(Unit) {
                             awaitEachGesture {
