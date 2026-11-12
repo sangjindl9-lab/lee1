@@ -1,5 +1,6 @@
 package kr.eumsoft.kidscoloring.ui
 
+import kr.eumsoft.kidscoloring.tr
 import android.app.ActivityManager
 import android.app.Application
 import android.content.Context
@@ -88,7 +89,7 @@ class ColoringViewModel(app: Application) : AndroidViewModel(app) {
     fun open(artworkId: String, existingProject: Long? = null, forceNew: Boolean = false, onReady: () -> Unit) {
         if (loading) return
         val art = repo.catalog.byId(artworkId)
-        if (art == null || !art.available) { error = "이 그림은 아직 준비 중이에요"; return }
+        if (art == null || !art.available) { error = tr("이 그림은 아직 준비 중이에요"); return }
         loading = true
         viewModelScope.launch {
             try {
@@ -111,9 +112,9 @@ class ColoringViewModel(app: Application) : AndroidViewModel(app) {
                 startAutosave()
                 onReady()
             } catch (e: OutOfMemoryError) {
-                release(); error = "메모리가 부족해서 그림을 열 수 없어요"
+                release(); error = tr("메모리가 부족해서 그림을 열 수 없어요")
             } catch (e: Exception) {
-                release(); error = "그림을 열 수 없어요"
+                release(); error = tr("그림을 열 수 없어요")
             } finally { loading = false }
         }
     }
@@ -154,7 +155,7 @@ class ColoringViewModel(app: Application) : AndroidViewModel(app) {
     /** 현재 상태를 저장한다. 바뀐 것이 없으면 아무것도 하지 않는다. */
     suspend fun save(silent: Boolean = false): Boolean {
         val e = engine ?: return false
-        if (!e.modified) { if (!silent) message = "저장했어요"; return true }
+        if (!e.modified) { if (!silent) message = tr("저장했어요"); return true }
         return saveLock.withLock {
             val id = projectId
             // 저장하는 동안에도 계속 그릴 수 있도록 복사본을 만든다
@@ -163,15 +164,15 @@ class ColoringViewModel(app: Application) : AndroidViewModel(app) {
             e.modified = false
             try {
                 withContext(NonCancellable) { repo.saveState(id, e.w, e.h, pixels, rc, st, thumb) }
-                if (!silent) message = "저장했어요"
+                if (!silent) message = tr("저장했어요")
                 true
             } catch (ex: IOException) {
                 e.modified = true
-                message = "저장하지 못했어요. 저장 공간을 확인해 주세요"
+                message = tr("저장하지 못했어요. 저장 공간을 확인해 주세요")
                 false
             } catch (ex: OutOfMemoryError) {
                 e.modified = true
-                message = "메모리가 부족해서 저장하지 못했어요"
+                message = tr("메모리가 부족해서 저장하지 못했어요")
                 false
             } finally { thumb.recycle() }
         }

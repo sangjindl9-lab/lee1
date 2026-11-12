@@ -1,5 +1,6 @@
 package kr.eumsoft.kidscoloring.ui
 
+import kr.eumsoft.kidscoloring.tr
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -21,10 +22,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kr.eumsoft.kidscoloring.BuildConfig
+import kr.eumsoft.kidscoloring.I18n
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // 기기 언어에 맞는 번역을 읽는다. (자동 테스트: am start --es lang ko 로 언어를 고정할 수 있다)
+        I18n.init(this, intent?.getStringExtra("lang"))
         setContent {
             EumTheme {
                 val vm: ColoringViewModel = viewModel()
@@ -33,7 +37,7 @@ class MainActivity : ComponentActivity() {
                 DisposableEffect(Unit) { onDispose { speaker.close() } }
                 // home / coloring / gallery / parent / privacy
                 var screen by rememberSaveable { mutableStateOf("home") }
-                val privacy = remember { ctx.assets.open("privacy_policy.txt").bufferedReader().use { it.readText() } }
+                val privacy = remember { ctx.assets.open(if (I18n.lang == "ko") "privacy_policy.txt" else "privacy_policy_en.txt").bufferedReader().use { it.readText() } }
                 val open: (String, Long?) -> Unit = { artId, projId -> vm.open(artId, projId) { screen = "coloring" } }
 
                 Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).safeDrawingPadding()) {
@@ -46,7 +50,7 @@ class MainActivity : ComponentActivity() {
                     }
                     if (vm.loading) Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color(0x55FFFFFF)), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
                 }
-                vm.error?.let { ConfirmDialog("알림", it, "확인", "닫기", onYes = { vm.error = null }, onNo = { vm.error = null }) }
+                vm.error?.let { ConfirmDialog(tr("알림"), it, tr("확인"), tr("닫기"), onYes = { vm.error = null }, onNo = { vm.error = null }) }
             }
         }
     }

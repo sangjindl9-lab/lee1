@@ -11,6 +11,7 @@ class EumApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        I18n.init(this)
         repo = Repository(this, AppDb.open(this), SettingsStore(this))
     }
 }

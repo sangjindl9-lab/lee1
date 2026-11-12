@@ -1,5 +1,6 @@
 package kr.eumsoft.kidscoloring.ui
 
+import kr.eumsoft.kidscoloring.tr
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
@@ -16,7 +17,7 @@ import java.io.File
 import java.io.IOException
 import java.util.Locale
 
-/** 한글 음성 안내 (기기에 한국어 음성 데이터가 있어야 소리가 난다) */
+/** 음성 안내 (기기에 현재 언어의 음성 데이터가 있어야 소리가 난다) */
 class Speaker(ctx: Context) {
     private var ready = false
     private var tts: TextToSpeech? = null
@@ -24,7 +25,7 @@ class Speaker(ctx: Context) {
     init {
         tts = TextToSpeech(ctx.applicationContext) { status ->
             if (status == TextToSpeech.SUCCESS) {
-                val r = tts?.setLanguage(Locale.KOREAN)
+                val r = tts?.setLanguage(kr.eumsoft.kidscoloring.I18n.locale)
                 ready = r != TextToSpeech.LANG_MISSING_DATA && r != TextToSpeech.LANG_NOT_SUPPORTED
             }
         }
@@ -69,7 +70,7 @@ object Exporter {
         val uri = FileProvider.getUriForFile(ctx, ctx.packageName + ".files", f)
         val send = Intent(Intent.ACTION_SEND).setType("image/png").putExtra(Intent.EXTRA_STREAM, uri)
             .putExtra(Intent.EXTRA_TITLE, name).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        ctx.startActivity(Intent.createChooser(send, "그림 보내기").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        ctx.startActivity(Intent.createChooser(send, tr("그림 보내기")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         true
     } catch (e: Exception) { false }
 }

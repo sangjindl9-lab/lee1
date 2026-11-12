@@ -1,5 +1,6 @@
 package kr.eumsoft.kidscoloring.ui
 
+import kr.eumsoft.kidscoloring.tr
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -73,7 +74,7 @@ fun EumTheme(content: @Composable () -> Unit) {
 @Composable
 fun BigButton(
     emoji: String, label: String, modifier: Modifier = Modifier, enabled: Boolean = true, selected: Boolean = false,
-    size: Dp = 60.dp, onClick: () -> Unit,
+    size: Dp = 60.dp, fitUnits: Int = 0, onClick: () -> Unit,
 ) {
     Column(
         modifier
@@ -88,7 +89,11 @@ fun BigButton(
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
     ) {
         Text(emoji, fontSize = 22.sp)
-        Text(label, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Ink, maxLines = 1, softWrap = false, modifier = Modifier.padding(horizontal = 3.dp))
+        // 너비가 정해진 버튼은 fitUnits(12sp 로 들어가는 글자 칸 수)를 넘으면, 언어에 따라 낱말이 길어져도 한 줄에 들어가도록 글자를 줄인다 (한글·한자·가나는 두 칸으로 센다)
+        var units = 0
+        for (ch in label) units += if (ch.code >= 0x2E80) 2 else 1
+        val fs = if (fitUnits in 1 until units) (12f * fitUnits / units).coerceIn(8f, 12f).sp else 12.sp
+        Text(label, fontSize = fs, fontWeight = FontWeight.Bold, color = Ink, maxLines = 1, softWrap = false, overflow = TextOverflow.Clip, modifier = Modifier.padding(horizontal = if (fitUnits > 0) 1.dp else 3.dp))
     }
 }
 
@@ -99,8 +104,8 @@ fun ArtThumb(repo: Repository, art: Artwork, modifier: Modifier = Modifier) {
     }
     Box(modifier.aspectRatio(1f).clip(RoundedCornerShape(18.dp)).background(Color.White), contentAlignment = Alignment.Center) {
         val b = bmp
-        if (b != null) Image(b, art.title, Modifier.padding(6.dp))
-        else if (!art.available) Text("준비 중", color = Color.Gray, fontSize = 14.sp)
+        if (b != null) Image(b, tr(art.title), Modifier.padding(6.dp))
+        else if (!art.available) Text(tr("준비 중"), color = Color.Gray, fontSize = 14.sp)
     }
 }
 
@@ -118,12 +123,12 @@ fun FileThumb(path: String, stamp: Long, desc: String, modifier: Modifier = Modi
 fun ArtCard(repo: Repository, art: Artwork, width: Dp, onClick: () -> Unit) {
     Column(
         Modifier.width(width).clip(RoundedCornerShape(20.dp))
-            .clickable(enabled = art.available, role = Role.Button, onClickLabel = art.title, onClick = onClick)
+            .clickable(enabled = art.available, role = Role.Button, onClickLabel = tr(art.title), onClick = onClick)
             .padding(4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         ArtThumb(repo, art, Modifier.fillMaxWidth().border(2.dp, Color(0xFFBBDEFB), RoundedCornerShape(18.dp)))
-        Text(art.title, fontSize = 13.sp, lineHeight = 17.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis,
+        Text(tr(art.title), fontSize = 13.sp, lineHeight = 17.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Center, modifier = Modifier.padding(top = 4.dp).height(38.dp))
         Text("★".repeat(art.difficulty) + "☆".repeat(3 - art.difficulty.coerceIn(1, 3)), fontSize = 12.sp, color = Sun)
     }
@@ -138,15 +143,15 @@ fun ParentGate(onPass: () -> Unit, onDismiss: () -> Unit) {
     var wrong by remember { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("부모님 확인") },
+        title = { Text(tr("부모님 확인")) },
         text = {
             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-                Text("어른만 들어갈 수 있어요.\n답을 눌러 주세요.", textAlign = TextAlign.Center)
+                Text(tr("어른만 들어갈 수 있어요.\n답을 눌러 주세요."), textAlign = TextAlign.Center)
                 Text("$a × $b = ${input.ifEmpty { "?" }}", fontSize = 30.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(12.dp))
-                if (wrong) Text("다시 해 보세요", color = Color.Red)
+                if (wrong) Text(tr("다시 해 보세요"), color = Color.Red)
                 for (row in listOf("123", "456", "789", "←0✓")) Row {
                     for (ch in row) {
-                        val label = when (ch) { '←' -> "지우기"; '✓' -> "확인"; else -> ch.toString() }
+                        val label = when (ch) { '←' -> tr("지우기"); '✓' -> tr("확인"); else -> ch.toString() }
                         Box(
                             Modifier.padding(4.dp).size(56.dp).clip(RoundedCornerShape(12.dp)).background(Color(0xFFE3F2FD))
                                 .clickable(role = Role.Button, onClickLabel = label) {
@@ -163,7 +168,7 @@ fun ParentGate(onPass: () -> Unit, onDismiss: () -> Unit) {
             }
         },
         confirmButton = {},
-        dismissButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(tr("닫기")) } },
     )
 }
 

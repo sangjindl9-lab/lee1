@@ -33,7 +33,26 @@ log "요청 권한: $(adb shell dumpsys package $A | grep -A8 'requested permiss
 adb shell svc wifi disable; adb shell svc data disable
 read SW SH < <(adb shell wm size | tr -d '\r' | grep -o '[0-9]*x[0-9]*' | tail -1 | tr x ' ')
 sleep 15; anr
-adb shell am start -W -n $A/.ui.MainActivity >/dev/null; sleep 6; anr; anr; shot 01_home
+# 다국어: 언어를 바꿔 가며 첫 화면과 색칠 화면이 그 언어로 나오는지 본다 (앱 실행 인텐트의 lang 값으로 언어 고정)
+J=app/src/main/assets/i18n
+for L in en ja es pt zh-CN zh-TW de fr id hi; do
+  adb shell am force-stop $A
+  adb shell am start -W -n $A/.ui.MainActivity --es lang $L >/dev/null; sleep 5; anr
+  T=$(python3 -c "import json,sys;print(json.load(open('$J/$L.json'))['오늘은 무엇을 색칠할까요?'])")
+  C=$(python3 -c "import json,sys;print(json.load(open('$J/$L.json'))['동물 친구들'])")
+  shot lang_${L}_home
+  if has "$T" && has "$C"; then ok "언어 $L: 첫 화면 번역 표시 ($T)"; else ng "언어 $L: 첫 화면 번역 표시 ($T)"; fi
+  case $L in en|ja|es|de|hi)
+    P=$(python3 -c "import json,sys;print(json.load(open('$J/$L.json'))['눌러서 색칠해요 🎨'])")
+    M=$(python3 -c "import json,sys;print(json.load(open('$J/$L.json'))['더보기'])")
+    tap "$P" "" 6; shot lang_${L}_coloring
+    if has "$M"; then ok "언어 $L: 색칠 화면 번역 표시 ($M)"; else ng "언어 $L: 색칠 화면 번역 표시 ($M)"; fi
+    tap "$M" exact 2; shot lang_${L}_more; adb shell input keyevent KEYCODE_BACK; sleep 1;;
+  esac
+done
+adb shell am force-stop $A; adb shell pm clear $A >/dev/null
+# 아래 기능 테스트는 한국어 화면으로 진행한다
+adb shell am start -W -n $A/.ui.MainActivity --es lang ko >/dev/null; sleep 6; anr; anr; shot 01_home
 check "앱 설치 후 실행 (오프라인)" has "오늘의 추천 그림"
 check "카테고리 표시: 동물 친구들" has "동물 친구들"
 

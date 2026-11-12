@@ -1,0 +1,31 @@
+EUM Kids Coloring Privacy Policy
+
+Effective date: November 11, 2026
+
+1. Personal information we collect
+This app does not collect personal information. There is no sign-up, and it does not collect or transmit names, ages, contact details, location, device identifiers or advertising identifiers.
+
+2. Internet use
+This app has no internet permission and does not communicate with any server. Every feature works only on the device.
+
+3. Information stored on the device
+Pictures your child colors, artwork names and app settings (sound, vibration, brush width, recently used colors and so on) are stored only in this app's private storage on the device. They are deleted when the app is uninstalled.
+
+4. Permissions
+The app does not request camera, location, contacts, microphone or storage permissions.
+
+5. Ads and analytics
+There are no ads, and the app contains no third-party SDKs for advertising, analytics or tracking.
+
+6. Exporting and sharing pictures
+'Export as picture' saves the picture to the device's photo folder. 'Send' runs only after the grown-up check (a question for adults) is passed, and the picture file is handed to another app chosen by the parent or guardian. After that, the handling of the file follows that app's policy.
+
+7. Voice guide
+When 'Voice guide' is on, the text-to-speech (TTS) feature installed on the device reads color names and similar words aloud. This app does not send voice or text anywhere. The behavior of the speech engine installed on the device follows the policy of that engine's provider.
+
+8. Protecting children
+This app is made for children. It has no external links, and the only feature that leaves the app (sharing) works only after the grown-up check.
+
+9. Contact
+Developer: EUM Software
+Contact: sangjindl9@gmail.com

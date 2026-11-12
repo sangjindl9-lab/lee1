@@ -1,5 +1,6 @@
 package kr.eumsoft.kidscoloring.ui
 
+import kr.eumsoft.kidscoloring.tr
 import android.os.Build
 import android.view.HapticFeedbackConstants
 import android.widget.Toast
@@ -32,6 +33,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -110,20 +112,20 @@ fun ColoringScreen(vm: ColoringViewModel, speaker: Speaker, onExit: () -> Unit) 
         if (settings.soundEnabled) Fx.pop()
     }
     fun say(t: String) { if (settings.voiceGuide) speaker.say(t) }
-    fun pick(c: Int) { vm.pickColor(c); say(Palettes.nameOf(c)); if (vm.tool == Tool.ERASER || vm.tool == Tool.REGION_ERASER) vm.tool = Tool.FILL }
+    fun pick(c: Int) { vm.pickColor(c); say(tr(Palettes.nameOf(c))); if (vm.tool == Tool.ERASER || vm.tool == Tool.REGION_ERASER) vm.tool = Tool.FILL }
     fun refresh() { canvas?.sync(); vm.edited() }
 
     val createDoc = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/png")) { uri ->
-        if (uri != null) vm.thumbBitmap(engine.w)?.let { b -> toast(if (Exporter.writeTo(ctx, uri, b)) "사진으로 저장했어요" else "저장하지 못했어요"); b.recycle() }
+        if (uri != null) vm.thumbBitmap(engine.w)?.let { b -> toast(if (Exporter.writeTo(ctx, uri, b)) tr("사진으로 저장했어요") else tr("저장하지 못했어요")); b.recycle() }
     }
     fun export() {
         if (Build.VERSION.SDK_INT >= 29) {
             val b = vm.thumbBitmap(engine.w) ?: return
-            toast(if (Exporter.saveToPictures(ctx, b, "이음컬러링_${art.title}_${System.currentTimeMillis() / 1000}")) "사진첩(Pictures/EumKidsColoring)에 저장했어요" else "저장하지 못했어요. 저장 공간을 확인해 주세요")
+            toast(if (Exporter.saveToPictures(ctx, b, "EumColoring_${tr(art.title)}_${System.currentTimeMillis() / 1000}")) tr("사진첩(Pictures/EumKidsColoring)에 저장했어요") else tr("저장하지 못했어요. 저장 공간을 확인해 주세요"))
             b.recycle()
-        } else createDoc.launch("이음컬러링_${art.title}.png")
+        } else createDoc.launch("EumColoring_${tr(art.title)}.png")
     }
-    fun share() { vm.thumbBitmap(engine.w)?.let { b -> if (!Exporter.share(ctx, b, art.title)) toast("보낼 수 없어요"); b.recycle() } }
+    fun share() { vm.thumbBitmap(engine.w)?.let { b -> if (!Exporter.share(ctx, b, tr(art.title))) toast(tr("보낼 수 없어요")); b.recycle() } }
 
     // 화면을 떠나거나 앱이 뒤로 갈 때 바로 저장 (강제 종료 대비)
     val owner = LocalLifecycleOwner.current
@@ -157,19 +159,19 @@ fun ColoringScreen(vm: ColoringViewModel, speaker: Speaker, onExit: () -> Unit) 
             val bw = ((maxWidth - 4.dp * 7) / 8).coerceIn(38.dp, 64.dp)
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
                 val m = Modifier.width(bw)
-                BigButton("🏠", "홈", m, size = 48.dp) { leave() }
-                BigButton("💾", "저장", m, size = 48.dp) { vm.saveNow() }
-                BigButton("↩", "취소", m, enabled = rev >= 0 && engine.canUndo, size = 48.dp) { engine.undo(); refresh() }
-                BigButton("↪", "다시", m, enabled = rev >= 0 && engine.canRedo, size = 48.dp) { engine.redo(); refresh() }
-                BigButton("🔍", "맞춤", m, size = 48.dp) { canvas?.fit() }
-                BigButton("👀", "보기", m, size = 48.dp) { preview = vm.thumbBitmap(1024)?.asImageBitmap() }
-                BigButton("🎉", "완성", m, size = 48.dp) { vm.markComplete() }
-                BigButton("➕", "더보기", m, size = 48.dp) { showMore = true }
+                BigButton("🏠", tr("홈"), m, size = 48.dp, fitUnits = 6) { leave() }
+                BigButton("💾", tr("저장"), m, size = 48.dp, fitUnits = 6) { vm.saveNow() }
+                BigButton("↩", tr("취소"), m, enabled = rev >= 0 && engine.canUndo, size = 48.dp, fitUnits = 6) { engine.undo(); refresh() }
+                BigButton("↪", tr("다시"), m, enabled = rev >= 0 && engine.canRedo, size = 48.dp, fitUnits = 6) { engine.redo(); refresh() }
+                BigButton("🔍", tr("맞춤"), m, size = 48.dp, fitUnits = 6) { canvas?.fit() }
+                BigButton("👀", tr("보기"), m, size = 48.dp, fitUnits = 6) { preview = vm.thumbBitmap(1024)?.asImageBitmap() }
+                BigButton("🎉", tr("완성"), m, size = 48.dp, fitUnits = 6) { vm.markComplete() }
+                BigButton("➕", tr("더보기"), m, size = 48.dp, fitUnits = 6) { showMore = true }
             }
         }
     }
     val toolButtons: @Composable () -> Unit = {
-        for (t in Tool.entries) BigButton(t.emoji, t.label, selected = vm.tool == t, size = 58.dp) { vm.tool = t; say(t.label) }
+        for (t in Tool.entries) BigButton(t.emoji, tr(t.label), selected = vm.tool == t, size = 58.dp) { vm.tool = t; say(tr(t.label)) }
     }
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -185,7 +187,7 @@ fun ColoringScreen(vm: ColoringViewModel, speaker: Speaker, onExit: () -> Unit) 
                         val cols = if (side >= 200.dp) 3 else 2
                         Tool.entries.chunked(cols).forEach { row ->
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                for (t in row) BigButton(t.emoji, t.label, Modifier.weight(1f), selected = vm.tool == t) { vm.tool = t; say(t.label) }
+                                for (t in row) BigButton(t.emoji, tr(t.label), Modifier.weight(1f), selected = vm.tool == t, fitUnits = 10) { vm.tool = t; say(tr(t.label)) }
                                 repeat(cols - row.size) { Box(Modifier.weight(1f)) }
                             }
                         }
@@ -212,31 +214,31 @@ fun ColoringScreen(vm: ColoringViewModel, speaker: Speaker, onExit: () -> Unit) 
         if (vm.celebrate) Celebration(settings.reduceMotion) { vm.celebrate = false }
     }
 
-    if (askExit) AlertDialog(onDismissRequest = { askExit = false }, title = { Text("그만할까요?") }, confirmButton = {}, dismissButton = {},
+    if (askExit) AlertDialog(onDismissRequest = { askExit = false }, title = { Text(tr("그만할까요?")) }, confirmButton = {}, dismissButton = {},
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("그림을 저장할까요, 지울까요?")
-                Button(onClick = { askExit = false; vm.close(onExit) }, modifier = Modifier.fillMaxWidth()) { Text("💾 저장하고 나가기", fontSize = 17.sp) }
-                Button(onClick = { askExit = false; askDiscard = true }, modifier = Modifier.fillMaxWidth()) { Text("🗑 지우고 나가기", fontSize = 17.sp) }
-                TextButton(onClick = { askExit = false }, modifier = Modifier.fillMaxWidth()) { Text("🎨 계속 칠하기", fontSize = 17.sp) }
+                Text(tr("그림을 저장할까요, 지울까요?"))
+                Button(onClick = { askExit = false; vm.close(onExit) }, modifier = Modifier.fillMaxWidth()) { Text(tr("💾 저장하고 나가기"), fontSize = 17.sp) }
+                Button(onClick = { askExit = false; askDiscard = true }, modifier = Modifier.fillMaxWidth()) { Text(tr("🗑 지우고 나가기"), fontSize = 17.sp) }
+                TextButton(onClick = { askExit = false }, modifier = Modifier.fillMaxWidth()) { Text(tr("🎨 계속 칠하기"), fontSize = 17.sp) }
             }
         })
-    if (askDiscard) ConfirmDialog("정말 지울까요?", "이 그림에 칠한 것이 모두 사라져요. 되돌릴 수 없어요.", "지우기", "아니요",
+    if (askDiscard) ConfirmDialog(tr("정말 지울까요?"), tr("이 그림에 칠한 것이 모두 사라져요. 되돌릴 수 없어요."), tr("지우기"), tr("아니요"),
         onYes = { askDiscard = false; vm.discard(onExit) }, onNo = { askDiscard = false; askExit = true })
-    if (askClear) ConfirmDialog("모두 지울까요?", "칠한 색과 스티커가 모두 지워져요. ('취소' 버튼으로 되돌릴 수 있어요.)", "모두 지우기", "아니요",
+    if (askClear) ConfirmDialog(tr("모두 지울까요?"), tr("칠한 색과 스티커가 모두 지워져요. ('취소' 버튼으로 되돌릴 수 있어요.)"), tr("모두 지우기"), tr("아니요"),
         onYes = { askClear = false; engine.clearAll(); refresh() }, onNo = { askClear = false })
-    if (showMore) AlertDialog(onDismissRequest = { showMore = false }, title = { Text("더보기") }, confirmButton = {},
-        dismissButton = { TextButton(onClick = { showMore = false }) { Text("닫기") } },
+    if (showMore) AlertDialog(onDismissRequest = { showMore = false }, title = { Text(tr("더보기")) }, confirmButton = {},
+        dismissButton = { TextButton(onClick = { showMore = false }) { Text(tr("닫기")) } },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { showMore = false; showAuto = true }, modifier = Modifier.fillMaxWidth()) { Text("✨ 자동 색칠") }
-                Button(onClick = { showMore = false; showSuggest = true }, modifier = Modifier.fillMaxWidth()) { Text("🎨 색칠 추천") }
-                Button(onClick = { showMore = false; askClear = true }, modifier = Modifier.fillMaxWidth()) { Text("🗑 모두 지우기") }
-                Button(onClick = { showMore = false; if (settings.parentalLockEnabled) gate = { export() } else export() }, modifier = Modifier.fillMaxWidth()) { Text("🖼 사진으로 내보내기") }
-                Button(onClick = { showMore = false; gate = { share() } }, modifier = Modifier.fillMaxWidth()) { Text("📤 보내기 (보호자 확인)") }
+                Button(onClick = { showMore = false; showAuto = true }, modifier = Modifier.fillMaxWidth()) { Text(tr("✨ 자동 색칠")) }
+                Button(onClick = { showMore = false; showSuggest = true }, modifier = Modifier.fillMaxWidth()) { Text(tr("🎨 색칠 추천")) }
+                Button(onClick = { showMore = false; askClear = true }, modifier = Modifier.fillMaxWidth()) { Text(tr("🗑 모두 지우기")) }
+                Button(onClick = { showMore = false; if (settings.parentalLockEnabled) gate = { export() } else export() }, modifier = Modifier.fillMaxWidth()) { Text(tr("🖼 사진으로 내보내기")) }
+                Button(onClick = { showMore = false; gate = { share() } }, modifier = Modifier.fillMaxWidth()) { Text(tr("📤 보내기 (보호자 확인)")) }
             }
         })
-    if (showAuto) ThemeDialog("자동 색칠", "색 묶음을 고르면 안 칠한 칸을 자동으로 칠해요. 다 칠한 그림은 고른 색으로 다시 칠해요.", onDismiss = { showAuto = false }) { th ->
+    if (showAuto) ThemeDialog(tr("자동 색칠"), tr("색 묶음을 고르면 안 칠한 칸을 자동으로 칠해요. 다 칠한 그림은 고른 색으로 다시 칠해요."), onDismiss = { showAuto = false }) { th ->
         showAuto = false
         val seed = System.nanoTime().toInt()
         var n = engine.autoColor(th.colors, art.background, seed)
@@ -244,7 +246,7 @@ fun ColoringScreen(vm: ColoringViewModel, speaker: Speaker, onExit: () -> Unit) 
         refresh()
         if (n > 0) { feedback(); vm.onFilled() }
     }
-    if (showSuggest) ThemeDialog("색칠 추천", "어울리는 색 묶음이에요. 고르면 칠해 둔 칸을 그 색으로 바꾸고, 색상판 맨 앞에도 놓아 줄게요. 또 누르면 색 배치가 바뀌어요.", onDismiss = { showSuggest = false }) { th ->
+    if (showSuggest) ThemeDialog(tr("색칠 추천"), tr("어울리는 색 묶음이에요. 고르면 칠해 둔 칸을 그 색으로 바꾸고, 색상판 맨 앞에도 놓아 줄게요. 또 누르면 색 배치가 바뀌어요."), onDismiss = { showSuggest = false }) { th ->
         showSuggest = false; suggested = th
         if (settings.selectedPalette != 0) vm.updateSettings { it.copy(selectedPalette = 0) }
         pick(th.colors[0])
@@ -255,8 +257,8 @@ fun ColoringScreen(vm: ColoringViewModel, speaker: Speaker, onExit: () -> Unit) 
     preview?.let { img ->
         Dialog(onDismissRequest = { preview = null }) {
             Column(Modifier.clip(RoundedCornerShape(24.dp)).background(Color.White).padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Image(img, "완성 이미지 미리보기", Modifier.fillMaxWidth())
-                TextButton(onClick = { preview = null }) { Text("닫기", fontSize = 18.sp) }
+                Image(img, tr("완성 이미지 미리보기"), Modifier.fillMaxWidth())
+                TextButton(onClick = { preview = null }) { Text(tr("닫기"), fontSize = 18.sp) }
             }
         }
     }
@@ -268,21 +270,21 @@ private fun ToolOptions(vm: ColoringViewModel, settings: UserSettings) {
     if (t.brush == null && t != Tool.STICKER) return
     Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
         if (t == Tool.STICKER) Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Render.stickerNames.forEachIndexed { i, n -> BigButton(Render.stickerEmoji[i], n, selected = vm.stickerType == i, size = 48.dp) { vm.stickerType = i } }
+            Render.stickerNames.forEachIndexed { i, n -> BigButton(Render.stickerEmoji[i], tr(n), selected = vm.stickerType == i, size = 48.dp) { vm.stickerType = i } }
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(if (t == Tool.STICKER) "크기" else "굵기", fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1, modifier = Modifier.width(46.dp))
-            Slider(vm.brushSize, { vm.brushSize = it }, valueRange = 6f..90f, modifier = Modifier.weight(1f).semantics { contentDescription = "붓 굵기" },
+            Text(if (t == Tool.STICKER) tr("크기") else tr("굵기"), fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1, modifier = Modifier.widthIn(min = 46.dp).padding(end = 6.dp))
+            Slider(vm.brushSize, { vm.brushSize = it }, valueRange = 6f..90f, modifier = Modifier.weight(1f).semantics { contentDescription = tr("붓 굵기") },
                 onValueChangeFinished = { vm.updateSettings { it.copy(brushSize = vm.brushSize) } })
         }
         if (t.brush != null && t != Tool.ERASER) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("진하기", fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1, modifier = Modifier.width(46.dp))
-                Slider(vm.opacity, { vm.opacity = it }, valueRange = 0.15f..1f, modifier = Modifier.weight(1f).semantics { contentDescription = "색 투명도" },
+                Text(tr("진하기"), fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1, modifier = Modifier.widthIn(min = 46.dp).padding(end = 6.dp))
+                Slider(vm.opacity, { vm.opacity = it }, valueRange = 0.15f..1f, modifier = Modifier.weight(1f).semantics { contentDescription = tr("색 투명도") },
                     onValueChangeFinished = { vm.updateSettings { it.copy(opacity = vm.opacity) } })
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("선 밖으로 안 나가기", fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                Text(tr("선 밖으로 안 나가기"), fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                 Switch(settings.stayInside, { v -> vm.updateSettings { it.copy(stayInside = v) } })
             }
         }
@@ -296,8 +298,8 @@ private fun Swatch(c: NamedColor, selected: Boolean, favorite: Boolean, showName
         Box(
             Modifier.size(size).clip(CircleShape).background(Color(c.argb))
                 .border(if (selected) 4.dp else 1.5.dp, if (selected) Ink else Color(0xFF90A4AE), CircleShape)
-                .combinedClickable(role = Role.Button, onClickLabel = c.name, onLongClickLabel = "좋아하는 색에 넣기", onLongClick = onLong, onClick = onPick)
-                .semantics { contentDescription = c.name + if (selected) " 선택됨" else "" },
+                .combinedClickable(role = Role.Button, onClickLabel = tr(c.name), onLongClickLabel = tr("좋아하는 색에 넣기"), onLongClick = onLong, onClick = onPick)
+                .semantics { contentDescription = if (selected) tr("%1\$s 선택됨", tr(c.name)) else tr(c.name) },
             contentAlignment = Alignment.Center,
         ) {
             // 색만으로 구분하지 않도록 선택 표시는 ✓ 모양으로도 보여 준다
@@ -305,7 +307,7 @@ private fun Swatch(c: NamedColor, selected: Boolean, favorite: Boolean, showName
             if (selected) Text("✓", color = if (dark) Color.White else Color.Black, fontWeight = FontWeight.Black, fontSize = 20.sp)
             else if (favorite) Text("★", color = if (dark) Color.White else Color.Black, fontSize = 11.sp)
         }
-        if (showName) Text(c.name, fontSize = 10.sp, maxLines = 1)
+        if (showName) Text(tr(c.name), fontSize = 10.sp, maxLines = 1)
     }
 }
 
@@ -325,16 +327,16 @@ private fun PalettePanel(vm: ColoringViewModel, settings: UserSettings, suggeste
     val tabs: @Composable () -> Unit = {
         Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
             paletteTabs.forEachIndexed { i, n ->
-                Text(n, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = if (i == tab) Color.White else Ink,
+                Text(tr(n), fontSize = 13.sp, fontWeight = FontWeight.Bold, color = if (i == tab) Color.White else Ink,
                     modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(if (i == tab) Color(0xFF1E88E5) else Color(0xFFECEFF1))
-                        .combinedClickableSimple(n) { vm.updateSettings { it.copy(selectedPalette = i) } }.padding(horizontal = 10.dp, vertical = 8.dp))
+                        .combinedClickableSimple(tr(n)) { vm.updateSettings { it.copy(selectedPalette = i) } }.padding(horizontal = 10.dp, vertical = 8.dp))
             }
-            Text("＋ 나만의 색", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.White,
-                modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(Berry).combinedClickableSimple("나만의 색 만들기", onCustom).padding(horizontal = 10.dp, vertical = 8.dp))
+            Text(tr("＋ 나만의 색"), fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.White,
+                modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(Berry).combinedClickableSimple(tr("나만의 색 만들기"), onCustom).padding(horizontal = 10.dp, vertical = 8.dp))
         }
     }
     val empty = colors.isEmpty()
-    val hint = if (tab == 4) "색을 길게 누르면 여기에 모여요" else "쓴 색이 여기에 모여요"
+    val hint = if (tab == 4) tr("색을 길게 누르면 여기에 모여요") else tr("쓴 색이 여기에 모여요")
     if (vertical) {
         tabs()
         if (empty) Text(hint, fontSize = 13.sp, color = Color.Gray, modifier = Modifier.padding(8.dp))
@@ -357,17 +359,17 @@ private fun Modifier.combinedClickableSimple(label: String, onClick: () -> Unit)
 @Composable
 private fun ThemeDialog(title: String, desc: String, onDismiss: () -> Unit, onPick: (PaletteTheme) -> Unit) {
     AlertDialog(onDismissRequest = onDismiss, title = { Text(title) }, confirmButton = {},
-        dismissButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(tr("닫기")) } },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(desc)
                 for (th in Palettes.themes) Row(
                     Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Color(0xFFF1F5F9))
-                        .combinedClickableSimple(th.name) { onPick(th) }.padding(8.dp),
+                        .combinedClickableSimple(tr(th.name)) { onPick(th) }.padding(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(th.name, fontWeight = FontWeight.Bold, modifier = Modifier.width(56.dp))
-                    for (c in th.colors) Box(Modifier.padding(1.dp).size(24.dp).clip(CircleShape).background(Color(c)).border(1.dp, Color.Gray, CircleShape))
+                    Text(tr(th.name), fontWeight = FontWeight.Bold, maxLines = 1, modifier = Modifier.widthIn(min = 56.dp).padding(end = 6.dp))
+                    for (c in th.colors) Box(Modifier.padding(1.dp).size(22.dp).clip(CircleShape).background(Color(c)).border(1.dp, Color.Gray, CircleShape))
                 }
             }
         })
@@ -381,28 +383,28 @@ private fun CustomColorDialog(initial: Int, onDismiss: () -> Unit, onPick: (Int)
     var s by remember { mutableFloatStateOf(hsv[1]) }
     var v by remember { mutableFloatStateOf(hsv[2]) }
     val c = AColor.HSVToColor(floatArrayOf(h, s, v))
-    AlertDialog(onDismissRequest = onDismiss, title = { Text("나만의 색 만들기") },
+    AlertDialog(onDismissRequest = onDismiss, title = { Text(tr("나만의 색 만들기")) },
         text = {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Box(Modifier.size(72.dp).clip(CircleShape).background(Color(c)).border(2.dp, Ink, CircleShape))
-                Text(Palettes.nameOf(c) + " 느낌", fontSize = 13.sp)
-                Text("색깔", fontWeight = FontWeight.Bold, modifier = Modifier.fillMaxWidth())
-                Slider(h, { h = it }, valueRange = 0f..359f, modifier = Modifier.semantics { contentDescription = "색깔" })
-                Text("선명하게", fontWeight = FontWeight.Bold, modifier = Modifier.fillMaxWidth())
-                Slider(s, { s = it }, valueRange = 0f..1f, modifier = Modifier.semantics { contentDescription = "선명하게" })
-                Text("밝게", fontWeight = FontWeight.Bold, modifier = Modifier.fillMaxWidth())
-                Slider(v, { v = it }, valueRange = 0f..1f, modifier = Modifier.semantics { contentDescription = "밝게" })
+                Text(tr("%1\$s 느낌", tr(Palettes.nameOf(c))), fontSize = 13.sp)
+                Text(tr("색깔"), fontWeight = FontWeight.Bold, modifier = Modifier.fillMaxWidth())
+                Slider(h, { h = it }, valueRange = 0f..359f, modifier = Modifier.semantics { contentDescription = tr("색깔") })
+                Text(tr("선명하게"), fontWeight = FontWeight.Bold, modifier = Modifier.fillMaxWidth())
+                Slider(s, { s = it }, valueRange = 0f..1f, modifier = Modifier.semantics { contentDescription = tr("선명하게") })
+                Text(tr("밝게"), fontWeight = FontWeight.Bold, modifier = Modifier.fillMaxWidth())
+                Slider(v, { v = it }, valueRange = 0f..1f, modifier = Modifier.semantics { contentDescription = tr("밝게") })
             }
         },
-        confirmButton = { Button(onClick = { onPick(c) }) { Text("이 색으로 칠하기") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("닫기") } })
+        confirmButton = { Button(onClick = { onPick(c) }) { Text(tr("이 색으로 칠하기")) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(tr("닫기")) } })
 }
 
 /** 완성 축하: 작은 별들이 떨어진다. '애니메이션 줄이기'를 켜면 움직이지 않는다. */
 @Composable
 private fun Celebration(reduceMotion: Boolean, onDone: () -> Unit) {
     LaunchedEffect(Unit) { delay(3500); onDone() }
-    BoxWithConstraints(Modifier.fillMaxSize().background(Color(0x66000000)).combinedClickableSimple("축하 닫기", onDone), contentAlignment = Alignment.Center) {
+    BoxWithConstraints(Modifier.fillMaxSize().background(Color(0x66000000)).combinedClickableSimple(tr("축하 닫기"), onDone), contentAlignment = Alignment.Center) {
         if (!reduceMotion) {
             val tr = rememberInfiniteTransition(label = "stars")
             val p by tr.animateFloat(0f, 1f, infiniteRepeatable(tween(2200, easing = LinearEasing), RepeatMode.Restart), label = "fall")
@@ -415,8 +417,8 @@ private fun Celebration(reduceMotion: Boolean, onDone: () -> Unit) {
         }
         Column(Modifier.clip(RoundedCornerShape(28.dp)).background(Color.White).padding(horizontal = 36.dp, vertical = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Text("🎉", fontSize = 48.sp)
-            Text("참 잘했어요!", fontSize = 28.sp, fontWeight = FontWeight.Black, color = Berry, textAlign = TextAlign.Center)
-            Text("그림을 완성했어요", fontSize = 16.sp)
+            Text(tr("참 잘했어요!"), fontSize = 28.sp, fontWeight = FontWeight.Black, color = Berry, textAlign = TextAlign.Center)
+            Text(tr("그림을 완성했어요"), fontSize = 16.sp)
         }
     }
 }

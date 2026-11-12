@@ -1,5 +1,6 @@
 package kr.eumsoft.kidscoloring.ui
 
+import kr.eumsoft.kidscoloring.tr
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Bitmap
@@ -155,7 +156,7 @@ class ColoringView(ctx: Context) : View(ctx) {
     private var pinchCx = 0f
     private var pinchCy = 0f
 
-    init { contentDescription = "색칠 도안" }
+    init { contentDescription = tr("색칠 도안") }
 
     private val size get() = engine?.w ?: 1
 
