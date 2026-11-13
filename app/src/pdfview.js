@@ -292,7 +292,7 @@ export async function openPdf(bytes, ctx) {
     } else if (mode === 'textfix') {
       const texts = await loadTexts(pg);
       const hit = texts.find((t) => l.x >= t.x - 2 && l.x <= t.x + t.w + 2 && l.y >= t.y - 2 && l.y <= t.y + t.h + 2);
-      if (!hit) { toast(t('글자 위를 누르세요')); return; }
+      if (!hit) { toast(t('글자 정보가 없는 곳입니다(스캔본 등). 고칠 글자를 한 손가락으로 네모로 둘러 끌어 주세요.'), 3500); return; }
       const r = await ask(t('글자 고치기'), [{ name: 't', value: hit.str, type: 'text' }]);
       if (!r) return;
       addEdit(pg, { type: 'textfix', x: hit.x, y: hit.y, w: hit.w, h: hit.h, text: r.t, color: '#000000' });
@@ -347,11 +347,38 @@ export async function openPdf(bytes, ctx) {
     };
   }
 
+  // 글자 고치기: 글자 정보가 없는 스캔본은 고칠 자리를 네모로 끌어 흰 상자로 덮고 새 글자를 쓴다. 그냥 누르면 글자 정보로 찾는다.
+  function textfixHandler() {
+    let box = null;
+    return {
+      start(pt) { const pg = pageAt(pt); if (!pg) { box = null; return; } const l = local(pg, pt); box = { pg, x1: l.x, y1: l.y, x2: l.x, y2: l.y, el: null }; },
+      move(pt) {
+        if (!box) return;
+        const l = local(box.pg, pt); box.x2 = l.x; box.y2 = l.y;
+        if (box.el) box.el.remove();
+        box.el = svgEl('rect', { x: Math.min(box.x1, box.x2), y: Math.min(box.y1, box.y2), width: Math.abs(box.x2 - box.x1), height: Math.abs(box.y2 - box.y1), fill: 'rgba(255,255,255,.6)', stroke: '#6d28d9', 'stroke-width': 1, 'stroke-dasharray': '4 3' });
+        box.el.classList.add('edit'); box.pg.g.appendChild(box.el);
+      },
+      async end(pt, isTap) {
+        if (!box) return;
+        if (box.el) box.el.remove();
+        const b = box; box = null;
+        if (isTap) return onTap(pt);
+        const x = Math.min(b.x1, b.x2), y = Math.min(b.y1, b.y2), w = Math.abs(b.x2 - b.x1), h = Math.abs(b.y2 - b.y1);
+        if (w < 4 || h < 4) return;
+        const r = await ask(t('글자 고치기'), [{ name: 't', type: 'text', placeholder: t('새 글자(비우면 흰 상자로 지우기만)') }]);
+        if (!r) return;
+        addEdit(b.pg, { type: 'textfix', x, y, w, h, text: r.t || '', color: '#000000' });
+      },
+      cancel() { if (box && box.el) box.el.remove(); box = null; },
+    };
+  }
+
   const btn = (label, icon, on, cls) => { const b = el('button', 'tool' + (cls ? ' ' + cls : '')); b.innerHTML = `<span class="ic">${icon}</span>${label}`; b.onclick = on; return b; };
   function setMode(m) {
     if (mode === 'measure' && m !== 'measure') measure.setMode(null);
     mode = m;
-    stage.setDrawHandler(['ink', 'highlight', 'shape'].includes(m) ? drawHandler() : null);
+    stage.setDrawHandler(['ink', 'highlight', 'shape'].includes(m) ? drawHandler() : m === 'textfix' ? textfixHandler() : null);
     if (m === 'textfix') for (const pg of state.pages) loadTexts(pg).then(() => drawEdits(pg));
     else if (m === 'form') for (const pg of state.pages) loadWidgets(pg).then(() => drawEdits(pg));
     for (const pg of state.pages) drawEdits(pg);
@@ -401,7 +428,7 @@ export async function openPdf(bytes, ctx) {
     }));
     if (mode) tools.appendChild(btn(t('되돌리기'), '↶', undo));
     setHint(t({ ink: '한 손가락으로 그립니다 · 두 손가락으로 이동·확대', highlight: '한 손가락으로 칠합니다', text: '글을 넣을 자리를 누르세요', shape: '한 손가락으로 끌어 그립니다 · 도형 버튼을 다시 누르면 종류 선택',
-      image: '이미지를 넣을 자리를 누르세요(도장·서명 등)', textfix: '고칠 글자를 누르세요(흰 상자로 덮고 새 글자를 씁니다)', form: '입력란을 누르세요' }[mode] || ''));
+      image: '이미지를 넣을 자리를 누르세요(도장·서명 등)', textfix: '고칠 글자를 누르거나, 스캔본이면 고칠 자리를 네모로 끌어 주세요(흰 상자로 덮고 새 글자) · 두 손가락으로 이동', form: '입력란을 누르세요' }[mode] || ''));
   }
   // 메뉴 아이콘에 HTML(색 견본)을 쓰므로 menu 의 아이콘 칸은 innerHTML 로
   updateTools();
