@@ -12,6 +12,9 @@ let current = null; // 열린 문서 컨트롤러
 let ctx = null;
 
 function setHint(t) { $('hint').textContent = t; $('hint').hidden = !t; }
+/** 예전 기록에 남은 %EC%8A… 식 이름을 사람이 읽는 글자로. */
+function pretty(name) { try { return /%[0-9A-Fa-f]{2}/.test(name) ? decodeURIComponent(name) : name; } catch { return name; } }
+
 function showHome() {
   $('viewer').hidden = true; $('home').hidden = false;
   renderRecents();
@@ -27,10 +30,10 @@ function renderRecents() {
     const pdf = /\.pdf$/i.test(r.name);
     row.appendChild(el('span', 'ricon ' + (pdf ? 'pdf' : 'cad'), pdf ? 'PDF' : 'CAD'));
     const box = el('span', 'rbox');
-    box.appendChild(el('span', 'rname', r.name));
+    box.appendChild(el('span', 'rname', pretty(r.name)));
     box.appendChild(el('span', 'rtime', new Date(r.t).toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'short' })));
     row.appendChild(box);
-    row.onclick = () => openUri(r.uri, r.name);
+    row.onclick = () => openUri(r.uri, pretty(r.name));
     row.oncontextmenu = (e) => { e.preventDefault(); forgetMenu(r); };
     let timer;
     row.onpointerdown = () => { timer = setTimeout(() => forgetMenu(r), 600); };
@@ -71,7 +74,9 @@ async function openUri(uri, name) {
     files.remember(uri, name);
   } catch (e) {
     console.error(e);
-    toast(t('열 수 없습니다: ') + (e.message || e), 5000);
+    // 예전 버전에서 다른 앱(카카오톡 등)이 넘겨 준 주소는 그 앱 밖에서는 다시 열 수 없다.
+    const stale = /No content provider|Permission Denial|not allowed|SecurityException|FileNotFound/i.test(e.message || '');
+    toast(stale ? t('이 파일은 다른 앱에서 잠깐 열어 준 것이라 다시 열 수 없습니다. 원본 앱(카카오톡·파일 관리자)에서 다시 열어 주세요. 목록에서 지웠습니다.') : t('열 수 없습니다: ') + (e.message || e), 5000);
     files.forget(uri);
     showHome();
   }
