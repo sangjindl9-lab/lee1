@@ -6,6 +6,7 @@ import * as files from './files.js';
 import { openPdf } from './pdfview.js';
 import { openCad } from './cadview.js';
 import { renderBanners } from './banners.js';
+import { checkUpdate } from './update.js';
 
 const stage = createStage($('stage'), $('content'));
 let current = null; // 열린 문서 컨트롤러
@@ -19,6 +20,7 @@ function showHome() {
   $('viewer').hidden = true; $('home').hidden = false;
   renderRecents();
   renderBanners({ top: $('ad-top'), bottom: $('ad-bottom') });
+  checkUpdate($('update'));
 }
 function renderRecents() {
   const list = $('recents');

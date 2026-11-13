@@ -91,6 +91,14 @@ export function onBack(cb) {
   window.addEventListener('eumBack', cb);
 }
 
+/** { code, name, fromPlay } — 브라우저에서는 null */
+export async function appVersion() {
+  return native ? native.version() : null;
+}
+export async function openUrl(url) {
+  if (native) await native.openUrl({ url }); else window.open(url, '_blank');
+}
+
 export function exitApp() {
   if (native) native.exit();
 }

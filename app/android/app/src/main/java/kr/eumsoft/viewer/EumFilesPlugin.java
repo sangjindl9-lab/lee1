@@ -191,6 +191,30 @@ public class EumFilesPlugin extends Plugin {
         }
     }
 
+    /** 설치된 앱의 버전과, 플레이 스토어에서 받았는지(패키지 설치자) 알려준다. */
+    @PluginMethod
+    public void version(PluginCall call) {
+        JSObject r = new JSObject();
+        try {
+            android.content.pm.PackageInfo pi = getContext().getPackageManager().getPackageInfo(getContext().getPackageName(), 0);
+            r.put("code", (int) androidx.core.content.pm.PackageInfoCompat.getLongVersionCode(pi));
+            r.put("name", pi.versionName);
+            String inst = getContext().getPackageManager().getInstallerPackageName(getContext().getPackageName());
+            r.put("fromPlay", "com.android.vending".equals(inst));
+        } catch (Exception e) { r.put("code", 0); }
+        call.resolve(r);
+    }
+
+    /** 플레이 스토어 앱 페이지(없으면 웹 주소)를 연다. */
+    @PluginMethod
+    public void openUrl(PluginCall call) {
+        String url = call.getString("url", "");
+        try {
+            getActivity().startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
+            call.resolve();
+        } catch (Exception e) { call.reject(e.getMessage()); }
+    }
+
     @PluginMethod
     public void exit(PluginCall call) {
         call.resolve();

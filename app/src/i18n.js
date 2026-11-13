@@ -91,6 +91,7 @@ const EN = {
   '쪽 관리(회전·삭제·순서·합치기·나누기)': 'Pages (rotate, delete, reorder, merge, split)',
   '축척 정하기(1:N)': 'Set scale (1:N)', '폭 맞춤': 'Fit width',
   '취소': 'Cancel', '확인': 'OK',
+  '새 버전 {v}이(가) 나왔습니다': 'Version {v} is available', '지금 업데이트': 'Update now',
 };
 
 const JA = {
@@ -183,6 +184,7 @@ const JA = {
   '쪽 관리(회전·삭제·순서·합치기·나누기)': 'ページ管理（回転・削除・並べ替え・結合・分割）',
   '축척 정하기(1:N)': '縮尺を設定 (1:N)', '폭 맞춤': '幅に合わせる',
   '취소': 'キャンセル', '확인': 'OK',
+  '새 버전 {v}이(가) 나왔습니다': '新しいバージョン {v} があります', '지금 업데이트': '今すぐ更新',
 };
 
 const lang = (navigator.language || 'ko').toLowerCase();
