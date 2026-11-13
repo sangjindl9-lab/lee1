@@ -1,0 +1,7 @@
+node_modules/
+www/app.js
+www/pdf.worker.js
+www/libredwg-web.wasm
+www/cmaps/
+www/standard_fonts/
+test/out/

@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="color-scheme" content="light">
+  <title>이음뷰어</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="app-icon.png">
+  <meta name="theme-color" content="#4c1ad6">
+</head>
+<body>
+  <div id="home">
+    <header class="bar home-bar">
+      <img src="app-icon.png" alt=""><span class="logo" data-i18n="이음뷰어">이음뷰어</span>
+      <span class="sub">PDF · DWG · DXF</span>
+    </header>
+    <main class="home-main">
+      <div id="update" hidden></div>
+      <div id="ad-top" class="ad-slot" hidden></div>
+      <button id="open" class="bigbtn">
+        <span class="bigic">📂</span>
+        <span data-i18n="파일 열기">파일 열기</span>
+        <small>PDF, DWG, DXF</small>
+      </button>
+      <section class="recent-sec">
+        <h2 data-i18n="최근 문서">최근 문서</h2>
+        <div id="recents"></div>
+        <p id="recents-empty" class="empty" data-i18n-html='아직 연 문서가 없습니다.|파일 관리자나 카카오톡에서 PDF·DWG·DXF 를 눌러 "이음뷰어"로 열 수도 있습니다.'>아직 연 문서가 없습니다.<br>파일 관리자나 카카오톡에서 PDF·DWG·DXF 를 눌러 "이음뷰어"로 열 수도 있습니다.</p>
+      </section>
+      <button id="open2" class="btn ghost" data-i18n="다른 파일 열기…">다른 파일 열기…</button>
+      <div id="ad-bottom" class="ad-slot" hidden></div>
+    </main>
+  </div>
+
+  <div id="viewer" hidden>
+    <header class="bar">
+      <button id="back" class="iconbtn" aria-label="뒤로" data-i18n-label="뒤로">‹</button>
+      <span id="title" class="title"></span>
+      <span id="kind" class="kind"></span>
+      <button id="save" class="iconbtn" aria-label="저장" data-i18n-label="저장" hidden>💾</button>
+      <button id="more" class="iconbtn" aria-label="더보기" data-i18n-label="더보기">⋮</button>
+    </header>
+    <div id="stage">
+      <div id="content"></div>
+      <div id="labels"></div>
+    </div>
+    <div id="hint" hidden></div>
+    <nav id="tools"></nav>
+  </div>
+
+  <div id="toast"></div>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

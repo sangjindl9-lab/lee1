@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">이음ZIP</string>
+    <string name="open_label">이음ZIP으로 풀기</string>
+    <string name="send_label">이음ZIP으로 압축/풀기</string>
+</resources>
