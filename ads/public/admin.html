@@ -33,6 +33,14 @@ img.th{width:120px;height:40px;object-fit:cover;border-radius:6px;background:#ee
 <br><button class="p" type="submit">저장</button> <button type="button" id="reset">새로 입력</button>
 </form></div>
 <div class="card"><b>배너 목록</b><table id="list"></table></div>
+<div class="card"><b>앱 업데이트 알림</b>
+<form id="vf">
+<div class="row"><div><label>앱</label><select name="app"><option value="eum-zip">이음ZIP</option><option value="eum-viewer">이음뷰어</option><option value="eum-docs">이음과 문서</option></select></div><div><label>최신 versionCode (스토어에 올린 숫자)</label><input name="code" type="number" min="0"></div></div>
+<div class="row"><div><label>버전 이름(표시용, 예 1.6.0)</label><input name="name"></div><div><label>안내 문구(선택)</label><input name="notes" placeholder="예: 압축 속도 개선"></div></div>
+<label><input type="checkbox" name="force" style="width:auto"> 강제 업데이트(나중에 버튼 없음)</label>
+<br><button class="p" type="submit">저장</button></form>
+<table id="vlist" style="margin-top:10px"></table>
+<div class="hint">앱이 켜질 때 <code>/api/version?app=…</code> 을 받아 자기 versionCode 보다 크면 "새 버전이 있습니다" 창을 띄우고, 업데이트 버튼은 Play 스토어 앱 페이지를 엽니다. 스토어에 새 버전이 실제로 게시된 뒤에 숫자를 올리세요.</div></div>
 <div class="card hint"><b>앱 쪽 동작</b><br>각 앱은 <code>/api/banners?app=eum-viewer</code> / <code>?app=eum-docs</code> / <code>?app=eum-zip</code> 을 받아 자리별 배너를 보여 줍니다(10분 캐시). 켜진 배너가 없으면 자리 자체가 숨겨집니다. 노출·클릭 수는 자동 집계됩니다.<br>
 광고를 실제로 켜기 전에 Google Play 콘솔 → 앱 콘텐츠 → 광고 선언을 "예"로 바꿔야 합니다.</div>
 </div>
@@ -41,11 +49,13 @@ img.th{width:120px;height:40px;object-fit:cover;border-radius:6px;background:#ee
 const APPS={'eum-viewer':'이음뷰어','eum-docs':'이음과 문서','eum-zip':'이음ZIP'};const SLOTS={top:'홈 위',bottom:'홈 아래',home:'홈 아래',result:'풀린 파일',compress:'압축하기'};
 const $=s=>document.querySelector(s);const api=(u,o={})=>fetch(u,{credentials:'same-origin',...o}).then(async r=>{if(r.status===401){show(false);throw new Error('로그인 필요')}return r.json()});
 function show(on){$('#login').hidden=on;$('#app').hidden=!on;$('#logout').hidden=!on}
-$('#loginBtn').onclick=async()=>{const r=await fetch('/admin/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({password:$('#pw').value})});if(!r.ok)return alert('비밀번호가 다릅니다');show(true);load()};
+$('#loginBtn').onclick=async()=>{const r=await fetch('/admin/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({password:$('#pw').value})});if(!r.ok)return alert('비밀번호가 다릅니다');show(true);load();loadVer()};
 $('#logout').onclick=()=>{document.cookie='eumads=;max-age=0';show(false)};
 $('#reset').onclick=()=>{$('#f').reset();$('#f').id.value=''};
 $('#f').onsubmit=async e=>{e.preventDefault();const fd=new FormData(e.target);fd.set('active',e.target.active.checked);fd.set('apps',[...e.target.querySelectorAll('input[name=app]:checked')].map(x=>x.value).join(','));if(!fd.get('apps'))return alert('대상 앱을 하나 이상 고르세요');await api('/admin/api/banners',{method:'POST',body:fd});e.target.reset();e.target.id.value='';load()};
 async function load(){const list=await api('/admin/api/banners');$('#list').innerHTML='<tr><th>이미지</th><th>제목</th><th>앱</th><th>자리</th><th>기간</th><th>노출/클릭</th><th>상태</th><th></th></tr>'+list.map(b=>`<tr><td>${b.image?`<img class="th" src="/img/${b.image}">`:''}</td><td>${b.title||''}<br><small>${b.link||''}</small></td><td>${(b.apps||['eum-viewer']).map(a=>APPS[a]||a).join('<br>')}</td><td>${SLOTS[b.slot]||b.slot} #${b.order||0}</td><td>${b.start||'-'} ~ ${b.end||'-'}</td><td>${b.stats?.imp||0} / ${b.stats?.click||0}</td><td><span class="badge ${b.active?'':'off'}">${b.active?'켜짐':'꺼짐'}</span></td><td><button data-t="${b.id}">${b.active?'끄기':'켜기'}</button> <button data-e="${b.id}">수정</button> <button class="d" data-d="${b.id}">삭제</button></td></tr>`).join('');
 $('#list').onclick=async e=>{const t=e.target.dataset;if(t.t){await api('/admin/api/banners/'+t.t+'/toggle',{method:'POST'});load()}if(t.d&&confirm('삭제할까요?')){await api('/admin/api/banners/'+t.d,{method:'DELETE'});load()}if(t.e){const b=list.find(x=>x.id===t.e);const f=$('#f');for(const k of ['id','title','link','slot','order','start','end','bg'])f[k].value=b[k]??'';for(const c of f.querySelectorAll('input[name=app]'))c.checked=(b.apps||['eum-viewer']).includes(c.value);f.active.checked=!!b.active;window.scrollTo(0,0)}}}
-api('/admin/api/banners').then(()=>{show(true);load()}).catch(()=>show(false));
+async function loadVer(){const v=await api('/admin/api/versions');$('#vlist').innerHTML='<tr><th>앱</th><th>versionCode</th><th>버전 이름</th><th>문구</th><th>강제</th></tr>'+Object.entries(v).map(([a,x])=>`<tr><td>${APPS[a]||a}</td><td>${x.code}</td><td>${x.name||''}</td><td>${x.notes||''}</td><td>${x.force?'예':'-'}</td></tr>`).join('');$('#vf').app.onchange=()=>{const x=v[$('#vf').app.value]||{};const f=$('#vf');f.code.value=x.code??'';f.name.value=x.name||'';f.notes.value=x.notes||'';f.force.checked=!!x.force};$('#vf').app.onchange()}
+$('#vf').onsubmit=async e=>{e.preventDefault();const f=e.target;await api('/admin/api/versions',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({app:f.app.value,code:f.code.value,name:f.name.value,notes:f.notes.value,force:f.force.checked})});loadVer()};
+api('/admin/api/banners').then(()=>{show(true);load();loadVer()}).catch(()=>show(false));
 </script></body></html>

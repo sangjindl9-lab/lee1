@@ -35,6 +35,13 @@ app.get('/api/banners', (req, res) => {
   res.set('Cache-Control', 'public, max-age=600');
   res.json(list);
 });
+// 앱 최신 버전 안내: 앱이 켜질 때 받아서 자기 versionCode 보다 크면 "업데이트" 안내를 띄운다.
+const VER = join(DATA, 'versions.json');
+const loadVer = () => (existsSync(VER) ? JSON.parse(readFileSync(VER, 'utf8')) : {});
+app.get('/api/version', (req, res) => {
+  res.set('Cache-Control', 'public, max-age=300');
+  res.json(loadVer()[req.query.app] || { code: 0 });
+});
 app.post('/api/banners/:id/:kind(imp|click)', (req, res) => {
   const db = load();
   const b = db.banners.find((x) => x.id === req.params.id);
@@ -64,6 +71,13 @@ app.post('/admin/api/banners', auth, upload.single('image'), (req, res) => {
 });
 app.post('/admin/api/banners/:id/toggle', auth, (req, res) => { const db = load(); const b = db.banners.find((x) => x.id === req.params.id); if (b) { b.active = !b.active; save(db); } res.json(b || {}); });
 app.delete('/admin/api/banners/:id', auth, (req, res) => { const db = load(); const b = db.banners.find((x) => x.id === req.params.id); if (b && b.image) try { unlinkSync(join(DATA, 'img', b.image)); } catch {} db.banners = db.banners.filter((x) => x.id !== req.params.id); save(db); res.json({ ok: true }); });
+app.get('/admin/api/versions', auth, (req, res) => res.json(loadVer()));
+app.post('/admin/api/versions', auth, (req, res) => {
+  const v = loadVer(); const b = req.body;
+  v[b.app] = { code: Number(b.code || 0), name: b.name || '', notes: b.notes || '', force: !!b.force };
+  writeFileSync(VER, JSON.stringify(v, null, 1));
+  res.json(v);
+});
 app.get('/admin', (req, res) => res.sendFile(join(process.cwd(), 'public', 'admin.html')));
 app.get('/', (req, res) => res.redirect('/admin'));
 app.listen(PORT, () => console.log('eum-ads on', PORT, 'data', DATA));
