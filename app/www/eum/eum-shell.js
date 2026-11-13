@@ -46,8 +46,9 @@
   function saveRecents(list) {
     try { localStorage.setItem(RECENT_KEY, JSON.stringify(list.slice(0, 20))); } catch { /* 저장 공간 없음 */ }
   }
-  function remember(uri, name) {
-    saveRecents([{ uri, name, t: Date.now() }, ...recents().filter((r) => r.uri !== uri)]);
+  function remember(uri, name, copy) {
+    const old = recents().find((r) => r.uri === uri);
+    saveRecents([{ uri, name, t: Date.now(), copy: copy || (old && old.copy) }, ...recents().filter((r) => r.uri !== uri)]);
   }
   function forget(uri) {
     saveRecents(recents().filter((r) => r.uri !== uri));
@@ -112,14 +113,21 @@
     }).then((ok) => { if (ok) hideHome(); });
     return true;
   }
-  async function openUri(uri, name) {
-    // 다른 앱이 잠시 열어 준 파일은 앱을 다시 켜면 접근 권한이 사라진다 → 다시 고르게 한다.
+  async function openUri(uri, name, copy) {
+    // 다른 앱이 잠시 열어 준 파일은 앱을 다시 켜면 접근 권한이 사라진다 → 앱 안에 둔 복사본을 열고, 그것도 없으면 다시 고르게 한다.
     if (typeof native.canRead === 'function' && !(await native.canRead({ uri })).ok) {
+      const saved = recents().find((r) => r.uri === uri);
+      if (saved && saved.copy && (await native.canRead({ uri: saved.copy })).ok) {
+        toast('원본에 접근할 수 없어 앱 안에 보관한 복사본을 엽니다.');
+        forget(uri);
+        return openUri(saved.copy, name);
+      }
       forget(uri);
       renderHome();
       if (await ask(`「${name}」에 지금은 접근할 수 없습니다.\n다른 앱에서 잠시 열어 준 파일은 앱을 다시 켜면 권한이 사라집니다.\n\n파일을 다시 선택할까요?`, '파일 선택')) pickAndOpen();
       return;
     }
+    if (copy) remember(uri, name, copy);
     if (routeOther(uri, name)) return;
     if (!leaveViewer()) return;
     remember(uri, name);
@@ -155,9 +163,9 @@
     });
     window.addEventListener('eumLaunch', (e) => {
       const f = typeof e.detail === 'string' ? JSON.parse(e.detail) : (e.detail || e);
-      if (f && f.uri) openUri(f.uri, f.name);
+      if (f && f.uri) openUri(f.uri, f.name, f.copy);
     });
-    native.getLaunch().then((f) => { if (f && f.uri) openUri(f.uri, f.name); }).catch(() => {});
+    native.getLaunch().then((f) => { if (f && f.uri) openUri(f.uri, f.name, f.copy); }).catch(() => {});
 
     // 웹뷰에서는 <a download> 가 동작하지 않는다 → 저장 위치를 물어 직접 쓴다(HTML 내보내기 등).
     const anchorClick = HTMLAnchorElement.prototype.click;

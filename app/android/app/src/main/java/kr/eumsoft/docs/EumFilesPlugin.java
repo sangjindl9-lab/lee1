@@ -53,13 +53,22 @@ public class EumFilesPlugin extends Plugin {
     private JSObject fileFromIntent(Intent intent) {
         if (intent == null || !Intent.ACTION_VIEW.equals(intent.getAction()) || intent.getData() == null) return null;
         Uri uri = intent.getData();
-        try {
-            // 보낸 앱이 허락한 경우에만 성공한다. 성공하면 앱을 다시 켜도 최근 문서에서 열 수 있다.
-            getContext().getContentResolver().takePersistableUriPermission(uri, intent.getFlags() & RW);
-        } catch (Exception ignored) {}
         JSObject o = new JSObject();
         o.put("uri", uri.toString());
         o.put("name", displayName(uri));
+        try {
+            // 보낸 앱이 허락한 경우에만 성공한다. 성공하면 앱을 다시 켜도 최근 문서에서 열 수 있다.
+            getContext().getContentResolver().takePersistableUriPermission(uri, intent.getFlags() & RW);
+        } catch (Exception notPersistable) {
+            // 잠시만 열어 준 파일(카카오톡·다운로드 알림 등)은 앱을 다시 켜면 못 읽으므로 앱 안에 복사본을 둔다.
+            try (InputStream in = getContext().getContentResolver().openInputStream(uri)) {
+                File dir = new File(getContext().getFilesDir(), "recent");
+                dir.mkdirs();
+                File f = new File(dir, System.currentTimeMillis() + "_" + displayName(uri));
+                try (OutputStream out = new FileOutputStream(f)) { out.write(readAll(in)); }
+                o.put("copy", Uri.fromFile(f).toString());
+            } catch (Exception ignored) {}
+        }
         return o;
     }
 
