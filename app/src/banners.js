@@ -2,7 +2,7 @@
 import { t } from './i18n.js';
 import { el } from './ui.js';
 
-const ADS_URL = 'https://ads-production-a599.up.railway.app';
+export const ADS_URL = 'https://ads-production-a599.up.railway.app';
 const APP_ID = 'eum-viewer';
 const CACHE_KEY = 'eumviewer.banners';
 const CACHE_MS = 10 * 60 * 1000;
