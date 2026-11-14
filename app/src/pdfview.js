@@ -78,6 +78,7 @@ export async function openPdf(bytes, ctx) {
     stage.setContentSize(layoutW, layoutH);
   }
   layout();
+  stage.setDocMode(true);
   stage.fitWidth();
   if (state.pages.length === 1 && state.pages[0].h * stage.transform.s > stage.visibleRect().h * stage.transform.s) { /* 세로로 긴 쪽은 폭 맞춤 유지 */ }
 

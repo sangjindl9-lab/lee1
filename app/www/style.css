@@ -128,3 +128,6 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .update-box { background: #fff; border: 2px solid #6d28d9; border-radius: 14px; padding: 14px 16px; margin-bottom: 14px; display: flex; flex-direction: column; gap: 8px; }
 .update-title { font-weight: 700; font-size: 16px; color: #4c1d95; }
 .update-notes { font-size: 13px; color: #555; white-space: pre-line; }
+
+.vbar { position: absolute; right: 3px; width: 5px; border-radius: 3px; background: rgba(91,33,230,.55); opacity: 0; transition: opacity .3s; pointer-events: none; z-index: 5; }
+#stage.dark .vbar { background: rgba(255,255,255,.5); }
