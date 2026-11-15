@@ -1,0 +1,48 @@
+name: EUM Viewer 2.1 preview
+on:
+  push:
+    branches: [codex/eum-viewer-improvements]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - run: npm ci
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - name: Browser regression tests
+        run: CHROME="$(node -e "console.log(require('playwright').chromium.executablePath())")" npm test
+      - run: npx cap sync android
+      - name: Build test APK and unsigned submission bundle
+        working-directory: app/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug bundleRelease --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eum-viewer-2.1.0-preview
+          path: |
+            app/android/app/build/outputs/apk/debug/app-debug.apk
+            app/android/app/build/outputs/bundle/release/app-release.aab
+            app/test/out/
+      - name: Publish separate preview
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cp app/android/app/build/outputs/apk/debug/app-debug.apk eum-viewer-2.1.0-preview.apk
+          cp app/android/app/build/outputs/bundle/release/app-release.aab eum-viewer-2.1.0-unsigned.aab
+          gh release create "eum-viewer-2.1-preview-${GITHUB_RUN_NUMBER}" eum-viewer-2.1.0-preview.apk eum-viewer-2.1.0-unsigned.aab --prerelease --target "$GITHUB_SHA" --title "이음뷰어 2.1.0 테스트" --notes "문서 검색·즐겨찾기·PDF 본문 검색 개선. APK는 테스트용 공개 debug 키로 서명되어 있습니다. AAB는 미서명으로 Play 업로드 전에 기존 업로드 키 서명이 필요합니다. 실기기 및 Play 심사는 미완료입니다."

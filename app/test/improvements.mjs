@@ -1,0 +1,72 @@
+import { chromium } from 'playwright';
+import { PDFDocument } from 'pdf-lib';
+import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
+import { readFileSync, existsSync, mkdirSync } from 'node:fs';
+import { extname, resolve } from 'node:path';
+const root = resolve('www');
+const server = createServer((req, res) => {
+  const p = resolve(root, '.' + (req.url === '/' ? '/index.html' : req.url.split('?')[0]));
+  if (!p.startsWith(root + '/') || !existsSync(p)) { res.writeHead(404); return res.end(); }
+  res.setHeader('Content-Type', ({'.js':'text/javascript','.html':'text/html','.css':'text/css','.wasm':'application/wasm'})[extname(p)] || 'application/octet-stream');
+  res.end(readFileSync(p));
+});
+await new Promise(r => server.listen(0,'127.0.0.1',r));
+const browser = await chromium.launch({ executablePath: process.env.CHROME || '/usr/bin/chromium', args:['--no-sandbox'] });
+try {
+  const page = await browser.newPage({viewport:{width:412,height:915},locale:'ko-KR'});
+  await page.route('https://ads-production-a599.up.railway.app/**', route => route.fulfill({json:[]}));
+  const errors=[]; page.on('pageerror',e=>errors.push(e.message));
+  await page.goto(`http://127.0.0.1:${server.address().port}`);
+  await page.evaluate(()=>localStorage.setItem('eumviewer.recents',JSON.stringify([
+    {uri:'test:1',name:'현장도면.pdf',t:100}, {uri:'test:2',name:'배선.dwg',t:200}
+  ])));
+  await page.reload();
+  assert.equal(await page.locator('.recent').count(),2);
+  await page.locator('#document-search').fill('현장');
+  assert.equal(await page.locator('.recent').count(),1);
+  await page.locator('.recent').click({button:'right'});
+  await page.getByRole('button',{name:'즐겨찾기 추가'}).click();
+  await page.waitForTimeout(220);
+  await page.locator('#document-search').fill('');
+  await page.locator('#document-filter').selectOption('favorite');
+  assert.match(await page.locator('.rname').innerText(),/★ 현장/);
+  await page.reload();
+  assert.match(await page.locator('.rname').first().innerText(),/★ 현장/);
+  await page.locator('#document-filter').selectOption('cad');
+  assert.equal(await page.locator('.recent').count(),1);
+  await page.locator('#clear-recents').click();
+  await page.locator('.dialog').getByRole('button',{name:'기록 지우기',exact:true}).click();
+  await page.waitForTimeout(220);
+  await page.locator('#document-filter').selectOption('all');
+  assert.equal(await page.locator('.recent').count(),1);
+  await page.locator('#document-search').fill('missing');
+  assert.equal(await page.locator('#search-empty').isVisible(),true);
+  await page.locator('#document-search').fill('');
+  mkdirSync('test/out',{recursive:true});
+  await page.screenshot({path:'test/out/home-mobile.png'});
+  await page.setViewportSize({width:1024,height:768});
+  await page.screenshot({path:'test/out/home-tablet.png'});
+  await page.setViewportSize({width:412,height:915});
+  const doc=await PDFDocument.create();
+  doc.addPage([595,842]).drawText('First page');
+  doc.addPage([595,842]).drawText('Cable schedule target text');
+  const chooser=page.waitForEvent('filechooser'); await page.locator('#open').click();
+  await (await chooser).setFiles({name:'search-test.pdf',mimeType:'application/pdf',buffer:Buffer.from(await doc.save())});
+  await page.locator('#tools').getByRole('button',{name:'검색',exact:false}).click();
+  await page.locator('.dialog input').fill('schedule');
+  await page.locator('.dialog').getByRole('button',{name:'확인',exact:true}).click();
+  await page.getByRole('button',{name:/2쪽 · Cable/}).click();
+  await page.waitForTimeout(400);
+  const y=await page.locator('.page').nth(1).evaluate(e=>e.getBoundingClientRect().top);
+  assert.ok(y>=0 && y<200,`search navigates to second page: ${y}`);
+  await page.screenshot({path:'test/out/pdf-search.png'});
+  await page.locator('#tools').getByRole('button',{name:'검색',exact:false}).click();
+  await page.locator('.dialog input').fill('no-such-content');
+  await page.locator('.dialog').getByRole('button',{name:'확인',exact:true}).click();
+  await page.waitForFunction(()=>document.getElementById('toast').textContent.includes('검색 결과가 없습니다'));
+  await page.goto(`http://127.0.0.1:${server.address().port}/privacy.html`);
+  assert.match(await page.locator('body').innerText(),/노출·클릭/);
+  assert.deepEqual(errors,[]);
+  console.log('PASS: search, filters, favorites, persistence, clear history, mobile/tablet, PDF search navigation, no results, privacy; no JS errors');
+} finally { await browser.close(); server.close(); }

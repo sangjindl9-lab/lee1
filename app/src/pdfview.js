@@ -415,6 +415,7 @@ export async function openPdf(bytes, ctx) {
     tools.appendChild(btn(t('양식'), '☑', () => setMode('form'), on('form')));
     tools.appendChild(btn(t('측정'), '📏', () => setMode('measure'), on('measure')));
     tools.appendChild(btn(t('쪽'), '▤', pagesPanel));
+    tools.appendChild(btn('검색', '⌕', searchText));
     if (['ink', 'text', 'shape'].includes(mode)) tools.appendChild(btn(t('색'), sw(color), async () => {
       const p = await menu(COLORS.map(([c, n]) => ({ label: n, icon: sw(c), c })), t('색'));
       if (p) { color = p.c; updateTools(); }
@@ -433,6 +434,33 @@ export async function openPdf(bytes, ctx) {
   }
   // 메뉴 아이콘에 HTML(색 견본)을 쓰므로 menu 의 아이콘 칸은 innerHTML 로
   updateTools();
+
+  // 검색 결과는 원본 PDF의 텍스트 기준이며 스캔 이미지 OCR은 하지 않는다.
+  async function searchText() {
+    const input = await ask('PDF 본문 검색', [{ name: 'query', label: '검색어 (스캔 문서 제외)', value: '' }]);
+    const query = input?.query?.trim().toLocaleLowerCase();
+    if (!query || closed) return;
+    setHint('본문을 검색하는 중…');
+    const matches = [];
+    try {
+      for (let i = 0; i < state.pages.length; i++) {
+        if (closed) return;
+        const pg = state.pages[i];
+        const text = pg.searchText ??= (await pg.page.getTextContent()).items.map(item => item.str || '').join(' ');
+        const at = text.toLocaleLowerCase().indexOf(query);
+        if (at >= 0) matches.push({ id: i, label: `${i + 1}쪽 · ${text.slice(Math.max(0, at - 24), at + query.length + 60)}` });
+      }
+      if (closed) return;
+      if (!matches.length) return toast('검색 결과가 없습니다. 이미지로 된 문서는 검색되지 않습니다.', 4000);
+      const choice = await menu(matches, `${matches.length}개 쪽에서 발견`);
+      if (choice && !closed) {
+        setMode(null);
+        stage.fitWidth();
+        stage.set({ ty: 12 - state.pages[choice.id].y0 * stage.transform.s });
+      }
+    } catch (e) { if (!closed) toast('검색 실패: ' + e.message); }
+    finally { if (!closed) setHint(''); }
+  }
 
   // ── 쪽 관리 ──
   async function pagesPanel() {

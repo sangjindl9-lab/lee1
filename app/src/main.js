@@ -27,25 +27,33 @@ function renderRecents() {
   list.innerHTML = '';
   const rs = files.recents();
   $('recents-empty').hidden = rs.length > 0;
-  for (const r of rs) {
+  const query = $('document-search').value.trim().toLocaleLowerCase();
+  const filter = $('document-filter').value;
+  const shown = rs.filter(r => pretty(r.name).toLocaleLowerCase().includes(query)
+    && (filter === 'all' || filter === 'favorite' && r.favorite || filter === 'pdf' && /\.pdf$/i.test(r.name) || filter === 'cad' && /\.(dwg|dxf)$/i.test(r.name)))
+    .sort((a, b) => Number(!!b.favorite) - Number(!!a.favorite) || b.t - a.t);
+  $('search-empty').hidden = !rs.length || shown.length > 0;
+  for (const r of shown) {
     const row = el('button', 'recent');
     const pdf = /\.pdf$/i.test(r.name);
     row.appendChild(el('span', 'ricon ' + (pdf ? 'pdf' : 'cad'), pdf ? 'PDF' : 'CAD'));
     const box = el('span', 'rbox');
-    box.appendChild(el('span', 'rname', pretty(r.name)));
+    box.appendChild(el('span', 'rname', (r.favorite ? '★ ' : '') + pretty(r.name)));
     box.appendChild(el('span', 'rtime', new Date(r.t).toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'short' })));
     row.appendChild(box);
-    row.onclick = () => openUri(r.uri, pretty(r.name));
     row.oncontextmenu = (e) => { e.preventDefault(); forgetMenu(r); };
-    let timer;
-    row.onpointerdown = () => { timer = setTimeout(() => forgetMenu(r), 600); };
-    row.onpointerup = row.onpointerleave = () => clearTimeout(timer);
+    let timer, held = false;
+    row.onclick = () => { if (!held) openUri(r.uri, pretty(r.name)); held = false; };
+    row.onpointerdown = () => { held = false; timer = setTimeout(() => { held = true; forgetMenu(r); }, 600); };
+    row.onpointerup = row.onpointercancel = row.onpointerleave = () => clearTimeout(timer);
     list.appendChild(row);
   }
 }
 async function forgetMenu(r) {
-  const p = await menu([{ label: t('목록에서 지우기'), icon: '✕', danger: true }], r.name);
-  if (p) { files.forget(r.uri); renderRecents(); }
+  const p = await menu([{ label: r.favorite ? '즐겨찾기 해제' : '즐겨찾기 추가', icon: '★', id: 'favorite' }, { label: t('목록에서 지우기'), icon: '✕', danger: true, id: 'forget' }], r.name);
+  if (p?.id === 'favorite') files.toggleFavorite(r.uri);
+  if (p?.id === 'forget') files.forget(r.uri);
+  if (p) renderRecents();
 }
 
 async function openUri(uri, name) {
@@ -101,6 +109,12 @@ async function pickAndOpen() {
   openUri(f.uri, f.name);
 }
 
+$('document-search').oninput = renderRecents;
+$('document-filter').onchange = renderRecents;
+$('clear-recents').onclick = async () => {
+  if (await confirmBox('즐겨찾기를 제외한 열기 기록을 지울까요? 원본 파일은 삭제하지 않습니다.', '기록 지우기')) { files.clearRecents(); renderRecents(); }
+};
+$('privacy').onclick = () => { window.location.href = 'privacy.html'; };
 $('open').onclick = pickAndOpen;
 $('open2').onclick = pickAndOpen;
 $('back').onclick = goBack;

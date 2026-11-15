@@ -131,3 +131,9 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 
 .vbar { position: absolute; right: 3px; width: 5px; border-radius: 3px; background: rgba(91,33,230,.55); opacity: 0; transition: opacity .3s; pointer-events: none; z-index: 5; }
 #stage.dark .vbar { background: rgba(255,255,255,.5); }
+
+.library-controls { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:16px; }
+.library-controls input { flex:1 1 180px; min-width:0; }
+.library-controls input, .library-controls select { padding:12px; border:1px solid #d9dce6; border-radius:12px; background:white; color:#202337; font:inherit; }
+.library-controls button { min-height:44px; }
+@media (min-width:760px) { #recents { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; } }

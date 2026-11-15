@@ -114,15 +114,21 @@ function download(bytes, name) {
 // ── 최근 문서 ──
 const RECENT_KEY = 'eumviewer.recents';
 export function recents() {
-  try { return JSON.parse(localStorage.getItem(RECENT_KEY)) || []; } catch { return []; }
+  try { const list = JSON.parse(localStorage.getItem(RECENT_KEY)); return Array.isArray(list) ? list.filter(r => r && typeof r.uri === 'string' && typeof r.name === 'string') : []; } catch { return []; }
 }
 function saveRecents(list) {
-  try { localStorage.setItem(RECENT_KEY, JSON.stringify(list.slice(0, 30))); } catch { /* 저장 공간 없음 */ }
+  try { localStorage.setItem(RECENT_KEY, JSON.stringify([...list.filter(r => r.favorite), ...list.filter(r => !r.favorite).slice(0, 30)])); } catch { /* 저장 공간 없음 */ }
 }
 export function remember(uri, name) {
   if (uri.startsWith('browser:')) return;
-  saveRecents([{ uri, name, t: Date.now() }, ...recents().filter((r) => r.uri !== uri)]);
+  const old = recents().find(r => r.uri === uri);
+  saveRecents([{ uri, name, favorite: !!old?.favorite, t: Date.now() }, ...recents().filter((r) => r.uri !== uri)]);
 }
 export function forget(uri) {
   saveRecents(recents().filter((r) => r.uri !== uri));
 }
+
+export function toggleFavorite(uri) {
+  saveRecents(recents().map(r => r.uri === uri ? { ...r, favorite: !r.favorite } : r));
+}
+export function clearRecents() { saveRecents(recents().filter(r => r.favorite)); }
