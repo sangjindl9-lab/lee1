@@ -51,6 +51,7 @@ try {
   const doc=await PDFDocument.create();
   doc.addPage([595,842]).drawText('First page');
   doc.addPage([595,842]).drawText('Cable schedule target text');
+  doc.addPage([595,842]).drawText('Third page');
   const chooser=page.waitForEvent('filechooser'); await page.locator('#open').click();
   await (await chooser).setFiles({name:'search-test.pdf',mimeType:'application/pdf',buffer:Buffer.from(await doc.save())});
   await page.locator('#tools').getByRole('button',{name:'검색',exact:false}).click();
