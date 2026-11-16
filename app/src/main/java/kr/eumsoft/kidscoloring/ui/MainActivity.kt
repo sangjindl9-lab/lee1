@@ -27,18 +27,14 @@ import kr.eumsoft.kidscoloring.BuildConfig
 import kr.eumsoft.kidscoloring.I18n
 
 class MainActivity : ComponentActivity() {
-    private val music = MusicBox()
     private val bgm by lazy { BgmPlayer(this) }
-    /** 지금 화면에 맞는 음악: "" 없음, "games" 오르골 동요, "coloring" 색칠 배경 음악 */
-    private var musicMode = ""
+    /** 지금 화면에서 배경 음악을 틀지 (색칠 화면·놀이터) */
+    private var musicOn = false
 
-    private fun applyMusic() {
-        if (musicMode == "games") music.start() else music.stop()
-        if (musicMode == "coloring") bgm.start() else bgm.pause()
-    }
+    private fun applyMusic() { if (musicOn) bgm.start() else bgm.pause() }
     override fun onStart() { super.onStart(); applyMusic() }
-    override fun onStop() { music.stop(); bgm.pause(); super.onStop() }
-    override fun onDestroy() { music.stop(); bgm.release(); super.onDestroy() }
+    override fun onStop() { bgm.pause(); super.onStop() }
+    override fun onDestroy() { bgm.release(); super.onDestroy() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -54,13 +50,9 @@ class MainActivity : ComponentActivity() {
                 var screen by rememberSaveable { mutableStateOf("home") }
                 val privacy = remember { ctx.assets.open(if (I18n.lang == "ko") "privacy_policy.txt" else "privacy_policy_en.txt").bufferedReader().use { it.readText() } }
                 val settings by vm.settings.collectAsState()
-                // 놀이터에서는 오르골 동요, 색칠할 때는 배경 음악을 튼다
-                val mode = when {
-                    screen == "games" && settings.musicEnabled -> "games"
-                    screen == "coloring" && vm.engine != null && settings.coloringMusic -> "coloring"
-                    else -> ""
-                }
-                LaunchedEffect(mode) { musicMode = mode; applyMusic() }
+                // 색칠할 때와 놀이터에서 배경 음악을 튼다 (화면을 오가도 곡이 끊기지 않고 이어진다)
+                val on = (screen == "games" && settings.musicEnabled) || (screen == "coloring" && vm.engine != null && settings.coloringMusic)
+                LaunchedEffect(on) { musicOn = on; applyMusic() }
                 val open: (String, Long?) -> Unit = { artId, projId -> vm.open(artId, projId) { screen = "coloring" } }
 
                 Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).safeDrawingPadding()) {

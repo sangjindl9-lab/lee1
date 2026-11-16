@@ -230,7 +230,6 @@
  "그림 바꾸기": "Trocar desenho",
  "그림을 골라요": "Escolha um desenho",
  "놀이터 배경 음악": "Música dos jogos",
- "놀이할 때 오르골 소리로 옛 동요를 들려줍니다. (반짝반짝 작은 별 등 저작권이 끝난 곡)": "Durante os jogos toca cantigas clássicas em caixinha de música (músicas de domínio público, como Brilha, brilha estrelinha).",
  "말하는 색의 풍선을 눌러요": "Toque no balão da cor que ouvir",
  "어떤 놀이를 할까요?": "Do que vamos brincar?",
  "음악": "Música",
@@ -251,5 +250,6 @@
  "그림을 색칠하는 동안 신나는 음악을 잔잔하게 들려줍니다.": "Toca músicas alegres baixinho enquanto colore.",
  "🔇 음악 끄기": "🔇 Desligar música",
  "🎵 음악 켜기": "🎵 Ligar música",
- "퍼즐 · 풍선 · 짝 맞추기": "Quebra-cabeça · Balões · Memória"
+ "퍼즐 · 풍선 · 짝 맞추기": "Quebra-cabeça · Balões · Memória",
+ "놀이터에서 놀 때 신나는 음악을 잔잔하게 들려줍니다.": "Toca músicas alegres baixinho enquanto brinca."
 }

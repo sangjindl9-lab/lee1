@@ -4,7 +4,6 @@ import kr.eumsoft.kidscoloring.ui.BalloonLogic
 import kr.eumsoft.kidscoloring.ui.FxSynth
 import kr.eumsoft.kidscoloring.ui.MemoryLogic
 import kr.eumsoft.kidscoloring.ui.PuzzleLogic
-import kr.eumsoft.kidscoloring.ui.Tunes
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -39,18 +38,7 @@ class GamesTest {
         assertEquals(c.size, c.map { it.argb }.toSet().size)
     }
 
-    @Test fun `동요 악보를 읽을 수 있다`() {
-        assertEquals(6, Tunes.songs.size)
-        for ((notes, beat) in Tunes.songs) {
-            assertTrue(notes.size > 10)
-            assertTrue(beat in 0.2f..1f)
-            assertTrue(notes.all { it.midi == -1 || it.midi in 55..90 })
-        }
-        // C4 = 60, A4 = 69
-        assertEquals(listOf(60, 69, -1, 61), Tunes.parse("C4 A4 R:2 C#4").map { it.midi })
-    }
-
-    @Test fun `색칠 배경 음악 파일이 들어 있다`() {
+    @Test fun `배경 음악 파일이 들어 있다`() {
         for (i in 1..2) assertTrue(File("src/main/res/raw/coloring_bgm_$i.m4a").length() > 100_000)
     }
 
