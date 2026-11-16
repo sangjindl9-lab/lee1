@@ -155,6 +155,25 @@ N=$(adb shell run-as $A ls files/projects/ | tr -d '\r' | wc -l)
 adb shell am force-stop $A; adb shell am start -W -n $A/.ui.MainActivity >/dev/null; sleep 5
 tap "내 그림" exact 3; tap "색칠하는 중" exact 2; shot 17_after_discard
 if has "작은 날개가 달린 아기 용"; then ng "지우고 나가면 목록에 남지 않음"; else ok "지우고 나가면 목록에 남지 않음 (저장 폴더 $N개)"; fi
+# 놀이터: 퍼즐 · 풍선 · 짝 맞추기
+adb shell input keyevent KEYCODE_BACK; sleep 2
+tap "놀이" exact 3; shot 18_games
+check "놀이터 열기" has "어떤 놀이를 할까요?"
+sleep 2; if playing; then log "  놀이터 음악: 재생 중"; else log "  놀이터 음악: 재생 목록에 없음"; fi
+tap "🧩 그림 퍼즐" "" 2; check "퍼즐: 그림 고르기" has "그림을 골라요"
+tap "당근을 들고 있는 아기 토끼" "" 3; shot 19_puzzle
+check "퍼즐: 조각 표시" has "조각 4"
+tap "조각 1" exact 1; tap "조각 2" exact 1; shot 19b_puzzle_swap
+tap "뒤로" exact 2; tap "🎈 풍선 터뜨리기" "" 4; shot 20_balloon
+check "풍선 터뜨리기: 색 안내" has "풍선을 눌러요"
+for i in 1 2 3 4 5; do adb shell input tap $((SW*(2*i-1)/10)) $((SH*6/10)); sleep 0.5; done; shot 20b_balloon_tap
+tap "뒤로" exact 2; tap "🃏 짝 맞추기" "" 3; shot 21_memory
+check "짝 맞추기: 카드 6장" has "카드 5"
+tap "카드 1" exact 0.5; tap "카드 2" exact 0.3; shot 21b_memory_open
+tap "카드 16장" exact 2; check "짝 맞추기: 카드 수 바꾸기" has "카드 9"
+tap "음악" exact 2; check "음악 끄기 버튼 (🔇 표시)" has "🔇"
+tap "뒤로" exact 2; tap "뒤로" exact 2
+check "놀이터에서 홈으로" has "오늘의 추천 그림"
 CR=$(adb logcat -d | grep -A2 "FATAL EXCEPTION" | grep -c "Process: $A")
 if [ "$CR" = "0" ]; then ok "비정상 종료 없음"; else ng "비정상 종료 $CR 회"; adb logcat -d | grep -A30 "FATAL EXCEPTION: main" | head -90 >> $R; fi
 adb shell dumpsys meminfo $A | grep -E "TOTAL PSS|TOTAL:" | head -2 | tee -a $R
