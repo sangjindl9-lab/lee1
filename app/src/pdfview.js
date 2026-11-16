@@ -140,6 +140,7 @@ export async function openPdf(bytes, ctx) {
     }
     if (mode === 'textfix') drawTextBoxes(pg);
     if (mode === 'form') drawWidgets(pg);
+    if (mode === 'search') drawHits(pg);
   }
   function editEl(ed) {
     switch (ed.type) {
@@ -197,6 +198,74 @@ export async function openPdf(bytes, ctx) {
     pg.g.querySelectorAll('.tbox').forEach((e) => e.remove());
     for (const t of pg.texts || []) pg.g.appendChild(svgEl('rect', { class: 'tbox edit', x: t.x, y: t.y, width: t.w, height: t.h }));
   }
+  // ── 문서 안 검색 ──
+  // 쪽의 글자 조각을 이어 붙여(공백·대소문자 무시) 찾는다. 낱말이 여러 조각으로 나뉜 PDF 에서도 찾을 수 있다.
+  let hits = [], hitIdx = -1, query = '';
+  const norm = (s) => s.toLowerCase().replace(/\s+/g, '');
+  async function search() {
+    const r = await ask(t('문서에서 찾기'), [{ name: 'q', type: 'text', value: query, placeholder: t('찾을 글자') }], t('찾기'));
+    if (!r || !norm(r.q)) return;
+    query = r.q.trim();
+    const q = norm(query);
+    setHint(t('찾는 중…'));
+    hits = [];
+    for (const pg of state.pages) {
+      const texts = await loadTexts(pg);
+      let all = '';
+      const map = []; // 이어 붙인 글자 하나마다 [조각, 조각 안 위치]
+      for (const it of texts) for (let i = 0; i < it.str.length; i++) {
+        const ch = norm(it.str[i]);
+        for (let k = 0; k < ch.length; k++) { all += ch[k]; map.push([it, i]); }
+      }
+      for (let at = all.indexOf(q); at >= 0; at = all.indexOf(q, at + q.length)) {
+        const rects = [];
+        for (let i = at; i < at + q.length; i++) {
+          const [it, ci] = map[i];
+          const last = rects[rects.length - 1];
+          if (last && last.it === it) last.b = ci + 1; else rects.push({ it, a: ci, b: ci + 1 });
+        }
+        // 조각 안에서의 위치는 글자 수 비율로 어림한다(가로쓰기 기준, 세로로 놓인 글자는 조각 전체)
+        hits.push({ pg, rects: rects.map(({ it, a, b }) => {
+          const n = it.str.length;
+          return it.w >= it.h || n === 1 ? { x: it.x + it.w * a / n, y: it.y, w: it.w * (b - a) / n, h: it.h } : { x: it.x, y: it.y, w: it.w, h: it.h };
+        }) });
+      }
+    }
+    if (!hits.length) {
+      hitIdx = -1;
+      const noText = state.pages.every((pg) => !pg.texts.length);
+      toast(noText ? t('글자 정보가 없는 문서(스캔본)라서 검색할 수 없습니다') : t('"{q}"을(를) 찾지 못했습니다', { q: query }), 3000);
+      if (mode === 'search') setMode(null); else updateTools();
+      return;
+    }
+    hitIdx = 0;
+    setMode('search');
+    showHit();
+  }
+  function drawHits(pg) {
+    hits.forEach((h, i) => {
+      if (h.pg !== pg) return;
+      for (const r of h.rects) pg.g.appendChild(svgEl('rect', { class: 'hit edit' + (i === hitIdx ? ' cur' : ''), x: r.x - 1, y: r.y - 1, width: r.w + 2, height: r.h + 2 }));
+    });
+  }
+  function moveHit(d) {
+    const prev = hits[hitIdx].pg;
+    hitIdx = (hitIdx + d + hits.length) % hits.length;
+    drawEdits(prev);
+    showHit();
+  }
+  /** 지금 찾은 곳이 화면에 보이게 옮긴다. */
+  function showHit() {
+    const h = hits[hitIdx], r = h.rects[0];
+    drawEdits(h.pg);
+    const vis = stage.visibleRect(), s = stage.transform.s;
+    const x = h.pg.x0 + r.x, y = h.pg.y0 + r.y;
+    const nt = { ty: -y * s + vis.h * s / 3 };
+    if (x < vis.x || x + r.w > vis.x + vis.w) nt.tx = -x * s + vis.w * s / 3;
+    stage.set(nt);
+    updateTools();
+  }
+
   // ── 양식(폼) 칸 ──
   async function loadWidgets(pg) {
     if (pg.widgets) return pg.widgets;
@@ -267,7 +336,7 @@ export async function openPdf(bytes, ctx) {
     drawEdits(u.pg);
   }
 
-  stage.setTapHandler((pt) => { if (!mode) return false; onTap(pt); return true; });
+  stage.setTapHandler((pt) => { if (!mode || mode === 'search') return false; onTap(pt); return true; });
   async function onTap(pt) {
     const pg = pageAt(pt);
     if (!pg) return;
@@ -378,6 +447,7 @@ export async function openPdf(bytes, ctx) {
   const btn = (label, icon, on, cls) => { const b = el('button', 'tool' + (cls ? ' ' + cls : '')); b.innerHTML = `<span class="ic">${icon}</span>${label}`; b.onclick = on; return b; };
   function setMode(m) {
     if (mode === 'measure' && m !== 'measure') measure.setMode(null);
+    if (m !== 'search') { hits = []; hitIdx = -1; }
     mode = m;
     stage.setDrawHandler(['ink', 'highlight', 'shape'].includes(m) ? drawHandler() : m === 'textfix' ? textfixHandler() : null);
     if (m === 'textfix') for (const pg of state.pages) loadTexts(pg).then(() => drawEdits(pg));
@@ -401,7 +471,16 @@ export async function openPdf(bytes, ctx) {
         : mm === 'area' ? t('꼭짓점을 차례로 누른 뒤 완료') : t('점을 차례로 누르세요 · 완료로 끝내기'));
       return;
     }
+    if (mode === 'search') {
+      tools.appendChild(btn(t('나가기'), '←', () => setMode(null)));
+      tools.appendChild(btn(t('이전'), '▲', () => moveHit(-1)));
+      tools.appendChild(btn(t('다음'), '▼', () => moveHit(1)));
+      tools.appendChild(btn(t('다시 찾기'), '🔍', search));
+      setHint(t('"{q}" {i} / {n} · {p}쪽', { q: query, i: hitIdx + 1, n: hits.length, p: state.pages.indexOf(hits[hitIdx].pg) + 1 }));
+      return;
+    }
     tools.appendChild(btn(t('보기'), '✋', () => setMode(null), mode == null ? 'on' : ''));
+    tools.appendChild(btn(t('검색'), '🔍', search));
     tools.appendChild(btn(t('펜'), '✎', () => setMode('ink'), on('ink')));
     tools.appendChild(btn(t('형광펜'), '▬', () => setMode('highlight'), on('highlight')));
     tools.appendChild(btn(t('글'), 'T', () => setMode('text'), on('text')));
@@ -497,7 +576,7 @@ export async function openPdf(bytes, ctx) {
         list.appendChild(row);
       });
     }
-    function after() { state.dirty = true; layout(); renderVisible(); measure.redraw((pg) => state.pages.includes(pg) ? { g: pg.g, origin: { x: pg.x0, y: pg.y0 } } : null); refresh(); }
+    function after() { if (mode === 'search') setMode(null); state.dirty = true; layout(); renderVisible(); measure.redraw((pg) => state.pages.includes(pg) ? { g: pg.g, origin: { x: pg.x0, y: pg.y0 } } : null); refresh(); }
     refresh();
   }
   function thumb(pg, canvas) {
@@ -568,6 +647,7 @@ export async function openPdf(bytes, ctx) {
         { label: t('다른 이름으로 저장'), icon: '📄', id: 'saveas' },
         { label: t('공유'), icon: '📤', id: 'share' },
         '-',
+        { label: t('문서에서 찾기'), icon: '🔍', id: 'search' },
         { label: t('쪽 관리(회전·삭제·순서·합치기·나누기)'), icon: '▤', id: 'pages' },
         { label: t('축척 정하기(1:N)'), icon: '📐', id: 'scale' },
         { label: t('측정 모두 지우기'), icon: '🧹', id: 'clear' },
@@ -577,6 +657,7 @@ export async function openPdf(bytes, ctx) {
       if (pick.id === 'save') await this.save();
       if (pick.id === 'saveas') await this.saveAs();
       if (pick.id === 'share') { if (!state.dirty || await this.save()) await files.share(ctx.uri, ctx.name); }
+      if (pick.id === 'search') search();
       if (pick.id === 'pages') pagesPanel();
       if (pick.id === 'scale') setScaleByRatio();
       if (pick.id === 'clear') measure.clear();

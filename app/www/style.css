@@ -27,6 +27,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 /* 홈 */
 #home { height: 100%; display: flex; flex-direction: column; }
 .home-main { flex: 1; overflow: auto; padding: 16px 16px calc(16px + var(--sab)); display: flex; flex-direction: column; gap: 14px; }
+.home-main > * { flex: none; }
 .bigbtn { position: relative; overflow: hidden; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 24px 22px; background: var(--grad); color: #fff; border-radius: 20px; font-size: 18px; font-weight: 800; box-shadow: 0 8px 22px rgba(74,26,214,.35); }
 .bigbtn::before { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 48%; background: linear-gradient(180deg, rgba(255,255,255,.28), rgba(255,255,255,0)); pointer-events: none; }
 .bigbtn .bigic { width: 64px; height: 64px; border-radius: 18px; background: url('app-icon.png') center/cover; box-shadow: 0 4px 10px rgba(0,0,0,.3); }
@@ -73,6 +74,8 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .tbox { fill: rgba(91,33,230,.08); stroke: rgba(91,33,230,.5); stroke-width: .5; }
 .wbox rect { fill: rgba(255,200,0,.18); stroke: #e0a800; stroke-width: .6; }
 .wbox text { fill: #000; }
+.hit { fill: rgba(255,214,0,.45); }
+.hit.cur { fill: rgba(255,120,0,.55); stroke: #e65100; stroke-width: .8; }
 
 /* CAD */
 .cad { position: relative; }
