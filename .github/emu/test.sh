@@ -157,7 +157,7 @@ tap "내 그림" exact 3; tap "색칠하는 중" exact 2; shot 17_after_discard
 if has "작은 날개가 달린 아기 용"; then ng "지우고 나가면 목록에 남지 않음"; else ok "지우고 나가면 목록에 남지 않음 (저장 폴더 $N개)"; fi
 # 놀이터: 퍼즐 · 풍선 · 짝 맞추기
 adb shell input keyevent KEYCODE_BACK; sleep 2
-tap "놀이" exact 3; shot 18_games
+tap "🎮 놀이터" "" 3; shot 18_games
 check "놀이터 열기" has "어떤 놀이를 할까요?"
 sleep 2; if playing; then log "  놀이터 음악: 재생 중"; else log "  놀이터 음악: 재생 목록에 없음"; fi
 tap "🧩 그림 퍼즐" "" 2; check "퍼즐: 그림 고르기" has "그림을 골라요"

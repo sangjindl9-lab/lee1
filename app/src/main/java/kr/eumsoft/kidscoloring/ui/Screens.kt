@@ -76,8 +76,6 @@ fun HomeScreen(vm: ColoringViewModel, speaker: Speaker, onOpen: (artworkId: Stri
                         Text(tr("이음 키즈 컬러링"), fontSize = 26.sp, fontWeight = FontWeight.Black, color = Color(0xFF1565C0))
                         Text(tr("오늘은 무엇을 색칠할까요?"), fontSize = 15.sp, color = Ink)
                     }
-                    BigButton("🎮", tr("놀이"), size = 68.dp, modifier = Modifier.testTag("home_games"), onClick = onGames)
-                    Spacer(Modifier.width(8.dp))
                     BigButton("🖼", tr("내 그림"), size = 68.dp, onClick = onGallery)
                     Spacer(Modifier.width(8.dp))
                     BigButton("🔒", tr("부모님"), size = 68.dp) { askGate = true }
@@ -96,6 +94,20 @@ fun HomeScreen(vm: ColoringViewModel, speaker: Speaker, onOpen: (artworkId: Stri
                         Text(tr(today.title), fontSize = 20.sp, fontWeight = FontWeight.Bold)
                         Gap()
                         Text(tr("눌러서 색칠해요 🎨"), fontSize = 16.sp, color = Color(0xFF6D4C41))
+                    }
+                }
+            }
+            item {
+                Row(
+                    Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp).fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(Color(0xFFE8F5E9))
+                        .border(3.dp, Color(0xFF66BB6A), RoundedCornerShape(24.dp))
+                        .clickable(role = Role.Button, onClickLabel = tr("🎮 놀이터"), onClick = onGames).testTag("home_games").padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("🧩🎈🃏", fontSize = 30.sp)
+                    Column(Modifier.padding(start = 14.dp)) {
+                        Text(tr("🎮 놀이터"), fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                        Text(tr("퍼즐 · 풍선 · 짝 맞추기"), fontSize = 15.sp, color = Color(0xFF2E7D32))
                     }
                 }
             }
