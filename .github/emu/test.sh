@@ -65,6 +65,11 @@ check "카테고리 표시: 동물 친구들" has "동물 친구들"
 
 tap "당근을 들고 있는 아기 토끼" "" 6; shot 02_coloring
 anr; geom
+# 색칠할 때 배경 음악: 앱이 소리를 내고 있는지 (dumpsys audio 의 재생 목록)
+UID=$(adb shell dumpsys package $A | grep -o 'userId=[0-9]*' | head -1 | cut -d= -f2)
+playing(){ adb shell dumpsys audio | grep "u/pid:$UID" | grep -q "state:started"; }
+# 에뮬레이터는 소리 장치 없이(-noaudio) 돌기 때문에 재생 여부는 기록만 한다
+if playing; then log "  배경 음악: 재생 중"; else log "  배경 음악: 재생 목록에 없음 (소리 장치 없음일 수 있음)"; fi
 if [ -n "$B" ]; then ok "도안 열기 / 색칠 화면 표시"; else ng "도안 열기"; fi
 log "  캔버스 $B"
 # 영역 채우기: 가운데 근처 여러 곳

@@ -236,6 +236,9 @@ fun ColoringScreen(vm: ColoringViewModel, speaker: Speaker, onExit: () -> Unit) 
                 Button(onClick = { showMore = false; askClear = true }, modifier = Modifier.fillMaxWidth()) { Text(tr("🗑 모두 지우기")) }
                 Button(onClick = { showMore = false; if (settings.parentalLockEnabled) gate = { export() } else export() }, modifier = Modifier.fillMaxWidth()) { Text(tr("🖼 사진으로 내보내기")) }
                 Button(onClick = { showMore = false; gate = { share() } }, modifier = Modifier.fillMaxWidth()) { Text(tr("📤 보내기 (보호자 확인)")) }
+                Button(onClick = { showMore = false; vm.updateSettings { it.copy(coloringMusic = !it.coloringMusic) } }, modifier = Modifier.fillMaxWidth()) {
+                    Text(if (settings.coloringMusic) tr("🔇 음악 끄기") else tr("🎵 음악 켜기"))
+                }
             }
         })
     if (showAuto) ThemeDialog(tr("자동 색칠"), tr("색 묶음을 고르면 안 칠한 칸을 자동으로 칠해요. 다 칠한 그림은 고른 색으로 다시 칠해요."), onDismiss = { showAuto = false }) { th ->

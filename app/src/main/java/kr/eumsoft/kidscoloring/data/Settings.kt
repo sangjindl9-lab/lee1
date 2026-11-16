@@ -26,6 +26,8 @@ data class UserSettings(
     val ageFilter: Int = 0,                // 0 모두, 1: 3~5세, 2: 6~7세, 3: 8~10세
     val recentColors: List<Int> = emptyList(),
     val favoriteColors: List<Int> = emptyList(),
+    val musicEnabled: Boolean = true,      // 놀이터 배경 음악
+    val coloringMusic: Boolean = true,     // 색칠할 때 배경 음악
 )
 
 private val Context.store by preferencesDataStore("user_settings")
@@ -46,6 +48,8 @@ class SettingsStore(private val ctx: Context) {
         val age = intPreferencesKey("ageFilter")
         val recent = stringPreferencesKey("recentColors")
         val fav = stringPreferencesKey("favoriteColors")
+        val music = booleanPreferencesKey("musicEnabled")
+        val bgm = booleanPreferencesKey("coloringMusic")
     }
 
     private fun colors(s: String?) = s?.split(',')?.mapNotNull { it.toIntOrNull() } ?: emptyList()
@@ -57,7 +61,7 @@ class SettingsStore(private val ctx: Context) {
             p[K.palette] ?: d.selectedPalette, p[K.lock] ?: d.parentalLockEnabled, p[K.voice] ?: d.voiceGuide,
             p[K.motion] ?: d.reduceMotion, p[K.names] ?: d.showColorNames, p[K.finger] ?: d.fingerPansOnly,
             p[K.inside] ?: d.stayInside, p[K.opacity] ?: d.opacity, p[K.age] ?: d.ageFilter,
-            colors(p[K.recent]), colors(p[K.fav]),
+            colors(p[K.recent]), colors(p[K.fav]), p[K.music] ?: d.musicEnabled, p[K.bgm] ?: d.coloringMusic,
         )
     }
 
@@ -68,6 +72,7 @@ class SettingsStore(private val ctx: Context) {
             p[K.motion] = s.reduceMotion; p[K.names] = s.showColorNames; p[K.finger] = s.fingerPansOnly
             p[K.inside] = s.stayInside; p[K.opacity] = s.opacity; p[K.age] = s.ageFilter
             p[K.recent] = s.recentColors.joinToString(","); p[K.fav] = s.favoriteColors.joinToString(",")
+            p[K.music] = s.musicEnabled; p[K.bgm] = s.coloringMusic
         }
     }
 }

@@ -42,6 +42,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -56,7 +57,7 @@ private val ageLabels = listOf("모두", "3~5세", "6~7세", "8~10세")
 fun SectionTitle(text: String) = Text(text, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Ink, modifier = Modifier.padding(start = 16.dp, top = 14.dp, bottom = 6.dp))
 
 @Composable
-fun HomeScreen(vm: ColoringViewModel, speaker: Speaker, onOpen: (artworkId: String, projectId: Long?) -> Unit, onGallery: () -> Unit, onParent: () -> Unit) {
+fun HomeScreen(vm: ColoringViewModel, speaker: Speaker, onOpen: (artworkId: String, projectId: Long?) -> Unit, onGallery: () -> Unit, onGames: () -> Unit, onParent: () -> Unit) {
     val settings by vm.settings.collectAsState()
     val projects by vm.projects.collectAsState()
     val catalog = vm.repo.catalog
@@ -75,6 +76,8 @@ fun HomeScreen(vm: ColoringViewModel, speaker: Speaker, onOpen: (artworkId: Stri
                         Text(tr("이음 키즈 컬러링"), fontSize = 26.sp, fontWeight = FontWeight.Black, color = Color(0xFF1565C0))
                         Text(tr("오늘은 무엇을 색칠할까요?"), fontSize = 15.sp, color = Ink)
                     }
+                    BigButton("🎮", tr("놀이"), size = 68.dp, modifier = Modifier.testTag("home_games"), onClick = onGames)
+                    Spacer(Modifier.width(8.dp))
                     BigButton("🖼", tr("내 그림"), size = 68.dp, onClick = onGallery)
                     Spacer(Modifier.width(8.dp))
                     BigButton("🔒", tr("부모님"), size = 68.dp) { askGate = true }
@@ -216,6 +219,8 @@ fun ParentScreen(vm: ColoringViewModel, version: String, onBack: () -> Unit, onP
         SettingRow(tr("음성 안내"), tr("색 이름과 도구 이름을 읽어 줍니다. 기기에 이 언어의 음성(TTS)이 설치되어 있어야 합니다."), s.voiceGuide) { v -> vm.updateSettings { it.copy(voiceGuide = v) } }
         SettingRow(tr("애니메이션 줄이기"), tr("완성 축하 효과를 움직임 없이 보여 줍니다."), s.reduceMotion) { v -> vm.updateSettings { it.copy(reduceMotion = v) } }
         SettingRow(tr("색 이름 표시"), tr("색 아래에 이름을 글자로 보여 줍니다. (색각 다양성 지원)"), s.showColorNames) { v -> vm.updateSettings { it.copy(showColorNames = v) } }
+        SettingRow(tr("색칠할 때 배경 음악"), tr("그림을 색칠하는 동안 신나는 음악을 잔잔하게 들려줍니다."), s.coloringMusic) { v -> vm.updateSettings { it.copy(coloringMusic = v) } }
+        SettingRow(tr("놀이터 배경 음악"), tr("놀이할 때 오르골 소리로 옛 동요를 들려줍니다. (반짝반짝 작은 별 등 저작권이 끝난 곡)"), s.musicEnabled) { v -> vm.updateSettings { it.copy(musicEnabled = v) } }
         SectionTitle(tr("펜(스타일러스)"))
         SettingRow(tr("펜으로만 그리기"), tr("붓 도구에서 손가락은 화면 이동에만 쓰고, 펜으로만 그립니다."), s.fingerPansOnly) { v -> vm.updateSettings { it.copy(fingerPansOnly = v) } }
         SectionTitle(tr("보호"))
