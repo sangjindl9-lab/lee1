@@ -137,6 +137,8 @@ tap "부모님" exact 2; dump; ANS=$(python3 $D/ui.py $O/ui.xml gate)
 for d in $(echo $ANS | grep -o .); do tap "$d" exact 0.5; done
 tap "확인" exact 3; shot 14_parent
 check "부모님 메뉴 진입 (성인 확인 통과 후)" has "부모님 메뉴"
+check "효과음 고르기 표시" has "실로폰"
+tap "물방울" exact 1; tap "실로폰" exact 1; shot 14b_sfx
 adb shell input keyevent KEYCODE_BACK; sleep 2
 # 다른 도안 몇 장 열어 보기
 for T in "웃고 있는 아기 티라노사우루스" "둥근 머리의 친구 로봇"; do

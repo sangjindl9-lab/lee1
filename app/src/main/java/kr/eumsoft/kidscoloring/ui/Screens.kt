@@ -25,6 +25,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedTextField
@@ -52,6 +53,7 @@ import kr.eumsoft.kidscoloring.data.ProjectEntity
 import java.util.Calendar
 
 private val ageLabels = listOf("모두", "3~5세", "6~7세", "8~10세")
+private val sfxNames = listOf("뽁뽁", "실로폰", "물방울", "반짝", "톡톡")
 
 @Composable
 fun SectionTitle(text: String) = Text(text, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Ink, modifier = Modifier.padding(start = 16.dp, top = 14.dp, bottom = 6.dp))
@@ -226,7 +228,17 @@ fun ParentScreen(vm: ColoringViewModel, version: String, onBack: () -> Unit, onP
         }
         Text(tr("도안을 영역 수에 따라 세 단계로 나눈 것이며, 나이별로 도안이 따로 있는 것은 아닙니다."), fontSize = 12.sp, color = Color.Gray, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
         SectionTitle(tr("소리와 화면"))
-        SettingRow(tr("효과음"), "", s.soundEnabled) { v -> vm.updateSettings { it.copy(soundEnabled = v) } }
+        Text(tr("효과음"), fontSize = 16.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 16.dp, top = 10.dp))
+        Text(tr("칠할 때와 놀이할 때 나는 소리예요. 누르면 들어 볼 수 있어요."), fontSize = 13.sp, color = Color.Gray, modifier = Modifier.padding(horizontal = 16.dp))
+        Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            BigButton("🔇", tr("끄기"), selected = !s.soundEnabled, size = 68.dp) { vm.updateSettings { it.copy(soundEnabled = false) } }
+            for ((k, emoji) in SfxSynth.kinds) {
+                BigButton(emoji, tr(sfxNames[k - 1]), selected = s.soundEnabled && s.effectSound == k, size = 68.dp) {
+                    vm.updateSettings { it.copy(soundEnabled = true, effectSound = k) }
+                    Fx.pop(k)
+                }
+            }
+        }
         SettingRow(tr("진동"), "", s.vibrationEnabled) { v -> vm.updateSettings { it.copy(vibrationEnabled = v) } }
         SettingRow(tr("음성 안내"), tr("색 이름과 도구 이름을 읽어 줍니다. 기기에 이 언어의 음성(TTS)이 설치되어 있어야 합니다."), s.voiceGuide) { v -> vm.updateSettings { it.copy(voiceGuide = v) } }
         SettingRow(tr("애니메이션 줄이기"), tr("완성 축하 효과를 움직임 없이 보여 줍니다."), s.reduceMotion) { v -> vm.updateSettings { it.copy(reduceMotion = v) } }

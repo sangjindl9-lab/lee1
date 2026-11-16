@@ -28,6 +28,7 @@ data class UserSettings(
     val favoriteColors: List<Int> = emptyList(),
     val musicEnabled: Boolean = true,      // 놀이터 배경 음악
     val coloringMusic: Boolean = true,     // 색칠할 때 배경 음악
+    val effectSound: Int = 2,              // 효과음 종류 (ui/Sfx.kt 의 Sfx.kinds 순서, 끄기는 soundEnabled=false)
 )
 
 private val Context.store by preferencesDataStore("user_settings")
@@ -50,6 +51,7 @@ class SettingsStore(private val ctx: Context) {
         val fav = stringPreferencesKey("favoriteColors")
         val music = booleanPreferencesKey("musicEnabled")
         val bgm = booleanPreferencesKey("coloringMusic")
+        val fx = intPreferencesKey("effectSound")
     }
 
     private fun colors(s: String?) = s?.split(',')?.mapNotNull { it.toIntOrNull() } ?: emptyList()
@@ -61,7 +63,7 @@ class SettingsStore(private val ctx: Context) {
             p[K.palette] ?: d.selectedPalette, p[K.lock] ?: d.parentalLockEnabled, p[K.voice] ?: d.voiceGuide,
             p[K.motion] ?: d.reduceMotion, p[K.names] ?: d.showColorNames, p[K.finger] ?: d.fingerPansOnly,
             p[K.inside] ?: d.stayInside, p[K.opacity] ?: d.opacity, p[K.age] ?: d.ageFilter,
-            colors(p[K.recent]), colors(p[K.fav]), p[K.music] ?: d.musicEnabled, p[K.bgm] ?: d.coloringMusic,
+            colors(p[K.recent]), colors(p[K.fav]), p[K.music] ?: d.musicEnabled, p[K.bgm] ?: d.coloringMusic, p[K.fx] ?: d.effectSound,
         )
     }
 
@@ -72,7 +74,7 @@ class SettingsStore(private val ctx: Context) {
             p[K.motion] = s.reduceMotion; p[K.names] = s.showColorNames; p[K.finger] = s.fingerPansOnly
             p[K.inside] = s.stayInside; p[K.opacity] = s.opacity; p[K.age] = s.ageFilter
             p[K.recent] = s.recentColors.joinToString(","); p[K.fav] = s.favoriteColors.joinToString(",")
-            p[K.music] = s.musicEnabled; p[K.bgm] = s.coloringMusic
+            p[K.music] = s.musicEnabled; p[K.bgm] = s.coloringMusic; p[K.fx] = s.effectSound
         }
     }
 }

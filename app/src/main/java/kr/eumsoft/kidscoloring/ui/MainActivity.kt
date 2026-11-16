@@ -40,6 +40,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         // 기기 언어에 맞는 번역을 읽는다. (자동 테스트: am start --es lang ko 로 언어를 고정할 수 있다)
         I18n.init(this, intent?.getStringExtra("lang"))
+        Fx.init(this)
         setContent {
             EumTheme {
                 val vm: ColoringViewModel = viewModel()
@@ -53,6 +54,7 @@ class MainActivity : ComponentActivity() {
                 // 색칠할 때와 놀이터에서 배경 음악을 튼다 (화면을 오가도 곡이 끊기지 않고 이어진다)
                 val on = (screen == "games" && settings.musicEnabled) || (screen == "coloring" && vm.engine != null && settings.coloringMusic)
                 LaunchedEffect(on) { musicOn = on; applyMusic() }
+                LaunchedEffect(settings.effectSound) { Fx.kind = settings.effectSound }
                 val open: (String, Long?) -> Unit = { artId, projId -> vm.open(artId, projId) { screen = "coloring" } }
 
                 Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).safeDrawingPadding()) {
