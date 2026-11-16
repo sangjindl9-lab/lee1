@@ -1,6 +1,7 @@
 package kr.eumsoft.kidscoloring
 
 import kr.eumsoft.kidscoloring.ui.BalloonLogic
+import kr.eumsoft.kidscoloring.ui.FxSynth
 import kr.eumsoft.kidscoloring.ui.MemoryLogic
 import kr.eumsoft.kidscoloring.ui.PuzzleLogic
 import kr.eumsoft.kidscoloring.ui.Tunes
@@ -51,5 +52,17 @@ class GamesTest {
 
     @Test fun `색칠 배경 음악 파일이 들어 있다`() {
         for (i in 1..2) assertTrue(File("src/main/res/raw/coloring_bgm_$i.m4a").length() > 100_000)
+    }
+
+    @Test fun `효과음은 짧고 부드럽게 시작해서 끝나며 깨지지 않는다`() {
+        val sounds = (0 until 5).map { FxSynth.pop(it) } + listOf(FxSynth.cheer())
+        for (pcm in sounds) {
+            val peak = pcm.maxOf { kotlin.math.abs(it.toInt()) }
+            assertTrue("소리가 난다", peak > 3000)
+            assertTrue("깨지지 않는다(최대 $peak)", peak < 30000)
+            assertTrue("딱 소리 없이 시작·끝", kotlin.math.abs(pcm.first().toInt()) < 300 && kotlin.math.abs(pcm.last().toInt()) < 300)
+        }
+        assertTrue(FxSynth.pop(0).size < FxSynth.RATE / 5)
+        assertTrue(FxSynth.cheer().size < FxSynth.RATE * 3 / 2)
     }
 }
