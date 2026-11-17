@@ -1,0 +1,8 @@
+{
+  "name": "hado-jungong-claim",
+  "version": "1.0.0",
+  "private": true,
+  "description": "하도급 준공금 청구서 프로그램",
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=18" }
+}
