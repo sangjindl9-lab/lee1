@@ -85,6 +85,7 @@ table.led input.sm2{min-width:0;width:78px}
 .tag{font-size:11px;border:1px solid var(--line);border-radius:99px;padding:0 6px;color:var(--muted);margin-left:4px;white-space:nowrap}
 .chgcol{background:var(--chg-soft)}
 .nochg .chg{display:none}
+.noadv .fxcol{display:none}
 .amt{display:flex;gap:4px}
 .addrow{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
 .addrow select{width:auto}
@@ -180,28 +181,29 @@ table.led input.sm2{min-width:0;width:78px}
 
     <section class="card" id="ledcard">
       <h2>원가계산서</h2>
-      <p class="hint">재료비·직접노무비처럼 금액을 넣는 항목에는 하도급률을 곱합니다. 간접노무비·보험료·기타경비·일반관리비·이윤 같은 제경비는 하도급률을 곱하지 않고, <b>하도급 금액을 기준으로 산식(요율)대로 다시 계산</b>합니다. <b>제경비 줄의 원도급 금액 칸에 내역서 금액을 그대로 적으면</b> 원도급 금액은 적은 대로 들어가고 요율이 거기에 맞춰집니다. 내역서에 없는 항목은 0을 적으세요(칸을 비우면 요율대로 계산). 제경비를 <b>제외</b>하면 그 금액은 뒤따르는 일반관리비·이윤 계산에서도 빠집니다. 협의한 금액을 그대로 넣으려면 적용을 <b>직접입력</b>으로 바꾸고 하도급 금액 칸에 적으세요.</p>
+      <p class="hint"><b>엑셀 내역서의 금액을 "원도급 당초 금액" 칸에 그대로 적으세요.</b> 적은 금액이 그대로 들어가고, 적지 않은 항목은 0입니다. 재료비·노무비 같은 직접비에는 하도급률을 곱하고, 제경비는 하도급 직접비에 맞춰 같은 비율로 줄여 계산합니다. 제경비를 <b>제외</b>하면 뒤따르는 일반관리비·이윤에서도 빠지고, <b>전액</b>은 적은 금액 그대로, <b>직접입력</b>은 하도급 금액을 직접 적습니다.</p>
       <div class="imp">
         <label for="up-xls"><b>준공내역서 불러오기</b> <span class="hint">엑셀(.xlsx, .xls)의 원가계산서 시트에서 금액과 요율을 읽어 아래 표를 채웁니다</span></label>
         <input type="file" id="up-xls" accept=".xlsx,.xls,.xlsm,.csv">
         <div class="implog" id="impmsg" role="status"></div>
       </div>
       <div class="bulk">제경비 한꺼번에:
-        <button class="sm" type="button" data-bulk="rate">모두 산식</button>
+        <button class="sm" type="button" data-bulk="rate">모두 요율</button>
         <button class="sm" type="button" data-bulk="full">모두 전액</button>
         <button class="sm" type="button" data-bulk="none">모두 제외</button>
+        <label class="check" for="adv" style="padding:0;margin-left:12px"><input type="checkbox" id="adv"> 요율·산식 직접 설정</label>
         <button class="sm" type="button" id="btn-zero" style="margin-left:auto">금액 전체 삭제</button>
       </div>
       <div class="scroll">
         <table class="led">
           <thead><tr>
-            <th>구분</th><th>항목</th><th>계산 방법 (기준 × 요율 + 기초액 × 배수)</th><th>적용</th>
+            <th>구분</th><th>항목</th><th class="fxcol">계산 방법 (기준 × 요율 + 기초액 × 배수)</th><th>적용</th>
             <th class="r">원도급 당초 금액</th><th class="r chg chgcol">설계변경 증감액</th>
             <th class="r">하도급 당초분</th><th class="r chg chgcol">하도급 변경분</th><th class="r">하도급 계</th><th></th>
           </tr></thead>
           <tbody id="rows"></tbody>
           <tfoot><tr>
-            <td colspan="4">합계</td>
+            <td colspan="2">합계</td><td class="fxcol"></td><td></td>
             <td class="out" id="t-pb"></td><td class="out chg chgcol" id="t-pc"></td>
             <td class="out" id="t-sb"></td><td class="out chg chgcol" id="t-sc"></td><td class="out" id="t-st"></td><td></td>
           </tr></tfoot>
@@ -291,11 +293,12 @@ function evalCol(rows,inp,opt){
     else if(fx!==undefined)v=fx;
     else if(x.kind==='f'){
       const b=x.fb==='own'?inp(x):String(x.fb).split('+').reduce(function(a,k){return a+(acc[k]||0)},0);
-      if(x.pamt!=null&&x.fb!=='own'){
+      const pa=x.pamt!=null?x.pamt:(opt.zero?0:null);
+      if(pa!=null&&x.fb!=='own'){
         // 원도급 금액을 직접 적은 제경비: 원도급 열은 적은 금액 그대로, 나머지 열은 (적은 금액 ÷ 원도급 기준) 비율을 그 열의 기준에 곱한다.
         // 기준이 0이면 직접비 합계를 기준으로 삼는다.
-        if(opt.rec){const dir=!b;opt.rec[x.id]={b:dir?acc.dir:b,dir:dir};v=x.pamt}
-        else{const r=opt.ref[x.id];v=r&&r.b?trunc((r.dir?acc.dir:b)*(x.pamt/r.b)+(b<0?-1e-6:1e-6)):0}
+        if(opt.rec){const dir=!b;opt.rec[x.id]={b:dir?acc.dir:b,dir:dir};v=pa}
+        else{const r=opt.ref[x.id];v=r&&r.b?trunc((r.dir?acc.dir:b)*(pa/r.b)+(b<0?-1e-6:1e-6)):0}
       }else v=trunc((pct(b,x.rate||0)+(opt.add?(x.add||0):0))*(x.mult||1));
     }else v=inp(x);
     out[x.id]=v;
@@ -311,17 +314,17 @@ function evalCol(rows,inp,opt){
 function calc(S){
   const isF=function(x){return x.kind==='f'},none=function(x){return x.mode==='none'};
   const Bp={};
-  const P=evalCol(S.rows,function(x){return x.base||0},{add:true,rec:Bp});
-  const PC=S.hasChg?evalCol(S.rows,function(x){return x.chg||0},{add:false,ref:Bp}):{};
+  const P=evalCol(S.rows,function(x){return x.base||0},{add:true,rec:Bp,zero:!S.adv});
+  const PC=S.hasChg?evalCol(S.rows,function(x){return x.chg||0},{add:false,ref:Bp,zero:!S.adv}):{};
   const SB=evalCol(S.rows,function(x){return isF(x)?trunc(pct(x.base||0,S.r1)):applyMode(x.base||0,x.mode,S.r1)},
-    {add:true,ref:Bp,skip:none,fixed:function(x){return x.mode==='fix'?(x.sfix||0):(isF(x)&&x.mode==='full'?P[x.id]:undefined)}});
+    {add:true,ref:Bp,zero:!S.adv,skip:none,fixed:function(x){return x.mode==='fix'?(x.sfix||0):(isF(x)&&x.mode==='full'?P[x.id]:undefined)}});
   const SC=S.hasChg?evalCol(S.rows,function(x){return isF(x)?trunc(pct(x.chg||0,S.r2)):applyMode(x.chg||0,x.mode,S.r2)},
-    {add:false,ref:Bp,skip:none,fixed:function(x){return x.mode==='fix'?(x.sfixc||0):(isF(x)&&x.mode==='full'?PC[x.id]:undefined)}}):{};
+    {add:false,ref:Bp,zero:!S.adv,skip:none,fixed:function(x){return x.mode==='fix'?(x.sfixc||0):(isF(x)&&x.mode==='full'?PC[x.id]:undefined)}}):{};
   const rows=S.rows.map(function(x){
     const sb=SB[x.id]||0,sc=SC[x.id]||0;
     const bp=Bp[x.id];
     return {id:x.id,grp:x.grp,name:x.name,mode:x.mode,kind:x.kind,fb:x.fb,rate:x.rate,add:x.add,mult:x.mult,
-      pin:!!bp,dirBase:!!(bp&&bp.dir),drate:bp&&bp.b?Math.round(x.pamt/bp.b*1e6)/1e4:null,
+      pin:!!bp,dirBase:!!(bp&&bp.dir),drate:bp&&bp.b?Math.round((x.pamt||0)/bp.b*1e6)/1e4:null,
       base:P[x.id]||0,chg:PC[x.id]||0,sb:sb,sc:sc,st:sb+sc};
   });
   const sum=function(k){return rows.reduce(function(a,x){return a+x[k]},0)};
@@ -377,7 +380,7 @@ const BASES={dlab:'직접노무비',lab:'노무비',mat:'재료비',dir:'직접�
 const DEF=[
   ['재료비','재료비',77879039],
   ['노무비','직접노무비',272204692],['노무비','간접노무비',0,'dlab',15.4],
-  ['경비','가설비',0],['경비','공구손료',249626167,'own',3],['경비','기계경비',2900000],
+  ['경비','가설비',0],['경비','공구손료',0,'dlab',3],['경비','기계경비',2900000],
   ['경비','산재보험료',0,'lab',3.626],['경비','고용보험료',0,'lab',1.01],
   ['경비','국민건강보험료',0,'dlab',3.545,1,'health'],['경비','노인장기요양보험료',0,'health',12.95],
   ['경비','퇴직공제부금',0,'dlab',2.3],['경비','국민연금보험료',0,'dlab',4.5],
@@ -404,6 +407,7 @@ function ftxt(x){
 let S;
 try{const raw=localStorage.getItem(KEY);if(raw){S=JSON.parse(raw);if(!S||!Array.isArray(S.rows))S=null}}catch(e){S=null}
 if(!S)S=fresh(false);
+if(!S.v3){S.rows.forEach(x=>{if(x.kind==='f'&&x.fb==='own'){x.fb='dlab';x.base=0;x.chg=0;x.pamt=null}});S.v3=1}
 if(!Array.isArray(S.primes)||!S.primes.length)S.primes=[{id:uid(),name:(S.info&&S.info.prime)||'',share:100}];
 let saveT;
 function save(){clearTimeout(saveT);saveT=setTimeout(()=>{try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}},300)}
@@ -425,12 +429,12 @@ function renderRows(){
     return `<tr data-id="${x.id}">
     <td class="grp">${esc(x.grp)}</td>
     <td><input class="nm" id="n-${x.id}" data-row="name" value="${esc(x.name)}" aria-label="항목 이름"></td>
-    <td><div class="fx"><select id="f-${x.id}" data-row="fb" aria-label="계산 방법"><option value="">금액 입력</option>${Object.keys(BASES).map(k=>`<option value="${k}"${f&&x.fb===k?' selected':''}>${BASES[k]}</option>`).join('')}</select>
+    <td class="fxcol"><div class="fx"><select id="f-${x.id}" data-row="fb" aria-label="계산 방법"><option value="">금액 입력</option>${Object.keys(BASES).map(k=>`<option value="${k}"${f&&x.fb===k?' selected':''}>${BASES[k]}</option>`).join('')}</select>
       ${f?`<span class="fr">×<input class="dec" id="r-${x.id}" data-row="rate" inputmode="decimal" value="${x.rate}" aria-label="요율">%</span>
       <span class="fr">+<input class="num sm2" id="a-${x.id}" data-row="add" inputmode="numeric" value="${x.add?fmt(x.add):''}" placeholder="기초액" aria-label="기초액"></span>
       <span class="fr">×<input class="dec" id="u-${x.id}" data-row="mult" inputmode="decimal" value="${x.mult||1}" aria-label="배수"></span>`:''}</div></td>
     <td><select id="m-${x.id}" data-row="mode" aria-label="적용 방식">
-      <option value="rate"${x.mode==='rate'?' selected':''}>${f?'산식':'요율'}</option>
+      <option value="rate"${x.mode==='rate'?' selected':''}>${f&&S.adv?'산식':'요율'}</option>
       <option value="full"${x.mode==='full'?' selected':''}>전액</option>
       <option value="fix"${x.mode==='fix'?' selected':''}>직접입력</option>
       <option value="none"${x.mode==='none'?' selected':''}>제외</option></select></td>
@@ -477,12 +481,13 @@ const primeNames=()=>S.primes.map(p=>p.name).filter(Boolean);
 const byTxt=x=>{if(S.primes.length<2)return '';const p=S.primes.find(q=>q.id===x.by);return ' · '+(p?esc(p.name||'(회사명 없음)')+' 지급':'지분대로')};
 function renderAll(){
   renderFields();renderPrimes();renderRows();renderDed();
-  $('r1').value=S.r1;$('r2').value=S.r2;$('cut').value=String(S.cut);$('haschg').checked=S.hasChg;
+  $('r1').value=S.r1;$('r2').value=S.r2;$('cut').value=String(S.cut);$('haschg').checked=S.hasChg;$('adv').checked=!!S.adv;
   recalc();
 }
 function recalc(){
   const R=calc(S);
   document.body.classList.toggle('nochg',!S.hasChg);
+  document.body.classList.toggle('noadv',!S.adv);
   $('exbanner').hidden=!S.example;
   R.rows.forEach(x=>{
     const tr=$('st-'+x.id); if(!tr)return;
@@ -588,6 +593,7 @@ document.addEventListener('input',e=>{
   else if(t.id==='r1'||t.id==='r2'){const v=parseFloat(t.value);S[t.id]=isFinite(v)&&v>=0?v:0}
   else if(t.id==='cut'){S.cut=Number(t.value)||1}
   else if(t.id==='haschg'){S.hasChg=t.checked}
+  else if(t.id==='adv'){S.adv=t.checked;renderRows()}
   else return;
   recalc();
 });
