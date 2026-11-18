@@ -1,0 +1,33 @@
+{
+  "name": "eum-market",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "이음마켓 EUM MARKET — 소프트웨어·소스코드·맞춤 개발·지식재산권 거래 플랫폼",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "test": "node --test \"test/*.test.ts\"",
+    "validate": "node scripts/validate-prisma.mjs && node scripts/gen-prisma.mjs --check",
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.16",
+    "@prisma/prisma-schema-wasm": "^8.1.0-2.59be4fda12412a79eeb9c2ae727b6aa723593323",
+    "@types/node": "^26.6.6",
+    "@types/pg": "^8.23.1",
+    "@types/react": "^19.3.0",
+    "@types/yauzl": "^3.4.0",
+    "typescript": "^7.0.2"
+  },
+  "dependencies": {
+    "next": "^16.4.6",
+    "pg": "^8.23.1",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "yauzl": "^3.4.0"
+  }
+}

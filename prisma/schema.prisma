@@ -1,0 +1,1291 @@
+// 이 파일은 scripts/gen-prisma.mjs 가 SQL 마이그레이션에서 생성한다. 직접 고치지 말고 SQL을 고친 뒤 다시 생성한다.
+// CHECK 제약과 불변성 트리거는 Prisma로 표현할 수 없어 SQL(prisma/migrations)에만 있다.
+// 금액 컬럼은 모두 원(KRW) 단위 BigInt.
+
+// 데이터 모델 참조용. 서버는 SQL을 직접 사용한다(src/server/db.ts).
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum BusinessType {
+  corporation
+  general_taxpayer
+  simplified_taxpayer
+  individual
+
+  @@map("business_type")
+}
+
+enum CapabilityStatus {
+  unverified
+  confirmed
+  unsupported
+
+  @@map("capability_status")
+}
+
+enum CompanyRole {
+  admin
+  buyer
+  inspector
+
+  @@map("company_role")
+}
+
+enum DeliveryStatus {
+  not_ready
+  submitted
+  granted
+  failed
+  revoked
+
+  @@map("delivery_status")
+}
+
+enum DisputeStatus {
+  none
+  open
+  resolved
+
+  @@map("dispute_status")
+}
+
+enum EscrowStatus {
+  none
+  test_simulated
+  held
+  dispute_hold
+  released
+  refunded
+  unsupported
+
+  @@map("escrow_status")
+}
+
+enum ExternalHoldStatus {
+  not_requested
+  confirmed
+  unsupported
+  failed
+  not_applicable
+
+  @@map("external_hold_status")
+}
+
+enum InspectionStatus {
+  not_started
+  in_progress
+  revision_requested
+  confirmed
+  auto_confirmed
+  disputed
+  closed_by_admin
+
+  @@map("inspection_status")
+}
+
+enum LedgerKind {
+  payment_in
+  refund_out
+  platform_fee_supply
+  platform_fee_vat
+  pg_fee_seller
+  pg_fee_platform
+  withholding_income_tax
+  withholding_local_tax
+  payout_paid
+
+  @@map("ledger_kind")
+}
+
+enum OperatorRole {
+  review
+  support
+  settlement
+  super
+
+  @@map("operator_role")
+}
+
+enum OrderType {
+  product
+  milestone
+  ip
+
+  @@map("order_type")
+}
+
+enum PaymentStatus {
+  unpaid
+  pending
+  paid
+  partially_refunded
+  cancelled
+  failed
+
+  @@map("payment_status")
+}
+
+enum PayoutStatus {
+  not_eligible
+  eligible
+  requested
+  unknown
+  paid
+  failed
+  blocked
+  void
+
+  @@map("payout_status")
+}
+
+enum ProductKind {
+  license
+  source
+
+  @@map("product_kind")
+}
+
+enum ProductStatus {
+  draft
+  pending_review
+  on_sale
+  rejected
+  suspended
+  withdrawn
+
+  @@map("product_status")
+}
+
+enum RefundStatus {
+  none
+  requested
+  processing
+  completed
+  failed
+  post_settlement_review
+
+  @@map("refund_status")
+}
+
+enum ScanStatus {
+  pending
+  scanning
+  passed
+  flagged
+  unscannable
+
+  @@map("scan_status")
+}
+
+enum SellerStatus {
+  pending
+  approved
+  suspended
+  withdrawn
+
+  @@map("seller_status")
+}
+
+enum TaxDocType {
+  tax_invoice
+  fee_receipt
+  withholding_statement
+
+  @@map("tax_doc_type")
+}
+
+enum VersionStatus {
+  draft
+  submitted
+  published
+  rejected
+  retired
+
+  @@map("version_status")
+}
+
+model AiConsent {
+  id BigInt @id @default(autoincrement())
+  userId BigInt @map("user_id")
+  purpose String
+  targetType String @map("target_type")
+  targetId String @map("target_id")
+  agreedAt DateTime @default(now()) @db.Timestamptz(6) @map("agreed_at")
+
+  user User @relation("AiConsent_userId", fields: [userId], references: [id])
+
+  @@map("ai_consents")
+}
+
+model AuditLog {
+  id BigInt @id @default(autoincrement())
+  actorId BigInt? @map("actor_id")
+  actorRole String @default("") @map("actor_role")
+  action String
+  targetType String @default("") @map("target_type")
+  targetId String @default("") @map("target_id")
+  detail String @default("")
+  ip String @default("")
+  createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+
+  actor User? @relation("AuditLog_actorId", fields: [actorId], references: [id])
+
+  @@map("audit_logs")
+}
+
+model ChangeOrder {
+  id BigInt @id @default(autoincrement())
+  contractId BigInt @map("contract_id")
+  requestedBy BigInt @map("requested_by")
+  existingScope String @map("existing_scope")
+  addedScope String @map("added_scope")
+  inOriginalScope Boolean? @map("in_original_scope")
+  amountDelta BigInt @default(0) @map("amount_delta")
+  daysDelta Int @default(0) @map("days_delta")
+  buyerAgreedAt DateTime? @db.Timestamptz(6) @map("buyer_agreed_at")
+  sellerAgreedAt DateTime? @db.Timestamptz(6) @map("seller_agreed_at")
+  resultingVersionId BigInt? @map("resulting_version_id")
+  status String @default("proposed")
+  createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+
+  contract Contract @relation("ChangeOrder_contractId", fields: [contractId], references: [id])
+  requestedByUser User @relation("ChangeOrder_requestedBy", fields: [requestedBy], references: [id])
+  resultingVersion ContractVersion? @relation("ChangeOrder_resultingVersionId", fields: [resultingVersionId], references: [id])
+
+  @@map("change_orders")
+}
+
+model CloseRequest {
+  id BigInt @id @default(autoincrement())
+  orderId BigInt @map("order_id")
+  sellerId BigInt @map("seller_id")
+  note String @default("")
+  status String @default("open")
+  decidedBy BigInt? @map("decided_by")
+  decisionBasis String? @map("decision_basis")
+  createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+  decidedAt DateTime? @db.Timestamptz(6) @map("decided_at")
+
+  decidedByUser User? @relation("CloseRequest_decidedBy", fields: [decidedBy], references: [id])
+  order Order @relation("CloseRequest_orderId", fields: [orderId], references: [id])
+  seller User @relation("CloseRequest_sellerId", fields: [sellerId], references: [id])
+
+  @@map("close_requests")
+}
+
+model Company {
+  id BigInt @id @default(autoincrement())
+  name String
+  bizRegNoEnc String? @map("biz_reg_no_enc")
+  purchaseApprovalRequired Boolean @default(false) @map("purchase_approval_required")
+  createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+
+  companyMembers CompanyMember[] @relation("CompanyMember_companyId")
+  orders Order[] @relation("Order_companyId")
+  purchaseApprovals PurchaseApproval[] @relation("PurchaseApproval_companyId")
+  requests Request[] @relation("Request_companyId")
+
+  @@map("companies")
+}
+
+model CompanyMember {
+  companyId BigInt @map("company_id")
+  userId BigInt @map("user_id")
+  role CompanyRole
+  createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+
+  company Company @relation("CompanyMember_companyId", fields: [companyId], references: [id])
+  user User @relation("CompanyMember_userId", fields: [userId], references: [id])
+
+  @@id([companyId, userId])
+  @@map("company_members")
+}
+
+model ContractVersion {
+  id BigInt @id @default(autoincrement())
+  contractId BigInt @map("contract_id")
+  versionNo Int @map("version_no")
+  terms Json
+  isDraft Boolean @default(true) @map("is_draft")
+  legalReviewed Boolean @default(false) @map("legal_reviewed")
+  buyerAgreedAt DateTime? @db.Timestamptz(6) @map("buyer_agreed_at")
+  sellerAgreedAt DateTime? @db.Timestamptz(6) @map("seller_agreed_at")
+  createdBy BigInt @map("created_by")
+  createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+
+  contract Contract @relation("ContractVersion_contractId", fields: [contractId], references: [id])
+  createdByUser User @relation("ContractVersion_createdBy", fields: [createdBy], references: [id])
+  changeOrdersAsResultingVersion ChangeOrder[] @relation("ChangeOrder_resultingVersionId")
+
+  @@unique([contractId, versionNo])
+  @@map("contract_versions")
+}
+
+model Contract {
+  id BigInt @id @default(autoincrement())
+  requestId BigInt? @map("request_id")
+  quoteId BigInt? @map("quote_id")
+  buyerId BigInt @map("buyer_id")
+  sellerId BigInt @map("seller_id")
+  currentVersionNo Int @default(0) @map("current_version_no")
+  status String @default("negotiating")
+  createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+
+  buyer User @relation("Contract_buyerId", fields: [buyerId], references: [id])
+  quote Quote? @relation("Contract_quoteId", fields: [quoteId], references: [id])
+  request Request? @relation("Contract_requestId", fields: [requestId], references: [id])
+  seller User @relation("Contract_sellerId", fields: [sellerId], references: [id])
+  changeOrders ChangeOrder[] @relation("ChangeOrder_contractId")
+  contractVersions ContractVersion[] @relation("ContractVersion_contractId")
+  ipDeals IpDeal[] @relation("IpDeal_contractId")
+  messages Message[] @relation("Message_contractId")
+  milestones Milestone[] @relation("Milestone_contractId")
+
+  @@map("contracts")
+}
+
+model Delivery {
+  id BigInt @id @default(autoincrement())
+  orderId BigInt @map("order_id")
+  versionId BigInt? @map("version_id")
+  status DeliveryStatus
+  missing Json @default("[]")
+  detail String @default("")
+  createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+
+  order Order @relation("Delivery_orderId", fields: [orderId], references: [id])
+  version FileVersion? @relation("Delivery_versionId", fields: [versionId], references: [id])
+
+  @@map("deliveries")
+}
+
+model DisputeEntry {
+  id BigInt @id @default(autoincrement())
+  disputeId BigInt @map("dispute_id")
+  authorId BigInt @map("author_id")
+  role String
+  kind String @default("statement")
+  body String
+  fileId BigInt? @map("file_id")
+  createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+
+  author User @relation("DisputeEntry_authorId", fields: [authorId], references: [id])
+  dispute Dispute @relation("DisputeEntry_disputeId", fields: [disputeId], references: [id])
+  file File? @relation("DisputeEntry_fileId", fields: [fileId], references: [id])
+
+  @@map("dispute_entries")
+}
+
+model Dispute {
+  id BigInt @id @default(autoincrement())
+  orderId BigInt @map("order_id")
+  openedBy BigInt @map("opened_by")
+  reason String
+  description String
+  wantsRefund Boolean @default(false) @map("wants_refund")
+  postSettlement Boolean @default(false) @map("post_settlement")
+  status String @default("open")
+  externalHold ExternalHoldStatus @default(not_requested) @map("external_hold")
+  externalHoldDetail String @default("") @map("external_hold_detail")
+  decision String?
+  decisionAmount BigInt? @map("decision_amount")
+  decisionBasis String? @map("decision_basis")
+  decidedBy BigInt? @map("decided_by")
+  decidedAt DateTime? @db.Timestamptz(6) @map("decided_at")
+  appealUntil DateTime? @db.Timestamptz(6) @map("appeal_until")
+  createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+
+  decidedByUser User? @relation("Dispute_decidedBy", fields: [decidedBy], references: [id])
+  openedByUser User @relation("Dispute_openedBy", fields: [openedBy], references: [id])
+  order Order @relation("Dispute_orderId", fields: [orderId], references: [id])
+  disputeEntries DisputeEntry[] @relation("DisputeEntry_disputeId")
+  refunds Refund[] @relation("Refund_disputeId")
+
+  @@map("disputes")
+}
+
+model DownloadLog {
+  id BigInt @id @default(autoincrement())
+  orderId BigInt @map("order_id")
+  fileId BigInt @map("file_id")
+  userId BigInt @map("user_id")
+  ip String @default("")
+  linkExpiresAt DateTime? @db.Timestamptz(6) @map("link_expires_at")
+  createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+
+  file File @relation("DownloadLog_fileId", fields: [fileId], references: [id])
+  order Order @relation("DownloadLog_orderId", fields: [orderId], references: [id])
+  user User @relation("DownloadLog_userId", fields: [userId], references: [id])
+
+  @@map("download_logs")
+}
+
+model EscrowRecord {
+  id BigInt @id @default(autoincrement())
+  orderId BigInt @map("order_id")
+  provider String
+  mode String
+  event String
+  externalRef String @default("") @map("external_ref")
+  detail String @default("")
+  createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+
+  order Order @relation("EscrowRecord_orderId", fields: [orderId], references: [id])
+
+  @@map("escrow_records")
+}
+
+model FeePolicy {
+  id BigInt @id @default(autoincrement())
+  scope String
+  scopeRef String @default("") @map("scope_ref")
+  rateBps Int @map("rate_bps")
+  pgFeeBearer String @default("seller") @map("pg_fee_bearer")
+  validFrom DateTime? @db.Timestamptz(6) @map("valid_from")
+  validTo DateTime? @db.Timestamptz(6) @map("valid_to")
+  note String @default("")
+  active Boolean @default(true)
+  createdBy BigInt? @map("created_by")
+  createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+
+  createdByUser User? @relation("FeePolicy_createdBy", fields: [createdBy], references: [id])
+
+  @@map("fee_policies")
+}
+
+model FileVersion {
+  id BigInt @id @default(autoincrement())
+  productId BigInt? @map("product_id")
+  milestoneId BigInt? @map("milestone_id")
+  ipListingId BigInt? @map("ip_listing_id")
+  label String
+  status VersionStatus @default(draft)
+  createdBy BigInt @map("created_by")
+  reviewNote String @default("") @map("review_note")
+  createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+  publishedAt DateTime? @db.Timestamptz(6) @map("published_at")
+
+  createdByUser User @relation("FileVersion_createdBy", fields: [createdBy], references: [id])
+  ipListing IpListing? @relation("FileVersion_ipListingId", fields: [ipListingId], references: [id])
+  milestone Milestone? @relation("FileVersion_milestoneId", fields: [milestoneId], references: [id])
+  product Product? @relation("FileVersion_productId", fields: [productId], references: [id])
+  deliveriesAsVersion Delivery[] @relation("Delivery_versionId")
+  filesAsVersion File[] @relation("File_versionId")
+  ordersAsVersion Order[] @relation("Order_versionId")
+  productsAsCurrentVersion Product[] @relation("Product_currentVersionId")
+
+  @@map("file_versions")
+}
+
+model File {
+  id BigInt @id @default(autoincrement())
+  versionId BigInt @map("version_id")
+  kind String
+  filename String
+  sizeBytes BigInt @map("size_bytes")
+  sha256 String
+  storageKey String @unique @map("storage_key")
+  keyWrapped String @map("key_wrapped")
+  scanArchive ScanStatus @default(pending) @map("scan_archive")
+  scanSecret ScanStatus @default(pending) @map("scan_secret")
+  scanMalware ScanStatus @default(pending) @map("scan_malware")
+  scanDetail Json @default("[]") @map("scan_detail")
+  buildOk Boolean? @map("build_ok")
+  uploadedBy BigInt @map("uploaded_by")
+  uploadedAt DateTime @default(now()) @db.Timestamptz(6) @map("uploaded_at")
+
+  uploadedByUser User @relation("File_uploadedBy", fields: [uploadedBy], references: [id])
+  version FileVersion @relation("File_versionId", fields: [versionId], references: [id])
+  disputeEntries DisputeEntry[] @relation("DisputeEntry_fileId")
+  downloadLogs DownloadLog[] @relation("DownloadLog_fileId")
+  ipRoomViews IpRoomView[] @relation("IpRoomView_fileId")
+
+  @@map("files")
+}
+
+model Inspection {
+  id BigInt @id @default(autoincrement())
+  orderId BigInt @map("order_id")
+  round Int @default(1)
+  inspectorId BigInt @map("inspector_id")
+  checklist Json
+  result String
+  note String @default("")
+  createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+
+  inspector User @relation("Inspection_inspectorId", fields: [inspectorId], references: [id])
+  order Order @relation("Inspection_orderId", fields: [orderId], references: [id])
+
+  @@unique([orderId, round])
+  @@map("inspections")
+}
+
+model IpAccessGrant {
+  id BigInt @id @default(autoincrement())
+  listingId BigInt @map("listing_id")
+  userId BigInt @map("user_id")
+  ndaTextSha256 String @map("nda_text_sha256")
+  ndaAgreedAt DateTime @db.Timestamptz(6) @map("nda_agreed_at")
+  approvedBy BigInt? @map("approved_by")
+  approvedAt DateTime? @db.Timestamptz(6) @map("approved_at")
+  revokedAt DateTime? @db.Timestamptz(6) @map("revoked_at")
+
+  approvedByUser User? @relation("IpAccessGrant_approvedBy", fields: [approvedBy], references: [id])
+  listing IpListing @relation("IpAccessGrant_listingId", fields: [listingId], references: [id])
+  user User @relation("IpAccessGrant_userId", fields: [userId], references: [id])
+
+  @@unique([listingId, userId])
+  @@map("ip_access_grants")
+}
+
+model IpDeal {
+  id BigInt @id @default(autoincrement())
+  listingId BigInt @map("listing_id")
+  buyerId BigInt @map("buyer_id")
+  contractId BigInt? @map("contract_id")
+  amount BigInt?
+  extraVerification Boolean @default(false) @map("extra_verification")
+  stage String @default("consult")
+  createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+  terms String @default("")
+
+  buyer User @relation("IpDeal_buyerId", fields: [buyerId], references: [id])
+  contract Contract? @relation("IpDeal_contractId", fields: [contractId], references: [id])
+  listing IpListing @relation("IpDeal_listingId", fields: [listingId], references: [id])
+  ipTransferItemsAsDeal IpTransferItem[] @relation("IpTransferItem_dealId")
+  orders Order[] @relation("Order_ipDealId")
+
+  @@map("ip_deals")
+}
+
+model IpListing {
+  id BigInt @id @default(autoincrement())
+  sellerId BigInt @map("seller_id")
+  title String
+  publicIntro String @default("") @map("public_intro")
+  rightType String @map("right_type")
+  subject String @default("")
+  rightHolder String @default("") @map("right_holder")
+  sellerAuthority String @default("") @map("seller_authority")
+  coOwners String @default("") @map("co_owners")
+  scope String @default("")
+  isExclusive Boolean @default(false) @map("is_exclusive")
+  term String @default("")
+  territory String @default("")
+  fieldOfUse String @default("") @map("field_of_use")
+  existingLicenses String @default("") @map("existing_licenses")
+  thirdParty String @default("") @map("third_party")
+  includedAssets String @default("") @map("included_assets")
+  excludedAssets String @default("") @map("excluded_assets")
+  askingPrice BigInt? @map("asking_price")
+  lockedByDealId BigInt? @map("locked_by_deal_id")
+  status String @default("draft")
+  createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+
+  seller User @relation("IpListing_sellerId", fields: [sellerId], references: [id])
+  fileVersions FileVersion[] @relation("FileVersion_ipListingId")
+  ipAccessGrantsAsListing IpAccessGrant[] @relation("IpAccessGrant_listingId")
+  ipDealsAsListing IpDeal[] @relation("IpDeal_listingId")
+  ipRoomViewsAsListing IpRoomView[] @relation("IpRoomView_listingId")
+  reports Report[] @relation("Report_ipListingId")
+
+  @@map("ip_listings")
+}
+
+model IpRoomView {
+  id BigInt @id @default(autoincrement())
+  listingId BigInt @map("listing_id")
+  fileId BigInt @map("file_id")
+  userId BigInt @map("user_id")
+  createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+
+  file File @relation("IpRoomView_fileId", fields: [fileId], references: [id])
+  listing IpListing @relation("IpRoomView_listingId", fields: [listingId], references: [id])
+  user User @relation("IpRoomView_userId", fields: [userId], references: [id])
+
+  @@map("ip_room_views")
+}
+
+model IpTransferItem {
+  id BigInt @id @default(autoincrement())
+  dealId BigInt @map("deal_id")
+  assetType String @map("asset_type")
+  description String @default("")
+  officialTransferRequired Boolean @default(false) @map("official_transfer_required")
+  officialTransferEvidence String @default("") @map("official_transfer_evidence")
+  sellerMarkedAt DateTime? @db.Timestamptz(6) @map("seller_marked_at")
+  buyerConfirmedAt DateTime? @db.Timestamptz(6) @map("buyer_confirmed_at")
+
+  deal IpDeal @relation("IpTransferItem_dealId", fields: [dealId], references: [id])
+
+  @@map("ip_transfer_items")
+}
+
+model LedgerEntry {
+  id BigInt @id @default(autoincrement())
+  orderId BigInt @map("order_id")
+  kind LedgerKind
+  amount BigInt
+  ref String @unique
+  memo String @default("")
+  createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+
+  order Order @relation("LedgerEntry_orderId", fields: [orderId], references: [id])
+
+  @@index([orderId], map: "ledger_order_idx")
+  @@map("ledger_entries")
+}
+
+model License {
+  id BigInt @id @default(autoincrement())
+  productId BigInt @map("product_id")
+  name String
+  term String @default("perpetual")
+  termMonths Int? @map("term_months")
+  maxUsers Int? @map("max_users")
+  maxDevices Int? @map("max_devices")
+  canModify Boolean @default(false) @map("can_modify")
+  canCommercial Boolean @default(false) @map("can_commercial")
+  canRedistribute Boolean @default(false) @map("can_redistribute")
+  canResell Boolean @default(false) @map("can_resell")
+  ipTransfer Boolean @default(false) @map("ip_transfer")
+  notes String @default("")
+  createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+
+  product Product @relation("License_productId", fields: [productId], references: [id])
+  productOptions ProductOption[] @relation("ProductOption_licenseId")
+
+  @@map("licenses")
+}
+
+model Message {
+  id BigInt @id @default(autoincrement())
+  orderId BigInt? @map("order_id")
+  productId BigInt? @map("product_id")
+  contractId BigInt? @map("contract_id")
+  senderId BigInt @map("sender_id")
+  recipientId BigInt? @map("recipient_id")
+  body String
+  createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+
+  contract Contract? @relation("Message_contractId", fields: [contractId], references: [id])
+  order Order? @relation("Message_orderId", fields: [orderId], references: [id])
+  product Product? @relation("Message_productId", fields: [productId], references: [id])
+  recipient User? @relation("Message_recipientId", fields: [recipientId], references: [id])
+  sender User @relation("Message_senderId", fields: [senderId], references: [id])
+
+  @@map("messages")
+}
+
+model Milestone {
+  id BigInt @id @default(autoincrement())
+  contractId BigInt @map("contract_id")
+  seq Int
+  title String
+  deliverables String @default("")
+  requiredFiles Json @default("[]") @map("required_files")
+  amount BigInt
+  dueDate DateTime? @db.Date @map("due_date")
+  inspectionDays Int @default(7) @map("inspection_days")
+  status String @default("planned")
+
+  contract Contract @relation("Milestone_contractId", fields: [contractId], references: [id])
+  fileVersions FileVersion[] @relation("FileVersion_milestoneId")
+  order Order? @relation("Order_milestoneId")
+
+  @@unique([contractId, seq])
+  @@map("milestones")
+}
+
+model Notification {
+  id BigInt @id @default(autoincrement())
+  userId BigInt @map("user_id")
+  body String
+  link String @default("")
+  readAt DateTime? @db.Timestamptz(6) @map("read_at")
+  createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+
+  user User @relation("Notification_userId", fields: [userId], references: [id])
+
+  @@map("notifications")
+}
+
+model Order {
+  id BigInt @id @default(autoincrement())
+  orderNo String @unique @map("order_no")
+  orderType OrderType @map("order_type")
+  buyerId BigInt @map("buyer_id")
+  sellerId BigInt @map("seller_id")
+  companyId BigInt? @map("company_id")
+  productId BigInt? @map("product_id")
+  optionId BigInt? @map("option_id")
+  milestoneId BigInt? @unique @map("milestone_id")
+  ipDealId BigInt? @map("ip_deal_id")
+  versionId BigInt? @map("version_id")
+  snapshot Json
+  termsAgreedAt DateTime @db.Timestamptz(6) @map("terms_agreed_at")
+  amount BigInt
+  payMethod String @map("pay_method")
+  feePolicy Json @map("fee_policy")
+  feeBps Int @map("fee_bps")
+  pgFeeBps Int @map("pg_fee_bps")
+  pgFeeBearer String @map("pg_fee_bearer")
+  sellerBusinessType BusinessType @map("seller_business_type")
+  paymentStatus PaymentStatus @default(unpaid) @map("payment_status")
+  escrowStatus EscrowStatus @default(none) @map("escrow_status")
+  deliveryStatus DeliveryStatus @default(not_ready) @map("delivery_status")
+  inspectionStatus InspectionStatus @default(not_started) @map("inspection_status")
+  disputeStatus DisputeStatus @default(none) @map("dispute_status")
+  refundStatus RefundStatus @default(none) @map("refund_status")
+  payoutStatus PayoutStatus @default(not_eligible) @map("payout_status")
+  deliveryDetail String @default("") @map("delivery_detail")
+  deliveryDueAt DateTime? @db.Timestamptz(6) @map("delivery_due_at")
+  inspectionDays Int @map("inspection_days")
+  inspectionStartedAt DateTime? @db.Timestamptz(6) @map("inspection_started_at")
+  inspectionDueAt DateTime? @db.Timestamptz(6) @map("inspection_due_at")
+  confirmedAt DateTime? @db.Timestamptz(6) @map("confirmed_at")
+  refundedAmount BigInt @default(0) @map("refunded_amount")
+  accessUntil DateTime? @db.Timestamptz(6) @map("access_until")
+  paidAt DateTime? @db.Timestamptz(6) @map("paid_at")
+  createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt DateTime @default(now()) @db.Timestamptz(6) @map("updated_at")
+
+  buyer User @relation("Order_buyerId", fields: [buyerId], references: [id])
+  company Company? @relation("Order_companyId", fields: [companyId], references: [id])
+  ipDeal IpDeal? @relation("Order_ipDealId", fields: [ipDealId], references: [id])
+  milestone Milestone? @relation("Order_milestoneId", fields: [milestoneId], references: [id])
+  option ProductOption? @relation("Order_optionId", fields: [optionId], references: [id])
+  product Product? @relation("Order_productId", fields: [productId], references: [id])
+  seller User @relation("Order_sellerId", fields: [sellerId], references: [id])
+  version FileVersion? @relation("Order_versionId", fields: [versionId], references: [id])
+  closeRequests CloseRequest[] @relation("CloseRequest_orderId")
+  deliveries Delivery[] @relation("Delivery_orderId")
+  disputes Dispute[] @relation("Dispute_orderId")
+  downloadLogs DownloadLog[] @relation("DownloadLog_orderId")
+  escrowRecords EscrowRecord[] @relation("EscrowRecord_orderId")
+  inspections Inspection[] @relation("Inspection_orderId")
+  ledgerEntries LedgerEntry[] @relation("LedgerEntry_orderId")
+  messages Message[] @relation("Message_orderId")
+  payment Payment? @relation("Payment_orderId")
+  payout Payout? @relation("Payout_orderId")
+  purchaseApproval PurchaseApproval? @relation("PurchaseApproval_orderId")
+  reconMismatches ReconMismatch[] @relation("ReconMismatch_orderId")
+  refunds Refund[] @relation("Refund_orderId")
+  review Review? @relation("Review_orderId")
+  supportTickets SupportTicket[] @relation("SupportTicket_orderId")
+
+  @@index([buyerId], map: "orders_buyer_idx")
+  @@index([productId], map: "orders_product_idx")
+  @@index([sellerId], map: "orders_seller_idx")
+  @@map("orders")
+}
+
+model Payment {
+  id BigInt @id @default(autoincrement())
+  orderId BigInt @unique @map("order_id")
+  provider String
+  providerPaymentId String @map("provider_payment_id")
+  amount BigInt
+  method String
+  externalStatus String @default("ready") @map("external_status")
+  externalRefunded BigInt @default(0) @map("external_refunded")
+  externalCheckedAt DateTime? @db.Timestamptz(6) @map("external_checked_at")
+  createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+
+  order Order @relation("Payment_orderId", fields: [orderId], references: [id])
+
+  @@unique([provider, providerPaymentId])
+  @@map("payments")
+}
+
+model Payout {
+  id BigInt @id @default(autoincrement())
+  orderId BigInt @unique @map("order_id")
+  sellerId BigInt @map("seller_id")
+  attempt Int @default(1)
+  idempotencyKey String @unique @map("idempotency_key")
+  sellerBusinessType BusinessType @map("seller_business_type")
+  baseAmount BigInt @map("base_amount")
+  feeSupply BigInt @map("fee_supply")
+  feeVat BigInt @map("fee_vat")
+  pgFee BigInt @map("pg_fee")
+  sellerPgFee BigInt @map("seller_pg_fee")
+  withholdingIncomeTax BigInt @default(0) @map("withholding_income_tax")
+  withholdingLocalTax BigInt @default(0) @map("withholding_local_tax")
+  netAmount BigInt @map("net_amount")
+  status String
+  providerPayoutId String? @map("provider_payout_id")
+  failure String @default("")
+  requestedBy BigInt? @map("requested_by")
+  requestedAt DateTime @default(now()) @db.Timestamptz(6) @map("requested_at")
+  externalConfirmedAt DateTime? @db.Timestamptz(6) @map("external_confirmed_at")
+  paidAt DateTime? @db.Timestamptz(6) @map("paid_at")
+
+  order Order @relation("Payout_orderId", fields: [orderId], references: [id])
+  requestedByUser User? @relation("Payout_requestedBy", fields: [requestedBy], references: [id])
+  seller User @relation("Payout_sellerId", fields: [sellerId], references: [id])
+  taxRecords TaxRecord[] @relation("TaxRecord_payoutId")
+
+  @@map("payouts")
+}
+
+model ProductOption {
+  id BigInt @id @default(autoincrement())
+  productId BigInt @map("product_id")
+  licenseId BigInt @map("license_id")
+  name String
+  price BigInt
+  includesSource Boolean @default(false) @map("includes_source")
+  includesInstall Boolean @default(false) @map("includes_install")
+  active Boolean @default(true)
+
+  license License @relation("ProductOption_licenseId", fields: [licenseId], references: [id])
+  product Product @relation("ProductOption_productId", fields: [productId], references: [id])
+  ordersAsOption Order[] @relation("Order_optionId")
+
+  @@map("product_options")
+}
+
+model Product {
+  id BigInt @id @default(autoincrement())
+  sellerId BigInt @map("seller_id")
+  kind ProductKind
+  category String
+  title String
+  summary String @default("")
+  problem String @default("")
+  description String @default("")
+  features String @default("")
+  included String @default("")
+  excluded String @default("")
+  mediaUrls String @default("") @map("media_urls")
+  demoUrl String @default("") @map("demo_url")
+  environment String @default("")
+  installMethod String @default("") @map("install_method")
+  hasSource Boolean @default(false) @map("has_source")
+  installSupport Boolean @default(false) @map("install_support")
+  installDoneCriteria String @default("") @map("install_done_criteria")
+  customizable Boolean @default(false)
+  externalPaid Boolean @default(false) @map("external_paid")
+  externalCosts String @default("") @map("external_costs")
+  thirdParty String @default("") @map("third_party")
+  updateSupport String @default("") @map("update_support")
+  inspectionCriteria String @default("") @map("inspection_criteria")
+  inspectionDays Int @default(7) @map("inspection_days")
+  deliveryNote String @default("") @map("delivery_note")
+  refundPolicy String @default("") @map("refund_policy")
+  deliverables Json @default("[]")
+  verificationScope Json @default("{}") @map("verification_scope")
+  status ProductStatus @default(draft)
+  currentVersionId BigInt? @map("current_version_id")
+  reviewNote String @default("") @map("review_note")
+  createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt DateTime @default(now()) @db.Timestamptz(6) @map("updated_at")
+
+  currentVersion FileVersion? @relation("Product_currentVersionId", fields: [currentVersionId], references: [id])
+  seller User @relation("Product_sellerId", fields: [sellerId], references: [id])
+  fileVersions FileVersion[] @relation("FileVersion_productId")
+  licenses License[] @relation("License_productId")
+  messages Message[] @relation("Message_productId")
+  orders Order[] @relation("Order_productId")
+  productOptions ProductOption[] @relation("ProductOption_productId")
+  reports Report[] @relation("Report_productId")
+  requestsAsBaseProduct Request[] @relation("Request_baseProductId")
+  reviews Review[] @relation("Review_productId")
+  wishlist Wishlist[] @relation("Wishlist_productId")
+
+  @@map("products")
+}
+
+model ProviderCapability {
+  provider String
+  key String
+  status CapabilityStatus @default(unverified)
+  value String @default("")
+  fallback String @default("")
+  evidence String @default("")
+  confirmedBy BigInt? @map("confirmed_by")
+  confirmedAt DateTime? @db.Timestamptz(6) @map("confirmed_at")
+
+  confirmedByUser User? @relation("ProviderCapability_confirmedBy", fields: [confirmedBy], references: [id])
+
+  @@id([provider, key])
+  @@map("provider_capabilities")
+}
+
+model PurchaseApproval {
+  id BigInt @id @default(autoincrement())
+  orderId BigInt @unique @map("order_id")
+  companyId BigInt @map("company_id")
+  requestedBy BigInt @map("requested_by")
+  decidedBy BigInt? @map("decided_by")
+  status String @default("pending")
+  note String @default("")
+  createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+  decidedAt DateTime? @db.Timestamptz(6) @map("decided_at")
+
+  company Company @relation("PurchaseApproval_companyId", fields: [companyId], references: [id])
+  decidedByUser User? @relation("PurchaseApproval_decidedBy", fields: [decidedBy], references: [id])
+  order Order @relation("PurchaseApproval_orderId", fields: [orderId], references: [id])
+  requestedByUser User @relation("PurchaseApproval_requestedBy", fields: [requestedBy], references: [id])
+
+  @@map("purchase_approvals")
+}
+
+model Quote {
+  id BigInt @id @default(autoincrement())
+  requestId BigInt @map("request_id")
+  sellerId BigInt @map("seller_id")
+  scope String @default("")
+  outOfScope String @default("") @map("out_of_scope")
+  inspectionCriteria String @default("") @map("inspection_criteria")
+  revisionScope String @default("") @map("revision_scope")
+  supportTerms String @default("") @map("support_terms")
+  stages Json @default("[]")
+  totalAmount BigInt @map("total_amount")
+  status String @default("submitted")
+  createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+
+  request Request @relation("Quote_requestId", fields: [requestId], references: [id])
+  seller User @relation("Quote_sellerId", fields: [sellerId], references: [id])
+  contracts Contract[] @relation("Contract_quoteId")
+
+  @@map("quotes")
+}
+
+model ReconMismatch {
+  id BigInt @id @default(autoincrement())
+  runId BigInt @map("run_id")
+  orderId BigInt? @map("order_id")
+  kind String
+  internalValue String @map("internal_value")
+  externalValue String @map("external_value")
+  resolvedBy BigInt? @map("resolved_by")
+  resolvedAt DateTime? @db.Timestamptz(6) @map("resolved_at")
+  resolution String?
+
+  order Order? @relation("ReconMismatch_orderId", fields: [orderId], references: [id])
+  resolvedByUser User? @relation("ReconMismatch_resolvedBy", fields: [resolvedBy], references: [id])
+  run ReconRun @relation("ReconMismatch_runId", fields: [runId], references: [id])
+
+  @@map("recon_mismatches")
+}
+
+model ReconRun {
+  id BigInt @id @default(autoincrement())
+  provider String
+  startedAt DateTime @default(now()) @db.Timestamptz(6) @map("started_at")
+  finishedAt DateTime? @db.Timestamptz(6) @map("finished_at")
+  checked Int @default(0)
+  mismatched Int @default(0)
+
+  reconMismatchesAsRun ReconMismatch[] @relation("ReconMismatch_runId")
+
+  @@map("recon_runs")
+}
+
+model Refund {
+  id BigInt @id @default(autoincrement())
+  orderId BigInt @map("order_id")
+  disputeId BigInt? @map("dispute_id")
+  amount BigInt
+  status String @default("requested")
+  idempotencyKey String @unique @map("idempotency_key")
+  basis String @default("")
+  failure String @default("")
+  approvedBy BigInt? @map("approved_by")
+  createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+  externalConfirmedAt DateTime? @db.Timestamptz(6) @map("external_confirmed_at")
+  completedAt DateTime? @db.Timestamptz(6) @map("completed_at")
+
+  approvedByUser User? @relation("Refund_approvedBy", fields: [approvedBy], references: [id])
+  dispute Dispute? @relation("Refund_disputeId", fields: [disputeId], references: [id])
+  order Order @relation("Refund_orderId", fields: [orderId], references: [id])
+
+  @@map("refunds")
+}
+
+model Report {
+  id BigInt @id @default(autoincrement())
+  reporterId BigInt @map("reporter_id")
+  productId BigInt? @map("product_id")
+  ipListingId BigInt? @map("ip_listing_id")
+  reason String
+  body String
+  status String @default("open")
+  actionTaken String @default("") @map("action_taken")
+  handledBy BigInt? @map("handled_by")
+  createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+  handledAt DateTime? @db.Timestamptz(6) @map("handled_at")
+
+  handledByUser User? @relation("Report_handledBy", fields: [handledBy], references: [id])
+  ipListing IpListing? @relation("Report_ipListingId", fields: [ipListingId], references: [id])
+  product Product? @relation("Report_productId", fields: [productId], references: [id])
+  reporter User @relation("Report_reporterId", fields: [reporterId], references: [id])
+
+  @@map("reports")
+}
+
+model Request {
+  id BigInt @id @default(autoincrement())
+  buyerId BigInt @map("buyer_id")
+  companyId BigInt? @map("company_id")
+  baseProductId BigInt? @map("base_product_id")
+  workType String @map("work_type")
+  title String
+  purpose String @default("")
+  requirements String @default("")
+  environment String @default("")
+  budgetMin BigInt? @map("budget_min")
+  budgetMax BigInt? @map("budget_max")
+  dueDate DateTime? @db.Date @map("due_date")
+  referenceNotes String @default("") @map("reference_notes")
+  sourceTerms String @default("") @map("source_terms")
+  rightsOwnership String @default("") @map("rights_ownership")
+  maintenance String @default("")
+  isPublic Boolean @default(true) @map("is_public")
+  status String @default("open")
+  createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+
+  baseProduct Product? @relation("Request_baseProductId", fields: [baseProductId], references: [id])
+  buyer User @relation("Request_buyerId", fields: [buyerId], references: [id])
+  company Company? @relation("Request_companyId", fields: [companyId], references: [id])
+  contracts Contract[] @relation("Contract_requestId")
+  quotes Quote[] @relation("Quote_requestId")
+
+  @@map("requests")
+}
+
+model Review {
+  id BigInt @id @default(autoincrement())
+  orderId BigInt @unique @map("order_id")
+  productId BigInt @map("product_id")
+  buyerId BigInt @map("buyer_id")
+  rating Int
+  body String
+  hiddenReason String? @map("hidden_reason")
+  createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+
+  buyer User @relation("Review_buyerId", fields: [buyerId], references: [id])
+  order Order @relation("Review_orderId", fields: [orderId], references: [id])
+  product Product @relation("Review_productId", fields: [productId], references: [id])
+
+  @@map("reviews")
+}
+
+model Seller {
+  userId BigInt @id @map("user_id")
+  displayName String @map("display_name")
+  intro String @default("")
+  portfolio String @default("")
+  status SellerStatus @default(pending)
+  businessType BusinessType @default(individual) @map("business_type")
+  bizRegNoEnc String? @map("biz_reg_no_enc")
+  taxInvoiceIssuable Boolean @default(false) @map("tax_invoice_issuable")
+  identityVerified Boolean @default(false) @map("identity_verified")
+  payoutAccountEnc String? @map("payout_account_enc")
+  payoutAccountHint String? @map("payout_account_hint")
+  payoutVerified Boolean @default(false) @map("payout_verified")
+  payoutAccountChangedAt DateTime? @db.Timestamptz(6) @map("payout_account_changed_at")
+  createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+
+  user User @relation("Seller_userId", fields: [userId], references: [id])
+
+  @@map("sellers")
+}
+
+model Session {
+  id String @id
+  userId BigInt @map("user_id")
+  stepupAt DateTime? @db.Timestamptz(6) @map("stepup_at")
+  expiresAt DateTime @db.Timestamptz(6) @map("expires_at")
+  createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+
+  user User @relation("Session_userId", fields: [userId], references: [id])
+
+  @@map("sessions")
+}
+
+model Setting {
+  key String @id
+  value String
+  updatedBy BigInt? @map("updated_by")
+  updatedAt DateTime @default(now()) @db.Timestamptz(6) @map("updated_at")
+
+  updatedByUser User? @relation("Setting_updatedBy", fields: [updatedBy], references: [id])
+
+  @@map("settings")
+}
+
+model SimpgEvent {
+  seq BigInt @id @default(autoincrement())
+  id String @unique
+  type String
+  payload Json
+  createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+
+  @@map("simpg_events")
+}
+
+model SimpgPayment {
+  id String @id
+  orderNo String @map("order_no")
+  amount BigInt
+  method String
+  status String @default("ready")
+  refunded BigInt @default(0)
+  hold Boolean @default(false)
+  createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+
+  @@map("simpg_payments")
+}
+
+model SimpgPayout {
+  idemKey String @id @map("idem_key")
+  id String
+  paymentId String @map("payment_id")
+  amount BigInt
+  status String
+  createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+
+  @@map("simpg_payouts")
+}
+
+model SimpgRefund {
+  idemKey String @id @map("idem_key")
+  paymentId String @map("payment_id")
+  amount BigInt
+  status String
+  createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+
+  @@map("simpg_refunds")
+}
+
+model SupportTicket {
+  id BigInt @id @default(autoincrement())
+  userId BigInt @map("user_id")
+  orderId BigInt? @map("order_id")
+  subject String
+  body String
+  status String @default("open")
+  assignedTo BigInt? @map("assigned_to")
+  createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+
+  assignedToUser User? @relation("SupportTicket_assignedTo", fields: [assignedTo], references: [id])
+  order Order? @relation("SupportTicket_orderId", fields: [orderId], references: [id])
+  user User @relation("SupportTicket_userId", fields: [userId], references: [id])
+
+  @@map("support_tickets")
+}
+
+model TaxRecord {
+  id BigInt @id @default(autoincrement())
+  payoutId BigInt @map("payout_id")
+  sellerId BigInt @map("seller_id")
+  docType TaxDocType @map("doc_type")
+  period String
+  supplyAmount BigInt @default(0) @map("supply_amount")
+  vatAmount BigInt @default(0) @map("vat_amount")
+  grossPayment BigInt @default(0) @map("gross_payment")
+  incomeTax BigInt @default(0) @map("income_tax")
+  localTax BigInt @default(0) @map("local_tax")
+  status String @default("draft")
+  note String @default("")
+  createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+
+  payout Payout @relation("TaxRecord_payoutId", fields: [payoutId], references: [id])
+  seller User @relation("TaxRecord_sellerId", fields: [sellerId], references: [id])
+
+  @@unique([payoutId, docType])
+  @@map("tax_records")
+}
+
+model User {
+  id BigInt @id @default(autoincrement())
+  email String @unique
+  passwordHash String @map("password_hash")
+  name String
+  operatorRole OperatorRole? @map("operator_role")
+  totpSecretEnc String? @map("totp_secret_enc")
+  status String @default("active")
+  createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+
+  aiConsents AiConsent[] @relation("AiConsent_userId")
+  auditLogsAsActor AuditLog[] @relation("AuditLog_actorId")
+  changeOrdersAsRequestedBy ChangeOrder[] @relation("ChangeOrder_requestedBy")
+  closeRequestsAsDecidedBy CloseRequest[] @relation("CloseRequest_decidedBy")
+  closeRequestsAsSeller CloseRequest[] @relation("CloseRequest_sellerId")
+  companyMembers CompanyMember[] @relation("CompanyMember_userId")
+  contractVersionsAsCreatedBy ContractVersion[] @relation("ContractVersion_createdBy")
+  contractsAsBuyer Contract[] @relation("Contract_buyerId")
+  contractsAsSeller Contract[] @relation("Contract_sellerId")
+  disputeEntriesAsAuthor DisputeEntry[] @relation("DisputeEntry_authorId")
+  disputesAsDecidedBy Dispute[] @relation("Dispute_decidedBy")
+  disputesAsOpenedBy Dispute[] @relation("Dispute_openedBy")
+  downloadLogs DownloadLog[] @relation("DownloadLog_userId")
+  feePoliciesAsCreatedBy FeePolicy[] @relation("FeePolicy_createdBy")
+  fileVersionsAsCreatedBy FileVersion[] @relation("FileVersion_createdBy")
+  filesAsUploadedBy File[] @relation("File_uploadedBy")
+  inspectionsAsInspector Inspection[] @relation("Inspection_inspectorId")
+  ipAccessGrantsAsApprovedBy IpAccessGrant[] @relation("IpAccessGrant_approvedBy")
+  ipAccessGrants IpAccessGrant[] @relation("IpAccessGrant_userId")
+  ipDealsAsBuyer IpDeal[] @relation("IpDeal_buyerId")
+  ipListingsAsSeller IpListing[] @relation("IpListing_sellerId")
+  ipRoomViews IpRoomView[] @relation("IpRoomView_userId")
+  messagesAsRecipient Message[] @relation("Message_recipientId")
+  messagesAsSender Message[] @relation("Message_senderId")
+  notifications Notification[] @relation("Notification_userId")
+  ordersAsBuyer Order[] @relation("Order_buyerId")
+  ordersAsSeller Order[] @relation("Order_sellerId")
+  payoutsAsRequestedBy Payout[] @relation("Payout_requestedBy")
+  payoutsAsSeller Payout[] @relation("Payout_sellerId")
+  productsAsSeller Product[] @relation("Product_sellerId")
+  providerCapabilitiesAsConfirmedBy ProviderCapability[] @relation("ProviderCapability_confirmedBy")
+  purchaseApprovalsAsDecidedBy PurchaseApproval[] @relation("PurchaseApproval_decidedBy")
+  purchaseApprovalsAsRequestedBy PurchaseApproval[] @relation("PurchaseApproval_requestedBy")
+  quotesAsSeller Quote[] @relation("Quote_sellerId")
+  reconMismatchesAsResolvedBy ReconMismatch[] @relation("ReconMismatch_resolvedBy")
+  refundsAsApprovedBy Refund[] @relation("Refund_approvedBy")
+  reportsAsHandledBy Report[] @relation("Report_handledBy")
+  reportsAsReporter Report[] @relation("Report_reporterId")
+  requestsAsBuyer Request[] @relation("Request_buyerId")
+  reviewsAsBuyer Review[] @relation("Review_buyerId")
+  seller Seller? @relation("Seller_userId")
+  sessions Session[] @relation("Session_userId")
+  settingsAsUpdatedBy Setting[] @relation("Setting_updatedBy")
+  supportTicketsAsAssignedTo SupportTicket[] @relation("SupportTicket_assignedTo")
+  supportTickets SupportTicket[] @relation("SupportTicket_userId")
+  taxRecordsAsSeller TaxRecord[] @relation("TaxRecord_sellerId")
+  wishlist Wishlist[] @relation("Wishlist_userId")
+
+  @@map("users")
+}
+
+model WebhookEvent {
+  id BigInt @id @default(autoincrement())
+  provider String
+  eventId String @map("event_id")
+  type String
+  payload Json
+  signatureOk Boolean @map("signature_ok")
+  receivedAt DateTime @default(now()) @db.Timestamptz(6) @map("received_at")
+  processedAt DateTime? @db.Timestamptz(6) @map("processed_at")
+  error String?
+
+  @@unique([provider, eventId])
+  @@map("webhook_events")
+}
+
+model Wishlist {
+  userId BigInt @map("user_id")
+  productId BigInt @map("product_id")
+  createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+
+  product Product @relation("Wishlist_productId", fields: [productId], references: [id])
+  user User @relation("Wishlist_userId", fields: [userId], references: [id])
+
+  @@id([userId, productId])
+  @@map("wishlist")
+}
