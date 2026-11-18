@@ -37,7 +37,7 @@ app.get('/.well-known/assetlinks.json', (_q, r) => r.json(process.env.ANDROID_PA
   relation: ['delegate_permission/common.handle_all_urls'],
   target: { namespace: 'android_app', package_name: process.env.ANDROID_PACKAGE, sha256_cert_fingerprints: process.env.ANDROID_SHA256.split(',').map((x) => x.trim()) },
 }] : []));
-app.use(express.static(path.join(root, 'dist')));
+app.use(express.static(path.join(root, 'dist'), { extensions: ['html'] })); // /privacy → privacy.html
 app.get('*', (_q, r) => r.sendFile(path.join(root, 'dist', 'index.html')));
 
 const server = http.createServer(app);

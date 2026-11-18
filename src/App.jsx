@@ -477,6 +477,7 @@ function MyTab() {
       </div>
       <div className="card">
         <Item label="이용 원칙" value="" onClick={() => setSheet({ type: 'rules' })} />
+        {!DEMO && <a className="row flat item" href="/privacy" target="_blank" rel="noreferrer"><span className="grow">개인정보처리방침</span><Icon n="chev" size={16} /></a>}
         {DEMO && <Item label="관리자 화면 체험" value="비밀번호 admin" onClick={openAdmin} />}
         <Item label={DEMO ? '체험판 초기화' : '회원 탈퇴'} value="" onClick={() => setSheet({ type: 'quit' })} />
       </div>
