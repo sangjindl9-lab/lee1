@@ -1,0 +1,1034 @@
+// 데브볼트 (DevVault) — 데이터 모델
+// 원칙: 하나의 주문 상태에 모든 의미를 넣지 않는다.
+// 결제/대금보호/납품/검수/분쟁/환불/정산을 각각 독립 상태로 관리한다.
+// 금액은 모두 KRW 최소 단위(원) 정수.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ────────────────────────────── 공통 열거형
+enum Role {
+  MEMBER
+  SELLER
+  ENTERPRISE_ADMIN
+  ENTERPRISE_BUYER
+  ENTERPRISE_REVIEWER
+  OPERATOR_REVIEW
+  OPERATOR_SUPPORT
+  OPERATOR_SETTLEMENT
+  SUPER_ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  WITHDRAWN
+}
+
+enum CompanyRole {
+  ADMIN
+  BUYER
+  REVIEWER
+}
+
+enum SellerType {
+  BUSINESS
+  INDIVIDUAL
+}
+
+enum SellerStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+  WITHDRAWN
+}
+
+enum ProductType {
+  SOLUTION
+  SOURCE
+}
+
+enum ProductStatus {
+  DRAFT
+  PENDING_REVIEW
+  ACTIVE
+  SUSPENDED
+  BLOCKED
+}
+
+enum LicenseType {
+  PERIOD
+  PERPETUAL
+}
+
+enum ScanStatus {
+  PENDING
+  SCANNING
+  PASSED
+  ISSUE_FOUND
+  UNSCANNABLE
+}
+
+enum OrderType {
+  LICENSE
+  SOURCE
+  IP_ASSIGNMENT
+  CUSTOM_STAGE
+}
+
+// 7대 상태
+enum PaymentStatus {
+  PENDING
+  AUTHORIZED
+  PAID
+  PARTIALLY_REFUNDED
+  REFUNDED
+  FAILED
+  CANCELLED
+}
+
+enum EscrowStatus {
+  NOT_SUPPORTED
+  NOT_REQUESTED
+  REQUESTED
+  HELD
+  STOP_REQUESTED
+  STOPPED
+  RELEASED
+}
+
+enum DeliveryStatus {
+  NOT_DELIVERED
+  DELIVERED
+  INCOMPLETE
+  WITHDRAWN
+}
+
+enum InspectionStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  APPROVED
+  REVISION_REQUESTED
+  AUTO_CONFIRMED
+  BLOCKED
+}
+
+enum DisputeStatus {
+  NONE
+  OPEN
+  EVIDENCE
+  NEGOTIATION
+  DECIDED
+  WITHDRAWN
+}
+
+enum RefundStatus {
+  NONE
+  REQUESTED
+  APPROVED
+  PROCESSING
+  COMPLETED
+  PARTIALLY_COMPLETED
+  RECOVERY_REQUIRED
+  REJECTED
+  FAILED
+  UNSUPPORTED
+}
+
+enum PayoutStatus {
+  NOT_ELIGIBLE
+  ELIGIBLE
+  REQUESTED
+  PROCESSING
+  PAID
+  FAILED
+  ON_HOLD
+  CANCELLED
+}
+
+enum LedgerType {
+  PAYMENT_IN
+  COMMISSION
+  PAYMENT_FEE
+  PAYOUT_OUT
+  REFUND_OUT
+  WITHHOLDING_TAX
+  ADJUSTMENT
+}
+
+enum FeeScope {
+  DEFAULT
+  CATEGORY
+  SELLER
+}
+
+enum FeeBearer {
+  SELLER
+  BUYER
+}
+
+enum DevRequestStatus {
+  OPEN
+  QUOTING
+  CONTRACTED
+  CLOSED
+}
+
+enum QuoteStatus {
+  SUBMITTED
+  SELECTED
+  REJECTED
+}
+
+enum ContractStatus {
+  DRAFT
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum StageStatus {
+  PENDING
+  AWAITING_PAYMENT
+  IN_PROGRESS
+  DELIVERED
+  INSPECTION
+  APPROVED
+  REVISION
+  SETTLED
+}
+
+enum ChangeStatus {
+  PROPOSED
+  AGREED
+  REJECTED
+}
+
+enum IpTransferMode {
+  ASSIGNMENT
+  EXCLUSIVE_LICENSE
+  NON_EXCLUSIVE_LICENSE
+  CONSULTATION
+}
+
+enum IpAssetStatus {
+  DRAFT
+  PENDING_REVIEW
+  ACTIVE
+  EXCLUSIVE_LOCKED
+  SOLD
+  SUSPENDED
+}
+
+enum IpAccessLevel {
+  PUBLIC_INTRO
+  CONFIDENTIAL
+}
+
+// ────────────────────────────── 회원 · 조직
+model User {
+  id           String     @id @default(cuid())
+  email        String     @unique
+  passwordHash String
+  name         String
+  phone        String?
+  status       UserStatus @default(ACTIVE)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  lastLoginAt  DateTime?
+
+  roles            RoleAssignment[]
+  companyMembers   CompanyMember[]
+  sellerProfile    SellerProfile?
+  ordersAsBuyer    Order[]             @relation("OrderBuyer")
+  favorites        Favorite[]
+  reviews          Review[]
+  consents         ConsentLog[]
+  messages         Message[]
+  tickets          SupportTicket[]
+  notifications    Notification[]
+  audits           AuditLog[]
+  devRequests      DevRequest[]
+  ipGrants         IpAccessGrant[]
+  downloadEvents   DownloadEvent[]
+  createdFiles     ProductFile[]
+}
+
+model RoleAssignment {
+  id        String @id @default(cuid())
+  userId    String
+  role      Role
+  companyId String?
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, role, companyId])
+  @@index([userId])
+}
+
+model Company {
+  id        String   @id @default(cuid())
+  name      String
+  bizRegNo  String?
+  status    String   @default("ACTIVE")
+  createdAt DateTime @default(now())
+
+  members CompanyMember[]
+  orders  Order[]
+}
+
+model CompanyMember {
+  id               String      @id @default(cuid())
+  companyId        String
+  userId           String
+  role             CompanyRole @default(BUYER)
+  approvalLimitKrw Int?
+  createdAt        DateTime    @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, userId])
+}
+
+model SellerProfile {
+  id              String       @id @default(cuid())
+  userId          String       @unique
+  sellerType      SellerType   @default(INDIVIDUAL)
+  displayName     String
+  intro           String?
+  bizName         String?
+  bizRegNo        String?
+  taxEmail        String?
+  bankName        String?
+  accountHolder   String?
+  // 계좌번호는 암호화하여 보관한다(평문 저장 금지).
+  accountCipher   String?
+  accountMasked   String?
+  accountVerifiedAt DateTime?
+  accountChangedAt  DateTime?
+  status          SellerStatus @default(PENDING)
+  ratingAvg       Float        @default(0)
+  ratingCount     Int          @default(0)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  user       User        @relation(fields: [userId], references: [id], onDelete: Restrict)
+  products   Product[]
+  ipAssets   IpAsset[]
+  orders     Order[]
+  payouts    Payout[]
+  quotes     Quote[]
+}
+
+// ────────────────────────────── 수수료 정책
+model FeePolicy {
+  id                 String    @id @default(cuid())
+  scope              FeeScope  @default(DEFAULT)
+  category           String?
+  sellerId           String?
+  commissionRateBp   Int       @default(1000) // 10.00%
+  paymentFeeRateBp   Int       @default(0)
+  paymentFeeBearer   FeeBearer @default(SELLER)
+  discountRateBp     Int       @default(0)
+  discountUntil      DateTime?
+  effectiveFrom      DateTime  @default(now())
+  effectiveTo        DateTime?
+  note               String?
+  createdById        String?
+  createdAt          DateTime  @default(now())
+
+  @@index([scope, category])
+}
+
+// ────────────────────────────── 상품 · 파일
+model Product {
+  id               String        @id @default(cuid())
+  sellerId         String
+  type             ProductType
+  title            String
+  summary          String
+  category         String
+  problem          String        @db.Text
+  features         String[]
+  includes         String[]
+  excludes         String[]
+  platforms        String[]      @default([])
+  licenseType      LicenseType   @default(PERPETUAL)
+  licenseMonths    Int?
+  seats            Int?
+  sourceIncluded   Boolean       @default(false)
+  installSupport   Boolean       @default(false)
+  customization    Boolean       @default(false)
+  thirdPartyDeps   String?
+  externalCostNote String?
+  inspectionDays   Int           @default(7)
+  deliveryNote     String?
+  refundPolicy     String?
+  priceKrw         Int
+  status           ProductStatus @default(DRAFT)
+  adminReviewNote  String?
+  publishedAt      DateTime?
+  viewCount        Int           @default(0)
+  purchaseCount    Int           @default(0)
+  ratingAvg        Float         @default(0)
+  ratingCount      Int           @default(0)
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  seller    SellerProfile   @relation(fields: [sellerId], references: [id], onDelete: Restrict)
+  files     ProductFile[]
+  orders    Order[]
+  favorites Favorite[]
+  reviews   Review[]
+  questions ProductQuestion[]
+
+  @@index([type, status])
+  @@index([category])
+}
+
+model ProductFile {
+  id           String     @id @default(cuid())
+  productId    String
+  version      Int
+  fileName     String
+  sizeBytes    Int
+  sha256       String
+  storageKey   String
+  mimeType     String?
+  scanStatus   ScanStatus @default(PENDING)
+  scanFindings Json?
+  uploadedById String
+  isCurrent    Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  uploader User   @relation(fields: [uploadedById], references: [id], onDelete: Restrict)
+
+  @@unique([productId, version, fileName])
+  @@index([productId, isCurrent])
+}
+
+model ProductQuestion {
+  id         String   @id @default(cuid())
+  productId  String
+  userId     String
+  body       String   @db.Text
+  answer     String?  @db.Text
+  answeredAt DateTime?
+  createdAt  DateTime @default(now())
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+}
+
+model Favorite {
+  id        String   @id @default(cuid())
+  userId    String
+  productId String
+  createdAt DateTime @default(now())
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, productId])
+}
+
+model Review {
+  id        String   @id @default(cuid())
+  orderId   String   @unique
+  productId String
+  buyerId   String
+  rating    Int
+  body      String   @db.Text
+  createdAt DateTime @default(now())
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  buyer   User    @relation(fields: [buyerId], references: [id], onDelete: Cascade)
+}
+
+// ────────────────────────────── 주문 · 거래
+model Order {
+  id        String @id @default(cuid())
+  orderNo   String @unique
+  buyerId   String
+  buyerCompanyId String?
+  sellerId  String
+  productId String?
+  type      OrderType
+
+  currency           String @default("KRW")
+  grossAmount        Int
+  commissionRateBp   Int
+  commissionAmount   Int
+  paymentFeeAmount   Int    @default(0)
+  vatAmount          Int    @default(0)
+  withholdingTax     Int    @default(0)
+  sellerNetAmount    Int
+  refundedAmount     Int    @default(0)
+
+  paymentStatus    PaymentStatus    @default(PENDING)
+  escrowStatus     EscrowStatus     @default(NOT_REQUESTED)
+  deliveryStatus   DeliveryStatus   @default(NOT_DELIVERED)
+  inspectionStatus InspectionStatus @default(NOT_STARTED)
+  disputeStatus    DisputeStatus    @default(NONE)
+  refundStatus     RefundStatus     @default(NONE)
+  payoutStatus     PayoutStatus     @default(NOT_ELIGIBLE)
+
+  // 주문 시점 고정 스냅샷(상품·파일·권리조건·수수료)
+  snapshot Json
+
+  inspectionDays      Int       @default(7)
+  consentVersion      String?
+  consentWithdrawalAt DateTime?
+  consentIp           String?
+  consentTextHash     String?
+
+  paidAt             DateTime?
+  deliveryDueAt      DateTime?
+  inspectionStartedAt DateTime?
+  inspectionEndsAt   DateTime?
+  autoConfirmAt      DateTime?
+  confirmedAt        DateTime?
+  settledAt          DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  rowVersion         Int       @default(0)
+
+  buyer   User          @relation("OrderBuyer", fields: [buyerId], references: [id], onDelete: Restrict)
+  seller  SellerProfile @relation(fields: [sellerId], references: [id], onDelete: Restrict)
+  product Product?      @relation(fields: [productId], references: [id], onDelete: SetNull)
+  company Company?      @relation(fields: [buyerCompanyId], references: [id], onDelete: SetNull)
+
+  files       OrderFile[]
+  payments    Payment[]
+  escrow      EscrowRecord?
+  deliveries  Delivery[]
+  inspections InspectionRecord[]
+  disputes    Dispute[]
+  refunds     RefundRecord[]
+  payout      Payout?
+  ledger      LedgerEntry[]
+  grants      DownloadGrant[]
+  downloads   DownloadEvent[]
+  consents    ConsentLog[]
+  messages    MessageThread[]
+  ipAsset     IpAsset?
+  stage       ContractStage?
+
+  @@index([buyerId])
+  @@index([sellerId])
+  @@index([paymentStatus, payoutStatus])
+}
+
+model OrderFile {
+  id            String  @id @default(cuid())
+  orderId       String
+  productFileId String?
+  fileName      String
+  version       Int
+  sizeBytes     Int
+  sha256        String
+  storageKey    String
+  mimeType      String?
+  included      Boolean @default(true)
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+}
+
+model Payment {
+  id             String        @id @default(cuid())
+  orderId        String
+  provider       String        @default("mockpg")
+  providerTxId   String        @unique
+  method         String
+  amount         Int
+  status         PaymentStatus @default(PENDING)
+  idempotencyKey String        @unique
+  approvedAt     DateTime?
+  cancelledAmount Int          @default(0)
+  raw            Json?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+}
+
+model EscrowRecord {
+  id         String       @id @default(cuid())
+  orderId    String       @unique
+  provider   String       @default("mockpg")
+  providerRef String?
+  holdState  EscrowStatus @default(NOT_REQUESTED)
+  note       String?
+  requestedAt DateTime?
+  updatedAt  DateTime     @updatedAt
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+model Delivery {
+  id           String   @id @default(cuid())
+  orderId      String
+  attempt      Int      @default(1)
+  fileIds      Json
+  note         String?
+  status       DeliveryStatus @default(NOT_DELIVERED)
+  deliveredById String
+  deliveredAt  DateTime @default(now())
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+}
+
+model InspectionRecord {
+  id          String           @id @default(cuid())
+  orderId     String
+  checklist   Json
+  result      InspectionStatus
+  note        String?
+  decidedById String?
+  decidedAt   DateTime         @default(now())
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+}
+
+model Dispute {
+  id               String        @id @default(cuid())
+  disputeNo        String        @unique
+  orderId          String
+  openedById       String
+  category         String
+  body             String        @db.Text
+  evidence         Json?
+  status           DisputeStatus @default(OPEN)
+  providerHoldState EscrowStatus @default(NOT_REQUESTED)
+  resolution       String?
+  decisionReason   String?       @db.Text
+  decidedById      String?
+  decidedAt        DateTime?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([status])
+}
+
+model RefundRecord {
+  id               String       @id @default(cuid())
+  orderId          String
+  amount           Int
+  reason           String       @db.Text
+  status           RefundStatus @default(REQUESTED)
+  provider         String       @default("mockpg")
+  providerRefundId String?
+  partialSupported Boolean      @default(true)
+  processedById    String?
+  failureReason    String?
+  requestedAt      DateTime     @default(now())
+  completedAt      DateTime?
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+}
+
+model Payout {
+  id             String       @id @default(cuid())
+  orderId        String?      @unique
+  sellerId       String
+  amount         Int
+  withholdingTax Int          @default(0)
+  status         PayoutStatus @default(REQUESTED)
+  provider       String       @default("mockpg")
+  providerRef    String?
+  idempotencyKey String       @unique
+  attempts       Int          @default(0)
+  lastError      String?
+  requestedAt    DateTime     @default(now())
+  paidAt         DateTime?
+
+  order  Order?        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  seller SellerProfile @relation(fields: [sellerId], references: [id], onDelete: Restrict)
+
+  @@index([sellerId, status])
+}
+
+model LedgerEntry {
+  id             String     @id @default(cuid())
+  orderId        String?
+  sellerId       String?
+  type           LedgerType
+  amount         Int
+  idempotencyKey String     @unique
+  memo           String?
+  createdAt      DateTime   @default(now())
+
+  order Order? @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([type])
+}
+
+model DownloadGrant {
+  id          String    @id @default(cuid())
+  orderId     String
+  orderFileId String
+  userId      String
+  tokenHash   String    @unique
+  expiresAt   DateTime
+  maxUses     Int       @default(3)
+  usedCount   Int       @default(0)
+  revokedAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+}
+
+model DownloadEvent {
+  id          String   @id @default(cuid())
+  orderId     String
+  orderFileId String
+  userId      String
+  ip          String?
+  userAgent   String?
+  allowed     Boolean
+  reason      String?
+  createdAt   DateTime @default(now())
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+}
+
+model ConsentLog {
+  id        String   @id @default(cuid())
+  userId    String
+  orderId   String?
+  kind      String
+  version   String
+  ip        String?
+  userAgent String?
+  textHash  String
+  agreedAt  DateTime @default(now())
+
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  order Order? @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+}
+
+model WebhookEvent {
+  id            String    @id @default(cuid())
+  provider      String
+  eventId       String
+  type          String
+  signatureValid Boolean
+  eventTime     DateTime
+  receivedAt    DateTime  @default(now())
+  processedAt   DateTime?
+  payload       Json
+  result        Json?
+  duplicate     Boolean   @default(false)
+
+  @@unique([provider, eventId])
+}
+
+// 테스트 PG(MockPG)의 외부 원장. 플랫폼 DB와 분리된 '결제사업자 측 상태'를 흉내 낸다.
+// 대사(Reconciliation)는 이 표와 플랫폼 내부 상태를 비교한다.
+model MockPgTx {
+  id             String   @id @default(cuid())
+  txId           String   @unique
+  kind           String // PAYMENT | REFUND | HOLD | PAYOUT
+  orderNo        String?
+  amount         Int
+  method         String?
+  status         String // AUTHORIZED | PAID | CANCELLED | REFUNDED | HELD | STOPPED | UNKNOWN | FAILED
+  idempotencyKey String   @unique
+  note           String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model ReconciliationRun {
+  id            String    @id @default(cuid())
+  startedAt     DateTime  @default(now())
+  finishedAt    DateTime?
+  checked       Int       @default(0)
+  mismatchCount Int       @default(0)
+  note          String?
+
+  issues ReconciliationIssue[]
+}
+
+model ReconciliationIssue {
+  id       String   @id @default(cuid())
+  runId    String
+  orderId  String?
+  field    String
+  internal String
+  external String
+  kind     String
+  createdAt DateTime @default(now())
+
+  run ReconciliationRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  actorRole  String?
+  action     String
+  targetType String
+  targetId   String
+  before     Json?
+  after      Json?
+  ip         String?
+  createdAt  DateTime @default(now())
+
+  actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([targetType, targetId])
+}
+
+model SupportTicket {
+  id         String   @id @default(cuid())
+  userId     String
+  category   String
+  title      String
+  body       String   @db.Text
+  status     String   @default("OPEN")
+  answer     String?  @db.Text
+  answeredAt DateTime?
+  createdAt  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model MessageThread {
+  id        String   @id @default(cuid())
+  orderId   String?
+  requestId String?
+  subject   String
+  buyerId   String
+  sellerId  String
+  createdAt DateTime @default(now())
+
+  order    Order?    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  messages Message[]
+}
+
+model Message {
+  id        String    @id @default(cuid())
+  threadId  String
+  senderId  String
+  body      String    @db.Text
+  createdAt DateTime  @default(now())
+  readAt    DateTime?
+
+  thread MessageThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  sender User          @relation(fields: [senderId], references: [id], onDelete: Cascade)
+}
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  kind      String
+  title     String
+  body      String?
+  link      String?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt])
+}
+
+// ────────────────────────────── 맞춤 개발
+model DevRequest {
+  id              String           @id @default(cuid())
+  requestNo       String           @unique
+  buyerId         String
+  title           String
+  purpose         String           @db.Text
+  features        String           @db.Text
+  environment     String
+  budgetKrw       Int?
+  deadline        String?
+  attachments     Json?
+  sourceCondition String?
+  rights          String?
+  maintenance     String?
+  visibility      String           @default("PUBLIC")
+  status          DevRequestStatus @default(OPEN)
+  createdAt       DateTime         @default(now())
+
+  buyer  User    @relation(fields: [buyerId], references: [id], onDelete: Cascade)
+  quotes Quote[]
+  contract Contract?
+}
+
+model Quote {
+  id                 String      @id @default(cuid())
+  requestId          String
+  sellerId           String
+  scope              String      @db.Text
+  outOfScope         String      @db.Text
+  milestones         Json
+  inspectionCriteria String      @db.Text
+  support            String?
+  totalAmount        Int
+  status             QuoteStatus @default(SUBMITTED)
+  createdAt          DateTime    @default(now())
+
+  request DevRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  seller  SellerProfile @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  contract Contract?
+
+  @@index([requestId])
+}
+
+model Contract {
+  id             String         @id @default(cuid())
+  contractNo     String         @unique
+  requestId      String         @unique
+  quoteId        String         @unique
+  buyerId        String
+  sellerId       String
+  totalAmount    Int
+  version        Int            @default(1)
+  status         ContractStatus @default(DRAFT)
+  agreementHash  String?
+  signedByBuyerAt  DateTime?
+  signedBySellerAt DateTime?
+  draftNotice    String         @default("본 계약서는 법률 검토 전 초안이며, 서명 전 법률 검토가 필요합니다.")
+  createdAt      DateTime       @default(now())
+
+  request DevRequest      @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  quote   Quote           @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  stages  ContractStage[]
+  changes ContractChange[]
+}
+
+model ContractStage {
+  id          String       @id @default(cuid())
+  contractId  String
+  seq         Int
+  title       String
+  deliverables String      @db.Text
+  amountKrw   Int
+  status      StageStatus  @default(AWAITING_PAYMENT)
+  orderId     String?      @unique
+  startedAt   DateTime?
+  deliveredAt DateTime?
+  approvedAt  DateTime?
+
+  contract Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  order    Order?   @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  @@unique([contractId, seq])
+}
+
+model ContractChange {
+  id            String       @id @default(cuid())
+  contractId    String
+  description   String       @db.Text
+  addedAmount   Int          @default(0)
+  addedDays     Int          @default(0)
+  status        ChangeStatus @default(PROPOSED)
+  buyerAgreedAt DateTime?
+  sellerAgreedAt DateTime?
+  createdAt     DateTime     @default(now())
+
+  contract Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+}
+
+// ────────────────────────────── 지식재산권
+model IpAsset {
+  id              String         @id @default(cuid())
+  sellerId        String
+  title           String
+  rightsType      String
+  target          String         @db.Text
+  owner           String
+  authorityBasis  String?
+  coOwners        String?
+  transferMode    IpTransferMode @default(ASSIGNMENT)
+  period          String?
+  territory       String?
+  field           String?
+  existingLicenses String?
+  thirdParty      String?
+  includedAssets  String         @db.Text
+  excludedAssets  String?
+  priceKrw        Int
+  status          IpAssetStatus  @default(DRAFT)
+  publicIntro     String         @db.Text
+  confidentialNote String?
+  exclusiveOrderId String?       @unique
+  createdAt       DateTime       @default(now())
+
+  seller  SellerProfile @relation(fields: [sellerId], references: [id], onDelete: Restrict)
+  order   Order?        @relation(fields: [exclusiveOrderId], references: [id], onDelete: SetNull)
+  vault   IpVaultFile[]
+  grants  IpAccessGrant[]
+  ndas    NdaAgreement[]
+}
+
+model IpVaultFile {
+  id         String        @id @default(cuid())
+  ipAssetId  String
+  fileName   String
+  sizeBytes  Int
+  sha256     String
+  storageKey String
+  accessLevel IpAccessLevel @default(CONFIDENTIAL)
+  scanStatus ScanStatus    @default(PENDING)
+  createdAt  DateTime      @default(now())
+
+  asset IpAsset @relation(fields: [ipAssetId], references: [id], onDelete: Cascade)
+}
+
+model IpAccessGrant {
+  id          String    @id @default(cuid())
+  ipAssetId   String
+  userId      String
+  ndaAgreedAt DateTime?
+  grantedById String?
+  expiresAt   DateTime?
+  revokedAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  asset IpAsset @relation(fields: [ipAssetId], references: [id], onDelete: Cascade)
+  user  User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([ipAssetId, userId])
+}
+
+model NdaAgreement {
+  id        String   @id @default(cuid())
+  ipAssetId String
+  userId    String
+  version   String
+  agreedAt  DateTime @default(now())
+  ip        String?
+
+  asset IpAsset @relation(fields: [ipAssetId], references: [id], onDelete: Cascade)
+}

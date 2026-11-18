@@ -1,0 +1,12 @@
+node_modules/
+.next/
+out/
+.env
+.env.local
+.env.*.local
+.vault/
+.vault-test/
+*.log
+.DS_Store
+next-env.d.ts
+tsconfig.tsbuildinfo
