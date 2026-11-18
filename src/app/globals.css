@@ -60,3 +60,4 @@ textarea { resize: vertical; } .check { display: flex; gap: 8px; align-items: ba
 }
 .grid > * { min-width: 0; } .btn, button { white-space: nowrap; } th.r { padding-right: 12px; } td.r.num { padding-right: 12px; white-space: nowrap; } td .hash { white-space: nowrap; }
 @media (max-width: 860px) { .g2, .g3, .split, .hero { grid-template-columns: minmax(0, 1fr); } .ledger .l { grid-template-columns: 80px 1fr; } .ledger .l > :last-child { grid-column: 2; } }
+.soon .detail { display: none; }

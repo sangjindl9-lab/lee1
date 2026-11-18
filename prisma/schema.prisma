@@ -154,6 +154,7 @@ enum ProductStatus {
   rejected
   suspended
   withdrawn
+  coming_soon
 
   @@map("product_status")
 }

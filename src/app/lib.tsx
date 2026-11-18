@@ -16,7 +16,7 @@ export const LABEL: Record<string, Record<string, string>> = {
   refund: { none: '없음', requested: '환불 결정됨(실행 전)', processing: '결제 취소 처리 중', completed: '환불 완료', failed: '결제 취소 실패', post_settlement_review: '사후 환불·회수 검토 중' },
   payout: { not_eligible: '정산 조건 미충족', eligible: '정산 대기', requested: '지급 요청 접수', unknown: '지급 결과 확인 중', paid: '지급 완료', failed: '지급 실패', blocked: '정산 보류', void: '지급 없음' },
   scan: { pending: '대기', scanning: '검사 중', passed: '통과', flagged: '문제 발견', unscannable: '검사 불가' },
-  product: { draft: '작성 중', pending_review: '심사 대기', on_sale: '판매 중', rejected: '반려', suspended: '판매 제한', withdrawn: '판매 종료' },
+  product: { coming_soon: '출시 예정', draft: '작성 중', pending_review: '심사 대기', on_sale: '판매 중', rejected: '반려', suspended: '판매 제한', withdrawn: '판매 종료' },
 };
 const TONE: Record<string, string> = { paid: 'ok', granted: 'ok', confirmed: 'ok', auto_confirmed: 'ok', completed: 'ok', released: 'ok', passed: 'ok', on_sale: 'ok', eligible: 'ok',
   failed: 'bad', flagged: 'bad', cancelled: 'bad', revoked: 'bad', open: 'warn', blocked: 'warn', disputed: 'warn', dispute_hold: 'warn', unknown: 'warn', processing: 'warn', post_settlement_review: 'warn',

@@ -176,6 +176,7 @@ export async function submitProduct(user: User, productId: number) {
     if (seller.status !== 'approved') throw new AppError('판매자 심사가 승인된 뒤에 제출할 수 있습니다');
     const v = await one(t, "SELECT * FROM file_versions WHERE product_id=$1 AND status='draft' ORDER BY id DESC LIMIT 1", [productId]);
     if (!v && !p.current_version_id) throw new AppError('판매를 시작하려면 실제 납품 파일을 먼저 등록해야 합니다');
+    if (!(await one(t, 'SELECT 1 FROM product_options WHERE product_id=$1', [productId]))) throw new AppError('가격과 판매 조건을 먼저 저장하세요');
     if (v) {
       const files = await all(t, 'SELECT * FROM files WHERE version_id=$1', [v.id]);
       if (!files.length) throw new AppError('납품 파일이 없습니다');
@@ -215,9 +216,9 @@ export async function reviewProduct(actor: User, productId: number, approve: boo
 const LIST_SQL = `SELECT p.id, p.kind, p.category, p.title, p.summary, p.has_source, p.install_support, p.customizable, p.external_paid, p.environment, p.status, p.seller_id,
   s.display_name AS seller_name, o.price, (SELECT round(avg(rating)::numeric,1) FROM reviews r WHERE r.product_id=p.id AND r.hidden_reason IS NULL) AS rating,
   (SELECT count(*)::int FROM reviews r WHERE r.product_id=p.id AND r.hidden_reason IS NULL) AS review_count
-  FROM products p JOIN sellers s ON s.user_id=p.seller_id JOIN LATERAL (SELECT price FROM product_options WHERE product_id=p.id AND active ORDER BY id LIMIT 1) o ON true`;
+  FROM products p JOIN sellers s ON s.user_id=p.seller_id LEFT JOIN LATERAL (SELECT price FROM product_options WHERE product_id=p.id AND active ORDER BY id LIMIT 1) o ON true`;
 export async function searchProducts(f: any) {
-  const w = ["p.status='on_sale'"]; const a: any[] = [];
+  const w = [f.buyable ? "p.status='on_sale'" : "p.status IN ('on_sale','coming_soon')"]; const a: any[] = [];
   const add = (sql: string, v: any) => { a.push(v); w.push(sql.replace('?', `$${a.length}`)); };
   if (['license', 'source'].includes(f.kind)) add('p.kind=?', f.kind);
   if (CATEGORIES[f.category]) add('p.category=?', f.category);
@@ -227,7 +228,7 @@ export async function searchProducts(f: any) {
   if (Number(f.max) > 0) add('o.price <= ?', Number(f.max));
   if (f.source) w.push('p.has_source'); if (f.install) w.push('p.install_support'); if (f.custom) w.push('p.customizable'); if (f.noext) w.push('NOT p.external_paid');
   if (Number(f.seller) > 0) add('p.seller_id=?', Number(f.seller));
-  const order = f.sort === 'price' ? 'o.price ASC' : f.sort === 'rating' ? 'rating DESC NULLS LAST' : 'p.id DESC';
+  const order = `(p.status='on_sale') DESC, ` + (f.sort === 'price' ? 'o.price ASC NULLS LAST' : f.sort === 'rating' ? 'rating DESC NULLS LAST' : 'p.id DESC');
   return all(db, `${LIST_SQL} WHERE ${w.join(' AND ')} ORDER BY ${order} LIMIT 60`, a);
 }
 export async function getProduct(id: number) {

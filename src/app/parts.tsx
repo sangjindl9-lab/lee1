@@ -10,7 +10,7 @@ export function ProductCard({ p }: { p: any }) {
       <div className="sub" style={{ fontSize: 14 }}>{p.summary}</div>
       <div className="meta"><span className="tag">{p.kind === 'source' ? '소스코드' : '사용권'}</span><span className="tag">{CATEGORIES[p.category]}</span>
         {p.has_source && p.kind !== 'source' && <span className="tag">소스 제공</span>}{p.install_support && <span className="tag">설치 지원</span>}{p.external_paid && <span className="tag">외부 유료 서비스 필요</span>}</div>
-      <div className="price">{won(p.price)}</div>
+      <div className="price">{p.status === 'coming_soon' ? '출시 예정' : won(p.price)}</div>
       <div className="muted" style={{ fontSize: 13 }}>{p.seller_name}{p.review_count > 0 && ` · 구매 후기 ${p.review_count}건 평균 ${p.rating}`}</div>
     </Link>
   );

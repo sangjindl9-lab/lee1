@@ -5,6 +5,7 @@ export async function register() {
   const { bootstrap } = await import('./server/auth.ts');
   const { runJobs } = await import('./server/trade.ts');
   await initDb(); await bootstrap();
+  await (await import('./server/showcase.ts')).seedShowcase().catch((e) => console.error('[showcase]', e));
   const g = globalThis as any;
   if (!g.__eumJobs && !process.env.DISABLE_JOBS) g.__eumJobs = setInterval(() => { runJobs().then((l) => l.length && console.error('[jobs]', l.join(' / '))).catch((e) => console.error('[jobs]', e)); }, 60_000);
 }
