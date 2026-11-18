@@ -47,7 +47,7 @@ export async function requestPayout(
       throw new DomainError("STATE_NOT_ALLOWED", "분쟁이 진행 중인 거래는 지급할 수 없습니다.", 409);
     }
     if (
-      ["REQUESTED", "APPROVED", "PROCESSING", "COMPLETED", "PARTIALLY_COMPLETED", "RECOVERY_REQUIRED", "UNSUPPORTED"].includes(
+      ["REQUESTED", "APPROVED", "PROCESSING", "COMPLETED", "RECOVERY_REQUIRED", "UNSUPPORTED"].includes(
         fresh.refundStatus,
       )
     ) {

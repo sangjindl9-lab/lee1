@@ -24,7 +24,7 @@ async function assertDownloadAllowed(order: {
   escrowStatus: string;
   deliveryStatus: string;
 }) {
-  if (order.refundStatus === "COMPLETED" || order.refundStatus === "PARTIALLY_COMPLETED") {
+  if (order.refundStatus === "COMPLETED") {
     throw new DomainError(
       "STATE_NOT_ALLOWED",
       "환불이 완료된 주문입니다. 추가 다운로드가 차단되며, 이미 내려받은 파일은 회수되지 않습니다.",
