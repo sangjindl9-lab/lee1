@@ -78,6 +78,7 @@ table.led tfoot td{font-weight:700;background:var(--bg);border-bottom:0}
 .fx{display:flex;flex-wrap:nowrap;gap:4px;align-items:center}
 .fx select{min-width:124px;flex:1 1 124px}
 .fr{display:flex;align-items:center;gap:2px;color:var(--muted);font-size:13px;white-space:nowrap}
+input.auto::placeholder{color:var(--ink);opacity:.8}
 input.dec{width:62px;text-align:right;padding:5px 4px;font-variant-numeric:tabular-nums}
 table.led input.sm2{min-width:0;width:78px}
 .cap{font-size:12px;color:var(--muted);text-align:right;font-variant-numeric:tabular-nums}
@@ -179,7 +180,7 @@ table.led input.sm2{min-width:0;width:78px}
 
     <section class="card" id="ledcard">
       <h2>원가계산서</h2>
-      <p class="hint">재료비·직접노무비처럼 금액을 넣는 항목에는 하도급률을 곱합니다. 간접노무비·보험료·기타경비·일반관리비·이윤 같은 제경비는 하도급률을 곱하지 않고, <b>하도급 금액을 기준으로 산식(요율)대로 다시 계산</b>합니다. 요율과 기준은 원가계산서 비고란에 맞춰 고치세요. 제경비를 <b>제외</b>하면 그 금액은 뒤따르는 일반관리비·이윤 계산에서도 빠집니다. 협의한 금액을 그대로 넣으려면 적용을 <b>직접입력</b>으로 바꾸고 하도급 금액 칸에 적으세요.</p>
+      <p class="hint">재료비·직접노무비처럼 금액을 넣는 항목에는 하도급률을 곱합니다. 간접노무비·보험료·기타경비·일반관리비·이윤 같은 제경비는 하도급률을 곱하지 않고, <b>하도급 금액을 기준으로 산식(요율)대로 다시 계산</b>합니다. <b>제경비 줄의 원도급 금액 칸에 내역서 금액을 그대로 적으면</b> 원도급 금액은 적은 대로 들어가고 요율이 거기에 맞춰집니다. 내역서에 없는 항목은 0을 적으세요(칸을 비우면 요율대로 계산). 제경비를 <b>제외</b>하면 그 금액은 뒤따르는 일반관리비·이윤 계산에서도 빠집니다. 협의한 금액을 그대로 넣으려면 적용을 <b>직접입력</b>으로 바꾸고 하도급 금액 칸에 적으세요.</p>
       <div class="imp">
         <label for="up-xls"><b>준공내역서 불러오기</b> <span class="hint">엑셀(.xlsx, .xls)의 원가계산서 시트에서 금액과 요율을 읽어 아래 표를 채웁니다</span></label>
         <input type="file" id="up-xls" accept=".xlsx,.xls,.xlsm,.csv">
@@ -283,16 +284,22 @@ function applyMode(v,mode,r){
 }
 // 위에서 아래로 한 줄씩 계산한다. 산식 항목은 그 열에서 이미 계산된 재료비·노무비·경비 등을 기준으로 삼는다.
 function evalCol(rows,inp,opt){
-  const acc={mat:0,dlab:0,lab:0,exp:0,ga:0,health:0},out={};
+  const acc={mat:0,dlab:0,lab:0,exp:0,ga:0,health:0,dir:0},out={};
   rows.forEach(function(x){
     let v;const fx=opt.fixed?opt.fixed(x):undefined;
     if(opt.skip&&opt.skip(x))v=0;
     else if(fx!==undefined)v=fx;
     else if(x.kind==='f'){
       const b=x.fb==='own'?inp(x):String(x.fb).split('+').reduce(function(a,k){return a+(acc[k]||0)},0);
-      v=trunc((pct(b,x.rate||0)+(opt.add?(x.add||0):0))*(x.mult||1));
+      if(x.pamt!=null&&x.fb!=='own'){
+        // 원도급 금액을 직접 적은 제경비: 원도급 열은 적은 금액 그대로, 나머지 열은 (적은 금액 ÷ 원도급 기준) 비율을 그 열의 기준에 곱한다.
+        // 기준이 0이면 직접비 합계를 기준으로 삼는다.
+        if(opt.rec){const dir=!b;opt.rec[x.id]={b:dir?acc.dir:b,dir:dir};v=x.pamt}
+        else{const r=opt.ref[x.id];v=r&&r.b?trunc((r.dir?acc.dir:b)*(x.pamt/r.b)+(b<0?-1e-6:1e-6)):0}
+      }else v=trunc((pct(b,x.rate||0)+(opt.add?(x.add||0):0))*(x.mult||1));
     }else v=inp(x);
     out[x.id]=v;
+    if(x.kind!=='f')acc.dir+=v;
     if(x.grp==='재료비')acc.mat+=v;
     if(x.grp==='노무비'){acc.lab+=v;if(x.kind!=='f')acc.dlab+=v}
     if(x.grp==='경비')acc.exp+=v;
@@ -303,15 +310,18 @@ function evalCol(rows,inp,opt){
 }
 function calc(S){
   const isF=function(x){return x.kind==='f'},none=function(x){return x.mode==='none'};
-  const P=evalCol(S.rows,function(x){return x.base||0},{add:true});
-  const PC=S.hasChg?evalCol(S.rows,function(x){return x.chg||0},{add:false}):{};
+  const Bp={};
+  const P=evalCol(S.rows,function(x){return x.base||0},{add:true,rec:Bp});
+  const PC=S.hasChg?evalCol(S.rows,function(x){return x.chg||0},{add:false,ref:Bp}):{};
   const SB=evalCol(S.rows,function(x){return isF(x)?trunc(pct(x.base||0,S.r1)):applyMode(x.base||0,x.mode,S.r1)},
-    {add:true,skip:none,fixed:function(x){return x.mode==='fix'?(x.sfix||0):(isF(x)&&x.mode==='full'?P[x.id]:undefined)}});
+    {add:true,ref:Bp,skip:none,fixed:function(x){return x.mode==='fix'?(x.sfix||0):(isF(x)&&x.mode==='full'?P[x.id]:undefined)}});
   const SC=S.hasChg?evalCol(S.rows,function(x){return isF(x)?trunc(pct(x.chg||0,S.r2)):applyMode(x.chg||0,x.mode,S.r2)},
-    {add:false,skip:none,fixed:function(x){return x.mode==='fix'?(x.sfixc||0):(isF(x)&&x.mode==='full'?PC[x.id]:undefined)}}):{};
+    {add:false,ref:Bp,skip:none,fixed:function(x){return x.mode==='fix'?(x.sfixc||0):(isF(x)&&x.mode==='full'?PC[x.id]:undefined)}}):{};
   const rows=S.rows.map(function(x){
     const sb=SB[x.id]||0,sc=SC[x.id]||0;
+    const bp=Bp[x.id];
     return {id:x.id,grp:x.grp,name:x.name,mode:x.mode,kind:x.kind,fb:x.fb,rate:x.rate,add:x.add,mult:x.mult,
+      pin:!!bp,dirBase:!!(bp&&bp.dir),drate:bp&&bp.b?Math.round(x.pamt/bp.b*1e6)/1e4:null,
       base:P[x.id]||0,chg:PC[x.id]||0,sb:sb,sc:sc,st:sb+sc};
   });
   const sum=function(k){return rows.reduce(function(a,x){return a+x[k]},0)};
@@ -362,7 +372,7 @@ const FIELDS=[
   ['period','계약기간'],['doneDate','준공일','date'],['claimDate','청구일','date'],
   ['sub','청구인 상호'],['bizno','사업자등록번호'],['ceo','대표자'],['addr','주소'],['bank','입금계좌 (은행·계좌번호·예금주)']
 ];
-const BASES={dlab:'직접노무비',lab:'노무비',mat:'재료비','mat+dlab':'재료비+직접노무비','mat+lab':'재료비+노무비','mat+lab+exp':'재료비+노무비+경비','lab+exp+ga':'노무비+경비+일반관리비',health:'건강보험료',own:'기준금액 입력'};
+const BASES={dlab:'직접노무비',lab:'노무비',mat:'재료비',dir:'직접비 합계','mat+dlab':'재료비+직접노무비','mat+lab':'재료비+노무비','mat+lab+exp':'재료비+노무비+경비','lab+exp+ga':'노무비+경비+일반관리비',health:'건강보험료',own:'기준금액 입력'};
 // [구분, 항목, 금액 또는 기준금액, 산식 기준(없으면 금액 입력), 요율, 배수, key]
 const DEF=[
   ['재료비','재료비',77879039],
@@ -388,6 +398,7 @@ function ftxt(x){
   if(x.mode==='fix')return '직접 입력';
   if(x.kind!=='f')return x.mode==='full'?'전액':'하도급률';
   if(x.mode==='full')return '원도급 전액';
+  if(x.pin)return (x.dirBase?'직접비 합계':BASES[x.fb])+' × '+x.drate+'% (원도급 금액 기준)';
   return (x.fb==='own'?'기준금액':BASES[x.fb])+' × '+x.rate+'%'+(x.add?' + '+fmt(x.add):'')+(x.mult&&x.mult!==1?' × '+x.mult:'');
 }
 let S;
@@ -423,7 +434,7 @@ function renderRows(){
       <option value="full"${x.mode==='full'?' selected':''}>전액</option>
       <option value="fix"${x.mode==='fix'?' selected':''}>직접입력</option>
       <option value="none"${x.mode==='none'?' selected':''}>제외</option></select></td>
-    <td class="${inp?'':'out'}">${cell('base','b')}</td>
+    <td>${inp?cell('base','b'):`<input class="num auto" id="pp-${x.id}" data-row="pamt" inputmode="numeric" value="${x.pamt!=null?fmt(x.pamt):''}" aria-label="원도급 금액 (비우면 산식으로 계산)">`}</td>
     <td class="chg chgcol ${inp?'':'out'}">${cell('chg','c')}</td>
     ${x.mode==='fix'
       ?`<td><input class="num" id="sf-${x.id}" data-row="sfix" inputmode="numeric" value="${x.sfix?fmt(x.sfix):''}" placeholder="하도급 금액" aria-label="하도급 당초분 직접 입력"></td><td class="chg chgcol"><input class="num" id="sg-${x.id}" data-row="sfixc" value="${x.sfixc?fmt(x.sfixc):''}" placeholder="하도급 금액" aria-label="하도급 변경분 직접 입력"></td>`
@@ -480,6 +491,8 @@ function recalc(){
     tr.parentNode.classList.toggle('off',x.mode==='none');
     const pb=$('pb-'+x.id),pc=$('pc-'+x.id),own=x.fb==='own';
     if(pb)pb.textContent=(own?'산출 ':'')+fmt(x.base);
+    const pp=$('pp-'+x.id),ri=$('r-'+x.id);if(pp)pp.placeholder=fmt(x.base);
+    if(ri&&x.pin&&x.drate!=null&&document.activeElement!==ri)ri.value=x.drate;
     if(pc)pc.textContent=(own?'산출 ':'')+fmt(x.chg);
   });
   $('t-pb').textContent=fmt(R.pb);$('t-pc').textContent=fmt(R.pc);$('t-sb').textContent=fmt(R.sb);$('t-sc').textContent=fmt(R.sc);$('t-st').textContent=fmt(R.raw);
@@ -566,8 +579,9 @@ document.addEventListener('input',e=>{
   else if(d.row){const x=find(S.rows,t),k=d.row;
     if(k==='name')x.name=t.value;
     else if(k==='mode'){x.mode=t.value;renderRows()}
-    else if(k==='fb'){x.kind=t.value?'f':'in';x.fb=t.value;if(!x.mult)x.mult=1;renderRows()}
-    else if(k==='rate'||k==='mult'){const v=parseFloat(t.value);x[k]=isFinite(v)&&v>=0?v:0}
+    else if(k==='fb'){x.kind=t.value?'f':'in';x.fb=t.value;if(!x.mult)x.mult=1;if(t.value==='own')x.pamt=null;renderRows()}
+    else if(k==='rate'||k==='mult'){const v=parseFloat(t.value);x[k]=isFinite(v)&&v>=0?v:0;if(k==='rate'&&x.pamt!=null){x.pamt=null;const e=$('pp-'+x.id);if(e)e.value=''}}
+    else if(k==='pamt')x.pamt=t.value.trim()===''?null:Math.abs(parseMoney(t.value));
     else x[k]=k==='chg'||k==='sfixc'?parseMoney(t.value):Math.abs(parseMoney(t.value))}
   else if(d.paid){const x=find(S.paid,t);x[d.paid]=d.paid==='amt'?Math.abs(parseMoney(t.value)):t.value}
   else if(d.direct){const x=find(S.direct,t);x[d.direct]=d.direct==='amt'?Math.abs(parseMoney(t.value)):t.value}
@@ -579,7 +593,7 @@ document.addEventListener('input',e=>{
 });
 document.addEventListener('focusout',e=>{
   const t=e.target;
-  if(t.classList&&t.classList.contains('num')&&t.id!=='r1'&&t.id!=='r2'){const n=parseMoney(t.value);t.value=n?fmt(n):''}
+  if(t.classList&&t.classList.contains('num')&&t.id!=='r1'&&t.id!=='r2'){const n=parseMoney(t.value);t.value=n||(t.dataset.row==='pamt'&&t.value.trim()!=='')?fmt(n):''}
 });
 document.addEventListener('click',e=>{
   const b=e.target.closest('button');if(!b)return;
@@ -598,7 +612,7 @@ document.addEventListener('click',e=>{
   else if(b.id==='btn-clear'){const keep=S.info,kp=S.primes;S=fresh(false);S.primes=kp;S.info=Object.assign(S.info,keep);renderAll()}
   else if(b.id==='tab-input'||b.id==='tab-doc'){const doc=b.id==='tab-doc';$('v-input').hidden=doc;$('v-doc').hidden=!doc;$('tab-input').classList.toggle('on',!doc);$('tab-doc').classList.toggle('on',doc);window.scrollTo(0,0)}
   else if(b.id==='btn-zero'){
-    if(b.dataset.arm){S.rows.forEach(x=>{x.base=0;x.chg=0;x.sfix=0;x.sfixc=0});S.paid.forEach(x=>{x.amt=0});S.direct.forEach(x=>{x.amt=0});S.info.contractAmt=0;S.example=false;$('impmsg').innerHTML='';renderAll();delete b.dataset.arm;b.textContent='금액 전체 삭제'}
+    if(b.dataset.arm){S.rows.forEach(x=>{x.base=0;x.chg=0;x.sfix=0;x.sfixc=0;x.pamt=null});S.paid.forEach(x=>{x.amt=0});S.direct.forEach(x=>{x.amt=0});S.info.contractAmt=0;S.example=false;$('impmsg').innerHTML='';renderAll();delete b.dataset.arm;b.textContent='금액 전체 삭제'}
     else{b.dataset.arm='1';b.textContent='한 번 더 누르면 삭제합니다';setTimeout(()=>{delete b.dataset.arm;b.textContent='금액 전체 삭제'},4000)}
   }
   else if(b.id==='btn-xlsx')saveXlsx();
@@ -692,26 +706,20 @@ function applyImport(found){
   S.rows.forEach(x=>{
     if(x.kind!=='f')return;
     const F=K[x.id]?found[K[x.id]]:null,A=F?Math.abs(F.amt):0;
-    if(!A){x.mode='none';log.push(x.name+': 내역서에 '+(F?'금액이 없어':'없어')+' 제외로 바꿨습니다.');return}
+    if(!A){x.mode='none';if(x.fb!=='own')x.pamt=0;log.push(x.name+': 내역서에 '+(F?'금액이 없어':'없어')+' 제외로 바꿨습니다.');return}
     if(x.mode==='none')x.mode='rate';
-    const m=x.mult||1,add=x.add||0;
-    const val=r=>{const o=x.rate;x.rate=r;const v=primeOf(x);x.rate=o;return v};
     if(x.fb==='own'){
-      const r=F.rate||x.rate;if(!r){log.push(x.name+': 요율을 알 수 없어 기준금액을 채우지 못했습니다.');return}
+      const m=x.mult||1,add=x.add||0,r=F.rate||x.rate;if(!r){log.push(x.name+': 요율을 알 수 없어 기준금액을 채우지 못했습니다.');return}
       x.rate=r;const b=Math.round((A/m-add)/(r/100));x.base=b;
       for(const d of [0,1,-1,2,-2]){x.base=b+d;if(primeOf(x)===A)return}
       x.base=b;return;
     }
-    const sv=[x.rate,x.add,x.mult];x.rate=100;x.add=0;x.mult=1;const B=primeOf(x);x.rate=sv[0];x.add=sv[1];x.mult=sv[2];
-    if(!B){log.push(x.name+': 기준 금액이 0이라 요율을 정하지 못했습니다.');return}
-    const ri=Math.round((A/m-add)/B*1e6)/1e4;let r=ri;
-    if(F.rate!=null){
-      const db=Math.abs(val(F.rate)-A),di=Math.abs(val(ri)-A);
-      if(db<=di||db/A<0.0005)r=F.rate;
-      else log.push(x.name+': 비고에는 '+F.rate+'%로 적혀 있지만 금액은 '+ri+'%로 계산한 값이어서 '+ri+'%를 넣었습니다.');
+    x.pamt=A;const q=calc(S).rows.find(z=>z.id===x.id);
+    if(q.drate!=null){
+      x.rate=q.drate;
+      if(q.dirBase)log.push(x.name+': 기준('+BASES[x.fb]+') 금액이 0이어서 직접비 합계 대비 비율로 계산합니다.');
+      else if(F.rate!=null&&Math.abs(F.rate-q.drate)>Math.max(0.002,q.drate*0.002))log.push(x.name+': 비고에는 '+F.rate+'%로 적혀 있지만 금액 기준으로는 '+q.drate+'%입니다. 금액에 맞췄습니다.');
     }
-    x.rate=r;const d=val(r)-A;
-    if(d)log.push(x.name+': '+r+'%로 계산하면 내역서 금액보다 '+fmt(Math.abs(d))+'원 '+(d>0?'많습니다.':'적습니다.'));
   });
   const miss=names.filter(k=>!used[k]&&!SKIP.test(k)&&found[k].amt>0).map(k=>found[k].label+' '+fmt(found[k].amt));
   if(miss.length)log.push('표에 없는 항목이라 가져오지 않았습니다: '+miss.join(', ')+'. 필요하면 "+ 항목 추가"로 넣으세요.');
