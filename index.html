@@ -102,7 +102,7 @@ table.led input.sm2{min-width:0;width:78px}
 @media (max-width:560px){.ded .line.m,.ded .line.v.m{grid-template-columns:1fr 1fr auto}.ded .line.m .nm{grid-column:1/-1}}
 #bycomp{overflow-x:auto}
 #bycomp h2{margin-top:16px}
-#bycomp table{border-collapse:collapse;width:100%;min-width:680px;font-size:14px}
+#bycomp table{border-collapse:collapse;width:100%;min-width:760px;font-size:14px}
 #bycomp th,#bycomp td{border-bottom:1px solid var(--line);padding:5px 6px;white-space:nowrap;text-align:left}
 #bycomp th{font-size:12px;color:var(--muted)}
 #bycomp td.n{text-align:right;font-variant-numeric:tabular-nums}
@@ -141,9 +141,9 @@ table.led input.sm2{min-width:0;width:78px}
   </header>
 
   <section class="summary" aria-label="계산 결과 요약">
-    <div><div class="lab">하도급 공급가액</div><div class="val" id="s-supply">0</div></div>
-    <div><div class="lab">부가세 포함 준공 총액</div><div class="val" id="s-total">0</div></div>
-    <div><div class="lab">공제 (기수령 + 직접지급)</div><div class="val" id="s-ded">0</div></div>
+    <div><div class="lab">원도급 준공금액 (부가세 포함)</div><div class="val" id="s-supply">0</div></div>
+    <div><div class="lab">기수령액 (선급금·기성금)</div><div class="val" id="s-total">0</div></div>
+    <div><div class="lab">하도급 금액 (잔액 × 하도급률)</div><div class="val" id="s-ded">0</div></div>
     <div class="final"><div class="lab">금회 청구금액</div><div class="val" id="s-claim">0</div></div>
   </section>
 
@@ -223,13 +223,13 @@ table.led input.sm2{min-width:0;width:78px}
     <div class="two">
       <section class="card">
         <h2>이미 받은 금액 (선급금·기성금)</h2>
-        <p class="hint">부가세 포함 금액으로 입력합니다. 선급금은 청구서에 "선급금 정산액"으로 따로 표시되고 준공금에서 빠집니다.</p>
+        <p class="hint">발주처·원도급 기준으로 이미 지급된 금액을 부가세 포함으로 적습니다. 원도급 준공금액에서 먼저 빼고, 남은 금액에 하도급률을 적용합니다.</p>
         <div class="ded" id="paid"></div>
         <div class="addrow"><button type="button" id="btn-addpaid">+ 수령액 추가</button></div>
       </section>
       <section class="card">
         <h2>원도급사 직접지급액 공제</h2>
-        <p class="hint">원도급사가 자재업체·근로자 등에게 직접 지급한 금액입니다. 청구금액에서 뺍니다. 원도급사가 여러 곳이면 지급한 회사를 고르세요.</p>
+        <p class="hint">원도급사가 우리 대신 자재업체·근로자 등에게 직접 지급한 금액입니다. 하도급 금액에서 뺍니다. 원도급사가 여러 곳이면 지급한 회사를 고르세요.</p>
         <div class="ded" id="direct"></div>
         <div class="addrow"><button type="button" id="btn-adddirect">+ 직접지급 추가</button></div>
       </section>
@@ -262,7 +262,7 @@ table.led input.sm2{min-width:0;width:78px}
       <h2>청구금액 계산</h2>
       <div class="result" id="result"></div>
       <div id="bycomp"></div>
-      <p class="warn" id="neg" hidden>공제액이 준공 총액보다 큽니다. 수령액과 직접지급액을 확인하세요.</p>
+      <p class="warn" id="neg" hidden>공제액이 하도급 금액보다 큽니다. 수령액과 직접지급액을 확인하세요.</p>
     </section>
   </main>
 
@@ -344,17 +344,20 @@ function calc(S){
   const pre=S.paid.reduce(function(a,x){return a+(isPre(x)?(x.amt||0):0)},0);
   const direct=S.direct.map(function(x){const a=x.amt||0;return {name:x.name,vat:x.vat,by:x.by,amt:a,gross:x.vat==='excl'?a+trunc(a/10):a}});
   const directSum=direct.reduce(function(a,x){return a+x.gross},0);
+  // 원도급 준공금액 G(부가세 포함)에서 기수령액을 먼저 빼고, 잔액에 하도급률(하도급 총계 ÷ 원도급 총계)을 곱한 것이 하도급 금액 H
+  const G=(pb+pc)+vatOf(pb+pc),ratio=G?total/G:0,paidSub=Math.round(paid*ratio),H=total-paidSub;
   // 공동도급: 준공 총액·기수령액·직접지급액을 원도급사별로 나눈다. 지급한 회사가 지정된 건은 그 회사 몫에서만 뺀다.
   const pr=S.primes&&S.primes.length?S.primes:[{id:'_',name:'',share:100}];
   const shSum=pr.reduce(function(a,p){return a+(p.share||0)},0);
   const split=function(amt){let rest=amt;return pr.map(function(p,i){const v=i===pr.length-1?rest:(shSum?Math.round(amt*(p.share||0)/shSum):0);rest-=v;return v})};
   const put=function(arr,amt,by){const i=pr.findIndex(function(p){return p.id===by});if(by&&i>=0)arr[i]+=amt;else split(amt).forEach(function(v,k){arr[k]+=v})};
-  const pt=split(total),pp=pr.map(function(){return 0}),pd=pr.map(function(){return 0});
+  const pt=split(G),pp=pr.map(function(){return 0}),pd=pr.map(function(){return 0});
   S.paid.forEach(function(x){put(pp,x.amt||0,x.by)});
   direct.forEach(function(x){put(pd,x.gross,x.by)});
-  const primes=pr.map(function(p,i){const c=pt[i]-pp[i]-pd[i],sp=Math.round(c/1.1);return {name:p.name,share:p.share||0,total:pt[i],paid:pp[i],direct:pd[i],claim:c,supply:sp,vat:c-sp}});
+  let hAcc=0;const hs=pr.map(function(p,i){const v=i===pr.length-1?H-hAcc:Math.round((pt[i]-pp[i])*ratio);hAcc+=v;return v});
+  const primes=pr.map(function(p,i){const c=hs[i]-pd[i],sp=Math.round(c/1.1);return {name:p.name,share:p.share||0,total:pt[i],paid:pp[i],sub:hs[i],direct:pd[i],claim:c,supply:sp,vat:c-sp}});
   return {pre:pre,gi:paid-pre,pvat:vatOf(pb),pcvat:vatOf(pc),sbvat:vatOf(sb),scvat:vatOf(sc),primes:primes,shSum:shSum,rows:rows,pb:pb,pc:pc,sb:sb,sc:sc,raw:raw,cutoff:raw-supply,supply:supply,vat:vat,total:total,
-    paid:paid,direct:direct,directSum:directSum,claim:total-paid-directSum,
+    paid:paid,direct:direct,directSum:directSum,claim:H-directSum,G:G,ratio:ratio,H:H,
     eff:(pb+pc)>0?supply/(pb+pc)*100:null};
 }
 function hangul(n){
@@ -475,11 +478,11 @@ function renderDed(){
     <select id="dv-${x.id}" data-direct="vat" aria-label="부가세 포함 여부"><option value="incl"${x.vat==='incl'?' selected':''}>부가세 포함</option><option value="excl"${x.vat==='excl'?' selected':''}>부가세 별도</option></select>${by(x,'direct')}
     <button class="x" type="button" data-act="deldirect" aria-label="삭제">×</button></div>`).join('');
 }
-const PH=['원도급사','지분','준공 총액','기수령액','직접지급액','청구금액(합계)','공급가액','부가가치세'];
+const PH=['원도급사','지분','준공금액','기수령액','하도급 금액','직접지급액','청구금액(합계)','공급가액','부가가치세'];
 function primeRows(R){
   const P=R.primes,sum=k=>P.reduce((a,p)=>a+p[k],0);
-  const rows=P.map(p=>[p.name||'(회사명 없음)',p.share+'%',p.total,p.paid,p.direct,p.claim,p.supply,p.vat]);
-  rows.push(['합 계',Math.round(R.shSum*1000)/1000+'%',sum('total'),sum('paid'),sum('direct'),sum('claim'),sum('supply'),sum('vat')]);
+  const rows=P.map(p=>[p.name||'(회사명 없음)',p.share+'%',p.total,p.paid,p.sub,p.direct,p.claim,p.supply,p.vat]);
+  rows.push(['합 계',Math.round(R.shSum*1000)/1000+'%',sum('total'),sum('paid'),sum('sub'),sum('direct'),sum('claim'),sum('supply'),sum('vat')]);
   return rows;
 }
 function primeTable(R){
@@ -513,12 +516,11 @@ function recalc(){
   $('t-pb').textContent=fmt(R.pb);$('t-pc').textContent=fmt(R.pc);$('t-sb').textContent=fmt(R.sb);$('t-sc').textContent=fmt(R.sc);$('t-st').textContent=fmt(R.supply);
   [['pb',R.pb,R.pvat],['pc',R.pc,R.pcvat],['sb',R.sb,R.sbvat],['sc',R.sc,R.scvat],['st',R.supply,R.vat]].forEach(v=>{$('v-'+v[0]).textContent=fmt(v[2]);$('g-'+v[0]).textContent=fmt(v[1]+v[2])});
   $('eff').textContent=R.eff==null?'-':R.eff.toFixed(2)+'%';
-  $('s-supply').textContent=fmt(R.supply);$('s-total').textContent=fmt(R.total);$('s-ded').textContent=fmt(R.paid+R.directSum);$('s-claim').textContent=fmt(R.claim);
-  const L=[['당초 계약분 ('+S.r1+'%)',R.sb]];
-  if(S.hasChg)L.push(['설계변경분 ('+S.r2+'%)',R.sc]);
-  if(R.cutoff)L.push(['절사','-'+fmt(R.cutoff)]);
-  L.push(['공급가액',R.supply,1],['부가가치세 (10%)',R.vat],['준공금액 (부가세 포함)',R.total,1],['선급금 정산액','-'+fmt(R.pre)],['기성금 수령액','-'+fmt(R.gi)],['원도급사 직접지급액','-'+fmt(R.directSum)],['금회 청구금액',R.claim,2]);
-  $('result').innerHTML=L.map(l=>{const c=l[2]?' t':'';const v=typeof l[1]==='number'?fmt(l[1]):l[1];return `<div class="${c}">${esc(l[0])}</div><div class="n${c}${l[2]===2?' big':''}">${v} 원</div>`}).join('');
+  $('s-supply').textContent=fmt(R.G);$('s-total').textContent=fmt(R.paid);$('s-ded').textContent=fmt(R.H);$('s-claim').textContent=fmt(R.claim);
+  const rp=(R.ratio*100).toFixed(2)+'%';
+  const L=[['원도급 준공금액 (부가세 포함)',R.G,1],['선급금 정산액','-'+fmt(R.pre)],['기성금 수령액','-'+fmt(R.gi)],['잔액',R.G-R.paid,1],
+    ['하도급률 (하도급 총계 '+fmt(R.total)+' ÷ 원도급 총계)',rp],['하도급 금액 (잔액 × 하도급률)',R.H,1],['원도급사 직접지급액','-'+fmt(R.directSum)],['금회 청구금액',R.claim,2]];
+  $('result').innerHTML=L.map(l=>{const c=l[2]?' t':'';const v=typeof l[1]==='number'?fmt(l[1]):l[1];return `<div class="${c}">${esc(l[0])}</div><div class="n${c}${l[2]===2?' big':''}">${v}${typeof l[1]==='string'&&l[1].slice(-1)==='%'?'':' 원'}</div>`}).join('');
   $('neg').hidden=R.claim>=0;
   $('bycomp').innerHTML=primeTable(R);
   const sw=$('shwarn'),bad=S.primes.length>1&&Math.abs(R.shSum-100)>0.001;sw.hidden=!bad;if(bad)sw.textContent='지분 합계가 '+Math.round(R.shSum*1000)/1000+'%입니다. 100%가 되게 맞추세요.';
@@ -567,20 +569,18 @@ function renderPaper(R){
   let h=`<h1>하도급 준공금 청구서</h1>
   <table><tr><th style="width:18%">공 사 명</th><td colspan="3">${esc(I.project)}</td></tr>
   <tr><th>계약기간</th><td style="width:32%">${esc(I.period)}</td><th style="width:18%">준 공 일</th><td>${esc(kdate(I.doneDate))}</td></tr>
-  <tr><th>계약금액</th><td class="n">${I.contractAmt?fmt(I.contractAmt)+' 원':''}</td><th>준공 총액</th><td class="n">${fmt(R.total)} 원</td></tr></table>
-  <table class="sum">${[['계 약 금 액',I.contractAmt,I.contractAmt>0],['준 공 금 액',R.total,1],['선급금 정산액',R.pre,1],['기성금 수령액',R.gi,R.gi>0],['직접지급 공제액',R.directSum,R.directSum>0],['청 구 금 액',R.claim,2]].filter(v=>v[2]).map(v=>`<tr${v[2]===2?' class="em"':''}><th style="width:22%">${v[0]}</th><td>일금 ${v[1]<0?'△':''}${hangul(v[1])}원정</td><td class="n" style="width:26%">(₩${fmt(v[1])})</td></tr>`).join('')}</table>
-  <p class="small" style="margin:-8px 0 12px">금액은 모두 부가가치세 포함입니다. 준공금액에서 선급금 정산액 등을 뺀 금액을 청구합니다.</p>
+  <tr><th>계약금액</th><td class="n">${I.contractAmt?fmt(I.contractAmt)+' 원':''}</td><th>준공금액</th><td class="n">${fmt(R.G)} 원</td></tr></table>
+  <table class="sum">${[['계 약 금 액',I.contractAmt,I.contractAmt>0],['준 공 금 액',R.G,1],['선급금 정산액',R.pre,1],['기성금 수령액',R.gi,R.gi>0],['하 도 급 금 액',R.H,1],['직접지급 공제액',R.directSum,R.directSum>0],['청 구 금 액',R.claim,2]].filter(v=>v[2]).map(v=>`<tr${v[2]===2?' class="em"':''}><th style="width:22%">${v[0]}</th><td>일금 ${v[1]<0?'△':''}${hangul(v[1])}원정</td><td class="n" style="width:26%">(₩${fmt(v[1])})</td></tr>`).join('')}</table>
+  <p class="small" style="margin:-8px 0 12px">금액은 모두 부가가치세 포함입니다. 하도급 금액은 준공금액에서 선급금 등을 뺀 잔액에 하도급률 ${(R.ratio*100).toFixed(2)}%를 적용한 금액입니다.</p>
   <table><tr><th>구 분</th><th style="width:26%">금 액 (원)</th><th style="width:30%">비 고</th></tr>`;
-  h+=row('① 당초 계약분',fmt(R.sb),'하도급률 '+S.r1+'%');
-  if(S.hasChg)h+=row('② 설계변경분',fmt(R.sc),'하도급률 '+S.r2+'%');
-  h+=row('공급가액',fmt(R.supply),R.cutoff?fmt(R.cutoff)+'원 절사':'',1);
-  h+=row('부가가치세',fmt(R.vat),'공급가액의 10%');
-  h+=row('준공금액 (A)',fmt(R.total),'',1);
+  h+=row('원도급 준공금액 (A)',fmt(R.G),'부가세 포함',1);
   S.paid.filter(x=>x.amt).forEach(x=>{h+=row((isPre(x)?'선급금 정산 – ':'기성금 수령 – ')+esc(x.name||(isPre(x)?'선급금':'기성금')),fmt(x.amt),'부가세 포함'+byTxt(x))});
   h+=row('선급금·기성금 계 (B)',fmt(R.paid),'',1);
+  h+=row('잔액 (A − B)',fmt(R.G-R.paid),'');
+  h+=row('하도급 금액 (D)',fmt(R.H),'잔액 × 하도급률 '+(R.ratio*100).toFixed(2)+'% (하도급 총계 '+fmt(R.total)+' ÷ 원도급 총계 '+fmt(R.G)+')',1);
   R.direct.filter(x=>x.amt).forEach(x=>{h+=row('원도급사 직접지급 – '+esc(x.name),fmt(x.gross),(x.vat==='excl'?'공급가액 '+fmt(x.amt)+' + 부가세':'부가세 포함')+byTxt(x))});
   h+=row('원도급사 직접지급액 계 (C)',fmt(R.directSum),'',1);
-  h+=row('금회 청구금액 (A − B − C)',fmt(R.claim),'',1);
+  h+=row('금회 청구금액 (D − C)',fmt(R.claim),'',1);
   h+=`</table>${primeTable(R)}<h2>산출 내역</h2><table><tr><th>구분</th><th>항목</th><th>산출 기준</th><th>원도급 당초</th>${S.hasChg?'<th>설계변경 증감</th>':''}<th>하도급 당초분</th>${S.hasChg?'<th>하도급 변경분</th>':''}<th>하도급 계</th></tr>`;
   R.rows.filter(x=>x.base||x.chg||x.st).forEach(x=>{h+=`<tr><td class="c small">${esc(x.grp)}</td><td>${esc(x.name)}</td><td class="small">${esc(ftxt(x))}</td><td class="n">${fmt(x.base)}</td>${S.hasChg?`<td class="n">${fmt(x.chg)}</td>`:''}<td class="n">${fmt(x.sb)}</td>${S.hasChg?`<td class="n">${fmt(x.sc)}</td>`:''}<td class="n">${fmt(x.st)}</td></tr>`});
   h+=`${paperFoot(R)}</table>
@@ -662,13 +662,11 @@ function saveHtml(){
 function saveXlsx(){
   const R=calc(S),I=S.info,c=S.hasChg;
   const a=[['하도급 준공금 청구서'],[],['공사명',I.project],['수신',primeNames().join(', ')],['계약기간',I.period],['준공일',kdate(I.doneDate)],['계약금액',I.contractAmt||''],[],
-    ['금회 청구금액','일금 '+hangul(R.claim)+'원정',R.claim],[],['구분','금액(원)','비고'],['당초 계약분',R.sb,'하도급률 '+S.r1+'%']];
-  if(c)a.push(['설계변경분',R.sc,'하도급률 '+S.r2+'%']);
-  a.push(['공급가액',R.supply,R.cutoff?R.cutoff+'원 절사':''],['부가가치세',R.vat,''],['준공금액 (A)',R.total,'']);
+    ['금회 청구금액','일금 '+hangul(R.claim)+'원정',R.claim],[],['구분','금액(원)','비고'],['원도급 준공금액 (A)',R.G,'부가세 포함']];
   S.paid.filter(x=>x.amt).forEach(x=>a.push([(isPre(x)?'선급금 정산 - ':'기성금 수령 - ')+x.name,x.amt,'부가세 포함']));
-  a.push(['선급금·기성금 계 (B)',R.paid,'']);
+  a.push(['선급금·기성금 계 (B)',R.paid,''],['잔액 (A-B)',R.G-R.paid,''],['하도급 금액 (D)',R.H,'잔액 × 하도급률 '+(R.ratio*100).toFixed(2)+'%']);
   R.direct.filter(x=>x.amt).forEach(x=>a.push(['원도급사 직접지급 - '+x.name,x.gross,x.vat==='excl'?'부가세 별도 입력':'부가세 포함']));
-  a.push(['원도급사 직접지급액 계 (C)',R.directSum,''],['금회 청구금액 (A-B-C)',R.claim,'']);
+  a.push(['원도급사 직접지급액 계 (C)',R.directSum,''],['금회 청구금액 (D-C)',R.claim,'']);
   if(R.primes.length>1){a.push([],['원도급사별 청구금액 (세금계산서 발행분)'],PH);primeRows(R).forEach(r=>a.push(r))}
   a.push([],['청구일',kdate(I.claimDate)],['상호',I.sub],['사업자등록번호',I.bizno],['대표자',I.ceo],['주소',I.addr],['입금계좌',I.bank]);
   const hd=['구분','항목','산출 기준','원도급 당초'].concat(c?['설계변경 증감']:[],['하도급 당초분'],c?['하도급 변경분']:[],['하도급 계']);
