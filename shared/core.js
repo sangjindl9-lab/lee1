@@ -3,7 +3,7 @@ export const REGIONS = ['서울', '경기', '인천', '부산', '대구', '대�
 export const AGES = ['20대', '30대', '40대', '50대 이상'];
 export const CATS = ['자유', '고민', '유머', '동네'];
 export const TOPICS = ['수다', '취미', '운동', '게임', '음악', '맛집', '여행', '동네'];
-export const REPORT_REASONS = ['욕설·비방', '음란·선정성', '광고·홍보', '사기·피싱 의심', '개인정보 요구', '기타'];
+export const REPORT_REASONS = ['아동 안전 위협·미성년자', '욕설·비방', '음란·선정성', '광고·홍보', '사기·피싱 의심', '개인정보 요구', '기타'];
 // 운영 설정 기본값 — 관리자 화면에서 바꿀 수 있다.
 export const DEFAULT_CONFIG = {
   startPoints: 100, attend: 10, bonus3: 20, bonus7: 50, pinCost: 30, pinMin: 30, requestCost: 10,
