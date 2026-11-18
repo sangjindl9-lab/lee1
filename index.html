@@ -74,7 +74,8 @@ table.led input.num{min-width:112px}
 table.led input.nm{min-width:118px}
 table.led select{min-width:78px;padding:5px 2px}
 table.led tr.off td.out{color:var(--muted);text-decoration:line-through}
-table.led tfoot td{font-weight:700;background:var(--bg);border-bottom:0}
+table.led tfoot td{font-weight:700;background:var(--bg);border-bottom:0;white-space:nowrap}
+table.led tfoot tr:last-child td{border-top:1px solid var(--line)}
 .fx{display:flex;flex-wrap:nowrap;gap:4px;align-items:center}
 .fx select{min-width:124px;flex:1 1 124px}
 .fr{display:flex;align-items:center;gap:2px;color:var(--muted);font-size:13px;white-space:nowrap}
@@ -94,6 +95,8 @@ table.led input.sm2{min-width:0;width:78px}
 .ded .line.v{grid-template-columns:1fr 150px 118px auto}
 @media (max-width:560px){.ded .line,.ded .line.v{grid-template-columns:1fr 1fr auto}.ded .line.v .nm{grid-column:1/-1}}
 .ded .line.pr{grid-template-columns:1fr 120px auto}
+.ded .line.k{grid-template-columns:96px 1fr 150px auto}
+.ded .line.k.m{grid-template-columns:96px 1fr 150px 140px auto}
 .ded .line.m{grid-template-columns:1fr 150px 140px auto}
 .ded .line.v.m{grid-template-columns:1fr 150px 118px 140px auto}
 @media (max-width:560px){.ded .line.m,.ded .line.v.m{grid-template-columns:1fr 1fr auto}.ded .line.m .nm{grid-column:1/-1}}
@@ -175,6 +178,8 @@ table.led input.sm2{min-width:0;width:78px}
         <div class="rate"><label for="cut">공급가액 절사
           <select id="cut"><option value="1">절사 안 함</option><option value="10">10원 미만</option><option value="100">100원 미만</option><option value="1000">1,000원 미만</option><option value="10000">10,000원 미만</option></select></label></div>
       </div>
+      <div class="rates" style="margin-top:10px"><div class="rate"><label for="vatr">부가세 원 미만
+          <select id="vatr"><option value="floor">버림</option><option value="round">반올림</option><option value="ceil">올림</option></select></label></div></div>
       <label class="check" for="haschg"><input type="checkbox" id="haschg"> 설계변경 건이 있음 (증감액에 별도 하도급률 적용)</label>
       <p class="hint">실질 하도급률(원도급 내역 전체 대비): <b id="eff">-</b></p>
     </section>
@@ -202,11 +207,11 @@ table.led input.sm2{min-width:0;width:78px}
             <th class="r">하도급 당초분</th><th class="r chg chgcol">하도급 변경분</th><th class="r">하도급 계</th><th></th>
           </tr></thead>
           <tbody id="rows"></tbody>
-          <tfoot><tr>
-            <td colspan="2">합계</td><td class="fxcol"></td><td></td>
-            <td class="out" id="t-pb"></td><td class="out chg chgcol" id="t-pc"></td>
-            <td class="out" id="t-sb"></td><td class="out chg chgcol" id="t-sc"></td><td class="out" id="t-st"></td><td></td>
-          </tr></tfoot>
+          <tfoot>
+            <tr><td colspan="2">합계 (공급가액)</td><td class="fxcol"></td><td></td><td class="out" id="t-pb"></td><td class="out chg chgcol" id="t-pc"></td><td class="out" id="t-sb"></td><td class="out chg chgcol" id="t-sc"></td><td class="out" id="t-st"></td><td></td></tr>
+            <tr><td colspan="2">부가가치세</td><td class="fxcol"></td><td></td><td class="out" id="v-pb"></td><td class="out chg chgcol" id="v-pc"></td><td class="out" id="v-sb"></td><td class="out chg chgcol" id="v-sc"></td><td class="out" id="v-st"></td><td></td></tr>
+            <tr><td colspan="2">총계</td><td class="fxcol"></td><td></td><td class="out" id="g-pb"></td><td class="out chg chgcol" id="g-pc"></td><td class="out" id="g-sb"></td><td class="out chg chgcol" id="g-sc"></td><td class="out" id="g-st"></td><td></td></tr>
+          </tfoot>
         </table>
       </div>
       <div class="addrow">
@@ -218,7 +223,7 @@ table.led input.sm2{min-width:0;width:78px}
     <div class="two">
       <section class="card">
         <h2>이미 받은 금액 (선급금·기성금)</h2>
-        <p class="hint">부가세 포함 금액으로 입력합니다.</p>
+        <p class="hint">부가세 포함 금액으로 입력합니다. 선급금은 청구서에 "선급금 정산액"으로 따로 표시되고 준공금에서 빠집니다.</p>
         <div class="ded" id="paid"></div>
         <div class="addrow"><button type="button" id="btn-addpaid">+ 수령액 추가</button></div>
       </section>
@@ -311,6 +316,7 @@ function evalCol(rows,inp,opt){
   });
   return out;
 }
+function isPre(x){return x.kind?x.kind==='pre':/선급|선금/.test(x.name||'')}
 function calc(S){
   const isF=function(x){return x.kind==='f'},none=function(x){return x.mode==='none'};
   const Bp={};
@@ -331,9 +337,11 @@ function calc(S){
   const pb=sum('base'),pc=sum('chg'),sb=sum('sb'),sc=sum('sc');
   const raw=sb+sc, cut=S.cut||1;
   const supply=trunc(raw/cut)*cut;
-  const vat=trunc(supply/10);
+  const vatOf=function(v){const q=v/10;return S.vatR==='ceil'?Math.ceil(q-1e-9):S.vatR==='round'?Math.round(q):trunc(q)};
+  const vat=vatOf(supply);
   const total=supply+vat;
   const paid=S.paid.reduce(function(a,x){return a+(x.amt||0)},0);
+  const pre=S.paid.reduce(function(a,x){return a+(isPre(x)?(x.amt||0):0)},0);
   const direct=S.direct.map(function(x){const a=x.amt||0;return {name:x.name,vat:x.vat,by:x.by,amt:a,gross:x.vat==='excl'?a+trunc(a/10):a}});
   const directSum=direct.reduce(function(a,x){return a+x.gross},0);
   // 공동도급: 준공 총액·기수령액·직접지급액을 원도급사별로 나눈다. 지급한 회사가 지정된 건은 그 회사 몫에서만 뺀다.
@@ -345,7 +353,7 @@ function calc(S){
   S.paid.forEach(function(x){put(pp,x.amt||0,x.by)});
   direct.forEach(function(x){put(pd,x.gross,x.by)});
   const primes=pr.map(function(p,i){const c=pt[i]-pp[i]-pd[i],sp=Math.round(c/1.1);return {name:p.name,share:p.share||0,total:pt[i],paid:pp[i],direct:pd[i],claim:c,supply:sp,vat:c-sp}});
-  return {primes:primes,shSum:shSum,rows:rows,pb:pb,pc:pc,sb:sb,sc:sc,raw:raw,cutoff:raw-supply,supply:supply,vat:vat,total:total,
+  return {pre:pre,gi:paid-pre,pvat:vatOf(pb),pcvat:vatOf(pc),sbvat:vatOf(sb),scvat:vatOf(sc),primes:primes,shSum:shSum,rows:rows,pb:pb,pc:pc,sb:sb,sc:sc,raw:raw,cutoff:raw-supply,supply:supply,vat:vat,total:total,
     paid:paid,direct:direct,directSum:directSum,claim:total-paid-directSum,
     eff:(pb+pc)>0?supply/(pb+pc)*100:null};
 }
@@ -393,7 +401,7 @@ function fresh(example){
       sub:'㈜에스에스전력',bizno:'220-86-60440',ceo:'김세인',addr:'',bank:''},
     rows:DEF.map(d=>({id:uid(),grp:d[0],name:d[1],kind:d[3]?'f':'in',fb:d[3]||'',rate:d[4]||0,add:0,mult:d[5]||1,key:d[6]||'',base:example?d[2]:0,chg:0,mode:'rate'})),
     primes:[{id:uid(),name:'',share:100}],
-    paid:[{id:uid(),name:'선급금',amt:0}],
+    paid:[{id:uid(),name:'선급금',kind:'pre',amt:0}],
     direct:[{id:uid(),name:'',amt:0,vat:'incl'}]};
 }
 function ftxt(x){
@@ -401,6 +409,7 @@ function ftxt(x){
   if(x.mode==='fix')return '직접 입력';
   if(x.kind!=='f')return x.mode==='full'?'전액':'하도급률';
   if(x.mode==='full')return '원도급 전액';
+  if(x.pin&&!S.adv)return '원도급 금액 기준';
   if(x.pin)return (x.dirBase?'직접비 합계':BASES[x.fb])+' × '+x.drate+'% (원도급 금액 기준)';
   return (x.fb==='own'?'기준금액':BASES[x.fb])+' × '+x.rate+'%'+(x.add?' + '+fmt(x.add):'')+(x.mult&&x.mult!==1?' × '+x.mult:'');
 }
@@ -455,7 +464,8 @@ function renderPrimes(){
 function renderDed(){
   const multi=S.primes.length>1,m=multi?' m':'';
   const by=(x,k)=>multi?`<select id="${k}b-${x.id}" data-${k}="by" aria-label="지급한 원도급사"><option value="">지분대로</option>${S.primes.map(p=>`<option value="${p.id}"${x.by===p.id?' selected':''}>${esc(p.name||'(회사명 없음)')}</option>`).join('')}</select>`:'';
-  $('paid').innerHTML=S.paid.map(x=>`<div class="line${m}" data-id="${x.id}">
+  $('paid').innerHTML=S.paid.map(x=>`<div class="line k${m}" data-id="${x.id}">
+    <select id="pk-${x.id}" data-paid="kind" aria-label="선급금 또는 기성금"><option value="pre"${isPre(x)?' selected':''}>선급금</option><option value="gi"${isPre(x)?'':' selected'}>기성금</option></select>
     <input class="nm" id="pn-${x.id}" data-paid="name" value="${esc(x.name)}" placeholder="내용 (예: 제1회 기성금)" aria-label="수령 내용">
     <input class="num" id="pa-${x.id}" data-paid="amt" inputmode="numeric" value="${x.amt?fmt(x.amt):''}" placeholder="0" aria-label="수령 금액">${by(x,'paid')}
     <button class="x" type="button" data-act="delpaid" aria-label="삭제">×</button></div>`).join('');
@@ -481,7 +491,7 @@ const primeNames=()=>S.primes.map(p=>p.name).filter(Boolean);
 const byTxt=x=>{if(S.primes.length<2)return '';const p=S.primes.find(q=>q.id===x.by);return ' · '+(p?esc(p.name||'(회사명 없음)')+' 지급':'지분대로')};
 function renderAll(){
   renderFields();renderPrimes();renderRows();renderDed();
-  $('r1').value=S.r1;$('r2').value=S.r2;$('cut').value=String(S.cut);$('haschg').checked=S.hasChg;$('adv').checked=!!S.adv;
+  $('r1').value=S.r1;$('r2').value=S.r2;$('cut').value=String(S.cut);$('haschg').checked=S.hasChg;$('adv').checked=!!S.adv;$('vatr').value=S.vatR||'floor';
   recalc();
 }
 function recalc(){
@@ -500,13 +510,14 @@ function recalc(){
     if(ri&&x.pin&&x.drate!=null&&document.activeElement!==ri)ri.value=x.drate;
     if(pc)pc.textContent=(own?'산출 ':'')+fmt(x.chg);
   });
-  $('t-pb').textContent=fmt(R.pb);$('t-pc').textContent=fmt(R.pc);$('t-sb').textContent=fmt(R.sb);$('t-sc').textContent=fmt(R.sc);$('t-st').textContent=fmt(R.raw);
+  $('t-pb').textContent=fmt(R.pb);$('t-pc').textContent=fmt(R.pc);$('t-sb').textContent=fmt(R.sb);$('t-sc').textContent=fmt(R.sc);$('t-st').textContent=fmt(R.supply);
+  [['pb',R.pb,R.pvat],['pc',R.pc,R.pcvat],['sb',R.sb,R.sbvat],['sc',R.sc,R.scvat],['st',R.supply,R.vat]].forEach(v=>{$('v-'+v[0]).textContent=fmt(v[2]);$('g-'+v[0]).textContent=fmt(v[1]+v[2])});
   $('eff').textContent=R.eff==null?'-':R.eff.toFixed(2)+'%';
   $('s-supply').textContent=fmt(R.supply);$('s-total').textContent=fmt(R.total);$('s-ded').textContent=fmt(R.paid+R.directSum);$('s-claim').textContent=fmt(R.claim);
   const L=[['당초 계약분 ('+S.r1+'%)',R.sb]];
   if(S.hasChg)L.push(['설계변경분 ('+S.r2+'%)',R.sc]);
   if(R.cutoff)L.push(['절사','-'+fmt(R.cutoff)]);
-  L.push(['공급가액',R.supply,1],['부가가치세 (10%)',R.vat],['준공 총액',R.total,1],['이미 받은 금액','-'+fmt(R.paid)],['원도급사 직접지급액','-'+fmt(R.directSum)],['금회 청구금액',R.claim,2]);
+  L.push(['공급가액',R.supply,1],['부가가치세 (10%)',R.vat],['준공금액 (부가세 포함)',R.total,1],['선급금 정산액','-'+fmt(R.pre)],['기성금 수령액','-'+fmt(R.gi)],['원도급사 직접지급액','-'+fmt(R.directSum)],['금회 청구금액',R.claim,2]);
   $('result').innerHTML=L.map(l=>{const c=l[2]?' t':'';const v=typeof l[1]==='number'?fmt(l[1]):l[1];return `<div class="${c}">${esc(l[0])}</div><div class="n${c}${l[2]===2?' big':''}">${v} 원</div>`}).join('');
   $('neg').hidden=R.claim>=0;
   $('bycomp').innerHTML=primeTable(R);
@@ -547,27 +558,32 @@ function attList(){
 }
 const kdate=s=>{const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(s||'');return m?`${m[1]}년 ${Number(m[2])}월 ${Number(m[3])}일`:(s||'')};
 const MODE={rate:'요율',full:'전액',none:'제외'};
+function paperFoot(R){
+  const c=S.hasChg,r=(lab,a,b,d,e,f)=>`<tr class="em"><td colspan="3" class="c">${lab}</td><td class="n">${fmt(a)}</td>${c?`<td class="n">${fmt(b)}</td>`:''}<td class="n">${fmt(d)}</td>${c?`<td class="n">${fmt(e)}</td>`:''}<td class="n">${fmt(f)}</td></tr>`;
+  return r('합 계 (공급가액)',R.pb,R.pc,R.sb,R.sc,R.supply)+r('부가가치세',R.pvat,R.pcvat,R.sbvat,R.scvat,R.vat)+r('총 계',R.pb+R.pvat,R.pc+R.pcvat,R.sb+R.sbvat,R.sc+R.scvat,R.total);
+}
 function renderPaper(R){
   const I=S.info,row=(a,b,c,em)=>`<tr${em?' class="em"':''}><td>${a}</td><td class="n">${b}</td><td class="small">${c||''}</td></tr>`;
   let h=`<h1>하도급 준공금 청구서</h1>
   <table><tr><th style="width:18%">공 사 명</th><td colspan="3">${esc(I.project)}</td></tr>
   <tr><th>계약기간</th><td style="width:32%">${esc(I.period)}</td><th style="width:18%">준 공 일</th><td>${esc(kdate(I.doneDate))}</td></tr>
   <tr><th>계약금액</th><td class="n">${I.contractAmt?fmt(I.contractAmt)+' 원':''}</td><th>준공 총액</th><td class="n">${fmt(R.total)} 원</td></tr></table>
-  <div class="amount">금회 청구금액 : 일금 ${hangul(R.claim)}원정 (₩${fmt(R.claim)})<div class="small" style="font-weight:400">부가가치세 포함</div></div>
+  <table class="sum">${[['계 약 금 액',I.contractAmt,I.contractAmt>0],['준 공 금 액',R.total,1],['선급금 정산액',R.pre,1],['기성금 수령액',R.gi,R.gi>0],['직접지급 공제액',R.directSum,R.directSum>0],['청 구 금 액',R.claim,2]].filter(v=>v[2]).map(v=>`<tr${v[2]===2?' class="em"':''}><th style="width:22%">${v[0]}</th><td>일금 ${v[1]<0?'△':''}${hangul(v[1])}원정</td><td class="n" style="width:26%">(₩${fmt(v[1])})</td></tr>`).join('')}</table>
+  <p class="small" style="margin:-8px 0 12px">금액은 모두 부가가치세 포함입니다. 준공금액에서 선급금 정산액 등을 뺀 금액을 청구합니다.</p>
   <table><tr><th>구 분</th><th style="width:26%">금 액 (원)</th><th style="width:30%">비 고</th></tr>`;
   h+=row('① 당초 계약분',fmt(R.sb),'하도급률 '+S.r1+'%');
   if(S.hasChg)h+=row('② 설계변경분',fmt(R.sc),'하도급률 '+S.r2+'%');
   h+=row('공급가액',fmt(R.supply),R.cutoff?fmt(R.cutoff)+'원 절사':'',1);
   h+=row('부가가치세',fmt(R.vat),'공급가액의 10%');
-  h+=row('준공 총액 (A)',fmt(R.total),'',1);
-  S.paid.filter(x=>x.amt).forEach(x=>{h+=row('기수령액 – '+esc(x.name),fmt(x.amt),'부가세 포함'+byTxt(x))});
-  h+=row('기수령액 계 (B)',fmt(R.paid),'',1);
+  h+=row('준공금액 (A)',fmt(R.total),'',1);
+  S.paid.filter(x=>x.amt).forEach(x=>{h+=row((isPre(x)?'선급금 정산 – ':'기성금 수령 – ')+esc(x.name||(isPre(x)?'선급금':'기성금')),fmt(x.amt),'부가세 포함'+byTxt(x))});
+  h+=row('선급금·기성금 계 (B)',fmt(R.paid),'',1);
   R.direct.filter(x=>x.amt).forEach(x=>{h+=row('원도급사 직접지급 – '+esc(x.name),fmt(x.gross),(x.vat==='excl'?'공급가액 '+fmt(x.amt)+' + 부가세':'부가세 포함')+byTxt(x))});
   h+=row('원도급사 직접지급액 계 (C)',fmt(R.directSum),'',1);
   h+=row('금회 청구금액 (A − B − C)',fmt(R.claim),'',1);
   h+=`</table>${primeTable(R)}<h2>산출 내역</h2><table><tr><th>구분</th><th>항목</th><th>산출 기준</th><th>원도급 당초</th>${S.hasChg?'<th>설계변경 증감</th>':''}<th>하도급 당초분</th>${S.hasChg?'<th>하도급 변경분</th>':''}<th>하도급 계</th></tr>`;
   R.rows.filter(x=>x.base||x.chg||x.st).forEach(x=>{h+=`<tr><td class="c small">${esc(x.grp)}</td><td>${esc(x.name)}</td><td class="small">${esc(ftxt(x))}</td><td class="n">${fmt(x.base)}</td>${S.hasChg?`<td class="n">${fmt(x.chg)}</td>`:''}<td class="n">${fmt(x.sb)}</td>${S.hasChg?`<td class="n">${fmt(x.sc)}</td>`:''}<td class="n">${fmt(x.st)}</td></tr>`});
-  h+=`<tr class="em"><td colspan="3" class="c">합 계</td><td class="n">${fmt(R.pb)}</td>${S.hasChg?`<td class="n">${fmt(R.pc)}</td>`:''}<td class="n">${fmt(R.sb)}</td>${S.hasChg?`<td class="n">${fmt(R.sc)}</td>`:''}<td class="n">${fmt(R.raw)}</td></tr></table>
+  h+=`${paperFoot(R)}</table>
   ${I.bank?`<table><tr><th style="width:18%">입금계좌</th><td>${esc(I.bank)}</td></tr></table>`:''}
   ${attList()}<div class="sign"><p>위와 같이 하도급 준공금을 청구합니다.</p><p>${esc(kdate(I.claimDate))}</p>
   <div class="who">${I.addr?'주&nbsp;&nbsp;&nbsp;&nbsp;소 : '+esc(I.addr)+'<br>':''}상&nbsp;&nbsp;&nbsp;&nbsp;호 : ${esc(I.sub)}<br>${I.bizno?'사업자등록번호 : '+esc(I.bizno)+'<br>':''}대 표 자 : ${esc(I.ceo)}${A.stamp?`<span class="sealbox">(인)<img src="${A.stamp}" alt="회사 도장"></span>`:'<span class="seal">인</span>'}</div>
@@ -592,6 +608,7 @@ document.addEventListener('input',e=>{
   else if(d.direct){const x=find(S.direct,t);x[d.direct]=d.direct==='amt'?Math.abs(parseMoney(t.value)):t.value}
   else if(t.id==='r1'||t.id==='r2'){const v=parseFloat(t.value);S[t.id]=isFinite(v)&&v>=0?v:0}
   else if(t.id==='cut'){S.cut=Number(t.value)||1}
+  else if(t.id==='vatr'){S.vatR=t.value}
   else if(t.id==='haschg'){S.hasChg=t.checked}
   else if(t.id==='adv'){S.adv=t.checked;renderRows()}
   else return;
@@ -613,7 +630,7 @@ document.addEventListener('click',e=>{
   else if(b.dataset.bulk){S.rows.forEach(x=>{if(x.kind==='f')x.mode=b.dataset.bulk});renderRows();recalc()}
   else if(b.id==='btn-addrow'){const g=$('newgrp').value;const x={id:uid(),grp:g,name:'',kind:'in',fb:'',rate:0,add:0,mult:1,key:'',base:0,chg:0,mode:'rate'};
     let i=-1;S.rows.forEach((r,k)=>{if(r.grp===g)i=k});if(i<0)S.rows.push(x);else S.rows.splice(i+1,0,x);renderRows();recalc();$('n-'+x.id).focus()}
-  else if(b.id==='btn-addpaid'){const x={id:uid(),name:'',amt:0};S.paid.push(x);renderDed();recalc();$('pn-'+x.id).focus()}
+  else if(b.id==='btn-addpaid'){const x={id:uid(),name:'',kind:'gi',amt:0};S.paid.push(x);renderDed();recalc();$('pn-'+x.id).focus()}
   else if(b.id==='btn-adddirect'){const x={id:uid(),name:'',amt:0,vat:'incl'};S.direct.push(x);renderDed();recalc();$('dn-'+x.id).focus()}
   else if(b.id==='btn-clear'){const keep=S.info,kp=S.primes;S=fresh(false);S.primes=kp;S.info=Object.assign(S.info,keep);renderAll()}
   else if(b.id==='tab-input'||b.id==='tab-doc'){const doc=b.id==='tab-doc';$('v-input').hidden=doc;$('v-doc').hidden=!doc;$('tab-input').classList.toggle('on',!doc);$('tab-doc').classList.toggle('on',doc);window.scrollTo(0,0)}
@@ -647,9 +664,9 @@ function saveXlsx(){
   const a=[['하도급 준공금 청구서'],[],['공사명',I.project],['수신',primeNames().join(', ')],['계약기간',I.period],['준공일',kdate(I.doneDate)],['계약금액',I.contractAmt||''],[],
     ['금회 청구금액','일금 '+hangul(R.claim)+'원정',R.claim],[],['구분','금액(원)','비고'],['당초 계약분',R.sb,'하도급률 '+S.r1+'%']];
   if(c)a.push(['설계변경분',R.sc,'하도급률 '+S.r2+'%']);
-  a.push(['공급가액',R.supply,R.cutoff?R.cutoff+'원 절사':''],['부가가치세',R.vat,''],['준공 총액 (A)',R.total,'']);
-  S.paid.filter(x=>x.amt).forEach(x=>a.push(['기수령액 - '+x.name,x.amt,'부가세 포함']));
-  a.push(['기수령액 계 (B)',R.paid,'']);
+  a.push(['공급가액',R.supply,R.cutoff?R.cutoff+'원 절사':''],['부가가치세',R.vat,''],['준공금액 (A)',R.total,'']);
+  S.paid.filter(x=>x.amt).forEach(x=>a.push([(isPre(x)?'선급금 정산 - ':'기성금 수령 - ')+x.name,x.amt,'부가세 포함']));
+  a.push(['선급금·기성금 계 (B)',R.paid,'']);
   R.direct.filter(x=>x.amt).forEach(x=>a.push(['원도급사 직접지급 - '+x.name,x.gross,x.vat==='excl'?'부가세 별도 입력':'부가세 포함']));
   a.push(['원도급사 직접지급액 계 (C)',R.directSum,''],['금회 청구금액 (A-B-C)',R.claim,'']);
   if(R.primes.length>1){a.push([],['원도급사별 청구금액 (세금계산서 발행분)'],PH);primeRows(R).forEach(r=>a.push(r))}
@@ -657,7 +674,9 @@ function saveXlsx(){
   const hd=['구분','항목','산출 기준','원도급 당초'].concat(c?['설계변경 증감']:[],['하도급 당초분'],c?['하도급 변경분']:[],['하도급 계']);
   const b=[hd];
   R.rows.forEach(x=>b.push([x.grp,x.name,ftxt(x),x.base].concat(c?[x.chg]:[],[x.sb],c?[x.sc]:[],[x.st])));
-  b.push(['합계','','',R.pb].concat(c?[R.pc]:[],[R.sb],c?[R.sc]:[],[R.raw]));
+  b.push(['합계 (공급가액)','','',R.pb].concat(c?[R.pc]:[],[R.sb],c?[R.sc]:[],[R.supply]));
+  b.push(['부가가치세','','',R.pvat].concat(c?[R.pcvat]:[],[R.sbvat],c?[R.scvat]:[],[R.vat]));
+  b.push(['총계','','',R.pb+R.pvat].concat(c?[R.pc+R.pcvat]:[],[R.sb+R.sbvat],c?[R.sc+R.scvat]:[],[R.total]));
   const wb=XLSX.utils.book_new(),w1=XLSX.utils.aoa_to_sheet(a),w2=XLSX.utils.aoa_to_sheet(b);
   w1['!cols']=[{wch:34},{wch:26},{wch:26},{wch:15},{wch:15},{wch:15},{wch:15},{wch:15}];w2['!cols']=[{wch:11},{wch:22},{wch:34}].concat(hd.slice(3).map(()=>({wch:16})));
   [w1,w2].forEach(w=>Object.keys(w).forEach(k=>{if(k[0]!=='!'&&w[k].t==='n')w[k].z='#,##0'}));
