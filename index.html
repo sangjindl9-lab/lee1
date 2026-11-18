@@ -72,7 +72,7 @@ table.led td.grp{color:var(--muted);font-size:12px;white-space:nowrap}
 table.led input,table.led select{padding:5px 5px}
 table.led input.num{min-width:112px}
 table.led input.nm{min-width:118px}
-table.led select{min-width:62px;padding:5px 2px}
+table.led select{min-width:78px;padding:5px 2px}
 table.led tr.off td.out{color:var(--muted);text-decoration:line-through}
 table.led tfoot td{font-weight:700;background:var(--bg);border-bottom:0}
 .fx{display:flex;flex-wrap:nowrap;gap:4px;align-items:center}
@@ -179,7 +179,7 @@ table.led input.sm2{min-width:0;width:78px}
 
     <section class="card" id="ledcard">
       <h2>원가계산서</h2>
-      <p class="hint">재료비·직접노무비처럼 금액을 넣는 항목에는 하도급률을 곱합니다. 간접노무비·보험료·기타경비·일반관리비·이윤 같은 제경비는 하도급률을 곱하지 않고, <b>하도급 금액을 기준으로 산식(요율)대로 다시 계산</b>합니다. 요율과 기준은 원가계산서 비고란에 맞춰 고치세요. 제경비를 <b>제외</b>하면 그 금액은 뒤따르는 일반관리비·이윤 계산에서도 빠집니다.</p>
+      <p class="hint">재료비·직접노무비처럼 금액을 넣는 항목에는 하도급률을 곱합니다. 간접노무비·보험료·기타경비·일반관리비·이윤 같은 제경비는 하도급률을 곱하지 않고, <b>하도급 금액을 기준으로 산식(요율)대로 다시 계산</b>합니다. 요율과 기준은 원가계산서 비고란에 맞춰 고치세요. 제경비를 <b>제외</b>하면 그 금액은 뒤따르는 일반관리비·이윤 계산에서도 빠집니다. 협의한 금액을 그대로 넣으려면 적용을 <b>직접입력</b>으로 바꾸고 하도급 금액 칸에 적으세요.</p>
       <div class="imp">
         <label for="up-xls"><b>준공내역서 불러오기</b> <span class="hint">엑셀(.xlsx, .xls)의 원가계산서 시트에서 금액과 요율을 읽어 아래 표를 채웁니다</span></label>
         <input type="file" id="up-xls" accept=".xlsx,.xls,.xlsm,.csv">
@@ -306,9 +306,9 @@ function calc(S){
   const P=evalCol(S.rows,function(x){return x.base||0},{add:true});
   const PC=S.hasChg?evalCol(S.rows,function(x){return x.chg||0},{add:false}):{};
   const SB=evalCol(S.rows,function(x){return isF(x)?trunc(pct(x.base||0,S.r1)):applyMode(x.base||0,x.mode,S.r1)},
-    {add:true,skip:none,fixed:function(x){return isF(x)&&x.mode==='full'?P[x.id]:undefined}});
+    {add:true,skip:none,fixed:function(x){return x.mode==='fix'?(x.sfix||0):(isF(x)&&x.mode==='full'?P[x.id]:undefined)}});
   const SC=S.hasChg?evalCol(S.rows,function(x){return isF(x)?trunc(pct(x.chg||0,S.r2)):applyMode(x.chg||0,x.mode,S.r2)},
-    {add:false,skip:none,fixed:function(x){return isF(x)&&x.mode==='full'?PC[x.id]:undefined}}):{};
+    {add:false,skip:none,fixed:function(x){return x.mode==='fix'?(x.sfixc||0):(isF(x)&&x.mode==='full'?PC[x.id]:undefined)}}):{};
   const rows=S.rows.map(function(x){
     const sb=SB[x.id]||0,sc=SC[x.id]||0;
     return {id:x.id,grp:x.grp,name:x.name,mode:x.mode,kind:x.kind,fb:x.fb,rate:x.rate,add:x.add,mult:x.mult,
@@ -385,6 +385,7 @@ function fresh(example){
 }
 function ftxt(x){
   if(x.mode==='none')return '제외';
+  if(x.mode==='fix')return '직접 입력';
   if(x.kind!=='f')return x.mode==='full'?'전액':'하도급률';
   if(x.mode==='full')return '원도급 전액';
   return (x.fb==='own'?'기준금액':BASES[x.fb])+' × '+x.rate+'%'+(x.add?' + '+fmt(x.add):'')+(x.mult&&x.mult!==1?' × '+x.mult:'');
@@ -420,10 +421,13 @@ function renderRows(){
     <td><select id="m-${x.id}" data-row="mode" aria-label="적용 방식">
       <option value="rate"${x.mode==='rate'?' selected':''}>${f?'산식':'요율'}</option>
       <option value="full"${x.mode==='full'?' selected':''}>전액</option>
+      <option value="fix"${x.mode==='fix'?' selected':''}>직접입력</option>
       <option value="none"${x.mode==='none'?' selected':''}>제외</option></select></td>
     <td class="${inp?'':'out'}">${cell('base','b')}</td>
     <td class="chg chgcol ${inp?'':'out'}">${cell('chg','c')}</td>
-    <td class="out" id="sb-${x.id}"></td><td class="out chg chgcol" id="sc-${x.id}"></td><td class="out" id="st-${x.id}"></td>
+    ${x.mode==='fix'
+      ?`<td><input class="num" id="sf-${x.id}" data-row="sfix" inputmode="numeric" value="${x.sfix?fmt(x.sfix):''}" placeholder="하도급 금액" aria-label="하도급 당초분 직접 입력"></td><td class="chg chgcol"><input class="num" id="sg-${x.id}" data-row="sfixc" value="${x.sfixc?fmt(x.sfixc):''}" placeholder="하도급 금액" aria-label="하도급 변경분 직접 입력"></td>`
+      :`<td class="out" id="sb-${x.id}"></td><td class="out chg chgcol" id="sc-${x.id}"></td>`}<td class="out" id="st-${x.id}"></td>
     <td><button class="x" type="button" data-act="delrow" aria-label="항목 삭제">×</button></td></tr>`}).join('');
 }
 function renderPrimes(){
@@ -470,8 +474,9 @@ function recalc(){
   document.body.classList.toggle('nochg',!S.hasChg);
   $('exbanner').hidden=!S.example;
   R.rows.forEach(x=>{
-    const tr=$('sb-'+x.id); if(!tr)return;
-    tr.textContent=fmt(x.sb);$('sc-'+x.id).textContent=fmt(x.sc);$('st-'+x.id).textContent=fmt(x.st);
+    const tr=$('st-'+x.id); if(!tr)return;
+    if(x.mode!=='fix'){$('sb-'+x.id).textContent=fmt(x.sb);$('sc-'+x.id).textContent=fmt(x.sc)}
+    tr.textContent=fmt(x.st);
     tr.parentNode.classList.toggle('off',x.mode==='none');
     const pb=$('pb-'+x.id),pc=$('pc-'+x.id),own=x.fb==='own';
     if(pb)pb.textContent=(own?'산출 ':'')+fmt(x.base);
@@ -559,10 +564,11 @@ document.addEventListener('input',e=>{
   if(d.prime){const x=find(S.primes,t);if(d.prime==='name')x.name=t.value;else{const v=parseFloat(t.value);x.share=isFinite(v)&&v>=0?v:0}}
   else if(d.info){S.info[d.info]=d.money?Math.abs(parseMoney(t.value)):t.value}
   else if(d.row){const x=find(S.rows,t),k=d.row;
-    if(k==='name'||k==='mode')x[k]=t.value;
+    if(k==='name')x.name=t.value;
+    else if(k==='mode'){x.mode=t.value;renderRows()}
     else if(k==='fb'){x.kind=t.value?'f':'in';x.fb=t.value;if(!x.mult)x.mult=1;renderRows()}
     else if(k==='rate'||k==='mult'){const v=parseFloat(t.value);x[k]=isFinite(v)&&v>=0?v:0}
-    else x[k]=k==='chg'?parseMoney(t.value):Math.abs(parseMoney(t.value))}
+    else x[k]=k==='chg'||k==='sfixc'?parseMoney(t.value):Math.abs(parseMoney(t.value))}
   else if(d.paid){const x=find(S.paid,t);x[d.paid]=d.paid==='amt'?Math.abs(parseMoney(t.value)):t.value}
   else if(d.direct){const x=find(S.direct,t);x[d.direct]=d.direct==='amt'?Math.abs(parseMoney(t.value)):t.value}
   else if(t.id==='r1'||t.id==='r2'){const v=parseFloat(t.value);S[t.id]=isFinite(v)&&v>=0?v:0}
@@ -592,7 +598,7 @@ document.addEventListener('click',e=>{
   else if(b.id==='btn-clear'){const keep=S.info,kp=S.primes;S=fresh(false);S.primes=kp;S.info=Object.assign(S.info,keep);renderAll()}
   else if(b.id==='tab-input'||b.id==='tab-doc'){const doc=b.id==='tab-doc';$('v-input').hidden=doc;$('v-doc').hidden=!doc;$('tab-input').classList.toggle('on',!doc);$('tab-doc').classList.toggle('on',doc);window.scrollTo(0,0)}
   else if(b.id==='btn-zero'){
-    if(b.dataset.arm){S.rows.forEach(x=>{x.base=0;x.chg=0});S.paid.forEach(x=>{x.amt=0});S.direct.forEach(x=>{x.amt=0});S.info.contractAmt=0;S.example=false;$('impmsg').innerHTML='';renderAll();delete b.dataset.arm;b.textContent='금액 전체 삭제'}
+    if(b.dataset.arm){S.rows.forEach(x=>{x.base=0;x.chg=0;x.sfix=0;x.sfixc=0});S.paid.forEach(x=>{x.amt=0});S.direct.forEach(x=>{x.amt=0});S.info.contractAmt=0;S.example=false;$('impmsg').innerHTML='';renderAll();delete b.dataset.arm;b.textContent='금액 전체 삭제'}
     else{b.dataset.arm='1';b.textContent='한 번 더 누르면 삭제합니다';setTimeout(()=>{delete b.dataset.arm;b.textContent='금액 전체 삭제'},4000)}
   }
   else if(b.id==='btn-xlsx')saveXlsx();
