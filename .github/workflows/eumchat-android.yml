@@ -1,0 +1,48 @@
+name: 이음챗 안드로이드 빌드
+on:
+  push:
+    branches: [eumchat]
+    paths: ['android/**', '.github/workflows/eumchat-android.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 17 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - name: 안드로이드 프로젝트 생성 (Bubblewrap) + 빌드
+        shell: bash
+        working-directory: android
+        run: |
+          set -o pipefail
+          mkdir -p ~/.bubblewrap
+          echo "{\"jdkPath\":\"$JAVA_HOME\",\"androidSdkPath\":\"$ANDROID_HOME\"}" > ~/.bubblewrap/config.json
+          {
+            npx --yes @bubblewrap/cli@latest update --skipVersionUpgrade --manifest ./twa-manifest.json
+            ls -la
+            chmod +x gradlew
+            ./gradlew bundleRelease assembleRelease --no-daemon
+          } 2>&1 | tee ../build.log
+      - name: 실패 로그 올리기
+        if: failure()
+        env: { GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }
+        run: |
+          tail -c 60000 build.log > errors.txt || true
+          gh release delete eumchat-buildlog --yes --cleanup-tag || true
+          gh release create eumchat-buildlog errors.txt --target "$GITHUB_SHA" --prerelease --title "이음챗 빌드 로그" --notes "빌드 실패 로그"
+      - name: 릴리스에 올리기
+        env: { GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }
+        run: |
+          cp android/app/build/outputs/bundle/release/app-release.aab eumchat-release-unsigned.aab
+          cp android/app/build/outputs/apk/release/app-release-unsigned.apk eumchat-release-unsigned.apk
+          grep -rn "playbilling\|DigitalGoods" android/app/src/main/AndroidManifest.xml android/app/src/main/java > billing-check.txt || true
+          gh release delete eumchat-buildlog --yes --cleanup-tag || true
+          gh release delete eumchat-latest --yes --cleanup-tag || true
+          gh release create eumchat-latest eumchat-release-unsigned.aab eumchat-release-unsigned.apk billing-check.txt \
+            --target "$GITHUB_SHA" --title "이음챗 안드로이드 (서명 전)" \
+            --notes "서명되지 않은 릴리스 번들입니다. 업로드 키로 서명한 뒤 Play Console 에 올립니다."
