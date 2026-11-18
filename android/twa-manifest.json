@@ -11,7 +11,7 @@
   "navigationDividerColor": "#F6F6F9",
   "navigationDividerColorDark": "#0E0E1A",
   "backgroundColor": "#F6F6F9",
-  "enableNotifications": false,
+  "enableNotifications": true,
   "startUrl": "/",
   "iconUrl": "https://eumchat-production.up.railway.app/icon-512.png",
   "maskableIconUrl": "https://eumchat-production.up.railway.app/icon-maskable.png",
