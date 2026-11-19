@@ -4,7 +4,7 @@ import Legal from './Legal.jsx';
 const won = (n) => `${Number(n).toLocaleString()}원`;
 const dt = (t) => new Date(t).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 const STATUS = { paid: '결제 완료', refunded: '환불 처리' };
-const TABS = [['dash', '현황'], ['orders', '충전'], ['users', '회원'], ['reports', '신고'], ['content', '콘텐츠'], ['legal', '수사협조'], ['config', '설정']];
+const TABS = [['dash', '현황'], ['orders', '충전'], ['users', '회원'], ['reports', '신고'], ['content', '콘텐츠'], ['mkt', '마케팅'], ['legal', '수사협조'], ['config', '설정']];
 
 function Settings({ config, send }) {
   const [c, setC] = useState(() => JSON.parse(JSON.stringify(config)));
@@ -21,6 +21,13 @@ function Settings({ config, send }) {
       <section className="a-card"><h3>포인트 규칙</h3>
         {Num({ k: 'startPoints', label: '가입 축하 포인트' })}{Num({ k: 'attend', label: '출석체크' })}{Num({ k: 'bonus3', label: '3일 연속 보너스' })}{Num({ k: 'bonus7', label: '7일 연속 보너스' })}
         {Num({ k: 'requestCost', label: '대화 신청 비용 (거절 시 환불)' })}{Num({ k: 'pinCost', label: '토크 상단 고정 비용' })}{Num({ k: 'pinMin', label: '상단 고정 시간', unit: '분' })}
+      </section>
+      <section className="a-card"><h3>마케팅 보상</h3>
+        {Num({ k: 'inviteJoin', label: '초대받아 가입한 친구에게' })}{Num({ k: 'inviteReward', label: '초대한 사람에게 (친구 첫 출석 시)' })}
+        {Num({ k: 'inviteMonthMax', label: '초대 보상 월 최대 인원 (0 = 제한 없음)', unit: '명' })}
+        {Num({ k: 'inviteMilestone', label: '초대 달성 보너스 기준 (0 = 끔)', unit: '명마다' })}{Num({ k: 'inviteMilestoneBonus', label: '초대 달성 보너스' })}
+        {Num({ k: 'firstBuyPct', label: '첫 충전 보너스 (0 = 끔)', unit: '%' })}
+        {Num({ k: 'comebackDays', label: '복귀 보너스 기준 (0 = 끔)', unit: '일 이상' })}{Num({ k: 'comebackPoints', label: '복귀 보너스' })}
       </section>
       <section className="a-card"><h3>기록 보관 기간 (수사 협조용, 최소 90일)</h3>
         {Num({ k: 'keepLogsDays', label: '접속 기록 (IP·기기)', unit: '일' })}{Num({ k: 'keepTrailDays', label: '작성·삭제 원본', unit: '일' })}{Num({ k: 'keepReportsDays', label: '신고 및 신고 시점 증거', unit: '일' })}
@@ -46,6 +53,58 @@ function Settings({ config, send }) {
         </div>
       </section>
       <button className="btn" onClick={save}>{saved ? '저장되었습니다' : '설정 저장'}</button>
+    </div>
+  );
+}
+
+const INV = { pending: '첫 출석 대기', paid: '보상 지급', blocked: '지급 제외 (같은 IP)', capped: '월 한도 초과' };
+const today = () => new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
+function Marketing({ m, send }) {
+  const blank = { code: '', points: 100, max: 0, until: '', newDays: 0, memo: '', on: true };
+  const [c, setC] = useState(blank);
+  const set = (k) => (e) => setC({ ...c, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value });
+  const Stat = ({ label, value }) => <div className="a-stat"><span>{label}</span><b>{value}</b></div>;
+  const iv = m.invites;
+  return (
+    <div className="a-stack">
+      <div className="a-grid">
+        <Stat label="전체 초대 가입" value={`${iv.total}명`} /><Stat label="이번 달 초대 가입" value={`${iv.month}명`} />
+        <Stat label="보상 지급" value={`${iv.paid}명`} /><Stat label="첫 출석 대기" value={`${iv.pending}명`} />
+        <Stat label="지급 제외 (같은 IP)" value={`${iv.blocked}명`} /><Stat label="초대 보상 지급 포인트" value={`${iv.points.toLocaleString()}P`} />
+        <Stat label="첫 충전 보너스 받은 회원" value={`${m.firstBuyers}명`} /><Stat label="복귀 보너스 지급" value={`${m.comebacks}회`} />
+      </div>
+      <section className="a-card"><h3>쿠폰 만들기</h3>
+        <p className="meta">이벤트·SNS·전단지에 쿠폰 코드를 공개하면 회원이 MY → 쿠폰 등록에서 입력해 포인트를 받습니다. 같은 코드로 다시 저장하면 내용이 바뀝니다.</p>
+        <div className="a-coupon">
+          <label>쿠폰 코드 (영문·숫자)<input value={c.code} maxLength={20} placeholder="예: OPEN2026" onChange={(e) => setC({ ...c, code: e.target.value.toUpperCase() })} /></label>
+          <label>지급 포인트<input type="number" min={1} value={c.points} onChange={set('points')} /></label>
+          <label>선착순 수량 (0 = 무제한)<input type="number" min={0} value={c.max} onChange={set('max')} /></label>
+          <label>사용 기한 (비우면 무기한)<input type="date" min={today()} value={c.until} onChange={set('until')} /></label>
+          <label>가입 N일 이내 회원만 (0 = 모두)<input type="number" min={0} value={c.newDays} onChange={set('newDays')} /></label>
+          <label>메모 (회원 내역에 표시)<input value={c.memo} maxLength={30} placeholder="예: 오픈 기념" onChange={set('memo')} /></label>
+        </div>
+        <div className="btn-row"><button className="btn sm" disabled={c.code.length < 4} onClick={() => { send({ t: 'admin.coupon', coupon: c }); setC(blank); }}>쿠폰 저장</button></div>
+        {m.coupons.length === 0 && <p className="meta">만든 쿠폰이 없습니다.</p>}
+        {m.coupons.map((x) => (
+          <div key={x.code} className={`a-led ${x.on ? '' : 'off'}`}>
+            <span><b>{x.code}</b> {x.points.toLocaleString()}P {x.memo && `· ${x.memo}`}<br />
+              <span className="meta">사용 {x.usedCount}{x.max ? ` / ${x.max}` : ''}회 · {x.until ? `${new Date(x.until).toLocaleDateString('ko-KR')}까지` : '무기한'}{x.newDays ? ` · 가입 ${x.newDays}일 이내` : ''}{x.on ? '' : ' · 중지됨'}</span></span>
+            <span className="btn-row">
+              <button className="btn sm ghost" onClick={() => send({ t: 'admin.coupon', coupon: { ...x, until: x.until ? new Date(x.until + 9 * 3600e3).toISOString().slice(0, 10) : '', on: !x.on } })}>{x.on ? '중지' : '재개'}</button>
+              <button className="btn sm ghost danger" onClick={() => send({ t: 'admin.coupon.del', code: x.code })}>삭제</button>
+            </span>
+          </div>
+        ))}
+      </section>
+      <section className="a-card"><h3>초대 순위</h3>
+        {m.top.length === 0 && <p className="meta">아직 초대 기록이 없습니다.</p>}
+        {m.top.map((t, i) => <div key={t.uid} className="a-led"><span><b>{i + 1}. {t.nick}</b><br /><span className="meta">초대 {t.total}명 · 보상 {t.paid}명{t.blocked ? ` · 제외 ${t.blocked}명` : ''}</span></span></div>)}
+      </section>
+      <section className="a-card"><h3>최근 초대 가입</h3>
+        <p className="meta">한 사람이 같은 IP로 계속 초대 가입시키면 부정 이용일 수 있습니다. 회원 탭에서 포인트 차감·이용 정지로 조치하세요.</p>
+        {m.recent.length === 0 && <p className="meta">기록이 없습니다.</p>}
+        {m.recent.map((x) => <div key={x.id} className="a-led"><span><b>{x.by}</b> → {x.nick}<br /><span className="meta">{dt(x.at)} · {x.ip || 'IP 없음'}</span></span><em className={`tag ${x.status === 'paid' ? 'soft' : ''}`}>{INV[x.status] || x.status}</em></div>)}
+      </section>
     </div>
   );
 }
@@ -153,6 +212,7 @@ export default function Admin({ adm, send, onExit, demo }) {
             {d[kind].map((x) => <div key={x.id} className="a-card a-led"><span>{x.text}<br /><span className="meta">{x.nick} · {dt(x.at)}</span></span><button className="btn sm ghost danger" onClick={() => send({ t: 'admin.del', kind, id: x.id })}>삭제</button></div>)}
           </div>
         )}
+        {tab === 'mkt' && d.marketing && <Marketing m={d.marketing} send={send} />}
         {tab === 'legal' && <Legal d={d} send={send} lookup={adm.lookup} exportRes={adm.exportRes} />}
         {tab === 'config' && <Settings config={d.config} send={send} />}
       </div>

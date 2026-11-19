@@ -15,12 +15,20 @@ export const DEFAULT_CONFIG = {
     { id: 'p4', sku: 'point_3000', name: '프리미엄', points: 3000, bonus: 600, price: 33000 },
   ],
   banWords: [], notice: '',
+  // 마케팅 보상
+  inviteJoin: 50, // 초대 코드로 가입한 친구에게
+  inviteReward: 100, // 초대한 사람에게(친구가 첫 출석하면)
+  inviteMonthMax: 30, // 초대 보상 월 최대 인원
+  inviteMilestone: 5, inviteMilestoneBonus: 200, // N명 달성할 때마다 추가 보너스
+  firstBuyPct: 50, // 첫 충전 보너스(%)
+  comebackDays: 14, comebackPoints: 30, // N일 이상 쉬다 돌아오면
+
   // 수사 협조용 보관 기간(일). 관리자 화면에서 바꾸되 90일 아래로는 줄일 수 없다.
   keepLogsDays: 180, keepTrailDays: 180, keepReportsDays: 365,
 };
 const KEEP_MIN_DAYS = 90;
 // 활동 기록에 남길 입력값(방 비밀번호처럼 수사와 무관한 값은 남기지 않는다)
-const TRAIL_FIELDS = ['text', 'title', 'body', 'name', 'intro', 'topic', 'cat', 'to', 'id', 'mid', 'cid', 'uid', 'reason', 'memo', 'ref', 'pin', 'productId'];
+const TRAIL_FIELDS = ['text', 'title', 'body', 'name', 'intro', 'topic', 'cat', 'to', 'id', 'mid', 'cid', 'uid', 'reason', 'memo', 'ref', 'pin', 'productId', 'code'];
 const NO_TRAIL = new Set(['conv.read', 'push.sub', 'push.unsub', 'notify.set', 'room.mute']);
 // 알림 설정 기본값: push = 휴대폰 알림(앱이 닫혀 있을 때), 나머지는 종류별 켜기/끄기
 export const DEFAULT_NOTIFY = { push: true, request: true, msg: true, room: true, comment: true, preview: true, quiet: false, mutedRooms: [] };
@@ -28,11 +36,12 @@ const NOTIFY_KEYS = ['push', 'request', 'msg', 'room', 'comment', 'preview', 'qu
 // 방해 금지: 한국 시간 밤 10시 ~ 오전 8시
 const quietNow = () => { const h = new Date(Date.now() + 9 * 3600e3).getUTCHours(); return h >= 22 || h < 8; };
 
+const INVITE_ENTER_DAYS = 7; // 가입 후 초대 코드를 등록할 수 있는 기간
 const dayKey = (t) => new Date(t + 9 * 3600e3).toISOString().slice(0, 10); // 한국 시간 기준 날짜
 
 export function createCore({ data, save = () => {}, hook = () => {}, adminPassword = '', verifyPurchase = null, sendPush = null, pushKey = '' } = {}) {
   const busy = new Set(); // 검증 중인 결제 토큰
-  const db = Object.assign({ users: {}, talks: [], convs: {}, rooms: {}, posts: [], reports: [], ledger: [], orders: [], logs: [], trail: [], holds: {}, disclosures: [], seq: 1 }, data || {});
+  const db = Object.assign({ users: {}, talks: [], convs: {}, rooms: {}, posts: [], reports: [], ledger: [], orders: [], logs: [], trail: [], holds: {}, disclosures: [], invites: [], coupons: [], seq: 1 }, data || {});
   db.config = { ...DEFAULT_CONFIG, ...(db.config || {}) };
   const cfg = () => db.config;
   const admins = new Set(); // 관리자로 로그인한 연결
@@ -53,8 +62,15 @@ export function createCore({ data, save = () => {}, hook = () => {}, adminPasswo
   const pushUsers = () => all({ t: 'users', users: Object.values(db.users).map(pub) });
   const pushMe = (uid) => {
     const u = db.users[uid]; if (!u) return;
-    const { token, subs, ...me } = u;
-    sendTo(uid, { t: 'me', me: { notify: nf(u), pushOn: !!subs?.length, ...me, ledger: db.ledger.filter((l) => l.uid === uid).slice(0, 50), orders: db.orders.filter((o) => o.uid === uid).slice(0, 20) } });
+    const { token, subs, couponFails, ...me } = u;
+    codeOf(u);
+    const mine = db.invites.filter((x) => x.by === uid);
+    const invite = {
+      code: u.code, by: u.invitedBy ? nickOf(u.invitedBy) : '', canEnter: !u.invitedBy && Date.now() - u.at < INVITE_ENTER_DAYS * 86400e3,
+      list: mine.slice(-50).reverse().map((x) => ({ id: x.id, nick: nickOf(x.uid), at: x.at, status: x.status, reward: x.reward || 0 })),
+      count: mine.length, paid: mine.filter((x) => x.status === 'paid').length, earned: mine.reduce((n, x) => n + (x.reward || 0) + (x.bonus || 0), 0),
+    };
+    sendTo(uid, { t: 'me', me: { notify: nf(u), pushOn: !!subs?.length, ...me, code: u.code, invite, firstBuy: !db.orders.some((o) => o.uid === uid && o.status === 'paid'), ledger: db.ledger.filter((l) => l.uid === uid).slice(0, 50), orders: db.orders.filter((o) => o.uid === uid).slice(0, 20) } });
   };
   const pubConfig = () => { const { banWords, ...c } = cfg(); return c; };
   const pushConfig = () => all({ t: 'config', config: pubConfig() });
@@ -64,6 +80,53 @@ export function createCore({ data, save = () => {}, hook = () => {}, adminPasswo
     db.ledger.unshift({ id: nid(), uid: u.id, delta, balance: u.points, reason, at: Date.now() });
     if (db.ledger.length > 5000) db.ledger.length = 5000;
   };
+  const nickOf = (id) => db.users[id]?.nick || '(알 수 없음)';
+  // 초대 코드: 헷갈리는 글자(0,O,1,I,L)를 뺀 6자리
+  const CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  const codeOf = (u) => {
+    if (u.code) return u.code;
+    let c;
+    do { c = Array.from({ length: 6 }, () => CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]).join(''); } while (Object.values(db.users).some((x) => x.code === c));
+    u.code = c; return c;
+  };
+  const monthKey = (t) => dayKey(t).slice(0, 7);
+  // 초대 코드 등록: 가입한 친구는 바로, 초대한 사람은 친구가 첫 출석하면 보상(가짜 계정 남용 방지)
+  function applyInvite(u, raw, meta = {}) {
+    const code = String(raw || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10);
+    if (!code) return;
+    if (u.invitedBy) fail('이미 초대 코드를 등록했습니다.');
+    if (Date.now() - u.at > INVITE_ENTER_DAYS * 86400e3) fail(`초대 코드는 가입 후 ${INVITE_ENTER_DAYS}일 안에만 등록할 수 있습니다.`);
+    const by = Object.values(db.users).find((x) => x.code === code);
+    if (!by || by.gone || by.banned || by.bot) fail('초대 코드를 찾을 수 없습니다. 다시 확인해 주세요.');
+    if (by.id === u.id) fail('내 초대 코드는 등록할 수 없습니다.');
+    if (by.invitedBy === u.id) fail('내가 초대한 친구의 코드는 등록할 수 없습니다.');
+    if (by.at > u.at) fail('나보다 늦게 가입한 친구의 코드는 등록할 수 없습니다.');
+    u.invitedBy = by.id;
+    // 초대한 사람과 같은 접속지(IP)에서 가입하면 초대한 사람 보상은 주지 않는다(혼자 여러 계정 만들기 방지)
+    const sameIp = !!meta.ip && meta.ip !== '체험판' && db.logs.some((l) => l.uid === by.id && l.ip === meta.ip);
+    db.invites.push({ id: nid(), by: by.id, uid: u.id, at: Date.now(), status: sameIp ? 'blocked' : 'pending', ip: line(meta.ip, 64) });
+    if (cfg().inviteJoin > 0) addPoints(u, cfg().inviteJoin, `친구 초대 가입 보너스 (${by.nick} 님 초대)`);
+    pushMe(u.id); pushMe(by.id);
+    toast(u.id, cfg().inviteJoin > 0 ? `초대 코드가 등록되어 ${cfg().inviteJoin}P를 받았습니다.` : '초대 코드가 등록되었습니다.');
+    if (!sameIp) toast(by.id, `${u.nick} 님이 내 초대로 가입했어요. 친구가 첫 출석하면 ${cfg().inviteReward}P를 드려요.`);
+  }
+  // 초대받은 친구가 첫 출석하면 초대한 사람에게 보상
+  function settleInvite(u) {
+    const inv = db.invites.find((x) => x.uid === u.id && x.status === 'pending');
+    const by = inv && db.users[inv.by];
+    if (!inv || !by || by.gone) return;
+    const c = cfg(); const month = monthKey(Date.now());
+    const paidMonth = db.invites.filter((x) => x.by === by.id && x.status === 'paid' && monthKey(x.paidAt) === month).length;
+    if (c.inviteMonthMax > 0 && paidMonth >= c.inviteMonthMax) { inv.status = 'capped'; inv.paidAt = Date.now(); pushMe(by.id); return; }
+    inv.status = 'paid'; inv.paidAt = Date.now(); inv.reward = c.inviteReward;
+    if (c.inviteReward > 0) addPoints(by, c.inviteReward, `친구 초대 보상 (${u.nick})`);
+    const total = db.invites.filter((x) => x.by === by.id && x.status === 'paid').length;
+    let extra = '';
+    if (c.inviteMilestone > 0 && c.inviteMilestoneBonus > 0 && total % c.inviteMilestone === 0) {
+      inv.bonus = c.inviteMilestoneBonus; addPoints(by, c.inviteMilestoneBonus, `친구 초대 ${total}명 달성 보너스`); extra = ` · ${total}명 달성 보너스 +${c.inviteMilestoneBonus}P`;
+    }
+    pushMe(by.id); toast(by.id, `${u.nick} 님이 첫 출석해서 초대 보상 ${c.inviteReward}P를 받았어요${extra}`);
+  }
   const checkWords = (...texts) => { for (const w of cfg().banWords) if (w && texts.some((t) => t.includes(w))) fail('사용할 수 없는 단어가 포함되어 있습니다.'); };
   const talkList = () => {
     const now = Date.now();
@@ -303,6 +366,7 @@ export function createCore({ data, save = () => {}, hook = () => {}, adminPasswo
       let gain = cfg().attend; let extra = '';
       if (u.attend.streak % 7 === 0) { gain += cfg().bonus7; extra = ` (7일 연속 보너스 +${cfg().bonus7}P)`; } else if (u.attend.streak % 7 === 3) { gain += cfg().bonus3; extra = ` (3일 연속 보너스 +${cfg().bonus3}P)`; }
       addPoints(u, gain, `출석체크 ${u.attend.streak}일째`); pushMe(u.id); toast(u.id, `출석 완료! ${gain}P 적립${extra}`);
+      settleInvite(u);
     },
     // 포인트 충전: 앱에서 Google Play 결제 → 결제 토큰을 서버가 Google 에 검증 → 자동 지급.
     'iap.verify'(u, m) {
@@ -315,12 +379,32 @@ export function createCore({ data, save = () => {}, hook = () => {}, adminPasswo
       if (!verifyPurchase) { sendTo(u.id, { t: 'iap.fail', token }); fail('서버에 Google 결제 검증이 설정되지 않았습니다.'); }
       busy.add(token);
       Promise.resolve().then(() => verifyPurchase({ sku: p.sku, token, uid: u.id })).then((r) => {
-        db.orders.unshift({ id: nid(), uid: u.id, productId: p.id, sku: p.sku, name: p.name, points: p.points, bonus: p.bonus, price: p.price, token, orderId: r?.orderId || '', test: !!r?.test, status: 'paid', at: Date.now(), doneAt: Date.now() });
+        const first = !db.orders.some((o) => o.uid === u.id && o.status === 'paid');
+        const firstBonus = first && cfg().firstBuyPct > 0 ? Math.floor((p.points * cfg().firstBuyPct) / 100) : 0;
+        db.orders.unshift({ firstBonus, id: nid(), uid: u.id, productId: p.id, sku: p.sku, name: p.name, points: p.points, bonus: p.bonus, price: p.price, token, orderId: r?.orderId || '', test: !!r?.test, status: 'paid', at: Date.now(), doneAt: Date.now() });
         addPoints(u, p.points + p.bonus, `포인트 충전 (${p.name})`);
-        pushMe(u.id); sendTo(u.id, { t: 'iap.done', token }); toast(u.id, `${(p.points + p.bonus).toLocaleString()}P가 충전되었습니다.`);
+        if (firstBonus) addPoints(u, firstBonus, `첫 충전 보너스 (+${cfg().firstBuyPct}%)`);
+        pushMe(u.id); sendTo(u.id, { t: 'iap.done', token }); toast(u.id, `${(p.points + p.bonus + firstBonus).toLocaleString()}P가 충전되었습니다.${firstBonus ? ' (첫 충전 보너스 포함)' : ''}`);
         save(db); pushAdmin();
       }).catch((e) => { sendTo(u.id, { t: 'iap.fail', token }); toast(u.id, e?.message || '결제를 확인하지 못했습니다.'); })
         .finally(() => busy.delete(token));
+    },
+    'invite.use'(u, m, meta) { if (!String(m.code || '').trim()) fail('초대 코드를 입력해 주세요.'); applyInvite(u, m.code, meta); },
+    // 쿠폰(이벤트 코드): 관리자가 만든 코드를 입력하면 포인트 지급. 틀린 입력은 하루 10번까지.
+    'coupon.use'(u, m) {
+      const code = String(m.code || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 20);
+      const today = dayKey(Date.now());
+      if (u.couponFails?.day === today && u.couponFails.n >= 10) fail('오늘은 쿠폰 입력 횟수를 모두 사용했습니다. 내일 다시 시도해 주세요.');
+      const c = db.coupons.find((x) => x.code === code);
+      const bad = (msg) => { u.couponFails = { day: today, n: (u.couponFails?.day === today ? u.couponFails.n : 0) + 1 }; fail(msg); };
+      if (!code || !c || !c.on) bad('사용할 수 없는 쿠폰입니다.');
+      if (c.until && Date.now() > c.until) bad('기간이 끝난 쿠폰입니다.');
+      if (c.used.includes(u.id)) fail('이미 사용한 쿠폰입니다.');
+      if (c.max > 0 && c.used.length >= c.max) fail('선착순 수량이 모두 소진된 쿠폰입니다.');
+      if (c.newDays > 0 && Date.now() - u.at > c.newDays * 86400e3) fail(`가입 ${c.newDays}일 이내 회원만 쓸 수 있는 쿠폰입니다.`);
+      c.used.push(u.id);
+      addPoints(u, c.points, `쿠폰 ${c.code}${c.memo ? ` (${c.memo})` : ''}`); pushMe(u.id);
+      toast(u.id, `쿠폰이 적용되어 ${c.points.toLocaleString()}P를 받았습니다.`);
     },
     'notify.set'(u, m) {
       const n = nf(u);
@@ -406,7 +490,7 @@ export function createCore({ data, save = () => {}, hook = () => {}, adminPasswo
     try {
       const h = handlers[m?.t];
       if (h) {
-        h(u, m);
+        h(u, m, meta);
         if (!NO_TRAIL.has(m.t)) addTrail(uid, m, meta, before !== undefined ? { deletedText: before } : undefined);
         prune(); save(db);
       }
@@ -415,7 +499,6 @@ export function createCore({ data, save = () => {}, hook = () => {}, adminPasswo
   }
 
   /* ---------- 관리자 ---------- */
-  const nickOf = (id) => db.users[id]?.nick || '(알 수 없음)';
   const num = (v, max = 1e7) => Math.min(max, Math.max(0, Math.floor(Number(v) || 0)));
   function adminData() {
     const today = dayKey(Date.now()); const isToday = (t) => dayKey(t) === today;
@@ -440,7 +523,23 @@ export function createCore({ data, save = () => {}, hook = () => {}, adminPasswo
       ledger: db.ledger.filter((l) => !db.users[l.uid]?.bot).slice(0, 100).map((l) => ({ ...l, nick: nickOf(l.uid) })),
       holds: Object.entries(db.holds).map(([uid, h]) => ({ uid, nick: nickOf(uid), ...h })),
       disclosures: db.disclosures.slice(-200).reverse(),
+      marketing: marketingData(),
       evidence: { logs: db.logs.length, trail: db.trail.length, oldest: Math.min(db.logs[0]?.at || Date.now(), db.trail[0]?.at || Date.now()) },
+    };
+  }
+  function marketingData() {
+    const month = monthKey(Date.now()); const inv = db.invites;
+    const by = {};
+    inv.forEach((x) => { const b = (by[x.by] ||= { uid: x.by, nick: nickOf(x.by), total: 0, paid: 0, blocked: 0 }); b.total += 1; if (x.status === 'paid') b.paid += 1; if (x.status === 'blocked') b.blocked += 1; });
+    const cnt = (st) => inv.filter((x) => x.status === st).length;
+    return {
+      invites: { total: inv.length, month: inv.filter((x) => monthKey(x.at) === month).length, paid: cnt('paid'), pending: cnt('pending'), blocked: cnt('blocked'), capped: cnt('capped'),
+        points: inv.reduce((n, x) => n + (x.reward || 0) + (x.bonus || 0), 0) },
+      top: Object.values(by).sort((a, b) => b.paid - a.paid || b.total - a.total).slice(0, 20),
+      recent: inv.slice(-100).reverse().map((x) => ({ id: x.id, by: nickOf(x.by), nick: nickOf(x.uid), at: x.at, status: x.status, ip: x.ip })),
+      coupons: db.coupons.map(({ used, ...c }) => ({ ...c, usedCount: used.length })),
+      firstBuyers: db.orders.filter((o) => o.firstBonus > 0).length,
+      comebacks: db.ledger.filter((l) => l.reason.includes('복귀 보너스')).length,
     };
   }
   function pushAdmin() { if (admins.size) { const d = { t: 'admin.data', data: adminData() }; admins.forEach((f) => f(d)); } }
@@ -455,6 +554,9 @@ export function createCore({ data, save = () => {}, hook = () => {}, adminPasswo
         pinCost: num(c.pinCost), pinMin: Math.max(1, num(c.pinMin, 1440)), requestCost: num(c.requestCost), products,
         banWords: (Array.isArray(c.banWords) ? c.banWords : []).map((w) => line(w, 20)).filter(Boolean).slice(0, 200),
         notice: line(c.notice, 100),
+        inviteJoin: num(c.inviteJoin, 100000), inviteReward: num(c.inviteReward, 100000), inviteMonthMax: num(c.inviteMonthMax, 10000),
+        inviteMilestone: num(c.inviteMilestone, 1000), inviteMilestoneBonus: num(c.inviteMilestoneBonus, 100000), firstBuyPct: num(c.firstBuyPct, 300),
+        comebackDays: num(c.comebackDays, 365), comebackPoints: num(c.comebackPoints, 100000),
         keepLogsDays: Math.max(KEEP_MIN_DAYS, num(c.keepLogsDays, 3650)), keepTrailDays: Math.max(KEEP_MIN_DAYS, num(c.keepTrailDays, 3650)), keepReportsDays: Math.max(KEEP_MIN_DAYS, num(c.keepReportsDays, 3650)),
       };
       pushConfig();
@@ -465,7 +567,7 @@ export function createCore({ data, save = () => {}, hook = () => {}, adminPasswo
       if (!o) fail('환불 처리할 수 없는 결제입니다.');
       const u = db.users[o.uid];
       o.status = 'refunded'; o.doneAt = Date.now();
-      if (u) { const back = Math.min(u.points, o.points + o.bonus); if (back > 0) addPoints(u, -back, `결제 환불 회수 (${o.name})`); pushMe(u.id); }
+      if (u) { const back = Math.min(u.points, o.points + o.bonus + (o.firstBonus || 0)); if (back > 0) addPoints(u, -back, `결제 환불 회수 (${o.name})`); pushMe(u.id); }
     },
     'admin.point'(m) {
       const u = db.users[m.uid]; const delta = Math.trunc(Number(m.delta) || 0);
@@ -546,11 +648,22 @@ export function createCore({ data, save = () => {}, hook = () => {}, adminPasswo
       send({ t: 'admin.export', name, sha256, text });
     },
     'admin.prune'() { prune(true); },
+    'admin.coupon'(m) {
+      const c = m.coupon || {};
+      const code = String(c.code || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 20);
+      if (code.length < 4) fail('쿠폰 코드는 영문·숫자 4자 이상으로 입력해 주세요.');
+      const points = num(c.points, 100000); if (points < 1) fail('지급 포인트를 입력해 주세요.');
+      const until = /^\d{4}-\d{2}-\d{2}$/.test(c.until || '') ? Date.parse(`${c.until}T23:59:59+09:00`) : 0;
+      const old = db.coupons.find((x) => x.code === code);
+      const v = { code, points, max: num(c.max, 1e7), until, newDays: num(c.newDays, 365), memo: line(c.memo, 30), on: c.on !== false };
+      if (old) Object.assign(old, v); else db.coupons.unshift({ ...v, used: [], at: Date.now() });
+    },
+    'admin.coupon.del'(m) { db.coupons = db.coupons.filter((x) => x.code !== m.code); },
   };
 
   function addUser(profile, token, extra = {}) {
     const u = { id: nid(), token, ...checkProfile(profile), points: 0, attend: { last: '', streak: 0 }, friends: [], blocks: [], at: Date.now(), lastSeen: Date.now(), ...extra };
-    db.users[u.id] = u; if (cfg().startPoints > 0) addPoints(u, cfg().startPoints, '가입 축하 포인트'); save(db); return u;
+    codeOf(u); db.users[u.id] = u; if (cfg().startPoints > 0) addPoints(u, cfg().startPoints, '가입 축하 포인트'); save(db); return u;
   }
 
   function connect(send, meta = {}) {
@@ -578,17 +691,23 @@ export function createCore({ data, save = () => {}, hook = () => {}, adminPasswo
           return;
         }
         if (m.t === 'hello') {
+          let joinNote = '';
           if (uid || typeof m.token !== 'string' || m.token.length < 16) return;
           let u = Object.values(db.users).find((x) => x.token === m.token);
           if (!u) {
             if (!m.profile) return send({ t: 'need_profile' });
             try { u = addUser(m.profile, m.token); } catch (e) { return send({ t: 'toast', msg: e.message }); }
             addLog('join', u.id, meta); addTrail(u.id, { t: 'join', profile: m.profile }, meta);
+            if (m.ref) { try { applyInvite(u, m.ref, meta); if (u.invitedBy && cfg().inviteJoin > 0) joinNote = `친구 초대 보너스 ${cfg().inviteJoin}P를 받았어요!`; addTrail(u.id, { t: 'invite.use', code: String(m.ref).slice(0, 10) }, meta); } catch (e) { joinNote = e.message; } }
+          } else if (!u.gone && !u.banned && cfg().comebackDays > 0 && cfg().comebackPoints > 0 && Date.now() - (u.lastSeen || u.at) >= cfg().comebackDays * 86400e3) {
+            addPoints(u, cfg().comebackPoints, `${cfg().comebackDays}일 만의 복귀 보너스`);
+            joinNote = `다시 오신 걸 환영해요! 복귀 보너스 ${cfg().comebackPoints}P를 드렸어요.`;
           }
           uid = u.id; u.lastSeen = Date.now();
           addLog('login', uid, meta); prune(); save(db);
           if (!socks.has(uid)) socks.set(uid, new Set());
           socks.get(uid).add(send); sync();
+          if (joinNote) send({ t: 'toast', msg: joinNote });
         } else if (uid) act(uid, m, meta);
       },
       close() {

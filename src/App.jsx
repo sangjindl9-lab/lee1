@@ -5,6 +5,10 @@ import Admin from './Admin.jsx';
 import { playService, playPrices, buy, pending, consume } from './pay.js';
 import { pushSupported, permission, registerSW, enablePush, disablePush, currentSub } from './push.js';
 
+// 초대 링크(?ref=코드)로 들어오면 코드를 기억해 두었다가 가입할 때 쓴다.
+try { const r = new URLSearchParams(location.search).get('ref'); if (r) { store.set('eum_ref', r.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10)); history.replaceState(null, '', location.pathname); } } catch { /* 무시 */ }
+const APP_URL = 'https://eumchat-production.up.railway.app';
+
 const ICONS = {
   talk: 'M4 5h16v11H10l-6 4z',
   mail: 'M3 6h18v12H3zM3 7l9 6 9-6',
@@ -19,6 +23,8 @@ const ICONS = {
   heart: 'M12 20s-7-4.5-7-10a4 4 0 017-2.5A4 4 0 0119 10c0 5.5-7 10-7 10z',
   x: 'M6 6l12 12M18 6L6 18',
   chev: 'M9 5l7 7-7 7',
+  gift: 'M4 11h16v9H4zM3 7h18v4H3zM12 7v13M12 7c-2-4-6-3-5 0M12 7c2-4 6-3 5 0',
+  ticket: 'M4 7h16v3a2 2 0 000 4v3H4v-3a2 2 0 000-4zM14 7v10',
 };
 const Icon = ({ n, size = 22, fill }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill={fill || 'none'} stroke="currentColor" strokeWidth={n === 'more' ? 3 : 1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={ICONS[n]} /></svg>
@@ -85,6 +91,7 @@ const Empty = ({ children }) => <div className="empty">{children}</div>;
 function ProfileForm({ initial, first, onSubmit }) {
   const [p, setP] = useState(initial || { nick: '', gender: '', age: '', region: '', intro: '' });
   const [agree, setAgree] = useState(!first);
+  const [ref, setRef] = useState(() => (first ? store.get('eum_ref') || '' : ''));
   const set = (k) => (v) => setP({ ...p, [k]: v });
   const ok = p.nick.trim().length >= 2 && p.gender && p.age && p.region && agree;
   return (
@@ -95,10 +102,13 @@ function ProfileForm({ initial, first, onSubmit }) {
       <label>지역</label><Chips items={REGIONS} value={p.region} onChange={set('region')} />
       <label>한줄소개<input value={p.intro} maxLength={40} placeholder="나를 한 줄로 소개해 보세요" onChange={(e) => set('intro')(e.target.value)} /></label>
       {first && (
+        <label>친구 초대 코드 <span className="meta">(선택)</span><input value={ref} maxLength={10} placeholder="친구에게 받은 코드가 있으면 입력" onChange={(e) => setRef(e.target.value.toUpperCase())} /></label>
+      )}
+      {first && (
         <label className="check"><input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} />
           <span>만 19세 이상이며, 욕설·음란물·금전 요구·개인정보 요구를 하지 않겠습니다.</span></label>
       )}
-      <button className="btn" disabled={!ok} onClick={() => onSubmit(p)}>{first ? '시작하기' : '저장'}</button>
+      <button className="btn" disabled={!ok} onClick={() => onSubmit(p, ref.trim())}>{first ? '시작하기' : '저장'}</button>
     </div>
   );
 }
@@ -470,9 +480,16 @@ function MyTab() {
         <div className="pt-btns"><button className="btn" onClick={() => setSheet({ type: 'shop' })}>포인트 충전</button>
           <button className="btn ghost" disabled={done} onClick={() => send({ t: 'attend' })}>{done ? '오늘 출석 완료' : `출석체크 +${c.attend}P`}</button></div>
       </div>
+      <button className="card invite-card" onClick={() => setSheet({ type: 'invite' })}>
+        <span className="invite-ic"><Icon n="gift" size={26} /></span>
+        <span className="grow"><b>친구 초대하고 포인트 받기</b><span className="meta">친구는 가입 즉시 {c.inviteJoin}P, 나는 친구가 첫 출석하면 {c.inviteReward}P{c.inviteMilestone > 0 && c.inviteMilestoneBonus > 0 ? ` · ${c.inviteMilestone}명마다 +${c.inviteMilestoneBonus}P` : ''}</span></span>
+        <Icon n="chev" size={16} />
+      </button>
       <p className="hint pad">매일 출석 {c.attend}P · 3일 연속 +{c.bonus3}P · 7일 연속 +{c.bonus7}P. 대화 신청 {c.requestCost}P, 토크 상단 고정 {c.pinCost}P.</p>
       <div className="card">
         <Item label="포인트 내역" value="" onClick={() => setSheet({ type: 'ledger' })} />
+        <Item label="쿠폰 등록" value="" onClick={() => setSheet({ type: 'coupon' })} />
+        <Item label="친구 초대" value={me.invite?.count ? `${me.invite.count}명 초대` : `내 코드 ${me.code || ''}`} onClick={() => setSheet({ type: 'invite' })} />
         <Item label="알림 설정" value={me.pushOn && me.notify?.push ? '휴대폰 알림 켜짐' : '휴대폰 알림 꺼짐'} onClick={() => setSheet({ type: 'notify' })} />
         <Item label="친구 목록" value={`${me.friends.length}명`} onClick={() => setSheet({ type: 'people', kind: 'friends' })} />
         <Item label="차단 목록" value={`${me.blocks.length}명`} onClick={() => setSheet({ type: 'people', kind: 'blocks' })} />
@@ -499,6 +516,58 @@ function People({ kind, close }) {
           <span className="grow"><b>{u.nick}</b> <Meta u={u} /></span>
           <button className="btn sm ghost" onClick={() => send({ t: kind === 'friends' ? 'friend.toggle' : 'block.toggle', uid })}>{kind === 'friends' ? '해제' : '차단 해제'}</button></div>
       ); })}
+    </Sheet>
+  );
+}
+
+/* ---------- 친구 초대 · 쿠폰 ---------- */
+const INVITE_STATUS = { pending: ['첫 출석 대기', ''], paid: ['보상 지급', 'soft'], blocked: ['지급 제외', ''], capped: ['이번 달 한도 초과', ''] };
+function InviteSheet({ close }) {
+  const { me, s, send, setToast } = useApp(); const c = s.config; const inv = me.invite || {};
+  const [code, setCode] = useState(store.get('eum_ref') || '');
+  const link = `${APP_URL}/?ref=${me.code}`;
+  const text = `이음챗에서 동네 친구 만들어요! 가입할 때 초대 코드 ${me.code} 를 넣으면 ${c.inviteJoin}P를 바로 받아요.\n${link}`;
+  const copy = async (v, msg) => { try { await navigator.clipboard.writeText(v); setToast(msg); } catch { setToast('복사하지 못했습니다. 길게 눌러 직접 복사해 주세요.'); } };
+  const share = async () => {
+    if (navigator.share) { try { await navigator.share({ title: '이음챗 초대', text }); return; } catch (e) { if (e?.name === 'AbortError') return; } }
+    copy(text, '초대 메시지를 복사했습니다. 카톡이나 문자에 붙여 넣어 보내세요.');
+  };
+  return (
+    <Sheet title="친구 초대" onClose={close}>
+      <div className="invite-hero">
+        <span className="meta">내 초대 코드</span>
+        <button className="invite-code" onClick={() => copy(me.code, '초대 코드를 복사했습니다.')}>{me.code}</button>
+        <div className="btn-row"><button className="btn" onClick={share}>초대 메시지 보내기</button><button className="btn ghost" onClick={() => copy(link, '초대 링크를 복사했습니다.')}>링크 복사</button></div>
+      </div>
+      <div className="invite-rules">
+        <div><b>+{c.inviteJoin}P</b><span>친구가 내 코드로 가입하면 친구에게 바로</span></div>
+        <div><b>+{c.inviteReward}P</b><span>친구가 첫 출석체크를 하면 나에게</span></div>
+        {c.inviteMilestone > 0 && c.inviteMilestoneBonus > 0 && <div><b>+{c.inviteMilestoneBonus}P</b><span>보상 받은 친구 {c.inviteMilestone}명마다 추가로</span></div>}
+      </div>
+      <div className="have"><span className="meta">초대한 친구 {inv.count || 0}명 · 보상 {inv.paid || 0}명</span><b>{(inv.earned || 0).toLocaleString()}P</b></div>
+      {inv.list?.length > 0 && <><h4 className="sub">초대한 친구</h4>{inv.list.map((x) => (
+        <div key={x.id} className="row flat"><span className="grow"><b>{x.nick}</b><br /><span className="meta">{new Date(x.at).toLocaleDateString('ko-KR')}</span></span><em className={`tag ${INVITE_STATUS[x.status]?.[1] || ''}`}>{INVITE_STATUS[x.status]?.[0] || x.status}</em></div>
+      ))}</>}
+      {inv.by && <p className="hint">나를 초대한 친구: <b>{inv.by}</b></p>}
+      {inv.canEnter && (
+        <div className="form"><h4 className="sub">친구에게 받은 초대 코드가 있나요?</h4>
+          <input value={code} maxLength={10} placeholder="초대 코드 입력" onChange={(e) => setCode(e.target.value.toUpperCase())} />
+          <button className="btn ghost" disabled={code.trim().length < 4} onClick={() => { store.del('eum_ref'); send({ t: 'invite.use', code }); }}>코드 등록하고 {c.inviteJoin}P 받기</button>
+          <span className="hint">가입 후 7일 안에 한 번만 등록할 수 있습니다.</span></div>
+      )}
+      <ul className="rules small"><li>{c.inviteMonthMax > 0 ? `초대 보상은 한 달에 ${c.inviteMonthMax}명까지 받을 수 있습니다.` : '초대 보상 인원 제한은 없습니다.'}</li><li>같은 기기·같은 네트워크에서 여러 계정을 만들어 초대하면 보상이 지급되지 않습니다.</li><li>부정한 방법으로 받은 포인트는 회수되고 이용이 제한될 수 있습니다.</li></ul>
+    </Sheet>
+  );
+}
+function CouponSheet({ close }) {
+  const { send } = useApp(); const [code, setCode] = useState('');
+  return (
+    <Sheet title="쿠폰 등록" onClose={close}>
+      <div className="form">
+        <input value={code} maxLength={20} placeholder="쿠폰 코드 입력" onChange={(e) => setCode(e.target.value.toUpperCase())} autoFocus />
+        <button className="btn" disabled={code.trim().length < 4} onClick={() => { send({ t: 'coupon.use', code }); setCode(''); }}>등록하고 포인트 받기</button>
+        <span className="hint">이벤트·공식 채널에서 받은 쿠폰 코드를 입력하세요. 쿠폰은 계정당 한 번만 쓸 수 있습니다.</span>
+      </div>
     </Sheet>
   );
 }
@@ -532,9 +601,10 @@ function Shop({ close }) {
       <div className="have"><span className="meta">보유 포인트</span><b>{me.points.toLocaleString()}P</b></div>
       {svc === null && !DEMO && <div className="warn">포인트 결제는 Google Play에서 설치한 이음챗 앱에서만 할 수 있습니다.</div>}
       {DEMO && <div className="warn">체험판은 실제 결제 없이 테스트 결제로 충전됩니다.</div>}
+      {me.firstBuy && s.config.firstBuyPct > 0 && <div className="first-buy"><Icon n="gift" size={18} /><span><b>첫 충전 보너스 +{s.config.firstBuyPct}%</b> · 처음 충전하면 포인트를 더 드려요</span></div>}
       {products.map((p) => (
         <button key={p.id} className="prod" disabled={!can || !!busy} onClick={() => pay(p)}>
-          <span className="grow"><b>{(p.points + p.bonus).toLocaleString()}P</b>{p.bonus > 0 && <em className="tag">+{p.bonus.toLocaleString()}P 보너스</em>}<span className="meta">{p.name}</span></span>
+          <span className="grow"><b>{(p.points + p.bonus).toLocaleString()}P</b>{p.bonus > 0 && <em className="tag">+{p.bonus.toLocaleString()}P 보너스</em>}{me.firstBuy && s.config.firstBuyPct > 0 && <em className="tag soft">첫 충전 +{Math.floor((p.points * s.config.firstBuyPct) / 100).toLocaleString()}P</em>}<span className="meta">{p.name}</span></span>
           <span className="price">{busy === p.id ? '확인 중…' : prices[p.sku] || `${p.price.toLocaleString()}원`}</span>
         </button>
       ))}
@@ -689,7 +759,7 @@ export default function App() {
       <div className="app onboard">
         <div className="logo">이음챗</div>
         <p className="lead">동네 사람들과 가볍게 이야기 나누는 곳.<br />프로필을 만들고 시작해 보세요.</p>
-        <ProfileForm first onSubmit={(profile) => send({ t: 'hello', profile })} />
+        <ProfileForm first onSubmit={(profile, ref) => { store.del('eum_ref'); send({ t: 'hello', profile, ref }); }} />
         {toast && <div className="toast">{toast}</div>}
       </div>
     );
@@ -724,6 +794,8 @@ export default function App() {
         {sheet?.type === 'shop' && <Shop close={close} />}
         {sheet?.type === 'notify' && <NotifySheet close={close} />}
         {sheet?.type === 'ledger' && <Ledger close={close} />}
+        {sheet?.type === 'invite' && <InviteSheet close={close} />}
+        {sheet?.type === 'coupon' && <CouponSheet close={close} />}
         {sheet?.type === 'writeTalk' && <WriteTalk close={close} />}
         {sheet?.type === 'report' && <ReportSheet uid={sheet.uid} refText={sheet.ref} close={close} />}
         {sheet?.type === 'newRoom' && <NewRoom close={close} />}
