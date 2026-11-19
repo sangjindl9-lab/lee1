@@ -431,7 +431,7 @@ export function createCore({ data, save = () => {}, hook = () => {}, adminPasswo
     },
     quit(u) {
       u.subs = [];
-      u.gone = true; u.token = null; db.talks = db.talks.filter((t) => t.uid !== u.id);
+      u.gone = true; u.goneAt = Date.now(); u.token = null; db.talks = db.talks.filter((t) => t.uid !== u.id);
       Object.values(db.rooms).forEach((r) => r.members.includes(u.id) && handlers['room.leave'](u, { id: r.id }));
       sendTo(u.id, { t: 'bye' }); pushTalks(); pushUsers();
     },
@@ -468,6 +468,9 @@ export function createCore({ data, save = () => {}, hook = () => {}, adminPasswo
     db.logs = db.logs.filter((l) => keep(l.at, c.keepLogsDays, l.uid));
     db.trail = db.trail.filter((t) => keep(t.at, c.keepTrailDays, t.uid, t.peer));
     db.reports = db.reports.filter((r) => keep(r.at, c.keepReportsDays, r.uid, r.by));
+    // 친구 초대 기록은 관련 회원이 탈퇴한 지 1년이 지나면 파기
+    const goneLong = (id) => { const x = db.users[id]; return !x || (x.gone && now - (x.goneAt || 0) > 365 * day); };
+    db.invites = db.invites.filter((x) => !(goneLong(x.uid) || goneLong(x.by)) || held(x.uid) || held(x.by));
   }
   // 신고 순간의 증거 보존: 두 사람 사이의 기록과 신고 대상의 최근 활동·접속 기록을 그대로 복사해 둔다.
   function snapshot(by, uid) {
