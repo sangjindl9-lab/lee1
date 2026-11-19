@@ -43,3 +43,10 @@ export async function verifyPurchase({ sku, token }) {
   fetch(`${base()}/products/${encodeURIComponent(sku)}/tokens/${encodeURIComponent(token)}:consume`, { method: 'POST', headers: auth }).catch(() => {});
   return { orderId: j.orderId || '', test: !!j.testPurchaseContext };
 }
+
+// 서버 시작 시 키가 맞는지 Google 로그인으로 한 번 확인한다.
+export async function googleSelfCheck() {
+  if (!googleReady) return;
+  try { await accessToken(); console.log('Google 결제 검증 준비 완료: 서비스 계정 로그인 성공 (' + sa.client_email + ')'); }
+  catch (e) { console.log('Google 결제 검증 경고: ' + e.message); }
+}

@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import express from 'express';
 import { WebSocketServer } from 'ws';
 import { createCore } from '../shared/core.js';
-import { verifyPurchase, googleReady } from './google.js';
+import { verifyPurchase, googleReady, googleSelfCheck } from './google.js';
 import webpush from 'web-push';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -28,6 +28,7 @@ const save = (db) => {
 
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
 if (!ADMIN_PASSWORD) console.log('ADMIN_PASSWORD 가 없어 관리자 화면(/admin)은 잠겨 있습니다.');
+googleSelfCheck();
 if (!googleReady) console.log('GOOGLE_SERVICE_ACCOUNT_JSON / ANDROID_PACKAGE 가 없어 Google 결제 검증이 꺼져 있습니다.');
 // 휴대폰 알림(웹 푸시). 키는 Railway 변수 VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY.
 const VAPID_PUBLIC = process.env.VAPID_PUBLIC_KEY || '';
