@@ -17,8 +17,8 @@
   "maskableIconUrl": "https://eumchat-production.up.railway.app/icon-maskable.png",
   "splashScreenFadeOutDuration": 300,
   "signingKey": { "path": "./android.keystore", "alias": "upload" },
-  "appVersionName": "1.0.1",
-  "appVersionCode": 2,
+  "appVersionName": "1.0.2",
+  "appVersionCode": 3,
   "shortcuts": [],
   "generatorApp": "bubblewrap-cli",
   "webManifestUrl": "https://eumchat-production.up.railway.app/manifest.webmanifest",
@@ -34,5 +34,5 @@
   "fingerprints": [],
   "additionalTrustedOrigins": [],
   "retainedBundles": [],
-  "appVersion": "1.0.1"
+  "appVersion": "1.0.2"
 }
