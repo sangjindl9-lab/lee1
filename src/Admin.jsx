@@ -30,6 +30,8 @@ function Settings({ config, send }) {
         {Num({ k: 'vipRequestPct', label: 'VIP 대화 신청 할인', unit: '%' })}{Num({ k: 'vipFreeBoost', label: 'VIP 하루 무료 부스트', unit: '회' })}
         {Num({ k: 'visitorCost', label: '방문자 보기 가격' })}{Num({ k: 'visitorHours', label: '방문자 보기 시간', unit: '시간' })}
         {Num({ k: 'giftMin', label: '선물 최소' })}{Num({ k: 'giftMax', label: '선물 1회 최대' })}{Num({ k: 'giftDayMax', label: '선물 하루 최대 (0 = 제한 없음)' })}
+        {Num({ k: 'massCost', label: '전체 쪽지 1명당 가격' })}{Num({ k: 'massDayMax', label: '전체 쪽지 하루 횟수 (0 = 제한 없음)', unit: '회' })}
+        {Num({ k: 'massAllMax', label: "전체 쪽지 '전체' 선택 시 최대 인원", unit: '명' })}{Num({ k: 'massCooldownMin', label: '전체 쪽지 재발송 대기', unit: '분' })}
         {Num({ k: 'pickCount', label: '오늘의 추천 친구 인원 (0 = 끔)', unit: '명' })}{Num({ k: 'pickHour', label: '추천 친구 알림 시각 (21시 이전)', unit: '시' })}
       </section>
       <section className="a-card"><h3>마케팅 보상</h3>
@@ -207,7 +209,7 @@ export default function Admin({ adm, send, onExit, demo }) {
               <Stat label="오늘 가입" value={`${s.joinedToday}명`} /><Stat label="오늘 토크" value={`${s.talksToday}개`} />
               <Stat label="회원 보유 포인트 합계" value={`${s.pointsHeld.toLocaleString()}P`} /><Stat label="이용 정지" value={`${s.banned}명`} />
               {d.revenue && <><Stat label="VIP 구독 중" value={`${d.revenue.vip}명`} /><Stat label="오늘 부스트" value={`${d.revenue.boostsToday}회`} />
-              <Stat label="오늘 선물" value={`${d.revenue.giftsToday.toLocaleString()}P`} /><Stat label="방문자 보기 구매" value={`${d.revenue.visitOpens}회`} /></>}
+              <Stat label="오늘 선물" value={`${d.revenue.giftsToday.toLocaleString()}P`} /><Stat label="방문자 보기 구매" value={`${d.revenue.visitOpens}회`} /><Stat label="오늘 전체 쪽지" value={`${d.revenue.massToday}회`} /></>}
             </div>
             <section className="a-card"><h3>최근 포인트 변동</h3>
               {d.ledger.length === 0 && <p className="meta">아직 내역이 없습니다.</p>}

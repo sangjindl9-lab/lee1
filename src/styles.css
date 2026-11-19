@@ -308,3 +308,9 @@ button.pts { font-weight: 700; }
 .notice-item { display: flex; flex-direction: column; gap: 4px; padding: 14px; }
 .notice-item p { margin: 6px 0 0; white-space: pre-wrap; font-size: 14px; }
 .notice-item.focus { outline: 2px solid var(--pri); }
+
+.mass-cta { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; padding: 14px; margin-bottom: 6px; background: linear-gradient(120deg, var(--pri-soft), var(--card)); }
+.mass-cta b { display: block; font-size: 15px; }
+.mass-cta .meta { display: block; margin-top: 2px; }
+label.sub { display: block; margin: 12px 0 6px; font-size: 13px; font-weight: 700; }
+.mass-sum b { font-size: 20px; }

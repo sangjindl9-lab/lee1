@@ -28,6 +28,8 @@ export const DEFAULT_CONFIG = {
   giftMin: 10, giftMax: 5000, giftDayMax: 20000, // 선물하기
   visitorCost: 30, visitorHours: 24, // 방문자 목록 열람(VIP 무료)
   pickCount: 3, pickHour: 19, // 오늘의 추천 친구: 인원, 알림 시각(한국 시간)
+  // 전체 쪽지: 1명당 비용, 하루 횟수, '전체' 선택 시 최대 인원, 다시 보내기까지 대기(분)
+  massCost: 5, massDayMax: 3, massAllMax: 200, massCooldownMin: 10,
 
   // 수사 협조용 보관 기간(일). 관리자 화면에서 바꾸되 90일 아래로는 줄일 수 없다.
   keepLogsDays: 180, keepTrailDays: 180, keepReportsDays: 365,
@@ -35,7 +37,7 @@ export const DEFAULT_CONFIG = {
 const KEEP_MIN_DAYS = 90;
 // 활동 기록에 남길 입력값(방 비밀번호처럼 수사와 무관한 값은 남기지 않는다)
 const TRAIL_FIELDS = ['text', 'title', 'body', 'name', 'intro', 'topic', 'cat', 'to', 'id', 'mid', 'cid', 'uid', 'reason', 'memo', 'ref', 'pin', 'productId', 'code'];
-const NO_TRAIL = new Set(['profile.view', 'conv.read', 'push.sub', 'push.unsub', 'notify.set', 'room.mute']);
+const NO_TRAIL = new Set(['profile.view', 'mass.count', 'conv.read', 'push.sub', 'push.unsub', 'notify.set', 'room.mute']);
 // 알림 설정 기본값: push = 휴대폰 알림(앱이 닫혀 있을 때), 나머지는 종류별 켜기/끄기
 // event = 이벤트·혜택(광고성) 알림: 법에 따라 본인이 켜야만 보낸다(기본 꺼짐)
 export const DEFAULT_NOTIFY = { push: true, request: true, msg: true, room: true, comment: true, pick: true, event: false, preview: true, quiet: false, mutedRooms: [] };
@@ -71,7 +73,7 @@ export function createCore({ data, save = () => {}, hook = () => {}, adminPasswo
   const pushUsers = () => all({ t: 'users', users: Object.values(db.users).map(pub) });
   const pushMe = (uid) => {
     const u = db.users[uid]; if (!u) return;
-    const { token, subs, couponFails, visitors, vip, ...me } = u;
+    const { token, subs, couponFails, visitors, vip, massLog, ...me } = u;
     codeOf(u);
     const mine = db.invites.filter((x) => x.by === uid);
     const invite = {
@@ -86,7 +88,11 @@ export function createCore({ data, save = () => {}, hook = () => {}, adminPasswo
       open, openUntil: u.visitOpenUntil || 0, list: open ? vs.slice(0, 50) : [],
     };
     const vipInfo = { on: isVip(u), until: vip?.until || 0, freeBoostLeft: isVip(u) ? Math.max(0, cfg().vipFreeBoost - (vip?.boostDay === dayKey(now) ? vip.boostUsed || 0 : 0)) : 0 };
-    sendTo(uid, { t: 'me', me: { notify: nf(u), pushOn: !!subs?.length, ...me, code: u.code, invite, visit, vipInfo, picks: u.picks?.day === dayKey(now) ? u.picks.ids.filter((id) => db.users[id] && !db.users[id].gone) : [], firstBuy: !db.orders.some((o) => o.uid === uid && o.status === 'paid'), ledger: db.ledger.filter((l) => l.uid === uid).slice(0, 50), orders: db.orders.filter((o) => o.uid === uid).slice(0, 20) } });
+    const mass = (massLog || []).slice(0, 20).map((b) => {
+      const cs = Object.values(db.convs).filter((c) => c.batch === b.id);
+      return { ...b, accepted: cs.filter((c) => c.status === 'open' || (c.status === 'closed' && c.msgs.some((x) => x.uid && x.uid !== uid))).length };
+    });
+    sendTo(uid, { t: 'me', me: { notify: nf(u), pushOn: !!subs?.length, ...me, code: u.code, invite, visit, vipInfo, mass, massToday: (massLog || []).filter((b) => dayKey(b.at) === dayKey(now)).length, picks: u.picks?.day === dayKey(now) ? u.picks.ids.filter((id) => db.users[id] && !db.users[id].gone) : [], firstBuy: !db.orders.some((o) => o.uid === uid && o.status === 'paid'), ledger: db.ledger.filter((l) => l.uid === uid).slice(0, 50), orders: db.orders.filter((o) => o.uid === uid).slice(0, 20) } });
   };
   const pubConfig = () => { const { banWords, ...c } = cfg(); return c; };
   const pushConfig = () => all({ t: 'config', config: pubConfig() });
@@ -157,6 +163,14 @@ export function createCore({ data, save = () => {}, hook = () => {}, adminPasswo
     }
     save(db); pushMe(u.id); if (was !== isVip(u)) pushUsers(); pushAdmin();
     return r.active;
+  }
+  // 전체 쪽지 받을 사람: 조건에 맞고, 최근 30일 안에 접속했고, 전체 쪽지 받기를 끄지 않았고, 이미 대화 중이 아닌 회원
+  function massPool(u, m) {
+    const region = REGIONS.includes(m.region) ? m.region : ''; const gender = ['M', 'F'].includes(m.gender) ? m.gender : '';
+    const busyWith = new Set(Object.values(db.convs).filter((c) => (c.a === u.id || c.b === u.id) && c.status !== 'closed').map((c) => (c.a === u.id ? c.b : c.a)));
+    const now = Date.now();
+    return Object.values(db.users).filter((x) => x.id !== u.id && !x.gone && !x.banned && !x.massOff && !busyWith.has(x.id) && !blockedEither(u.id, x.id)
+      && now - (x.lastSeen || x.at) < 30 * 86400e3 && (!region || x.region === region) && (!gender || x.gender === gender));
   }
   // 오늘의 추천 친구: 같은 지역 → 같은 나이대 → 최근 접속 순으로, 이미 대화했거나 차단한 사람은 빼고
   function makePicks(u) {
@@ -290,7 +304,7 @@ export function createCore({ data, save = () => {}, hook = () => {}, adminPasswo
     'conv.accept'(u, m) {
       const c = db.convs[m.id];
       if (!c || c.b !== u.id || c.status !== 'pending') return;
-      c.status = 'open'; c.msgs.push(sysMsg('대화가 시작되었습니다.')); pushConvs(c.a, c.b);
+      c.status = 'open'; c.msgs.push(sysMsg('대화가 시작되었습니다.')); pushConvs(c.a, c.b); if (c.mass) pushMe(c.a);
       notify(c.a, 'msg', { title: `${u.nick} 님이 대화를 수락했어요`, body: '지금 대화를 시작해 보세요.', view: { type: 'chat', id: c.id }, tag: `conv-${c.id}`, from: u.id });
     },
     'conv.reject'(u, m) {
@@ -461,6 +475,39 @@ export function createCore({ data, save = () => {}, hook = () => {}, adminPasswo
       }).catch((e) => { sendTo(u.id, { t: 'iap.fail', token }); toast(u.id, e?.message || '결제를 확인하지 못했습니다.'); })
         .finally(() => busy.delete(token));
     },
+    // 전체 쪽지: 지역·성별 조건에 맞는 회원에게 한 번에 대화 신청을 보낸다(받는 사람이 수락해야 대화 시작).
+    'mass.count'(u, m) { const pool = massPool(u, m); sendTo(u.id, { t: 'mass.count', n: pool.length, key: m.key }); },
+    'mass.send'(u, m) {
+      const c = cfg(); const now = Date.now();
+      const text = multi(m.text, 200);
+      if (text.length < 5) fail('쪽지 내용을 5자 이상 입력해 주세요.');
+      checkWords(text);
+      const log = u.massLog || [];
+      if (c.massDayMax > 0 && log.filter((b) => dayKey(b.at) === dayKey(now)).length >= c.massDayMax) fail(`전체 쪽지는 하루 ${c.massDayMax}번까지 보낼 수 있습니다.`);
+      if (log[0] && now - log[0].at < c.massCooldownMin * 60e3) fail(`전체 쪽지는 ${c.massCooldownMin}분에 한 번 보낼 수 있습니다. ${Math.ceil((log[0].at + c.massCooldownMin * 60e3 - now) / 60e3)}분 뒤에 다시 시도해 주세요.`);
+      const want = m.count === 'all' ? c.massAllMax : [10, 20, 30, 40, 50].includes(Number(m.count)) ? Number(m.count) : 0;
+      if (!want) fail('보낼 인원을 선택해 주세요.');
+      // 접속 중인 사람 → 최근 접속한 사람 순으로, 같은 조건이면 무작위
+      const pool = massPool(u, m).map((x) => ({ x, k: (socks.has(x.id) ? 2 : 0) + Math.max(0, 1 - (now - (x.lastSeen || x.at)) / (7 * 86400e3)) + Math.random() * 0.5 }))
+        .sort((a, b) => b.k - a.k).slice(0, want).map((o) => o.x);
+      if (!pool.length) fail('조건에 맞는 받을 사람이 없습니다. 지역이나 성별을 바꿔 보세요.');
+      const per = isVip(u) ? Math.floor((c.massCost * (100 - c.vipRequestPct)) / 100) : c.massCost;
+      const cost = per * pool.length;
+      if (u.points < cost) fail(`포인트가 부족합니다. (${pool.length}명 × ${per}P = ${cost.toLocaleString()}P)`);
+      const batch = { id: nid(), at: now, n: pool.length, cost, text, region: REGIONS.includes(m.region) ? m.region : '', gender: ['M', 'F'].includes(m.gender) ? m.gender : '' };
+      if (cost > 0) addPoints(u, -cost, `전체 쪽지 ${pool.length}명`);
+      for (const to of pool) {
+        const conv = { cost: 0, mass: true, batch: batch.id, id: nid(), a: u.id, b: to.id, status: 'pending', msgs: [{ id: nid(), uid: u.id, text, at: now }], read: { [u.id]: now }, left: [], at: now };
+        db.convs[conv.id] = conv;
+        hook({ type: 'conv.request', conv });
+        notify(to.id, 'request', { title: `${u.nick} 님의 전체 쪽지`, body: text, view: { type: 'chat', id: conv.id }, tag: `conv-${conv.id}`, from: u.id });
+        pushConvs(to.id);
+      }
+      u.massLog = [batch, ...log].slice(0, 50);
+      pushMe(u.id); pushConvs(u.id);
+      toast(u.id, `${pool.length}명에게 전체 쪽지를 보냈습니다. (${cost.toLocaleString()}P) 상대가 수락하면 대화가 시작됩니다.`);
+    },
+    'mass.recv'(u, m) { u.massOff = !m.on; pushMe(u.id); toast(u.id, m.on ? '전체 쪽지를 받습니다.' : '이제 전체 쪽지를 받지 않습니다.'); },
     // 프로필 부스트: 정해진 시간 동안 토크 목록·주변 사람 맨 위에 노출. VIP 는 하루 무료 횟수가 있다.
     boost(u) {
       const c = cfg(); const now = Date.now(); const today = dayKey(now);
@@ -667,6 +714,7 @@ export function createCore({ data, save = () => {}, hook = () => {}, adminPasswo
         boostsToday: db.ledger.filter((l) => l.reason.startsWith('프로필 부스트') && dayKey(l.at) === dayKey(Date.now())).length,
         giftsToday: db.ledger.filter((l) => l.gift && dayKey(l.at) === dayKey(Date.now())).reduce((n, l) => n - l.delta, 0),
         visitOpens: db.ledger.filter((l) => l.reason.startsWith('방문자 보기')).length,
+        massToday: db.ledger.filter((l) => l.reason.startsWith('전체 쪽지') && dayKey(l.at) === dayKey(Date.now())).length,
       },
       evidence: { logs: db.logs.length, trail: db.trail.length, oldest: Math.min(db.logs[0]?.at || Date.now(), db.trail[0]?.at || Date.now()) },
     };
@@ -706,6 +754,7 @@ export function createCore({ data, save = () => {}, hook = () => {}, adminPasswo
         giftMin: Math.max(1, num(c.giftMin, 100000)), giftMax: Math.max(1, num(c.giftMax, 1e6)), giftDayMax: num(c.giftDayMax, 1e7),
         visitorCost: num(c.visitorCost, 100000), visitorHours: Math.max(1, num(c.visitorHours, 720)),
         pickCount: num(c.pickCount, 10), pickHour: Math.min(21, num(c.pickHour, 21)),
+        massCost: num(c.massCost, 100000), massDayMax: num(c.massDayMax, 100), massAllMax: Math.max(1, num(c.massAllMax, 5000)), massCooldownMin: num(c.massCooldownMin, 1440),
         keepLogsDays: Math.max(KEEP_MIN_DAYS, num(c.keepLogsDays, 3650)), keepTrailDays: Math.max(KEEP_MIN_DAYS, num(c.keepTrailDays, 3650)), keepReportsDays: Math.max(KEEP_MIN_DAYS, num(c.keepReportsDays, 3650)),
       };
       pushConfig();

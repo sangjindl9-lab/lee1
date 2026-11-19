@@ -264,15 +264,21 @@ function ReportSheet({ uid, refText, close }) {
 /* ---------- 쪽지(1:1 대화) ---------- */
 const unreadOf = (c, myId) => (c.status === 'open' ? c.msgs.filter((m) => !m.sys && m.uid !== myId && m.at > (c.read[myId] || 0)).length : 0);
 function MailTab() {
-  const { s, me, U, hidden, setView, send } = useApp();
+  const { s, me, U, hidden, setView, send, setSheet } = useApp();
   const [seg, setSeg] = useState('chat');
   const convs = s.convs.filter((c) => !hidden(c.a === me.id ? c.b : c.a));
   const incoming = convs.filter((c) => c.status === 'pending' && c.b === me.id);
-  const chats = convs.filter((c) => !(c.status === 'pending' && c.b === me.id)).sort((a, b) => b.msgs.at(-1).at - a.msgs.at(-1).at);
+  // 내가 보낸 전체 쪽지 중 아직 수락 안 된 것은 대화 목록에 쌓이지 않게 숨긴다(보낸 전체 쪽지 기록에서 확인)
+  const chats = convs.filter((c) => !(c.status === 'pending' && c.b === me.id) && !(c.mass && c.status === 'pending' && c.a === me.id)).sort((a, b) => b.msgs.at(-1).at - a.msgs.at(-1).at);
   return (
     <>
       <div className="filters"><Chips items={[['chat', '대화'], ['req', `받은 신청 ${incoming.length || ''}`]]} value={seg} onChange={setSeg} /></div>
       <div className="list">
+        <button className="card mass-cta" onClick={() => setSheet({ type: 'mass' })}>
+          <span className="invite-ic"><Icon n="send" size={22} /></span>
+          <span className="grow"><b>전체 쪽지 보내기</b><span className="meta">지역·성별을 골라 최대 {s.config.massAllMax}명에게 한 번에 · 1명당 {s.config.massCost}P</span></span>
+          <Icon n="chev" size={16} />
+        </button>
         {seg === 'chat' ? (
           <>
             {chats.length === 0 && <Empty>진행 중인 대화가 없습니다.<br />토크에서 마음에 드는 상대에게 대화를 신청해 보세요.</Empty>}
@@ -291,7 +297,7 @@ function MailTab() {
             {incoming.map((c) => { const u = U(c.a); return (
               <div key={c.id} className="row req">
                 <Avatar u={u} />
-                <span className="grow"><span className="line1"><b>{u.nick}</b><Meta u={u} /></span><span className="text">{c.msgs[0].text}</span>
+                <span className="grow"><span className="line1"><b>{u.nick}</b><Meta u={u} />{c.mass && <em className="tag soft">전체 쪽지</em>}<Badges u={u} /></span><span className="text">{c.msgs[0].text}</span>
                   <span className="btn-row"><button className="btn sm" onClick={() => { send({ t: 'conv.accept', id: c.id }); setView({ type: 'chat', id: c.id }); }}>수락</button><button className="btn sm ghost" onClick={() => send({ t: 'conv.reject', id: c.id })}>거절</button></span></span>
               </div>
             ); })}
@@ -622,6 +628,43 @@ function InviteSheet({ close }) {
     </Sheet>
   );
 }
+const COUNTS = [[10, '10명'], [20, '20명'], [30, '30명'], [40, '40명'], [50, '50명'], ['all', '전체']];
+function MassSheet({ close }) {
+  const { me, s, send, api } = useApp(); const c = s.config;
+  const [region, setRegion] = useState(me.region); const [gender, setGender] = useState('');
+  const [count, setCount] = useState(10); const [text, setText] = useState(''); const [avail, setAvail] = useState(null);
+  useEffect(() => {
+    const key = Date.now(); setAvail(null);
+    const h = (m) => { if (m.key === key) setAvail(m.n); };
+    window.__massCount = h; send({ t: 'mass.count', region, gender, key });
+  }, [region, gender]);
+  const want = count === 'all' ? c.massAllMax : count;
+  const n = avail === null ? want : Math.min(want, avail);
+  const per = me.vipInfo?.on ? Math.floor((c.massCost * (100 - c.vipRequestPct)) / 100) : c.massCost;
+  const cost = n * per;
+  const left = Math.max(0, c.massDayMax - (me.massToday || 0));
+  const ok = text.trim().length >= 5 && n > 0 && me.points >= cost && (c.massDayMax === 0 || left > 0);
+  return (
+    <Sheet title="전체 쪽지" onClose={close}>
+      <label className="sub">지역</label>
+      <div className="chips wrap"><button className={`chip ${region === '' ? 'on' : ''}`} onClick={() => setRegion('')}>전국</button>{REGIONS.map((r) => <button key={r} className={`chip ${region === r ? 'on' : ''}`} onClick={() => setRegion(r)}>{r}</button>)}</div>
+      <label className="sub">성별</label>
+      <Chips items={[['', '전체'], ['F', '여자'], ['M', '남자']]} value={gender} onChange={setGender} />
+      <label className="sub">보낼 인원</label>
+      <div className="chips wrap">{COUNTS.map(([v, l]) => <button key={v} className={`chip ${count === v ? 'on' : ''}`} onClick={() => setCount(v)}>{l}</button>)}</div>
+      <div className="form">
+        <textarea rows={3} maxLength={200} value={text} placeholder="첫 인사를 적어 주세요 (5자 이상)" onChange={(e) => setText(e.target.value)} />
+        <div className="have mass-sum"><span className="meta">받을 수 있는 회원 {avail === null ? '…' : `${avail}명`} → <b>{n}명</b>에게 발송</span><b>{cost.toLocaleString()}P</b></div>
+        {me.points < cost && <span className="hint err">포인트가 부족합니다. (보유 {me.points.toLocaleString()}P)</span>}
+        <button className="btn" disabled={!ok} onClick={() => { send({ t: 'mass.send', region, gender, count, text }); close(); }}>{n}명에게 보내기</button>
+        <span className="hint">받는 사람이 수락하면 대화가 시작됩니다. 1명당 {per}P{me.vipInfo?.on && per < c.massCost ? ' (VIP 할인)' : ''}이며 거절돼도 환불되지 않습니다. 하루 {c.massDayMax}번(오늘 {left}번 남음), {c.massCooldownMin}분에 한 번 보낼 수 있습니다. 이미 대화 중이거나 전체 쪽지 받기를 끈 회원에게는 가지 않습니다.</span>
+      </div>
+      {me.mass?.length > 0 && <><h4 className="sub">보낸 전체 쪽지</h4>{me.mass.map((b) => (
+        <div key={b.id} className="row flat"><span className="grow">{b.text}<br /><span className="meta">{new Date(b.at).toLocaleString('ko-KR')} · {b.region || '전국'} · {b.gender === 'F' ? '여자' : b.gender === 'M' ? '남자' : '전체'} · {b.n}명 · {b.cost.toLocaleString()}P</span></span><em className="tag soft">수락 {b.accepted}</em></div>
+      ))}</>}
+    </Sheet>
+  );
+}
 function GiftSheet({ uid, close }) {
   const { me, s, send, U } = useApp(); const c = s.config; const [amt, setAmt] = useState(100);
   const presets = [10, 50, 100, 300, 500, 1000].filter((x) => x >= c.giftMin && x <= c.giftMax);
@@ -824,6 +867,10 @@ function NotifySheet({ close }) {
         <Switch on={n.comment} onChange={set('comment')} label="내 글 댓글" desc="라운지에 쓴 내 글에 댓글이 달렸을 때" />
         <Switch on={n.pick} onChange={set('pick')} label="오늘의 추천 친구" desc={`매일 저녁 ${s.config.pickHour}시 추천 친구 소식`} />
       </div>
+      <h4 className="sub">쪽지 받기</h4>
+      <div className="card sw-card">
+        <Switch on={!me.massOff} onChange={(v) => send({ t: 'mass.recv', on: v })} label="전체 쪽지 받기" desc="끄면 다른 회원이 여러 명에게 한 번에 보내는 쪽지를 받지 않습니다." />
+      </div>
       <h4 className="sub">이벤트·혜택</h4>
       <div className="card sw-card">
         <Switch on={n.event} onChange={set('event')} label="이벤트·쿠폰·혜택 알림 (광고성 정보 수신 동의)" desc={me.adConsent ? `${new Date(me.adConsent.at).toLocaleDateString('ko-KR')} ${me.adConsent.on ? '수신 동의' : '수신 거부'}` : '켜면 포인트 이벤트와 쿠폰 소식을 알려 드려요. 밤 9시 ~ 아침 8시에는 보내지 않습니다.'} />
@@ -871,6 +918,7 @@ export default function App() {
       else if (m.t === 'admin.lookup') setAdm((a) => ({ ...a, lookup: m }));
       else if (m.t === 'admin.export') setAdm((a) => ({ ...a, exportRes: { ...m, uid: m.name.split('_')[1] } }));
       else if (m.t === 'iap.done' || m.t === 'iap.fail') { iapWait.current[m.token]?.(m.t === 'iap.done'); delete iapWait.current[m.token]; }
+      else if (m.t === 'mass.count') window.__massCount?.(m);
       else if (m.t === 'toast') setToast(m.msg);
       else if (m.t === 'goto') setView(m.view);
       else if (m.t === 'notify') {
@@ -965,6 +1013,7 @@ export default function App() {
         {sheet?.type === 'invite' && <InviteSheet close={close} />}
         {sheet?.type === 'coupon' && <CouponSheet close={close} />}
         {sheet?.type === 'gift' && <GiftSheet uid={sheet.uid} close={close} />}
+        {sheet?.type === 'mass' && <MassSheet close={close} />}
         {sheet?.type === 'visitors' && <VisitorsSheet close={close} />}
         {sheet?.type === 'picks' && <PicksSheet close={close} />}
         {sheet?.type === 'vip' && <VipSheet close={close} />}
