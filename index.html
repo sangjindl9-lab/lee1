@@ -241,6 +241,11 @@ table.qg .pct input{font-size:14px;width:72px}
         <input type="file" id="up-xls" accept=".xlsx,.xls,.xlsm,.csv">
         <div class="implog" id="impmsg" role="status"></div>
       </div>
+      <div class="bulk">항목 구성:
+        <select id="tpl" aria-label="원가계산서 항목 구성"><option value="std">재료비·직접노무비 구분</option><option value="net">순공사원가 (직접공사비 한 줄)</option></select>
+        <button class="sm" type="button" id="btn-tpl">이 구성으로 바꾸기</button>
+        <span class="hint">내역서가 재료비·노무비를 나누지 않고 직접공사비로 되어 있으면 "순공사원가"를 고르세요. 바꾸면 아래 금액이 지워집니다.</span>
+      </div>
       <div class="bulk">제경비 한꺼번에:
         <button class="sm" type="button" data-bulk="rate">모두 요율</button>
         <button class="sm" type="button" data-bulk="full">모두 전액</button>
@@ -264,7 +269,7 @@ table.qg .pct input{font-size:14px;width:72px}
         </table>
       </div>
       <div class="addrow">
-        <select id="newgrp" aria-label="추가할 항목의 구분"><option>재료비</option><option>노무비</option><option selected>경비</option><option>일반관리비</option><option>이윤</option><option>기타</option></select>
+        <select id="newgrp" aria-label="추가할 항목의 구분"><option>직접공사비</option><option>재료비</option><option>노무비</option><option selected>경비</option><option>일반관리비</option><option>이윤</option><option>기타</option></select>
         <button type="button" id="btn-addrow">+ 항목 추가</button>
       </div>
     </section>
@@ -340,7 +345,7 @@ function applyMode(v,mode,r){
 }
 // 위에서 아래로 한 줄씩 계산한다. 산식 항목은 그 열에서 이미 계산된 재료비·노무비·경비 등을 기준으로 삼는다.
 function evalCol(rows,inp,opt){
-  const acc={mat:0,dlab:0,lab:0,exp:0,ga:0,health:0,dir:0},out={};
+  const acc={mat:0,dlab:0,lab:0,exp:0,ga:0,health:0,dir:0,net:0},out={};
   rows.forEach(function(x){
     let v;const fx=opt.fixed?opt.fixed(x):undefined;
     if(opt.skip&&opt.skip(x))v=0;
@@ -360,6 +365,7 @@ function evalCol(rows,inp,opt){
     if(x.grp==='재료비')acc.mat+=v;
     if(x.grp==='노무비'){acc.lab+=v;if(x.kind!=='f')acc.dlab+=v}
     if(x.grp==='경비')acc.exp+=v;
+    if(x.grp==='직접공사비'||x.grp==='재료비'||x.grp==='노무비'||x.grp==='경비')acc.net+=v;
     if(x.grp==='일반관리비')acc.ga+=v;
     if(x.key==='health')acc.health+=v;
   });
@@ -457,7 +463,7 @@ const FIELDS=[
   ['period','계약기간','',1],['doneDate','준공일','date',1],['claimDate','청구일','date'],
   ['sub','청구인 상호'],['bizno','사업자등록번호'],['ceo','대표자'],['addr','주소'],['bank','입금계좌 (은행·계좌번호·예금주)']
 ];
-const BASES={dlab:'직접노무비',lab:'노무비',mat:'재료비',dir:'직접비 합계','mat+dlab':'재료비+직접노무비','mat+lab':'재료비+노무비','mat+lab+exp':'재료비+노무비+경비','lab+exp+ga':'노무비+경비+일반관리비',health:'건강보험료',own:'기준금액 입력'};
+const BASES={dlab:'직접노무비',lab:'노무비',mat:'재료비',dir:'직접비 합계','mat+dlab':'재료비+직접노무비','mat+lab':'재료비+노무비','mat+lab+exp':'재료비+노무비+경비','lab+exp+ga':'노무비+경비+일반관리비',net:'순공사원가','net+ga':'순공사원가+일반관리비',health:'건강보험료',own:'기준금액 입력'};
 // [구분, 항목, 금액 또는 기준금액, 산식 기준(없으면 금액 입력), 요율, 배수, key]
 const DEF=[
   ['재료비','재료비',77879039],
@@ -486,11 +492,20 @@ function ensureQ(){
     q.exMode='minus';
   }
 }
+// 순공사원가 구성: 재료비·노무비를 나누지 않고 직접공사비 한 줄로 적는 내역서 (제경비는 원도급 금액을 적으면 같은 비율로 줄어든다)
+const DEF_NET=[
+  ['직접공사비','직접공사비',0],
+  ['노무비','간접노무비',0,'dir',0],
+  ['경비','산재보험료',0,'dir',0],['경비','고용보험료',0,'dir',0],['경비','국민건강보험료',0,'dir',0],['경비','국민연금보험료',0,'dir',0],
+  ['경비','노인장기요양보험료',0,'dir',0],['경비','퇴직공제부금',0,'dir',0],['경비','산업안전보건관리비',0,'dir',0],['경비','기타경비',0,'dir',0],
+  ['일반관리비','일반관리비',0,'net',0],['이윤','이윤',0,'net+ga',0],['기타','물가변동계약금액조정',0,'dir',0]
+];
+const mkRows=(def,example)=>def.map(d=>({id:uid(),grp:d[0],name:d[1],kind:d[3]?'f':'in',fb:d[3]||'',rate:d[4]||0,add:0,mult:d[5]||1,key:d[6]||'',base:example?d[2]:0,chg:0,mode:'rate'}));
 function fresh(example){
   return {example:!!example,mode:'simple',q:freshQ(),r1:65,r2:65,hasChg:false,cut:1,
     info:{project:'',prime:'',contractAmt:0,period:'',doneDate:'',claimDate:today(),
       sub:'㈜에스에스전력',bizno:'220-86-60440',ceo:'김세인',addr:'',bank:''},
-    rows:DEF.map(d=>({id:uid(),grp:d[0],name:d[1],kind:d[3]?'f':'in',fb:d[3]||'',rate:d[4]||0,add:0,mult:d[5]||1,key:d[6]||'',base:example?d[2]:0,chg:0,mode:'rate'})),
+    rows:mkRows(DEF,example),
     primes:[{id:uid(),name:'',share:100}],
     paid:[{id:uid(),name:'선급금',kind:'pre',amt:0}],
     direct:[{id:uid(),name:'',amt:0,vat:'incl'}]};
@@ -646,7 +661,7 @@ function renderAll(){
   document.body.classList.toggle('simple',S.mode==='simple');
   $('mode-simple').classList.toggle('on',S.mode==='simple');$('mode-cost').classList.toggle('on',S.mode!=='simple');
   renderFields();renderPrimes();renderRows();renderDed();renderQ();
-  $('r1').value=S.r1;$('r2').value=S.r2;$('cut').value=String(S.cut);$('haschg').checked=S.hasChg;$('adv').checked=!!S.adv;$('vatr').value=S.vatR||'floor';
+  $('r1').value=S.r1;$('r2').value=S.r2;$('cut').value=String(S.cut);$('haschg').checked=S.hasChg;$('adv').checked=!!S.adv;$('vatr').value=S.vatR||'floor';$('tpl').value=S.tpl==='net'?'net':'std';
   recalc();
 }
 function recalc(){
@@ -838,6 +853,10 @@ document.addEventListener('click',e=>{
     if(b.dataset.arm){S.rows.forEach(x=>{x.base=0;x.chg=0;x.sfix=0;x.sfixc=0;x.pamt=null});S.paid.forEach(x=>{x.amt=0});S.direct.forEach(x=>{x.amt=0});S.info.contractAmt=0;S.example=false;$('impmsg').innerHTML='';renderAll();delete b.dataset.arm;b.textContent='금액 전체 삭제'}
     else{b.dataset.arm='1';b.textContent='한 번 더 누르면 삭제합니다';setTimeout(()=>{delete b.dataset.arm;b.textContent='금액 전체 삭제'},4000)}
   }
+  else if(b.id==='btn-tpl'){
+    if(b.dataset.arm){S.tpl=$('tpl').value;S.rows=mkRows(S.tpl==='net'?DEF_NET:DEF,false);S.example=false;$('impmsg').innerHTML='';renderRows();recalc();delete b.dataset.arm;b.textContent='이 구성으로 바꾸기'}
+    else{b.dataset.arm='1';b.textContent='한 번 더 누르면 금액을 지우고 바꿉니다';setTimeout(()=>{delete b.dataset.arm;b.textContent='이 구성으로 바꾸기'},4000)}
+  }
   else if(b.id==='btn-xlsx')saveXlsx();
   else if(b.id==='btn-html')saveHtml();
   else if(b.id==='btn-print')window.print();
@@ -910,23 +929,29 @@ function saveXlsx(){
 /* ---------- 준공내역서(엑셀) 불러오기 ---------- */
 /*IMP-START*/
 const SYN={직접재료비:'재료비',노무비:'직접노무비',산업재해보상보험료:'산재보험료',산재보험:'산재보험료',고용보험:'고용보험료',건강보험료:'국민건강보험료',국민건강보험:'국민건강보험료',건강보험:'국민건강보험료',노인장기요양보험:'노인장기요양보험료',장기요양보험료:'노인장기요양보험료',장기요양보험:'노인장기요양보험료',퇴직공제부금비:'퇴직공제부금',연금보험료:'국민연금보험료',국민연금:'국민연금보험료',국민연금보험:'국민연금보험료',안전관리비:'산업안전보건관리비',산업안전보건관리비:'산업안전보건관리비'};
-const norm=s=>String(s).replace(/[\s()（）\[\]·.,:]/g,'');
-const canon=s=>{const n=norm(s);return SYN[n]||n};
-const SKIP=/^(소계|계|합계|총계|노무비계|재료비계|경비계|부가세|부가가치세|순공사원가|순공사비|총원가|공급가액|도급액|총공사비|공사원가|내용|구분|비목|비고)$/;
+const norm=s=>String(s).replace(/^\s*(?:\d+|[가-하]|[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩIVX]+)\s*[.)]\s*/,'').replace(/[\s()（）\[\]·.,:]/g,'');
+const canon=s=>{const n=norm(s);return SYN[n]||(n.indexOf('물가변동')===0?'물가변동계약금액조정':n)};
+const SKIP=/^(소계|계|합계|총계|노무비계|재료비계|경비계|부가세|부가가치세|도급금액|순공사원가|순공사비|총원가|공급가액|도급액|총공사비|공사원가|내용|구분|비목|비고)$/;
 const cellNum=c=>typeof c==='number'?c:(typeof c==='string'&&/^-?[\d,]+(\.\d+)?$/.test(c.trim())?Number(c.replace(/,/g,'')):null);
 function scanSheet(aoa){
-  let col=-1;const found={};
+  let col=-1,prev=null,multi=false;const found={};
   aoa.forEach(r=>{
     if(!r)return;
-    const hi=r.findIndex(c=>typeof c==='string'&&norm(c)==='금액');
-    if(hi>=0&&col<0){col=hi;return}
+    let hi=r.findIndex(c=>typeof c==='string'&&norm(c)==='금액');
+    if(hi>=0&&col<0){
+      // 도급·전회·금회·준공으로 금액 열이 여러 개면 "금회" 아래의 금액 열을 읽는다
+      const g=(prev||r).findIndex(c=>typeof c==='string'&&norm(c).indexOf('금회')===0);
+      if(g>=0){const k=r.findIndex((c,i)=>i>=g&&typeof c==='string'&&norm(c)==='금액');if(k>=0)hi=k}
+      multi=r.filter(c=>typeof c==='string'&&norm(c)==='금액').length>1;
+      col=hi;return}
+    prev=r;
     const li=r.findIndex(c=>typeof c==='string'&&/[가-힣]/.test(c)&&norm(c).length>1);
     if(li<0)return;
     const n=norm(r[li]);let amt=null,rate=null;
     if(col>=0)amt=cellNum(r[col]);
     else r.forEach((c,i)=>{if(i>li){const v=cellNum(c);if(v!=null&&(amt==null||Math.abs(v)>Math.abs(amt)))amt=v}});
-    r.forEach((c,i)=>{if(i>li&&typeof c==='string'){const m=c.match(/\d+(?:\.\d+)?\s*%/g);if(m)rate=parseFloat(m[m.length-1])}});
-    if(!(n in found))found[n]={label:String(r[li]).replace(/\s+/g,' ').trim(),amt:amt==null?0:Math.round(amt),rate:rate};
+    if(!multi)r.forEach((c,i)=>{if(i>li&&typeof c==='string'){const m=c.match(/\d+(?:\.\d+)?\s*%/g);if(m)rate=parseFloat(m[m.length-1])}});
+    if(!(n in found))found[n]={label:String(r[li]).replace(/\s+/g,' ').trim(),amt:amt==null?0:Math.round(amt),rate:rate,sub:/^\s*[가-하]\)/.test(r[li])};
   });
   return found;
 }
@@ -961,8 +986,11 @@ function applyImport(found){
       else if(F.rate!=null&&Math.abs(F.rate-q.drate)>Math.max(0.002,q.drate*0.002))log.push(x.name+': 비고에는 '+F.rate+'%로 적혀 있지만 금액 기준으로는 '+q.drate+'%입니다. 금액에 맞췄습니다.');
     }
   });
-  const miss=names.filter(k=>!used[k]&&!SKIP.test(k)&&found[k].amt>0).map(k=>found[k].label+' '+fmt(found[k].amt));
+  const miss=names.filter(k=>!used[k]&&!SKIP.test(k)&&!found[k].sub&&found[k].amt>0).map(k=>found[k].label+' '+fmt(found[k].amt));
   if(miss.length)log.push('표에 없는 항목이라 가져오지 않았습니다: '+miss.join(', ')+'. 필요하면 "+ 항목 추가"로 넣으세요.');
+  const V=found['부가가치세']||found['부가세'];
+  if(V&&V.amt){const q=calc(S).pb/10,m=[['floor',Math.floor(q)],['round',Math.round(q)],['ceil',Math.ceil(q-1e-9)]].filter(v=>v[1]===V.amt).map(v=>v[0]);
+    if(m.length&&m.indexOf(S.vatR||'floor')<0){S.vatR=m[0];const e=$('vatr');if(e)e.value=m[0];log.push('부가세 원 미만 처리를 내역서('+fmt(V.amt)+'원)에 맞춰 '+({floor:'버림',round:'반올림',ceil:'올림'})[m[0]]+'으로 바꿨습니다.')}}
   const T=found['합계']||found['공급가액']||found['총원가'];
   if(T&&T.amt){const d=calc(S).pb-T.amt;log.push(d?'내역서 합계 '+fmt(T.amt)+'원과 '+fmt(Math.abs(d))+'원 차이가 납니다. 위 항목을 확인하세요.':'내역서 합계 '+fmt(T.amt)+'원과 일치합니다.')}
   return log;
