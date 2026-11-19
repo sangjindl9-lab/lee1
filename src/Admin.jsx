@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import Legal from './Legal.jsx';
+import { REGIONS } from '../shared/core.js';
 
 const won = (n) => `${Number(n).toLocaleString()}원`;
 const dt = (t) => new Date(t).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 const STATUS = { paid: '결제 완료', refunded: '환불 처리' };
-const TABS = [['dash', '현황'], ['orders', '충전'], ['users', '회원'], ['reports', '신고'], ['content', '콘텐츠'], ['mkt', '마케팅'], ['legal', '수사협조'], ['config', '설정']];
+const TABS = [['dash', '현황'], ['orders', '충전'], ['users', '회원'], ['reports', '신고'], ['content', '콘텐츠'], ['mkt', '마케팅'], ['push', '단체 알림'], ['legal', '수사협조'], ['config', '설정']];
 
 function Settings({ config, send }) {
   const [c, setC] = useState(() => JSON.parse(JSON.stringify(config)));
@@ -21,6 +22,15 @@ function Settings({ config, send }) {
       <section className="a-card"><h3>포인트 규칙</h3>
         {Num({ k: 'startPoints', label: '가입 축하 포인트' })}{Num({ k: 'attend', label: '출석체크' })}{Num({ k: 'bonus3', label: '3일 연속 보너스' })}{Num({ k: 'bonus7', label: '7일 연속 보너스' })}
         {Num({ k: 'requestCost', label: '대화 신청 비용 (거절 시 환불)' })}{Num({ k: 'pinCost', label: '토크 상단 고정 비용' })}{Num({ k: 'pinMin', label: '상단 고정 시간', unit: '분' })}
+      </section>
+      <section className="a-card"><h3>수익 상품</h3>
+        {Num({ k: 'boostCost', label: '프로필 부스트 가격' })}{Num({ k: 'boostMin', label: '부스트 지속 시간', unit: '분' })}
+        <label className="a-num"><span>VIP 구독 상품 ID (Play Console과 같게)</span><span className="a-in"><input value={c.vipSku} onChange={(e) => set('vipSku', e.target.value)} /></span></label>
+        {Num({ k: 'vipPrice', label: 'VIP 표시 가격 (실제 금액은 Play Console)', unit: '원' })}{Num({ k: 'vipPoints', label: 'VIP 매달 지급 포인트' })}
+        {Num({ k: 'vipRequestPct', label: 'VIP 대화 신청 할인', unit: '%' })}{Num({ k: 'vipFreeBoost', label: 'VIP 하루 무료 부스트', unit: '회' })}
+        {Num({ k: 'visitorCost', label: '방문자 보기 가격' })}{Num({ k: 'visitorHours', label: '방문자 보기 시간', unit: '시간' })}
+        {Num({ k: 'giftMin', label: '선물 최소' })}{Num({ k: 'giftMax', label: '선물 1회 최대' })}{Num({ k: 'giftDayMax', label: '선물 하루 최대 (0 = 제한 없음)' })}
+        {Num({ k: 'pickCount', label: '오늘의 추천 친구 인원 (0 = 끔)', unit: '명' })}{Num({ k: 'pickHour', label: '추천 친구 알림 시각 (21시 이전)', unit: '시' })}
       </section>
       <section className="a-card"><h3>마케팅 보상</h3>
         {Num({ k: 'inviteJoin', label: '초대받아 가입한 친구에게' })}{Num({ k: 'inviteReward', label: '초대한 사람에게 (친구 첫 출석 시)' })}
@@ -53,6 +63,31 @@ function Settings({ config, send }) {
         </div>
       </section>
       <button className="btn" onClick={save}>{saved ? '저장되었습니다' : '설정 저장'}</button>
+    </div>
+  );
+}
+
+function Broadcast({ d, send }) {
+  const [f, setF] = useState({ title: '', body: '', region: '' }); const [ok, setOk] = useState(false);
+  const set = (k) => (e) => { setF({ ...f, [k]: e.target.value }); setOk(false); };
+  const h = new Date(Date.now() + 9 * 3600e3).getUTCHours(); const night = h >= 21 || h < 8;
+  return (
+    <div className="a-stack">
+      <section className="a-card"><h3>단체 알림 보내기</h3>
+        <p className="meta">이벤트·혜택 알림을 켠 회원(광고성 정보 수신 동의) <b>{d.revenue.eventOn}명</b>에게만 보냅니다. 법에 따라 제목 앞에 "(광고)"와 수신거부 방법이 자동으로 붙고, 밤 9시 ~ 아침 8시에는 보낼 수 없습니다. 앱을 보고 있는 회원에게는 화면 팝업으로, 아니면 휴대폰 알림으로 갑니다.</p>
+        <div className="form">
+          <input placeholder="제목 (예: 주말 포인트 2배 이벤트)" maxLength={40} value={f.title} onChange={set('title')} />
+          <textarea rows={4} placeholder="내용 (쿠폰 코드를 넣으면 회원이 MY > 쿠폰 등록에서 쓸 수 있습니다)" maxLength={300} value={f.body} onChange={set('body')} />
+          <select value={f.region} onChange={set('region')}><option value="">전체 지역</option>{REGIONS.map((r) => <option key={r} value={r}>{r}만</option>)}</select>
+          {night && <div className="hint err">지금은 광고성 알림을 보낼 수 없는 시간입니다.</div>}
+          {!ok ? <button className="btn" disabled={!f.title.trim() || !f.body.trim() || night} onClick={() => setOk(true)}>보내기</button>
+            : <div className="btn-row"><button className="btn danger" onClick={() => { send({ t: 'admin.broadcast', ...f }); setF({ title: '', body: '', region: '' }); setOk(false); }}>정말 보내기 (취소 불가)</button><button className="btn ghost" onClick={() => setOk(false)}>취소</button></div>}
+        </div>
+      </section>
+      <section className="a-card"><h3>보낸 알림</h3>
+        {d.notices.length === 0 && <p className="meta">보낸 알림이 없습니다.</p>}
+        {d.notices.map((n) => <div key={n.id} className="a-led"><span><b>{n.title}</b> {n.region && <em className="tag soft">{n.region}</em>}<br /><span className="meta">{dt(n.at)} · {n.sent}명에게 발송</span><br />{n.body}</span></div>)}
+      </section>
     </div>
   );
 }
@@ -171,6 +206,8 @@ export default function Admin({ adm, send, onExit, demo }) {
               <Stat label="회원" value={`${s.users}명`} /><Stat label="현재 접속" value={`${s.online}명`} />
               <Stat label="오늘 가입" value={`${s.joinedToday}명`} /><Stat label="오늘 토크" value={`${s.talksToday}개`} />
               <Stat label="회원 보유 포인트 합계" value={`${s.pointsHeld.toLocaleString()}P`} /><Stat label="이용 정지" value={`${s.banned}명`} />
+              {d.revenue && <><Stat label="VIP 구독 중" value={`${d.revenue.vip}명`} /><Stat label="오늘 부스트" value={`${d.revenue.boostsToday}회`} />
+              <Stat label="오늘 선물" value={`${d.revenue.giftsToday.toLocaleString()}P`} /><Stat label="방문자 보기 구매" value={`${d.revenue.visitOpens}회`} /></>}
             </div>
             <section className="a-card"><h3>최근 포인트 변동</h3>
               {d.ledger.length === 0 && <p className="meta">아직 내역이 없습니다.</p>}
@@ -184,7 +221,7 @@ export default function Admin({ adm, send, onExit, demo }) {
             {d.orders.length === 0 && <p className="empty">결제 내역이 없습니다.</p>}
             {d.orders.map((o) => (
               <div key={o.id} className={`a-card a-row ${o.status === 'refunded' ? 'off' : ''}`}>
-                <div className="a-line"><b>{o.nick}</b><em className={`tag ${o.status === 'paid' ? 'soft' : ''}`}>{STATUS[o.status] || o.status}</em>{o.test && <em className="tag">테스트 결제</em>}<span className="a-pts">{won(o.price)}</span></div>
+                <div className="a-line"><b>{o.nick}</b><em className={`tag ${o.status === 'paid' ? 'soft' : ''}`}>{STATUS[o.status] || o.status}</em>{o.kind === 'sub' && <em className="tag soft">VIP 구독</em>}{o.test && <em className="tag">테스트 결제</em>}<span className="a-pts">{won(o.price)}</span></div>
                 <div className="meta">{o.name} · {(o.points + o.bonus).toLocaleString()}P · {dt(o.at)}{o.orderId ? ` · 주문 ${o.orderId}` : ''}</div>
                 {o.status === 'paid' && <div className="btn-row"><button className="btn sm ghost danger" onClick={() => send({ t: 'admin.refund', id: o.id })}>환불 처리 (포인트 회수)</button></div>}
               </div>
@@ -213,6 +250,7 @@ export default function Admin({ adm, send, onExit, demo }) {
           </div>
         )}
         {tab === 'mkt' && d.marketing && <Marketing m={d.marketing} send={send} />}
+        {tab === 'push' && d.revenue && <Broadcast d={d} send={send} />}
         {tab === 'legal' && <Legal d={d} send={send} lookup={adm.lookup} exportRes={adm.exportRes} />}
         {tab === 'config' && <Settings config={d.config} send={send} />}
       </div>

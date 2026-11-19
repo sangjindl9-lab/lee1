@@ -3,6 +3,7 @@ import { connect, store, DEMO } from './api.js';
 import { REGIONS, AGES, CATS, TOPICS, REPORT_REASONS } from '../shared/core.js';
 import Admin from './Admin.jsx';
 import { playService, playPrices, buy, pending, consume } from './pay.js';
+const SUB_URL = (sku) => `https://play.google.com/store/account/subscriptions?sku=${sku}&package=kr.eumsoft.eumchat`;
 import { pushSupported, permission, registerSW, enablePush, disablePush, currentSub } from './push.js';
 
 // 초대 링크(?ref=코드)로 들어오면 코드를 기억해 두었다가 가입할 때 쓴다.
@@ -25,6 +26,10 @@ const ICONS = {
   chev: 'M9 5l7 7-7 7',
   gift: 'M4 11h16v9H4zM3 7h18v4H3zM12 7v13M12 7c-2-4-6-3-5 0M12 7c2-4 6-3 5 0',
   ticket: 'M4 7h16v3a2 2 0 000 4v3H4v-3a2 2 0 000-4zM14 7v10',
+  bolt: 'M13 3L5 14h6l-1 7 8-11h-6z',
+  eye: 'M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12zM12 15a3 3 0 100-6 3 3 0 000 6z',
+  crown: 'M3 8l4 4 5-7 5 7 4-4-2 11H5z',
+  star: 'M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z',
 };
 const Icon = ({ n, size = 22, fill }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill={fill || 'none'} stroke="currentColor" strokeWidth={n === 'more' ? 3 : 1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={ICONS[n]} /></svg>
@@ -39,7 +44,7 @@ const ago = (t) => {
 };
 const clock = (t) => new Date(t).toLocaleTimeString('ko-KR', { hour: 'numeric', minute: '2-digit' });
 
-const init = { ready: false, need: false, me: null, config: null, pushKey: '', users: {}, talks: [], convs: [], rooms: [], room: {}, posts: [] };
+const init = { ready: false, need: false, me: null, config: null, pushKey: '', notices: [], users: {}, talks: [], convs: [], rooms: [], room: {}, posts: [] };
 function reducer(s, m) {
   switch (m.t) {
     case 'need_profile': return { ...s, need: true, ready: true };
@@ -47,6 +52,7 @@ function reducer(s, m) {
     case 'me': return { ...s, me: m.me };
     case 'config': return { ...s, config: m.config };
     case 'push.key': return { ...s, pushKey: m.key };
+    case 'notices': return { ...s, notices: m.list };
     case 'users': return { ...s, users: Object.fromEntries(m.users.map((u) => [u.id, u])) };
     case 'talks': return { ...s, talks: m.talks };
     case 'convs': return { ...s, convs: m.convs };
@@ -70,6 +76,8 @@ function Avatar({ u, size = 42 }) {
     </span>
   );
 }
+const isBoost = (u) => (u.boostUntil || 0) > Date.now();
+const Badges = ({ u }) => <>{u.vip && <em className="tag vip">VIP</em>}{isBoost(u) && <em className="tag boost">부스트</em>}</>;
 const Meta = ({ u }) => <span className="meta">{u.gender === 'F' ? '여' : '남'} · {u.age} · {u.region}</span>;
 
 function Sheet({ title, onClose, children }) {
@@ -92,6 +100,7 @@ function ProfileForm({ initial, first, onSubmit }) {
   const [p, setP] = useState(initial || { nick: '', gender: '', age: '', region: '', intro: '' });
   const [agree, setAgree] = useState(!first);
   const [ref, setRef] = useState(() => (first ? store.get('eum_ref') || '' : ''));
+  const [ad, setAd] = useState(false);
   const set = (k) => (v) => setP({ ...p, [k]: v });
   const ok = p.nick.trim().length >= 2 && p.gender && p.age && p.region && agree;
   return (
@@ -108,37 +117,76 @@ function ProfileForm({ initial, first, onSubmit }) {
         <label className="check"><input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} />
           <span>만 19세 이상이며, 욕설·음란물·금전 요구·개인정보 요구를 하지 않겠습니다.</span></label>
       )}
-      <button className="btn" disabled={!ok} onClick={() => onSubmit(p, ref.trim())}>{first ? '시작하기' : '저장'}</button>
+      {first && (
+        <label className="check"><input type="checkbox" checked={ad} onChange={(e) => setAd(e.target.checked)} />
+          <span>(선택) 이벤트·쿠폰·혜택 소식을 알림으로 받겠습니다. 언제든 MY &gt; 알림 설정에서 끌 수 있습니다.</span></label>
+      )}
+      <button className="btn" disabled={!ok} onClick={() => onSubmit(p, ref.trim(), ad)}>{first ? '시작하기' : '저장'}</button>
     </div>
   );
 }
 
 /* ---------- 토크 ---------- */
+function BoostBar() {
+  const { me, s, send } = useApp(); const c = s.config;
+  const left = Math.ceil(((me.boostUntil || 0) - Date.now()) / 60e3);
+  const free = me.vipInfo?.freeBoostLeft > 0;
+  return (
+    <div className="boostbar">
+      <Icon n="bolt" size={18} />
+      <span className="grow">{left > 0 ? <><b>부스트 중</b> · {left}분 남음</> : <>내 프로필을 <b>{c.boostMin}분</b> 동안 맨 위에</>}</span>
+      <button className="btn sm" onClick={() => send({ t: 'boost' })}>{free ? 'VIP 무료' : `${left > 0 ? '연장' : '부스트'} ${c.boostCost}P`}</button>
+    </div>
+  );
+}
+function PersonRow({ u, onClick }) {
+  return (
+    <button className={`row talk ${isBoost(u) ? 'pinned' : ''}`} onClick={onClick}>
+      <Avatar u={u} />
+      <span className="grow"><span className="line1"><b>{u.nick}</b><Meta u={u} /><Badges u={u} /></span><span className="text">{u.intro || ' '}</span></span>
+      <span className="time">{u.online ? '접속 중' : ago(u.lastSeen)}</span>
+    </button>
+  );
+}
 function TalkTab() {
   const { s, me, U, hidden, setSheet } = useApp();
   const [g, setG] = useState('all');
   const [near, setNear] = useState(false);
+  const [mode, setMode] = useState('talk');
   const notice = s.config.notice;
-  const list = s.talks.filter((t) => { const u = U(t.uid); return !hidden(t.uid) && (g === 'all' || u.gender === g) && (!near || u.region === me.region); });
+  const ok = (u) => !hidden(u.id) && (g === 'all' || u.gender === g) && (!near || u.region === me.region);
+  const list = s.talks.filter((t) => { const u = U(t.uid); return ok({ ...u, id: t.uid }); });
+  const people = Object.values(s.users).filter((u) => u.id !== me.id && !u.gone && ok(u))
+    .sort((a, b) => (isBoost(b) - isBoost(a)) || (b.online - a.online) || (b.lastSeen - a.lastSeen)).slice(0, 200);
   return (
     <>
       <div className="filters">
+        <Chips items={[['talk', '토크'], ['people', '주변 사람']]} value={mode} onChange={setMode} />
+        <span className="sep" />
         <Chips items={[['all', '전체'], ['F', '여자'], ['M', '남자']]} value={g} onChange={setG} />
         <button className={`chip ${near ? 'on' : ''}`} onClick={() => setNear(!near)}>{me.region}만</button>
       </div>
       <div className="list">
         {notice && <div className="noticebar"><b>공지</b>{notice}</div>}
+        <BoostBar />
+        {mode === 'people' ? (
+          <>
+            {people.length === 0 && <Empty>조건에 맞는 사람이 없습니다.</Empty>}
+            {people.map((u) => <PersonRow key={u.id} u={u} onClick={() => setSheet({ type: 'profile', uid: u.id })} />)}
+          </>
+        ) : <>
         {list.length === 0 && <Empty>등록된 토크가 없습니다.<br />첫 토크를 남겨 보세요.</Empty>}
         {list.map((t) => { const u = U(t.uid); const pinned = t.pinUntil > Date.now(); return (
-          <button key={t.id} className={`row talk ${pinned ? 'pinned' : ''}`} onClick={() => setSheet({ type: 'profile', uid: t.uid, talk: t })}>
+          <button key={t.id} className={`row talk ${pinned || isBoost(u) ? 'pinned' : ''}`} onClick={() => setSheet({ type: 'profile', uid: t.uid, talk: t })}>
             <Avatar u={u} />
             <span className="grow">
-              <span className="line1"><b>{u.nick}</b><Meta u={u} />{pinned && <em className="tag">상단</em>}</span>
+              <span className="line1"><b>{u.nick}</b><Meta u={u} />{pinned && <em className="tag">상단</em>}<Badges u={u} /></span>
               <span className="text">{t.text}</span>
             </span>
             <span className="time">{ago(t.at)}</span>
           </button>
         ); })}
+        </>}
       </div>
       <button className="fab" onClick={() => setSheet({ type: 'writeTalk' })} aria-label="토크 쓰기"><Icon n="plus" size={26} /></button>
     </>
@@ -164,11 +212,13 @@ function ProfileSheet({ uid, talk, close }) {
   const [text, setText] = useState('');
   const conv = s.convs.find((c) => [c.a, c.b].includes(uid) && c.status !== 'closed');
   const friend = me.friends.includes(uid); const blocked = me.blocks.includes(uid);
+  useEffect(() => { if (!mine) send({ t: 'profile.view', uid }); }, [uid]);
+  const cost = me.vipInfo?.on ? Math.floor((s.config.requestCost * (100 - s.config.vipRequestPct)) / 100) : s.config.requestCost;
   return (
     <Sheet title="프로필" onClose={close}>
       <div className="profile">
         <Avatar u={u} size={64} />
-        <div><b className="big">{u.nick}</b><div><Meta u={u} /></div><div className="meta">{u.online ? '접속 중' : `최근 접속 ${ago(u.lastSeen)}`}</div></div>
+        <div><b className="big">{u.nick}</b> <Badges u={u} /><div><Meta u={u} /></div><div className="meta">{u.online ? '접속 중' : `최근 접속 ${ago(u.lastSeen)}`}</div></div>
       </div>
       {u.intro && <p className="intro">{u.intro}</p>}
       {talk && <p className="quote">{talk.text}</p>}
@@ -176,11 +226,14 @@ function ProfileSheet({ uid, talk, close }) {
         talk ? <button className="btn ghost danger" onClick={() => { send({ t: 'talk.del', id: talk.id }); close(); }}>이 토크 삭제</button> : null
       ) : u.gone ? <Empty>탈퇴한 회원입니다.</Empty> : (
         <div className="form">
-          {conv ? <button className="btn" onClick={() => { setView({ type: 'chat', id: conv.id }); close(); }}>대화방 열기</button> : !blocked && (
+          {conv ? <>
+            <button className="btn" onClick={() => { setView({ type: 'chat', id: conv.id }); close(); }}>대화방 열기</button>
+            {conv.status === 'open' && <button className="btn ghost" onClick={() => setSheet({ type: 'gift', uid })}><Icon n="gift" size={18} /> 포인트 선물하기</button>}
+          </> : !blocked && (
             <>
               <textarea rows={2} maxLength={200} value={text} placeholder="첫 인사를 적어 보세요 (비우면 기본 인사)" onChange={(e) => setText(e.target.value)} />
-              <button className="btn" onClick={() => { if (me.points < s.config.requestCost) setSheet({ type: 'shop' }); else { send({ t: 'conv.request', to: uid, text }); close(); } }}>대화 신청{s.config.requestCost > 0 ? ` (${s.config.requestCost}P)` : ''}</button>
-              {s.config.requestCost > 0 && <div className="hint">상대가 거절하면 포인트는 돌려받습니다. 보유 {me.points.toLocaleString()}P</div>}
+              <button className="btn" onClick={() => { if (me.points < cost) setSheet({ type: 'shop' }); else { send({ t: 'conv.request', to: uid, text }); close(); } }}>대화 신청{cost > 0 ? ` (${cost}P${me.vipInfo?.on && cost < s.config.requestCost ? ' · VIP 할인' : ''})` : ''}</button>
+              {cost > 0 && <div className="hint">상대가 거절하면 포인트는 돌려받습니다. 보유 {me.points.toLocaleString()}P</div>}
             </>
           )}
           <div className="btn-row">
@@ -270,7 +323,7 @@ function Messages({ msgs, myId, readAt, onPick, showNick }) {
           <div className="col">
             {m.uid !== myId && showNick && <span className="nick">{U(m.uid).nick}</span>}
             <div className="bubble-row">
-              <button className={`bubble ${m.deleted ? 'del' : ''}`} onClick={() => !m.deleted && onPick?.(m)}>{m.deleted ? '삭제된 메시지입니다.' : m.text}</button>
+              <button className={`bubble ${m.deleted ? 'del' : ''} ${m.gift ? 'giftmsg' : ''}`} onClick={() => !m.deleted && !m.gift && onPick?.(m)}>{m.gift && <Icon n="gift" size={16} />}{m.deleted ? '삭제된 메시지입니다.' : m.text}</button>
               <span className="mt">{m.uid === myId && readAt !== undefined && readAt < m.at && <i>1</i>}{clock(m.at)}</span>
             </div>
           </div>
@@ -293,7 +346,7 @@ function ChatView({ id }) {
     <div className="screen">
       <header className="bar">
         <button className="ib" onClick={() => setView(null)} aria-label="뒤로"><Icon n="back" /></button>
-        <button className="title" onClick={() => setSheet({ type: 'profile', uid: oid })}><b>{u.nick}</b><span className="meta">{u.online ? '접속 중' : `최근 접속 ${ago(u.lastSeen)}`}</span></button>
+        <button className="title" onClick={() => setSheet({ type: 'profile', uid: oid })}><b>{u.nick} <Badges u={u} /></b><span className="meta">{u.online ? '접속 중' : `최근 접속 ${ago(u.lastSeen)}`}</span></button>
         <button className="ib" onClick={() => setSheet({ type: 'chatMenu', id, uid: oid })} aria-label="메뉴"><Icon n="more" /></button>
       </header>
       <Messages msgs={c.msgs} myId={me.id} readAt={c.read[oid] || 0} onPick={(m) => setSheet({ type: 'msgMenu', id, m })} />
@@ -480,6 +533,15 @@ function MyTab() {
         <div className="pt-btns"><button className="btn" onClick={() => setSheet({ type: 'shop' })}>포인트 충전</button>
           <button className="btn ghost" disabled={done} onClick={() => send({ t: 'attend' })}>{done ? '오늘 출석 완료' : `출석체크 +${c.attend}P`}</button></div>
       </div>
+      <button className={`card vip-card ${me.vipInfo?.on ? 'on' : ''}`} onClick={() => setSheet({ type: 'vip' })}>
+        <span className="vip-ic"><Icon n="crown" size={24} /></span>
+        <span className="grow"><b>{me.vipInfo?.on ? 'VIP 이용 중' : 'VIP 멤버십'}</b><span className="meta">{me.vipInfo?.on ? `${new Date(me.vipInfo.until).toLocaleDateString('ko-KR')}까지 · 매달 ${c.vipPoints}P · 대화 신청 ${c.vipRequestPct}% 할인` : `월 ${c.vipPrice.toLocaleString()}원 · 매달 ${c.vipPoints}P · 대화 신청 ${c.vipRequestPct}% 할인 · 방문자 무료`}</span></span>
+        <Icon n="chev" size={16} />
+      </button>
+      <div className="card my-quick">
+        <button onClick={() => setSheet({ type: 'visitors' })}><Icon n="eye" size={20} /><b>{me.visit?.today || 0}명</b><span className="meta">오늘 나를 본 사람</span></button>
+        <button onClick={() => setSheet({ type: 'picks' })}><Icon n="star" size={20} /><b>{me.picks?.length || 0}명</b><span className="meta">오늘의 추천 친구</span></button>
+      </div>
       <button className="card invite-card" onClick={() => setSheet({ type: 'invite' })}>
         <span className="invite-ic"><Icon n="gift" size={26} /></span>
         <span className="grow"><b>친구 초대하고 포인트 받기</b><span className="meta">친구는 가입 즉시 {c.inviteJoin}P, 나는 친구가 첫 출석하면 {c.inviteReward}P{c.inviteMilestone > 0 && c.inviteMilestoneBonus > 0 ? ` · ${c.inviteMilestone}명마다 +${c.inviteMilestoneBonus}P` : ''}</span></span>
@@ -489,6 +551,7 @@ function MyTab() {
       <div className="card">
         <Item label="포인트 내역" value="" onClick={() => setSheet({ type: 'ledger' })} />
         <Item label="쿠폰 등록" value="" onClick={() => setSheet({ type: 'coupon' })} />
+        <Item label="공지·이벤트" value={s.notices?.length ? `${s.notices.length}건` : ''} onClick={() => setSheet({ type: 'notices' })} />
         <Item label="친구 초대" value={me.invite?.count ? `${me.invite.count}명 초대` : `내 코드 ${me.code || ''}`} onClick={() => setSheet({ type: 'invite' })} />
         <Item label="알림 설정" value={me.pushOn && me.notify?.push ? '휴대폰 알림 켜짐' : '휴대폰 알림 꺼짐'} onClick={() => setSheet({ type: 'notify' })} />
         <Item label="친구 목록" value={`${me.friends.length}명`} onClick={() => setSheet({ type: 'people', kind: 'friends' })} />
@@ -556,6 +619,98 @@ function InviteSheet({ close }) {
           <span className="hint">가입 후 7일 안에 한 번만 등록할 수 있습니다.</span></div>
       )}
       <ul className="rules small"><li>{c.inviteMonthMax > 0 ? `초대 보상은 한 달에 ${c.inviteMonthMax}명까지 받을 수 있습니다.` : '초대 보상 인원 제한은 없습니다.'}</li><li>같은 기기·같은 네트워크에서 여러 계정을 만들어 초대하면 보상이 지급되지 않습니다.</li><li>부정한 방법으로 받은 포인트는 회수되고 이용이 제한될 수 있습니다.</li></ul>
+    </Sheet>
+  );
+}
+function GiftSheet({ uid, close }) {
+  const { me, s, send, U } = useApp(); const c = s.config; const [amt, setAmt] = useState(100);
+  const presets = [10, 50, 100, 300, 500, 1000].filter((x) => x >= c.giftMin && x <= c.giftMax);
+  const n = Math.floor(Number(amt) || 0);
+  return (
+    <Sheet title={`${U(uid).nick} 님에게 선물`} onClose={close}>
+      <div className="have"><span className="meta">보유 포인트</span><b>{me.points.toLocaleString()}P</b></div>
+      <div className="chips wrap">{presets.map((x) => <button key={x} className={`chip ${n === x ? 'on' : ''}`} onClick={() => setAmt(x)}>{x.toLocaleString()}P</button>)}</div>
+      <div className="form">
+        <input type="number" min={c.giftMin} max={c.giftMax} value={amt} onChange={(e) => setAmt(e.target.value)} />
+        <button className="btn" disabled={n < c.giftMin || n > c.giftMax || n > me.points} onClick={() => { send({ t: 'gift', to: uid, amount: n }); close(); }}>{n.toLocaleString()}P 선물하기</button>
+        {n > me.points && <span className="hint err">포인트가 부족합니다.</span>}
+        <span className="hint">대화 중인 상대에게만 보낼 수 있고, 보낸 선물은 취소할 수 없습니다. 하루 {c.giftDayMax.toLocaleString()}P까지 보낼 수 있습니다.</span>
+      </div>
+    </Sheet>
+  );
+}
+function VisitorsSheet({ close }) {
+  const { me, s, send, setSheet, U } = useApp(); const v = me.visit || {}; const c = s.config;
+  return (
+    <Sheet title="나를 본 사람" onClose={close}>
+      <div className="have"><span className="meta">오늘 {v.today || 0}명 · 최근 7일 {v.week || 0}명</span><Icon n="eye" size={22} /></div>
+      {v.open ? (
+        <>
+          {v.list.length === 0 && <Empty>아직 내 프로필을 본 사람이 없습니다.<br />토크를 쓰거나 부스트를 써 보세요.</Empty>}
+          {v.list.map((x) => { const u = U(x.uid); return <PersonRow key={x.uid} u={{ ...u, lastSeen: x.at, online: false }} onClick={() => setSheet({ type: 'profile', uid: x.uid })} />; })}
+          {!me.vipInfo?.on && <p className="hint">{new Date(v.openUntil).toLocaleString('ko-KR')}까지 볼 수 있습니다.</p>}
+        </>
+      ) : (
+        <>
+          <div className="locked">{Array.from({ length: Math.min(4, Math.max(1, v.week || 0)) }, (_, i) => <div key={i} className="row flat blur"><span className="av M" style={{ width: 42, height: 42 }}>?</span><span className="grow"><b>숨겨진 방문자</b><br /><span className="meta">○○ · ○○대 · ○○</span></span></div>)}</div>
+          <button className="btn" disabled={!v.week} onClick={() => send({ t: 'visit.open' })}>{c.visitorCost}P로 {c.visitorHours}시간 동안 보기</button>
+          <button className="btn ghost" onClick={() => setSheet({ type: 'vip' })}>VIP는 언제나 무료로 볼 수 있어요</button>
+        </>
+      )}
+      <p className="hint">내 프로필을 연 회원이 최근 순으로 보입니다. 차단한 회원은 보이지 않습니다.</p>
+    </Sheet>
+  );
+}
+function PicksSheet({ close }) {
+  const { me, U, setSheet, s } = useApp();
+  return (
+    <Sheet title="오늘의 추천 친구" onClose={close}>
+      <p className="hint">매일 같은 지역·비슷한 나이대에서 아직 대화하지 않은 분을 골라 드려요. 저녁 {s.config.pickHour}시에 알림으로도 알려 드립니다.</p>
+      {(me.picks || []).length === 0 && <Empty>오늘은 추천할 분이 없습니다.<br />내일 다시 확인해 주세요.</Empty>}
+      {(me.picks || []).map((id) => <PersonRow key={id} u={U(id)} onClick={() => setSheet({ type: 'profile', uid: id })} />)}
+    </Sheet>
+  );
+}
+function VipSheet({ close }) {
+  const { me, s, verifyVip, setToast } = useApp(); const c = s.config; const v = me.vipInfo || {};
+  const [svc, setSvc] = useState(undefined); const [price, setPrice] = useState(''); const [busy, setBusy] = useState(false);
+  useEffect(() => { let on = true; (async () => {
+    const service = await playService(); if (!on) return; setSvc(service); if (!service) return;
+    const pr = await playPrices(service, [c.vipSku]); if (on) setPrice(pr[c.vipSku] || '');
+    if (!v.on) for (const x of await pending(service)) if (x.sku === c.vipSku) await verifyVip(x.token); // 결제했는데 반영 안 된 구독 복구
+  })(); return () => { on = false; }; }, []);
+  const subscribe = async () => {
+    setBusy(true);
+    if (DEMO) await verifyVip(`demo-sub-${Date.now()}`);
+    else { const r = await buy(c.vipSku); if (r) { const ok = await verifyVip(r.token); r.finish(ok); } else setToast('구독이 취소되었습니다.'); }
+    setBusy(false);
+  };
+  return (
+    <Sheet title="VIP 멤버십" onClose={close}>
+      <div className={`vip-hero ${v.on ? 'on' : ''}`}><Icon n="crown" size={34} /><b>{v.on ? 'VIP 이용 중' : '이음챗 VIP'}</b><span>{v.on ? `${new Date(v.until).toLocaleDateString('ko-KR')}까지 · 자동 갱신` : `월 ${price || `${c.vipPrice.toLocaleString()}원`}`}</span></div>
+      <div className="invite-rules">
+        <div><b>{c.vipPoints}P</b><span>매달 결제될 때마다 포인트 지급</span></div>
+        <div><b>{c.vipRequestPct}%</b><span>대화 신청 비용 할인</span></div>
+        <div><b>무료</b><span>나를 본 사람(방문자) 언제나 보기</span></div>
+        {c.vipFreeBoost > 0 && <div><b>매일 {c.vipFreeBoost}회</b><span>프로필 부스트 무료</span></div>}
+        <div><b>VIP</b><span>프로필과 대화에 VIP 배지 표시</span></div>
+      </div>
+      {v.on ? <a className="btn ghost" href={SUB_URL(c.vipSku)} target="_blank" rel="noreferrer">Google Play에서 구독 관리·해지</a> : (
+        <>
+          {svc === null && !DEMO && <div className="warn">구독은 Google Play에서 설치한 이음챗 앱에서만 할 수 있습니다.</div>}
+          <button className="btn" disabled={busy || (!DEMO && !svc)} onClick={subscribe}>{busy ? '확인 중…' : DEMO ? '테스트로 구독하기 (체험판)' : '구독 시작하기'}</button>
+        </>
+      )}
+      <p className="hint">매달 자동으로 결제되며, Google Play에서 언제든 해지할 수 있습니다. 해지해도 이미 결제한 기간이 끝날 때까지 VIP가 유지됩니다. 결제·환불은 Google Play 정책을 따릅니다.</p>
+    </Sheet>
+  );
+}
+function NoticesSheet({ close, focus }) {
+  const { s } = useApp(); const list = s.notices || [];
+  return (
+    <Sheet title="공지·이벤트" onClose={close}>
+      {list.length === 0 && <Empty>공지가 없습니다.</Empty>}
+      {list.map((n) => <div key={n.id} className={`card notice-item ${focus === n.id ? 'focus' : ''}`}><b>{n.title}</b><span className="meta">{new Date(n.at).toLocaleString('ko-KR')}</span><p>{n.body}</p></div>)}
     </Sheet>
   );
 }
@@ -667,6 +822,11 @@ function NotifySheet({ close }) {
         <Switch on={n.msg} onChange={set('msg')} label="1:1 메시지" desc="쪽지 대화의 새 메시지, 대화 수락" />
         <Switch on={n.room} onChange={set('room')} label="그룹채팅" desc="참여 중인 방의 새 메시지 (방마다 따로 끌 수 있어요)" />
         <Switch on={n.comment} onChange={set('comment')} label="내 글 댓글" desc="라운지에 쓴 내 글에 댓글이 달렸을 때" />
+        <Switch on={n.pick} onChange={set('pick')} label="오늘의 추천 친구" desc={`매일 저녁 ${s.config.pickHour}시 추천 친구 소식`} />
+      </div>
+      <h4 className="sub">이벤트·혜택</h4>
+      <div className="card sw-card">
+        <Switch on={n.event} onChange={set('event')} label="이벤트·쿠폰·혜택 알림 (광고성 정보 수신 동의)" desc={me.adConsent ? `${new Date(me.adConsent.at).toLocaleDateString('ko-KR')} ${me.adConsent.on ? '수신 동의' : '수신 거부'}` : '켜면 포인트 이벤트와 쿠폰 소식을 알려 드려요. 밤 9시 ~ 아침 8시에는 보내지 않습니다.'} />
       </div>
       <h4 className="sub">표시 방법</h4>
       <div className="card sw-card">
@@ -697,7 +857,11 @@ export default function App() {
   const [banner, setBanner] = useState(null);
   const viewRef = useRef(null);
   useEffect(() => { viewRef.current = view; }, [view]);
-  const openView = (v) => { if (v?.type && v.id) { setSheet(null); setView(v); setBanner(null); } };
+  const openView = (v) => {
+    if (!v?.type || !v.id) return;
+    setBanner(null);
+    if (v.type === 'picks') { setView(null); setSheet({ type: 'picks' }); } else if (v.type === 'notice') { setView(null); setSheet({ type: 'notices', focus: v.id }); } else { setSheet(null); setView(v); }
+  };
 
   useEffect(() => {
     api.current = connect((m) => {
@@ -744,9 +908,13 @@ export default function App() {
     iapWait.current[token] = ok; send({ t: 'iap.verify', productId, token });
     setTimeout(() => { if (iapWait.current[token]) { delete iapWait.current[token]; ok(false); } }, 30e3);
   });
+  const verifyVip = (token) => new Promise((ok) => {
+    iapWait.current[token] = ok; send({ t: 'vip.verify', token });
+    setTimeout(() => { if (iapWait.current[token]) { delete iapWait.current[token]; ok(false); } }, 30e3);
+  });
   const exitAdmin = () => { if (location.pathname === '/admin') location.href = '/'; else { if (location.hash === '#admin') location.hash = ''; setAdminMode(false); } };
   const ctx = useMemo(() => ({
-    s, me, send, setView, setSheet, theme, api, verify, setToast, openAdmin: () => setAdminMode(true),
+    s, me, send, setView, setSheet, theme, api, verify, verifyVip, setToast, openAdmin: () => setAdminMode(true),
     setTheme: (t) => { store.set('eum_theme', t); setThemeState(t); },
     U: (id) => s.users[id] || NOBODY,
     hidden: (id) => !!me && me.blocks.includes(id),
@@ -759,7 +927,7 @@ export default function App() {
       <div className="app onboard">
         <div className="logo">이음챗</div>
         <p className="lead">동네 사람들과 가볍게 이야기 나누는 곳.<br />프로필을 만들고 시작해 보세요.</p>
-        <ProfileForm first onSubmit={(profile, ref) => { store.del('eum_ref'); send({ t: 'hello', profile, ref }); }} />
+        <ProfileForm first onSubmit={(profile, ref, adConsent) => { store.del('eum_ref'); send({ t: 'hello', profile, ref, adConsent }); }} />
         {toast && <div className="toast">{toast}</div>}
       </div>
     );
@@ -796,6 +964,11 @@ export default function App() {
         {sheet?.type === 'ledger' && <Ledger close={close} />}
         {sheet?.type === 'invite' && <InviteSheet close={close} />}
         {sheet?.type === 'coupon' && <CouponSheet close={close} />}
+        {sheet?.type === 'gift' && <GiftSheet uid={sheet.uid} close={close} />}
+        {sheet?.type === 'visitors' && <VisitorsSheet close={close} />}
+        {sheet?.type === 'picks' && <PicksSheet close={close} />}
+        {sheet?.type === 'vip' && <VipSheet close={close} />}
+        {sheet?.type === 'notices' && <NoticesSheet close={close} focus={sheet.focus} />}
         {sheet?.type === 'writeTalk' && <WriteTalk close={close} />}
         {sheet?.type === 'report' && <ReportSheet uid={sheet.uid} refText={sheet.ref} close={close} />}
         {sheet?.type === 'newRoom' && <NewRoom close={close} />}
@@ -813,6 +986,7 @@ export default function App() {
         {sheet?.type === 'chatMenu' && (
           <Sheet title="대화 메뉴" onClose={close}>
             <div className="form">
+              {s.convs.find((x) => x.id === sheet.id)?.status === 'open' && <button className="btn ghost" onClick={() => setSheet({ type: 'gift', uid: sheet.uid })}>포인트 선물하기</button>}
               <button className="btn ghost" onClick={() => { send({ t: 'friend.toggle', uid: sheet.uid }); close(); }}>{me.friends.includes(sheet.uid) ? '친구 해제' : '친구 추가'}</button>
               <button className="btn ghost" onClick={() => { send({ t: 'block.toggle', uid: sheet.uid }); close(); }}>{me.blocks.includes(sheet.uid) ? '차단 해제' : '차단하기'}</button>
               <button className="btn ghost danger" onClick={() => setSheet({ type: 'report', uid: sheet.uid, ref: `대화:${sheet.id}` })}>신고하기</button>
@@ -843,7 +1017,7 @@ export default function App() {
         )}
         {banner && (
           <button key={banner.key} className="banner" onClick={() => openView(banner.view)} role="status">
-            <span className="banner-ic"><Icon n={banner.kind === 'room' ? 'group' : banner.kind === 'comment' ? 'board' : 'mail'} size={18} /></span>
+            <span className="banner-ic"><Icon n={banner.kind === 'room' ? 'group' : banner.kind === 'comment' ? 'board' : banner.kind === 'pick' ? 'star' : banner.kind === 'event' ? 'gift' : 'mail'} size={18} /></span>
             <span className="grow"><b>{banner.title}</b><span className="one">{banner.body}</span></span>
           </button>
         )}

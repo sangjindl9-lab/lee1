@@ -284,3 +284,27 @@ button.pts { font-weight: 700; }
 .a-coupon label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
 .a-led.off { opacity: .55; }
 .a-led .btn-row { margin: 0; flex: none; }
+
+/* 수익 기능: 부스트·VIP·선물·방문자·추천 */
+.tag.vip { background: linear-gradient(120deg, #f6c453, #f08a24); color: #fff; }
+.tag.boost { background: var(--pri); color: #fff; }
+.filters .sep { width: 1px; align-self: stretch; background: var(--line); margin: 0 2px; }
+.boostbar { display: flex; align-items: center; gap: 10px; padding: 10px 12px; margin: 0 0 6px; border-radius: 14px; background: var(--pri-soft); color: var(--pri); font-size: 13px; }
+.boostbar .btn { flex: none; }
+.vip-card { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; padding: 14px; background: linear-gradient(120deg, #fff4dc, var(--card)); }
+.vip-card.on { background: linear-gradient(120deg, #ffe7b0, #fff4dc); }
+.vip-card b { display: block; font-size: 15px; }
+.vip-card .meta { display: block; margin-top: 2px; }
+.vip-ic { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 14px; background: linear-gradient(135deg, #f6c453, #f08a24); color: #fff; flex: none; }
+.vip-hero { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 20px; border-radius: 18px; background: linear-gradient(135deg, #f6c453, #f08a24); color: #fff; }
+.vip-hero b { font-size: 20px; }
+.my-quick { display: grid; grid-template-columns: 1fr 1fr; gap: 0; padding: 0; overflow: hidden; }
+.my-quick button { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 14px 8px; color: var(--pri); }
+.my-quick button + button { border-left: 1px solid var(--line); }
+.my-quick b { font-size: 18px; color: var(--text, inherit); }
+.locked .blur { filter: blur(4px); pointer-events: none; user-select: none; }
+.bubble.giftmsg { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; background: linear-gradient(120deg, #ffe7b0, #ffd1dc); color: #7a3b00; }
+.chips.wrap { flex-wrap: wrap; }
+.notice-item { display: flex; flex-direction: column; gap: 4px; padding: 14px; }
+.notice-item p { margin: 6px 0 0; white-space: pre-wrap; font-size: 14px; }
+.notice-item.focus { outline: 2px solid var(--pri); }

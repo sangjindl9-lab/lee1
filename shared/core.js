@@ -22,6 +22,12 @@ export const DEFAULT_CONFIG = {
   inviteMilestone: 5, inviteMilestoneBonus: 200, // N명 달성할 때마다 추가 보너스
   firstBuyPct: 50, // 첫 충전 보너스(%)
   comebackDays: 14, comebackPoints: 30, // N일 이상 쉬다 돌아오면
+  // 수익 상품
+  boostCost: 50, boostMin: 30, // 프로필 부스트: 포인트, 지속 시간(분)
+  vipSku: 'vip_monthly', vipPrice: 9900, vipPoints: 500, vipRequestPct: 50, vipFreeBoost: 1, // VIP 월 구독
+  giftMin: 10, giftMax: 5000, giftDayMax: 20000, // 선물하기
+  visitorCost: 30, visitorHours: 24, // 방문자 목록 열람(VIP 무료)
+  pickCount: 3, pickHour: 19, // 오늘의 추천 친구: 인원, 알림 시각(한국 시간)
 
   // 수사 협조용 보관 기간(일). 관리자 화면에서 바꾸되 90일 아래로는 줄일 수 없다.
   keepLogsDays: 180, keepTrailDays: 180, keepReportsDays: 365,
@@ -29,19 +35,20 @@ export const DEFAULT_CONFIG = {
 const KEEP_MIN_DAYS = 90;
 // 활동 기록에 남길 입력값(방 비밀번호처럼 수사와 무관한 값은 남기지 않는다)
 const TRAIL_FIELDS = ['text', 'title', 'body', 'name', 'intro', 'topic', 'cat', 'to', 'id', 'mid', 'cid', 'uid', 'reason', 'memo', 'ref', 'pin', 'productId', 'code'];
-const NO_TRAIL = new Set(['conv.read', 'push.sub', 'push.unsub', 'notify.set', 'room.mute']);
+const NO_TRAIL = new Set(['profile.view', 'conv.read', 'push.sub', 'push.unsub', 'notify.set', 'room.mute']);
 // 알림 설정 기본값: push = 휴대폰 알림(앱이 닫혀 있을 때), 나머지는 종류별 켜기/끄기
-export const DEFAULT_NOTIFY = { push: true, request: true, msg: true, room: true, comment: true, preview: true, quiet: false, mutedRooms: [] };
-const NOTIFY_KEYS = ['push', 'request', 'msg', 'room', 'comment', 'preview', 'quiet'];
+// event = 이벤트·혜택(광고성) 알림: 법에 따라 본인이 켜야만 보낸다(기본 꺼짐)
+export const DEFAULT_NOTIFY = { push: true, request: true, msg: true, room: true, comment: true, pick: true, event: false, preview: true, quiet: false, mutedRooms: [] };
+const NOTIFY_KEYS = ['push', 'request', 'msg', 'room', 'comment', 'pick', 'event', 'preview', 'quiet'];
 // 방해 금지: 한국 시간 밤 10시 ~ 오전 8시
 const quietNow = () => { const h = new Date(Date.now() + 9 * 3600e3).getUTCHours(); return h >= 22 || h < 8; };
 
 const INVITE_ENTER_DAYS = 7; // 가입 후 초대 코드를 등록할 수 있는 기간
 const dayKey = (t) => new Date(t + 9 * 3600e3).toISOString().slice(0, 10); // 한국 시간 기준 날짜
 
-export function createCore({ data, save = () => {}, hook = () => {}, adminPassword = '', verifyPurchase = null, sendPush = null, pushKey = '' } = {}) {
+export function createCore({ data, save = () => {}, hook = () => {}, adminPassword = '', verifyPurchase = null, verifySubscription = null, sendPush = null, pushKey = '' } = {}) {
   const busy = new Set(); // 검증 중인 결제 토큰
-  const db = Object.assign({ users: {}, talks: [], convs: {}, rooms: {}, posts: [], reports: [], ledger: [], orders: [], logs: [], trail: [], holds: {}, disclosures: [], invites: [], coupons: [], seq: 1 }, data || {});
+  const db = Object.assign({ users: {}, talks: [], convs: {}, rooms: {}, posts: [], reports: [], ledger: [], orders: [], logs: [], trail: [], holds: {}, disclosures: [], invites: [], coupons: [], notices: [], seq: 1 }, data || {});
   db.config = { ...DEFAULT_CONFIG, ...(db.config || {}) };
   const cfg = () => db.config;
   const admins = new Set(); // 관리자로 로그인한 연결
@@ -55,14 +62,16 @@ export function createCore({ data, save = () => {}, hook = () => {}, adminPasswo
   const pub = (u) => ({
     id: u.id, nick: u.gone ? '(탈퇴한 회원)' : u.nick, gender: u.gender, age: u.age, region: u.region,
     intro: u.gone ? '' : u.intro, online: !u.gone && (socks.has(u.id) || !!u.bot), lastSeen: u.lastSeen, gone: !!u.gone,
+    vip: isVip(u), boostUntil: u.boostUntil || 0,
   });
+  const isVip = (u) => !!u && (u.vip?.until || 0) > Date.now();
   const sendTo = (uid, m) => { const s = socks.get(uid); if (s) for (const f of s) f(m); };
   const all = (m) => { for (const uid of socks.keys()) sendTo(uid, m); };
 
   const pushUsers = () => all({ t: 'users', users: Object.values(db.users).map(pub) });
   const pushMe = (uid) => {
     const u = db.users[uid]; if (!u) return;
-    const { token, subs, couponFails, ...me } = u;
+    const { token, subs, couponFails, visitors, vip, ...me } = u;
     codeOf(u);
     const mine = db.invites.filter((x) => x.by === uid);
     const invite = {
@@ -70,7 +79,14 @@ export function createCore({ data, save = () => {}, hook = () => {}, adminPasswo
       list: mine.slice(-50).reverse().map((x) => ({ id: x.id, nick: nickOf(x.uid), at: x.at, status: x.status, reward: x.reward || 0 })),
       count: mine.length, paid: mine.filter((x) => x.status === 'paid').length, earned: mine.reduce((n, x) => n + (x.reward || 0) + (x.bonus || 0), 0),
     };
-    sendTo(uid, { t: 'me', me: { notify: nf(u), pushOn: !!subs?.length, ...me, code: u.code, invite, firstBuy: !db.orders.some((o) => o.uid === uid && o.status === 'paid'), ledger: db.ledger.filter((l) => l.uid === uid).slice(0, 50), orders: db.orders.filter((o) => o.uid === uid).slice(0, 20) } });
+    const now = Date.now(); const open = isVip(u) || (u.visitOpenUntil || 0) > now;
+    const vs = (visitors || []).filter((v) => db.users[v.uid] && !db.users[v.uid].gone && !u.blocks.includes(v.uid));
+    const visit = {
+      today: vs.filter((v) => dayKey(v.at) === dayKey(now)).length, week: vs.filter((v) => now - v.at < 7 * 86400e3).length,
+      open, openUntil: u.visitOpenUntil || 0, list: open ? vs.slice(0, 50) : [],
+    };
+    const vipInfo = { on: isVip(u), until: vip?.until || 0, freeBoostLeft: isVip(u) ? Math.max(0, cfg().vipFreeBoost - (vip?.boostDay === dayKey(now) ? vip.boostUsed || 0 : 0)) : 0 };
+    sendTo(uid, { t: 'me', me: { notify: nf(u), pushOn: !!subs?.length, ...me, code: u.code, invite, visit, vipInfo, picks: u.picks?.day === dayKey(now) ? u.picks.ids.filter((id) => db.users[id] && !db.users[id].gone) : [], firstBuy: !db.orders.some((o) => o.uid === uid && o.status === 'paid'), ledger: db.ledger.filter((l) => l.uid === uid).slice(0, 50), orders: db.orders.filter((o) => o.uid === uid).slice(0, 20) } });
   };
   const pubConfig = () => { const { banWords, ...c } = cfg(); return c; };
   const pushConfig = () => all({ t: 'config', config: pubConfig() });
@@ -127,10 +143,66 @@ export function createCore({ data, save = () => {}, hook = () => {}, adminPasswo
     }
     pushMe(by.id); toast(by.id, `${u.nick} 님이 첫 출석해서 초대 보상 ${c.inviteReward}P를 받았어요${extra}`);
   }
+  // 구독 확인: 새 결제 주기(주문번호)가 보이면 VIP 포인트를 지급한다.
+  async function checkVip(u, token) {
+    const c = cfg();
+    const r = await verifySubscription({ sku: c.vipSku, token });
+    const was = isVip(u);
+    u.vip = { ...(u.vip || {}), token, until: r.expiry, checkedAt: Date.now(), active: r.active };
+    if (r.active && r.orderId && !(u.vip.orders || []).includes(r.orderId)) {
+      u.vip.orders = [...(u.vip.orders || []), r.orderId].slice(-36);
+      db.orders.unshift({ id: nid(), uid: u.id, productId: 'vip', sku: c.vipSku, name: 'VIP 월 구독', points: c.vipPoints, bonus: 0, price: c.vipPrice, token, orderId: r.orderId, test: !!r.test, status: 'paid', kind: 'sub', at: Date.now(), doneAt: Date.now() });
+      if (c.vipPoints > 0) addPoints(u, c.vipPoints, 'VIP 월 구독 포인트');
+      toast(u.id, was ? `VIP가 연장되었습니다. ${c.vipPoints}P를 드렸어요.` : `VIP가 시작되었습니다! ${c.vipPoints}P를 드렸어요.`);
+    }
+    save(db); pushMe(u.id); if (was !== isVip(u)) pushUsers(); pushAdmin();
+    return r.active;
+  }
+  // 오늘의 추천 친구: 같은 지역 → 같은 나이대 → 최근 접속 순으로, 이미 대화했거나 차단한 사람은 빼고
+  function makePicks(u) {
+    const today = dayKey(Date.now());
+    if (u.picks?.day === today && (u.picks.sent || u.picks.ids.length >= cfg().pickCount)) return u.picks.ids;
+    const talked = new Set(Object.values(db.convs).filter((c) => c.a === u.id || c.b === u.id).map((c) => (c.a === u.id ? c.b : c.a)));
+    const pool = Object.values(db.users).filter((x) => x.id !== u.id && !x.gone && !x.banned && !talked.has(x.id) && !blockedEither(u.id, x.id) && Date.now() - (x.lastSeen || x.at) < 30 * 86400e3);
+    const score = (x) => (x.region === u.region ? 4 : 0) + (x.age === u.age ? 2 : 0) + (x.gender !== u.gender ? 1 : 0) + Math.random() * 1.5;
+    const ids = pool.sort((a, b) => score(b) - score(a)).slice(0, cfg().pickCount).map((x) => x.id);
+    u.picks = { day: today, ids, sent: false };
+    return ids;
+  }
+  // 주기 작업(서버가 몇 분마다 호출): 추천 친구 알림, 만료 임박 구독 재확인
+  let lastTick = 0;
+  function tick() {
+    const now = Date.now(); if (now - lastTick < 60e3) return; lastTick = now;
+    const h = new Date(now + 9 * 3600e3).getUTCHours(); const c = cfg();
+    let changed = false;
+    if (c.pickCount > 0 && h >= c.pickHour && h < 22) {
+      for (const u of Object.values(db.users)) {
+        if (u.gone || u.banned || u.bot || now - (u.lastSeen || u.at) > 30 * 86400e3) continue;
+        const ids = makePicks(u);
+        if (u.picks.sent || !ids.length) continue;
+        u.picks.sent = true; changed = true;
+        const names = ids.map((id) => db.users[id].nick).join(', ');
+        notify(u.id, 'pick', { title: '오늘의 추천 친구가 도착했어요', body: `${names} 님과 이야기해 보세요.`, view: { type: 'picks', id: 'today' }, tag: 'picks' });
+        pushMe(u.id);
+      }
+    }
+    if (verifySubscription) {
+      for (const u of Object.values(db.users)) {
+        if (!u.vip?.token || u.gone) continue;
+        const dueSoon = u.vip.until - now < 3600e3 && now - u.vip.until < 7 * 86400e3; // 만료 1시간 전 ~ 만료 후 7일
+        if (dueSoon && now - (u.vip.checkedAt || 0) > 6 * 3600e3 && !busy.has(u.vip.token)) {
+          busy.add(u.vip.token); const t = u.vip.token;
+          checkVip(u, t).catch(() => { u.vip.checkedAt = Date.now(); }).finally(() => busy.delete(t));
+        }
+      }
+    }
+    if (changed) save(db);
+  }
   const checkWords = (...texts) => { for (const w of cfg().banWords) if (w && texts.some((t) => t.includes(w))) fail('사용할 수 없는 단어가 포함되어 있습니다.'); };
   const talkList = () => {
     const now = Date.now();
-    return db.talks.slice().sort((a, b) => ((b.pinUntil > now) - (a.pinUntil > now)) || b.at - a.at).slice(0, 200);
+    const top = (t) => t.pinUntil > now || (db.users[t.uid]?.boostUntil || 0) > now;
+    return db.talks.slice().sort((a, b) => (top(b) - top(a)) || b.at - a.at).slice(0, 200);
   };
   const pushTalks = () => all({ t: 'talks', talks: talkList() });
   const convsOf = (uid) => Object.values(db.convs).filter((c) => (c.a === uid || c.b === uid) && !c.left.includes(uid));
@@ -204,7 +276,7 @@ export function createCore({ data, save = () => {}, hook = () => {}, adminPasswo
       if (!c) {
         const text = multi(m.text, 200) || '안녕하세요! 대화 나눠요.';
         checkWords(text);
-        const cost = cfg().requestCost;
+        const cost = isVip(u) ? Math.floor((cfg().requestCost * (100 - cfg().vipRequestPct)) / 100) : cfg().requestCost;
         if (u.points < cost) fail(`포인트가 부족합니다. (대화 신청 ${cost}P)`);
         if (cost > 0) addPoints(u, -cost, `대화 신청 (${to.nick})`);
         c = { cost, id: nid(), a: u.id, b: to.id, status: 'pending', msgs: [{ id: nid(), uid: u.id, text, at: Date.now() }], read: { [u.id]: Date.now() }, left: [], at: Date.now() };
@@ -389,6 +461,66 @@ export function createCore({ data, save = () => {}, hook = () => {}, adminPasswo
       }).catch((e) => { sendTo(u.id, { t: 'iap.fail', token }); toast(u.id, e?.message || '결제를 확인하지 못했습니다.'); })
         .finally(() => busy.delete(token));
     },
+    // 프로필 부스트: 정해진 시간 동안 토크 목록·주변 사람 맨 위에 노출. VIP 는 하루 무료 횟수가 있다.
+    boost(u) {
+      const c = cfg(); const now = Date.now(); const today = dayKey(now);
+      if (!u.vip || u.vip.boostDay !== today) { if (u.vip) { u.vip.boostDay = today; u.vip.boostUsed = 0; } }
+      const free = isVip(u) && (u.vip.boostUsed || 0) < c.vipFreeBoost;
+      if (!free) {
+        if (u.points < c.boostCost) fail(`포인트가 부족합니다. (부스트 ${c.boostCost}P)`);
+        addPoints(u, -c.boostCost, `프로필 부스트 ${c.boostMin}분`);
+      } else u.vip.boostUsed = (u.vip.boostUsed || 0) + 1;
+      u.boostUntil = Math.max(now, u.boostUntil || 0) + c.boostMin * 60e3;
+      pushMe(u.id); pushUsers(); pushTalks();
+      toast(u.id, `${free ? 'VIP 무료 부스트! ' : ''}${c.boostMin}분 동안 내 프로필이 맨 위에 보입니다.`);
+    },
+    // 포인트 선물: 대화 중인 상대에게만
+    gift(u, m) {
+      const c = cfg(); const to = db.users[m.to]; const amt = Math.floor(Number(m.amount) || 0);
+      if (!to || to.gone || to.id === u.id) fail('선물할 수 없는 상대입니다.');
+      if (blockedEither(u.id, to.id)) fail('차단 관계에서는 선물할 수 없습니다.');
+      const conv = Object.values(db.convs).find((x) => [x.a, x.b].includes(u.id) && [x.a, x.b].includes(to.id) && x.status === 'open');
+      if (!conv) fail('대화 중인 상대에게만 선물할 수 있습니다.');
+      if (amt < c.giftMin || amt > c.giftMax) fail(`선물은 ${c.giftMin}P ~ ${c.giftMax.toLocaleString()}P 사이로 보낼 수 있습니다.`);
+      if (u.points < amt) fail('포인트가 부족합니다.');
+      const today = dayKey(Date.now());
+      const sent = db.ledger.filter((l) => l.uid === u.id && l.gift && dayKey(l.at) === today).reduce((n, l) => n - l.delta, 0);
+      if (c.giftDayMax > 0 && sent + amt > c.giftDayMax) fail(`선물은 하루 ${c.giftDayMax.toLocaleString()}P까지 보낼 수 있습니다.`);
+      addPoints(u, -amt, `선물 보냄 (${to.nick})`); db.ledger[0].gift = true;
+      addPoints(to, amt, `선물 받음 (${u.nick})`);
+      const msg = { id: nid(), uid: u.id, text: `${amt.toLocaleString()}P를 선물했습니다.`, gift: amt, at: Date.now() };
+      conv.msgs.push(msg); conv.read[u.id] = msg.at; conv.at = msg.at;
+      pushMe(u.id); pushMe(to.id); pushConvs(conv.a, conv.b);
+      notify(to.id, 'msg', { title: `${u.nick} 님의 선물`, body: `${amt.toLocaleString()}P를 선물 받았어요!`, view: { type: 'chat', id: conv.id }, tag: `conv-${conv.id}`, from: u.id });
+    },
+    // 프로필 방문 기록(같은 사람은 최근 1번만)
+    'profile.view'(u, m) {
+      const to = db.users[m.uid];
+      if (!to || to.gone || to.bot || to.id === u.id || blockedEither(u.id, to.id)) return;
+      to.visitors = [{ uid: u.id, at: Date.now() }, ...(to.visitors || []).filter((v) => v.uid !== u.id)].slice(0, 100);
+      pushMe(to.id);
+    },
+    'visit.open'(u) {
+      const c = cfg();
+      if (isVip(u)) return;
+      if ((u.visitOpenUntil || 0) > Date.now()) return;
+      if (u.points < c.visitorCost) fail(`포인트가 부족합니다. (방문자 보기 ${c.visitorCost}P)`);
+      addPoints(u, -c.visitorCost, `방문자 보기 ${c.visitorHours}시간`);
+      u.visitOpenUntil = Date.now() + c.visitorHours * 3600e3; pushMe(u.id);
+    },
+    // VIP 월 구독: Google Play 정기결제를 서버가 확인 → 기간 연장 + 매달 포인트
+    'vip.verify'(u, m) {
+      const token = String(m.token || '');
+      if (token.length < 10 || token.length > 2000) fail('결제 정보가 올바르지 않습니다.');
+      const owner = Object.values(db.users).find((x) => x.vip?.token === token);
+      if (owner && owner.id !== u.id) fail('다른 계정에서 사용 중인 구독입니다.');
+      if (!verifySubscription) { sendTo(u.id, { t: 'iap.fail', token }); fail('서버에 Google 결제 검증이 설정되지 않았습니다.'); }
+      if (busy.has(token)) return;
+      busy.add(token);
+      checkVip(u, token).then((ok) => sendTo(u.id, { t: ok ? 'iap.done' : 'iap.fail', token }))
+        .catch((e) => { sendTo(u.id, { t: 'iap.fail', token }); toast(u.id, e?.message || '구독을 확인하지 못했습니다.'); })
+        .finally(() => busy.delete(token));
+    },
     'invite.use'(u, m, meta) { if (!String(m.code || '').trim()) fail('초대 코드를 입력해 주세요.'); applyInvite(u, m.code, meta); },
     // 쿠폰(이벤트 코드): 관리자가 만든 코드를 입력하면 포인트 지급. 틀린 입력은 하루 10번까지.
     'coupon.use'(u, m) {
@@ -409,6 +541,7 @@ export function createCore({ data, save = () => {}, hook = () => {}, adminPasswo
     'notify.set'(u, m) {
       const n = nf(u);
       for (const k of NOTIFY_KEYS) if (typeof m[k] === 'boolean') n[k] = m[k];
+      if (typeof m.event === 'boolean') { u.adConsent = { on: m.event, at: Date.now() }; toast(u.id, `${new Date().toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul' })} 이벤트·혜택 알림 수신에 ${m.event ? '동의' : '동의 철회'}하셨습니다.`); }
       u.notify = n; pushMe(u.id);
     },
     'room.mute'(u, m) {
@@ -527,6 +660,14 @@ export function createCore({ data, save = () => {}, hook = () => {}, adminPasswo
       holds: Object.entries(db.holds).map(([uid, h]) => ({ uid, nick: nickOf(uid), ...h })),
       disclosures: db.disclosures.slice(-200).reverse(),
       marketing: marketingData(),
+      notices: db.notices.slice(0, 30),
+      revenue: {
+        vip: Object.values(db.users).filter((u) => !u.bot && isVip(u)).length,
+        eventOn: Object.values(db.users).filter((u) => !u.bot && !u.gone && nf(u).event).length,
+        boostsToday: db.ledger.filter((l) => l.reason.startsWith('프로필 부스트') && dayKey(l.at) === dayKey(Date.now())).length,
+        giftsToday: db.ledger.filter((l) => l.gift && dayKey(l.at) === dayKey(Date.now())).reduce((n, l) => n - l.delta, 0),
+        visitOpens: db.ledger.filter((l) => l.reason.startsWith('방문자 보기')).length,
+      },
       evidence: { logs: db.logs.length, trail: db.trail.length, oldest: Math.min(db.logs[0]?.at || Date.now(), db.trail[0]?.at || Date.now()) },
     };
   }
@@ -560,6 +701,11 @@ export function createCore({ data, save = () => {}, hook = () => {}, adminPasswo
         inviteJoin: num(c.inviteJoin, 100000), inviteReward: num(c.inviteReward, 100000), inviteMonthMax: num(c.inviteMonthMax, 10000),
         inviteMilestone: num(c.inviteMilestone, 1000), inviteMilestoneBonus: num(c.inviteMilestoneBonus, 100000), firstBuyPct: num(c.firstBuyPct, 300),
         comebackDays: num(c.comebackDays, 365), comebackPoints: num(c.comebackPoints, 100000),
+        boostCost: num(c.boostCost, 100000), boostMin: Math.max(1, num(c.boostMin, 1440)),
+        vipSku: line(c.vipSku, 40) || 'vip_monthly', vipPrice: num(c.vipPrice, 1e7), vipPoints: num(c.vipPoints, 100000), vipRequestPct: num(c.vipRequestPct, 100), vipFreeBoost: num(c.vipFreeBoost, 10),
+        giftMin: Math.max(1, num(c.giftMin, 100000)), giftMax: Math.max(1, num(c.giftMax, 1e6)), giftDayMax: num(c.giftDayMax, 1e7),
+        visitorCost: num(c.visitorCost, 100000), visitorHours: Math.max(1, num(c.visitorHours, 720)),
+        pickCount: num(c.pickCount, 10), pickHour: Math.min(21, num(c.pickHour, 21)),
         keepLogsDays: Math.max(KEEP_MIN_DAYS, num(c.keepLogsDays, 3650)), keepTrailDays: Math.max(KEEP_MIN_DAYS, num(c.keepTrailDays, 3650)), keepReportsDays: Math.max(KEEP_MIN_DAYS, num(c.keepReportsDays, 3650)),
       };
       pushConfig();
@@ -661,6 +807,23 @@ export function createCore({ data, save = () => {}, hook = () => {}, adminPasswo
       const v = { code, points, max: num(c.max, 1e7), until, newDays: num(c.newDays, 365), memo: line(c.memo, 30), on: c.on !== false };
       if (old) Object.assign(old, v); else db.coupons.unshift({ ...v, used: [], at: Date.now() });
     },
+    // 단체 알림: 이벤트·혜택 알림을 켠(광고 수신 동의) 회원에게만. 밤 9시~아침 8시는 보낼 수 없다.
+    'admin.broadcast'(m, send) {
+      const title = line(m.title, 40); const body = multi(m.body, 300);
+      if (!title || !body) fail('제목과 내용을 입력해 주세요.');
+      const h = new Date(Date.now() + 9 * 3600e3).getUTCHours();
+      if (h >= 21 || h < 8) fail('광고성 알림은 밤 9시부터 아침 8시까지 보낼 수 없습니다.');
+      const region = REGIONS.includes(m.region) ? m.region : '';
+      const n = { id: nid(), title, body, region, at: Date.now(), sent: 0 };
+      db.notices.unshift(n); db.notices.length = Math.min(db.notices.length, 50);
+      for (const u of Object.values(db.users)) {
+        if (u.gone || u.banned || u.bot || !nf(u).event || (region && u.region !== region)) continue;
+        n.sent += 1;
+        notify(u.id, 'event', { title: `(광고) ${title}`, body: `${body}\n수신거부: MY > 알림 설정`, view: { type: 'notice', id: n.id }, tag: `notice-${n.id}` });
+      }
+      all({ t: 'notices', list: db.notices.slice(0, 20) });
+      send({ t: 'toast', msg: `알림을 ${n.sent}명에게 보냈습니다.` });
+    },
     'admin.coupon.del'(m) { db.coupons = db.coupons.filter((x) => x.code !== m.code); },
   };
 
@@ -674,7 +837,7 @@ export function createCore({ data, save = () => {}, hook = () => {}, adminPasswo
     const sync = () => {
       pushUsers(); pushMe(uid); send({ t: 'config', config: pubConfig() }); send({ t: 'push.key', key: sendPush ? pushKey : '' });
       send({ t: 'talks', talks: talkList() }); send({ t: 'convs', convs: convsOf(uid) });
-      send({ t: 'rooms', rooms: roomList() }); send({ t: 'posts', posts: db.posts });
+      send({ t: 'rooms', rooms: roomList() }); send({ t: 'posts', posts: db.posts }); send({ t: 'notices', list: db.notices.slice(0, 20) });
       Object.values(db.rooms).forEach((r) => { if (r.members.includes(uid)) { const { pw, ...room } = r; send({ t: 'room', room }); } });
       send({ t: 'ready' });
     };
@@ -701,12 +864,13 @@ export function createCore({ data, save = () => {}, hook = () => {}, adminPasswo
             if (!m.profile) return send({ t: 'need_profile' });
             try { u = addUser(m.profile, m.token); } catch (e) { return send({ t: 'toast', msg: e.message }); }
             addLog('join', u.id, meta); addTrail(u.id, { t: 'join', profile: m.profile }, meta);
+            if (m.adConsent === true) { u.notify = { ...nf(u), event: true }; u.adConsent = { on: true, at: Date.now() }; }
             if (m.ref) { try { applyInvite(u, m.ref, meta); if (u.invitedBy && cfg().inviteJoin > 0) joinNote = `친구 초대 보너스 ${cfg().inviteJoin}P를 받았어요!`; addTrail(u.id, { t: 'invite.use', code: String(m.ref).slice(0, 10) }, meta); } catch (e) { joinNote = e.message; } }
           } else if (!u.gone && !u.banned && cfg().comebackDays > 0 && cfg().comebackPoints > 0 && Date.now() - (u.lastSeen || u.at) >= cfg().comebackDays * 86400e3) {
             addPoints(u, cfg().comebackPoints, `${cfg().comebackDays}일 만의 복귀 보너스`);
             joinNote = `다시 오신 걸 환영해요! 복귀 보너스 ${cfg().comebackPoints}P를 드렸어요.`;
           }
-          uid = u.id; u.lastSeen = Date.now();
+          uid = u.id; u.lastSeen = Date.now(); makePicks(u);
           addLog('login', uid, meta); prune(); save(db);
           if (!socks.has(uid)) socks.set(uid, new Set());
           socks.get(uid).add(send); sync();
@@ -725,5 +889,5 @@ export function createCore({ data, save = () => {}, hook = () => {}, adminPasswo
     };
   }
 
-  return { db, connect, act, addUser };
+  return { db, connect, act, addUser, tick };
 }

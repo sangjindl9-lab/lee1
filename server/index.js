@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import express from 'express';
 import { WebSocketServer } from 'ws';
 import { createCore } from '../shared/core.js';
-import { verifyPurchase, googleReady, googleSelfCheck } from './google.js';
+import { verifyPurchase, verifySubscription, googleReady, googleSelfCheck } from './google.js';
 import webpush from 'web-push';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -38,7 +38,7 @@ if (VAPID_PUBLIC && VAPID_PRIVATE) {
   webpush.setVapidDetails(process.env.VAPID_SUBJECT || 'mailto:pm999@naver.com', VAPID_PUBLIC, VAPID_PRIVATE);
   sendPush = (sub, payload) => webpush.sendNotification(sub, JSON.stringify(payload), { TTL: 6 * 3600, urgency: 'high' });
 } else console.log('VAPID 키가 없어 휴대폰 알림이 꺼져 있습니다.');
-const core = createCore({ data, save, adminPassword: ADMIN_PASSWORD, verifyPurchase: googleReady ? verifyPurchase : null, sendPush, pushKey: VAPID_PUBLIC });
+const core = createCore({ data, save, adminPassword: ADMIN_PASSWORD, verifyPurchase: googleReady ? verifyPurchase : null, verifySubscription: googleReady ? verifySubscription : null, sendPush, pushKey: VAPID_PUBLIC });
 
 const app = express();
 app.get('/health', (_q, r) => r.json({ ok: true, users: Object.keys(core.db.users).length }));
@@ -72,6 +72,8 @@ wss.on('connection', (ws, req) => {
   ws.on('close', () => session.close());
 });
 
+setInterval(() => core.tick(), 5 * 60e3);
+setTimeout(() => core.tick(), 20e3);
 setInterval(() => {
   wss.clients.forEach((ws) => { if (!ws.alive) return ws.terminate(); ws.alive = false; ws.ping(); });
 }, 30e3);

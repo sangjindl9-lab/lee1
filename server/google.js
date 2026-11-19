@@ -44,6 +44,25 @@ export async function verifyPurchase({ sku, token }) {
   return { orderId: j.orderId || '', test: !!j.testPurchaseContext };
 }
 
+// 정기결제(구독) 확인: { active, expiry, orderId, test }. 처음 결제면 승인(acknowledge)까지 한다.
+export async function verifySubscription({ sku, token }) {
+  const auth = { authorization: `Bearer ${await accessToken()}` };
+  const res = await fetch(`${base()}/subscriptionsv2/tokens/${encodeURIComponent(token)}`, { headers: auth });
+  if (res.status === 404 || res.status === 400) throw new Error('확인되지 않는 구독입니다.');
+  if (!res.ok) throw new Error('Google 구독 확인 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.');
+  const j = await res.json();
+  const item = (j.lineItems || []).find((x) => x.productId === sku);
+  if (!item) throw new Error('구독한 상품이 일치하지 않습니다.');
+  const st = j.subscriptionState;
+  if (st === 'SUBSCRIPTION_STATE_PENDING') throw new Error('결제가 아직 완료되지 않았습니다.');
+  const expiry = Date.parse(item.expiryTime) || 0;
+  const active = ['SUBSCRIPTION_STATE_ACTIVE', 'SUBSCRIPTION_STATE_IN_GRACE_PERIOD', 'SUBSCRIPTION_STATE_CANCELED'].includes(st) && expiry > Date.now();
+  if (j.acknowledgementState === 'ACKNOWLEDGEMENT_STATE_PENDING') {
+    await fetch(`${base()}/subscriptions/${encodeURIComponent(sku)}/tokens/${encodeURIComponent(token)}:acknowledge`, { method: 'POST', headers: { ...auth, 'content-type': 'application/json' }, body: '{}' }).catch(() => {});
+  }
+  return { active, expiry, orderId: item.latestSuccessfulOrderId || j.latestOrderId || '', test: !!j.testPurchase };
+}
+
 // 서버 시작 시 키가 맞는지 Google 로그인으로 한 번 확인한다.
 export async function googleSelfCheck() {
   if (!googleReady) return;

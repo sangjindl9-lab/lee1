@@ -42,7 +42,17 @@ export function startDemo() {
 
   // 체험판은 실제 결제 없이 1초 뒤 성공으로 처리한다.
   const verifyPurchase = () => new Promise((ok) => setTimeout(() => ok({ orderId: 'TEST-' + Date.now().toString(36).toUpperCase(), test: true }), 900));
-  core = createCore({ data: data || undefined, save, hook, adminPassword: 'admin', verifyPurchase });
+  // 체험판 구독: 30일짜리 테스트 구독으로 처리
+  const verifySubscription = ({ token }) => new Promise((ok) => setTimeout(() => ok({ active: true, expiry: Date.now() + 30 * 86400e3, orderId: 'TEST-SUB-' + token.slice(-6), test: true }), 900));
+  core = createCore({ data: data || undefined, save, hook, adminPassword: 'admin', verifyPurchase, verifySubscription });
+  setInterval(() => core.tick(), 60e3);
+  // 체험판: 가상 회원이 가끔 내 프로필을 본다(방문자 기능 체험용)
+  const peek = () => {
+    const me = Object.values(core.db.users).find((u) => !u.bot && !u.gone);
+    const bots = Object.values(core.db.users).filter((u) => u.bot);
+    if (me && bots.length) core.act(pick(bots).id, { t: 'profile.view', uid: me.id });
+  };
+  setTimeout(peek, 4000); setTimeout(peek, 9000); setInterval(peek, 45000);
 
   if (!data) {
     const bots = BOTS.map((b) => core.addUser(b, null, { bot: true }));
