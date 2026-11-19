@@ -43,10 +43,13 @@ app.get('*', (_q, r) => r.sendFile(path.join(root, 'dist', 'index.html')));
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 64 * 1024 });
 
-wss.on('connection', (ws) => {
+wss.on('connection', (ws, req) => {
   ws.alive = true;
+  // Railway 등 프록시 뒤에서는 x-forwarded-for 의 첫 값이 실제 접속 IP 다.
+  const ip = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
+  const ua = String(req.headers['user-agent'] || '');
   let count = 0; let windowStart = Date.now();
-  const session = core.connect((m) => { if (ws.readyState === 1) ws.send(JSON.stringify(m)); });
+  const session = core.connect((m) => { if (ws.readyState === 1) ws.send(JSON.stringify(m)); }, { ip, ua });
   ws.on('pong', () => { ws.alive = true; });
   ws.on('message', (raw) => {
     const now = Date.now();

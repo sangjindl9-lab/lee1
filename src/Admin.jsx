@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
+import Legal from './Legal.jsx';
 
 const won = (n) => `${Number(n).toLocaleString()}원`;
 const dt = (t) => new Date(t).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 const STATUS = { paid: '결제 완료', refunded: '환불 처리' };
-const TABS = [['dash', '현황'], ['orders', '충전'], ['users', '회원'], ['reports', '신고'], ['content', '콘텐츠'], ['config', '설정']];
+const TABS = [['dash', '현황'], ['orders', '충전'], ['users', '회원'], ['reports', '신고'], ['content', '콘텐츠'], ['legal', '수사협조'], ['config', '설정']];
 
 function Settings({ config, send }) {
   const [c, setC] = useState(() => JSON.parse(JSON.stringify(config)));
@@ -20,6 +21,9 @@ function Settings({ config, send }) {
       <section className="a-card"><h3>포인트 규칙</h3>
         {Num({ k: 'startPoints', label: '가입 축하 포인트' })}{Num({ k: 'attend', label: '출석체크' })}{Num({ k: 'bonus3', label: '3일 연속 보너스' })}{Num({ k: 'bonus7', label: '7일 연속 보너스' })}
         {Num({ k: 'requestCost', label: '대화 신청 비용 (거절 시 환불)' })}{Num({ k: 'pinCost', label: '토크 상단 고정 비용' })}{Num({ k: 'pinMin', label: '상단 고정 시간', unit: '분' })}
+      </section>
+      <section className="a-card"><h3>기록 보관 기간 (수사 협조용, 최소 90일)</h3>
+        {Num({ k: 'keepLogsDays', label: '접속 기록 (IP·기기)', unit: '일' })}{Num({ k: 'keepTrailDays', label: '작성·삭제 원본', unit: '일' })}{Num({ k: 'keepReportsDays', label: '신고 및 신고 시점 증거', unit: '일' })}
       </section>
       <section className="a-card"><h3>충전 상품</h3>
         <p className="meta">상품 ID는 Google Play Console에 등록한 인앱 상품 ID와 똑같이 적어야 결제가 됩니다. 실제 결제 금액은 Play Console 가격이 적용됩니다.</p>
@@ -149,6 +153,7 @@ export default function Admin({ adm, send, onExit, demo }) {
             {d[kind].map((x) => <div key={x.id} className="a-card a-led"><span>{x.text}<br /><span className="meta">{x.nick} · {dt(x.at)}</span></span><button className="btn sm ghost danger" onClick={() => send({ t: 'admin.del', kind, id: x.id })}>삭제</button></div>)}
           </div>
         )}
+        {tab === 'legal' && <Legal d={d} send={send} lookup={adm.lookup} exportRes={adm.exportRes} />}
         {tab === 'config' && <Settings config={d.config} send={send} />}
       </div>
     </div>

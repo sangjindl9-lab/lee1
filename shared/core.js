@@ -15,13 +15,19 @@ export const DEFAULT_CONFIG = {
     { id: 'p4', sku: 'point_3000', name: '프리미엄', points: 3000, bonus: 600, price: 33000 },
   ],
   banWords: [], notice: '',
+  // 수사 협조용 보관 기간(일). 관리자 화면에서 바꾸되 90일 아래로는 줄일 수 없다.
+  keepLogsDays: 180, keepTrailDays: 180, keepReportsDays: 365,
 };
+const KEEP_MIN_DAYS = 90;
+// 활동 기록에 남길 입력값(방 비밀번호처럼 수사와 무관한 값은 남기지 않는다)
+const TRAIL_FIELDS = ['text', 'title', 'body', 'name', 'intro', 'topic', 'cat', 'to', 'id', 'mid', 'cid', 'uid', 'reason', 'memo', 'ref', 'pin', 'productId'];
+const NO_TRAIL = new Set(['conv.read']);
 
 const dayKey = (t) => new Date(t + 9 * 3600e3).toISOString().slice(0, 10); // 한국 시간 기준 날짜
 
 export function createCore({ data, save = () => {}, hook = () => {}, adminPassword = '', verifyPurchase = null } = {}) {
   const busy = new Set(); // 검증 중인 결제 토큰
-  const db = Object.assign({ users: {}, talks: [], convs: {}, rooms: {}, posts: [], reports: [], ledger: [], orders: [], seq: 1 }, data || {});
+  const db = Object.assign({ users: {}, talks: [], convs: {}, rooms: {}, posts: [], reports: [], ledger: [], orders: [], logs: [], trail: [], holds: {}, disclosures: [], seq: 1 }, data || {});
   db.config = { ...DEFAULT_CONFIG, ...(db.config || {}) };
   const cfg = () => db.config;
   const admins = new Set(); // 관리자로 로그인한 연결
@@ -179,7 +185,7 @@ export function createCore({ data, save = () => {}, hook = () => {}, adminPasswo
     },
     report(u, m) {
       if (!db.users[m.uid] || m.uid === u.id) return;
-      db.reports.push({ id: nid(), by: u.id, uid: m.uid, reason: line(m.reason, 30), memo: multi(m.memo, 300), ref: line(m.ref, 60), at: Date.now() });
+      db.reports.push({ id: nid(), by: u.id, uid: m.uid, reason: line(m.reason, 30), memo: multi(m.memo, 300), ref: line(m.ref, 60), at: Date.now(), snapshot: snapshot(u.id, m.uid) });
       if (!u.blocks.includes(m.uid)) u.blocks.push(m.uid);
       u.friends = u.friends.filter((x) => x !== m.uid);
       pushMe(u.id); toast(u.id, '신고가 접수되었습니다. 해당 사용자는 함께 차단됩니다.');
@@ -293,11 +299,64 @@ export function createCore({ data, save = () => {}, hook = () => {}, adminPasswo
     },
   };
 
-  function act(uid, m) {
+  /* ---------- 수사 협조용 기록 ----------
+   * logs  : 접속 기록(가입·접속·종료, IP, 기기 정보)
+   * trail : 사용자가 한 모든 작성·변경 행위의 원본(화면에서 지워도 여기엔 남는다)
+   * 보관 기간이 지나면 자동 파기하되, 보존 조치(holds)된 회원 관련 기록은 남긴다. */
+  const addLog = (type, uid, meta = {}) => {
+    db.logs.push({ id: nid(), type, uid: uid || null, ip: line(meta.ip, 64), ua: line(meta.ua, 200), at: Date.now() });
+  };
+  const peerOf = (uid, m) => {
+    if (m.t === 'conv.request') return { peer: m.to || null };
+    if (m.t?.startsWith('conv.') || m.t === 'msg.del') { const c = db.convs[m.id]; return c ? { peer: other(c, uid), conv: c.id } : {}; }
+    if (m.t?.startsWith('room.')) return { room: m.id || null };
+    if (['friend.toggle', 'block.toggle', 'report'].includes(m.t)) return { peer: m.uid || null };
+    return {};
+  };
+  const addTrail = (uid, m, meta, extra) => {
+    const data = {};
+    for (const k of TRAIL_FIELDS) if (m[k] !== undefined && m[k] !== '') data[k] = typeof m[k] === 'string' ? m[k].slice(0, 2000) : m[k];
+    if (m.profile) data.profile = { nick: line(m.profile.nick, 20), gender: m.profile.gender, age: m.profile.age, region: m.profile.region, intro: line(m.profile.intro, 60) };
+    db.trail.push({ id: nid(), uid, t: m.t, ...peerOf(uid, m), ...extra, data, ip: line(meta.ip, 64), at: Date.now() });
+  };
+  const held = (uid) => !!(uid && db.holds[uid]);
+  let lastPrune = 0;
+  function prune(force) {
+    const now = Date.now();
+    if (!force && now - lastPrune < 3600e3) return;
+    lastPrune = now;
+    const day = 86400e3; const c = cfg();
+    const keep = (at, days, ...uids) => now - at < days * day || uids.some(held);
+    db.logs = db.logs.filter((l) => keep(l.at, c.keepLogsDays, l.uid));
+    db.trail = db.trail.filter((t) => keep(t.at, c.keepTrailDays, t.uid, t.peer));
+    db.reports = db.reports.filter((r) => keep(r.at, c.keepReportsDays, r.uid, r.by));
+  }
+  // 신고 순간의 증거 보존: 두 사람 사이의 기록과 신고 대상의 최근 활동·접속 기록을 그대로 복사해 둔다.
+  function snapshot(by, uid) {
+    const since = Date.now() - 30 * 86400e3;
+    const u = db.users[uid];
+    return {
+      at: Date.now(),
+      user: u ? { id: u.id, nick: u.nick, gender: u.gender, age: u.age, region: u.region, intro: u.intro, joined: u.at, gone: !!u.gone } : null,
+      between: db.trail.filter((t) => t.at >= since && ((t.uid === uid && t.peer === by) || (t.uid === by && t.peer === uid))).slice(-300),
+      recent: db.trail.filter((t) => t.uid === uid && t.at >= since).slice(-300),
+      logs: db.logs.filter((l) => l.uid === uid).slice(-50),
+    };
+  }
+
+  function act(uid, m, meta = {}) {
     const u = db.users[uid];
     if (!u || u.gone) return;
     if (u.banned) return toast(uid, '이용이 정지된 계정입니다. 문의는 운영자에게 해 주세요.');
-    try { const h = handlers[m?.t]; if (h) { h(u, m); save(db); } } catch (e) { toast(uid, e.message || '처리하지 못했습니다.'); }
+    const before = m?.t === 'msg.del' ? db.convs[m.id]?.msgs.find((x) => x.id === m.mid)?.text : undefined;
+    try {
+      const h = handlers[m?.t];
+      if (h) {
+        h(u, m);
+        if (!NO_TRAIL.has(m.t)) addTrail(uid, m, meta, before !== undefined ? { deletedText: before } : undefined);
+        prune(); save(db);
+      }
+    } catch (e) { toast(uid, e.message || '처리하지 못했습니다.'); }
     pushAdmin();
   }
 
@@ -325,6 +384,9 @@ export function createCore({ data, save = () => {}, hook = () => {}, adminPasswo
       posts: db.posts.slice(0, 100).map((p) => ({ id: p.id, nick: nickOf(p.uid), text: p.title, at: p.at })),
       rooms: Object.values(db.rooms).map((r) => ({ id: r.id, nick: nickOf(r.owner), text: `${r.name} (${r.members.length}명)`, at: r.at })),
       ledger: db.ledger.filter((l) => !db.users[l.uid]?.bot).slice(0, 100).map((l) => ({ ...l, nick: nickOf(l.uid) })),
+      holds: Object.entries(db.holds).map(([uid, h]) => ({ uid, nick: nickOf(uid), ...h })),
+      disclosures: db.disclosures.slice(-200).reverse(),
+      evidence: { logs: db.logs.length, trail: db.trail.length, oldest: Math.min(db.logs[0]?.at || Date.now(), db.trail[0]?.at || Date.now()) },
     };
   }
   function pushAdmin() { if (admins.size) { const d = { t: 'admin.data', data: adminData() }; admins.forEach((f) => f(d)); } }
@@ -339,6 +401,7 @@ export function createCore({ data, save = () => {}, hook = () => {}, adminPasswo
         pinCost: num(c.pinCost), pinMin: Math.max(1, num(c.pinMin, 1440)), requestCost: num(c.requestCost), products,
         banWords: (Array.isArray(c.banWords) ? c.banWords : []).map((w) => line(w, 20)).filter(Boolean).slice(0, 200),
         notice: line(c.notice, 100),
+        keepLogsDays: Math.max(KEEP_MIN_DAYS, num(c.keepLogsDays, 3650)), keepTrailDays: Math.max(KEEP_MIN_DAYS, num(c.keepTrailDays, 3650)), keepReportsDays: Math.max(KEEP_MIN_DAYS, num(c.keepReportsDays, 3650)),
       };
       pushConfig();
     },
@@ -364,6 +427,71 @@ export function createCore({ data, save = () => {}, hook = () => {}, adminPasswo
       if (m.kind === 'rooms' && db.rooms[m.id]) { db.rooms[m.id].members.forEach((uid) => sendTo(uid, { t: 'room_gone', id: m.id })); delete db.rooms[m.id]; pushRooms(); }
     },
     'admin.report'(m) { const r = db.reports.find((x) => x.id === m.id); if (r) r.done = !r.done; },
+
+    // 회원 찾기: 탈퇴한 회원도 실제 닉네임·ID로 찾는다.
+    'admin.lookup'(m, send) {
+      const q = line(m.q, 40);
+      if (!q) return;
+      const list = Object.values(db.users).filter((u) => !u.bot && (u.id === q || u.nick.includes(q))).slice(0, 20).map((u) => {
+        const logs = db.logs.filter((l) => l.uid === u.id);
+        return {
+          id: u.id, nick: u.nick, gender: u.gender, age: u.age, region: u.region, joined: u.at, lastSeen: u.lastSeen, gone: !!u.gone, banned: !!u.banned,
+          held: db.holds[u.id] || null, trail: db.trail.filter((t) => t.uid === u.id).length, reported: db.reports.filter((r) => r.uid === u.id).length,
+          logs: logs.slice(-30).reverse(),
+        };
+      });
+      send({ t: 'admin.lookup', q, list });
+    },
+    // 보존 조치: 수사기관 요청 등으로 자동 파기를 멈춘다.
+    'admin.hold'(m) {
+      const u = db.users[m.uid]; if (!u) fail('없는 회원입니다.');
+      if (m.on) {
+        const reason = line(m.reason, 100);
+        if (!reason) fail('보존 사유를 입력해 주세요.');
+        db.holds[u.id] = { reason, agency: line(m.agency, 50), at: Date.now() };
+      } else delete db.holds[u.id];
+    },
+    // 자료 추출: 회원·기간을 정해 기록을 한 파일로 만들고 해시값과 제공 이력을 남긴다.
+    async 'admin.export'(m, send, meta) {
+      const u = db.users[m.uid]; if (!u) fail('없는 회원입니다.');
+      const purpose = m.purpose === 'agency' ? 'agency' : 'internal';
+      const agency = line(m.agency, 50); const docType = line(m.docType, 30); const docNo = line(m.docNo, 60);
+      if (purpose === 'agency' && (!agency || !docType || !docNo)) fail('수사기관 제공은 기관명, 근거 문서 종류, 문서 번호를 모두 입력해야 합니다.');
+      const from = Number(new Date(m.from + 'T00:00:00+09:00')) || 0;
+      const to = (Number(new Date(m.to + 'T00:00:00+09:00')) || Date.now()) + 86400e3 - 1;
+      const inRange = (x) => x.at >= from && x.at <= to;
+      const mine = db.trail.filter((t) => inRange(t) && t.uid === u.id);
+      const rooms = new Set(mine.map((t) => t.room).filter(Boolean));
+      const related = db.trail.filter((t) => inRange(t) && t.uid !== u.id && (t.peer === u.id || (t.room && rooms.has(t.room))));
+      const nicks = {};
+      [...mine, ...related].forEach((t) => { for (const x of [t.uid, t.peer]) if (x && !nicks[x]) nicks[x] = nickOf(x); });
+      const pkg = {
+        title: '이음챗 회원 자료',
+        service: '이음챗 (kr.eumsoft.eumchat) / 운영 이음소프트웨어',
+        createdAt: new Date().toISOString(),
+        timezone: '모든 시각은 UTC 밀리초(at) 기준이며 화면 표기는 한국 시간(UTC+9)',
+        request: { purpose: purpose === 'agency' ? '수사기관 제공' : '내부 검토', agency, docType, docNo, memo: line(m.memo, 200), from: m.from || null, to: m.to || null },
+        subject: { id: u.id, nick: u.nick, gender: u.gender, age: u.age, region: u.region, intro: u.intro, joined: u.at, lastSeen: u.lastSeen, withdrawn: !!u.gone, banned: !!u.banned, points: u.points },
+        accessLogs: db.logs.filter((l) => l.uid === u.id && inRange(l)),
+        activity: mine,
+        counterpartActivity: related,
+        reportsAgainst: db.reports.filter((r) => r.uid === u.id && inRange(r)),
+        reportsBy: db.reports.filter((r) => r.by === u.id && inRange(r)).map(({ snapshot, ...r }) => r),
+        purchases: db.orders.filter((o) => o.uid === u.id && inRange(o)).map(({ token, ...o }) => o),
+        nicknames: nicks,
+      };
+      const text = JSON.stringify(pkg, null, 2);
+      const buf = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+      const sha256 = [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
+      const name = `eumchat_${u.id}_${(m.from || 'all')}_${(m.to || 'now')}.json`;
+      db.disclosures.push({
+        id: nid(), at: Date.now(), uid: u.id, nick: u.nick, ...pkg.request, file: name, sha256, adminIp: line(meta?.ip, 64),
+        counts: { accessLogs: pkg.accessLogs.length, activity: mine.length, counterpart: related.length, reports: pkg.reportsAgainst.length },
+      });
+      save(db);
+      send({ t: 'admin.export', name, sha256, text });
+    },
+    'admin.prune'() { prune(true); },
   };
 
   function addUser(profile, token, extra = {}) {
@@ -371,7 +499,7 @@ export function createCore({ data, save = () => {}, hook = () => {}, adminPasswo
     db.users[u.id] = u; if (cfg().startPoints > 0) addPoints(u, cfg().startPoints, '가입 축하 포인트'); save(db); return u;
   }
 
-  function connect(send) {
+  function connect(send, meta = {}) {
     let uid = null; let isAdmin = false; let tries = 0;
     const sync = () => {
       pushUsers(); pushMe(uid); send({ t: 'config', config: pubConfig() });
@@ -384,13 +512,15 @@ export function createCore({ data, save = () => {}, hook = () => {}, adminPasswo
       recv(m) {
         if (!m || typeof m !== 'object') return;
         if (m.t === 'admin.login') {
-          if (adminPassword && ++tries <= 5 && m.pw === adminPassword) { isAdmin = true; admins.add(send); send({ t: 'admin.ok' }); send({ t: 'admin.data', data: adminData() }); } else send({ t: 'admin.fail', off: !adminPassword });
-          return;
+          if (adminPassword && ++tries <= 5 && m.pw === adminPassword) { isAdmin = true; admins.add(send); addLog('admin.login', null, meta); send({ t: 'admin.ok' }); send({ t: 'admin.data', data: adminData() }); } else { addLog('admin.fail', null, meta); send({ t: 'admin.fail', off: !adminPassword }); }
+          save(db); return;
         }
         if (typeof m.t === 'string' && m.t.startsWith('admin.')) {
           if (!isAdmin) return;
-          try { adminHandlers[m.t]?.(m); save(db); } catch (e) { send({ t: 'toast', msg: e.message }); }
-          pushAdmin(); return;
+          Promise.resolve().then(() => adminHandlers[m.t]?.(m, send, meta))
+            .then(() => { save(db); pushAdmin(); })
+            .catch((e) => send({ t: 'toast', msg: e.message || '처리하지 못했습니다.' }));
+          return;
         }
         if (m.t === 'hello') {
           if (uid || typeof m.token !== 'string' || m.token.length < 16) return;
@@ -398,11 +528,13 @@ export function createCore({ data, save = () => {}, hook = () => {}, adminPasswo
           if (!u) {
             if (!m.profile) return send({ t: 'need_profile' });
             try { u = addUser(m.profile, m.token); } catch (e) { return send({ t: 'toast', msg: e.message }); }
+            addLog('join', u.id, meta); addTrail(u.id, { t: 'join', profile: m.profile }, meta);
           }
           uid = u.id; u.lastSeen = Date.now();
+          addLog('login', uid, meta); prune(); save(db);
           if (!socks.has(uid)) socks.set(uid, new Set());
           socks.get(uid).add(send); sync();
-        } else if (uid) act(uid, m);
+        } else if (uid) act(uid, m, meta);
       },
       close() {
         admins.delete(send);
@@ -410,6 +542,7 @@ export function createCore({ data, save = () => {}, hook = () => {}, adminPasswo
         const s = socks.get(uid); s?.delete(send);
         if (s && !s.size) socks.delete(uid);
         if (db.users[uid]) db.users[uid].lastSeen = Date.now();
+        addLog('logout', uid, meta);
         pushUsers(); save(db);
       },
     };

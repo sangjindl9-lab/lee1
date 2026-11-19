@@ -23,7 +23,7 @@ export function connect(onMsg, onStatus) {
   const token = getToken();
   if (DEMO) {
     const core = startDemo();
-    const s = core.connect((m) => setTimeout(() => onMsg(JSON.parse(JSON.stringify(m))), 0));
+    const s = core.connect((m) => setTimeout(() => onMsg(JSON.parse(JSON.stringify(m))), 0), { ip: '체험판', ua: navigator.userAgent });
     s.recv({ t: 'hello', token });
     onStatus(true);
     return { send: (m) => s.recv(m.t === 'hello' ? { ...m, token } : m), reset: () => { store.del('eum_token'); store.del('eum_demo_db'); } };

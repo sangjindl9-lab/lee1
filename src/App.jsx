@@ -578,6 +578,8 @@ export default function App() {
       if (m.t === 'admin.ok') setAdm((a) => ({ ...a, state: 'in' }));
       else if (m.t === 'admin.fail') setAdm({ state: 'fail', off: m.off, data: null });
       else if (m.t === 'admin.data') setAdm((a) => ({ ...a, data: m.data }));
+      else if (m.t === 'admin.lookup') setAdm((a) => ({ ...a, lookup: m }));
+      else if (m.t === 'admin.export') setAdm((a) => ({ ...a, exportRes: { ...m, uid: m.name.split('_')[1] } }));
       else if (m.t === 'iap.done' || m.t === 'iap.fail') { iapWait.current[m.token]?.(m.t === 'iap.done'); delete iapWait.current[m.token]; }
       else if (m.t === 'toast') setToast(m.msg);
       else if (m.t === 'goto') setView(m.view);

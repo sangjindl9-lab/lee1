@@ -233,3 +233,16 @@ button.pts { font-weight: 700; }
 .a-prod input { width: 100%; text-align: left; }
 .a-prod .btn { align-self: end; }
 .row.item { color: inherit; text-decoration: none; }
+
+/* ---------- 수사협조 ---------- */
+.a-pick { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; width: 100%; padding: 10px 12px; margin-top: 8px; border-radius: 12px; background: var(--bg); text-align: left; }
+.a-pick.on { box-shadow: inset 0 0 0 2px var(--pri); }
+.a-table { display: flex; flex-direction: column; font-size: 13px; }
+.a-tr { display: grid; grid-template-columns: 150px 70px 140px 1fr; gap: 8px; padding: 7px 0; border-top: 1px solid var(--line); align-items: start; }
+.a-tr .ua { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mono, .a-hash { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; word-break: break-all; }
+.a-dates { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.form select { padding: 11px 12px; border-radius: 14px; border: 0; box-shadow: inset 0 0 0 1.5px var(--line); background: var(--card); color: var(--text); font: inherit; }
+.a-done { box-shadow: 0 0 0 2px var(--pri), var(--soft); }
+.a-done a.btn { text-decoration: none; }
+@media (max-width: 560px) { .a-tr { grid-template-columns: 1fr 1fr; } .a-tr .ua { grid-column: 1 / -1; } }
