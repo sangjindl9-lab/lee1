@@ -25,6 +25,10 @@ jobs:
           {
             npx --yes @bubblewrap/cli@latest update --skipVersionUpgrade --manifest ./twa-manifest.json
             ls -la
+            # 난독화 때문에 시작 화면 클래스 이름이 바뀌어 앱이 꺼지는 문제 방지
+            sed -i 's/minifyEnabled true/minifyEnabled false/; s/shrinkResources true/shrinkResources false/' app/build.gradle
+            printf '\n-keep class com.google.androidbrowserhelper.** { *; }\n-keep class androidx.browser.** { *; }\n-keep class kr.eumsoft.eumchat.** { *; }\n' >> app/proguard-rules.pro || true
+            grep -n "minifyEnabled\|versionCode" app/build.gradle
             chmod +x gradlew
             ./gradlew bundleRelease assembleRelease --no-daemon
           } 2>&1 | tee ../build.log
