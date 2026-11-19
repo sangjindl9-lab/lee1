@@ -7,325 +7,452 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=Noto+Serif+KR:wght@600;700&display=swap" rel="stylesheet">
 <style>
-/* 배치: 위에 결과 요약 띠, 아래에 입력(원가계산서 장부)과 청구서(흰 종이) 두 화면 */
+/* 구성: 위 막대(화면 전환) · 왼쪽 입력 3단계 · 오른쪽 결과와 청구서 미리보기 */
 :root{
-  --bg:#eef1f0; --surface:#ffffff; --ink:#17262b; --muted:#5d6f75; --line:#cfd8d8;
-  --accent:#17616e; --accent-soft:#dcecee; --on-accent:#ffffff; --warn:#b3261e; --chg:#8a5a00; --chg-soft:#fbf1d9;
+  --bg:#f7f7f6; --surface:#ffffff; --raised:#f1f1f0; --ink:#171717; --ink2:#4f4f4f; --muted:#6f6f6f;
+  --line:rgba(23,23,23,.09); --field:rgba(23,23,23,.18);
+  --accent:#17616e; --accent-ink:#135560; --accent-soft:#e6eff0; --on-accent:#ffffff;
+  --warn:#c0392b; --chg:#8a5a00; --chg-soft:#fbf3df;
   --body:"IBM Plex Sans KR","Apple SD Gothic Neo","Malgun Gothic",sans-serif;
-  --display:"Noto Serif KR","Batang",serif;
+  --ease:cubic-bezier(.22,1,.36,1);
 }
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
-    --bg:#10191c; --surface:#18252a; --ink:#e6eeef; --muted:#9bb0b5; --line:#2f4248;
-    --accent:#6cc3d0; --accent-soft:#1d3a41; --on-accent:#08252b; --warn:#ff8a80; --chg:#f0c36a; --chg-soft:#3a3018;
-    color-scheme:dark;
+    --bg:#141415; --surface:#1b1b1d; --raised:#252527; --ink:#ededed; --ink2:#b4b4b8; --muted:#8e8e94;
+    --line:rgba(237,237,237,.09); --field:rgba(237,237,237,.18);
+    --accent:#6cc3d0; --accent-ink:#8fd3dd; --accent-soft:#1d3a41; --on-accent:#08252b;
+    --warn:#ff8a80; --chg:#f0c36a; --chg-soft:#3a3018; color-scheme:dark;
   }
-}
-:root[data-theme="dark"]{
-  --bg:#10191c; --surface:#18252a; --ink:#e6eeef; --muted:#9bb0b5; --line:#2f4248;
-  --accent:#6cc3d0; --accent-soft:#1d3a41; --on-accent:#08252b; --warn:#ff8a80; --chg:#f0c36a; --chg-soft:#3a3018;
-  color-scheme:dark;
 }
 *{box-sizing:border-box}
 html,body{margin:0}
-body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.5}
-.wrap{max-width:1480px;margin:0 auto;padding:16px 16px 64px;display:flex;flex-direction:column;gap:16px}
-header.top{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:baseline;justify-content:space-between}
-h1{font-family:var(--display);font-size:24px;margin:0;text-wrap:balance}
-h2{font-size:16px;margin:0 0 10px;font-weight:700}
-.hint{color:var(--muted);font-size:13px;margin:0}
-.card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px}
-.summary{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:10px;overflow:hidden}
-.summary>div{background:var(--surface);padding:10px 12px;min-width:0}
-.summary .lab{font-size:12px;color:var(--muted)}
-.summary .val{font-size:17px;font-weight:700;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
-.summary .final{background:var(--accent);color:var(--on-accent)}
-.summary .final .lab{color:var(--on-accent);opacity:.85}
-@media (max-width:640px){.summary{grid-template-columns:repeat(2,1fr)}}
-.tabs{display:flex;gap:8px}
-.tabs button{flex:1}
-button{font:inherit;cursor:pointer;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:8px;padding:8px 12px}
-button:hover{border-color:var(--accent)}
-button.on,button.primary{background:var(--accent);color:var(--on-accent);border-color:var(--accent);font-weight:600}
-button.sm{padding:4px 8px;font-size:13px}
-button.x{padding:2px 8px;color:var(--muted)}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1360px;margin:0 auto;padding:0 24px 96px}
+[hidden]{display:none!important}
+body.simple .m-cost{display:none!important}
+body:not(.simple) .m-simple{display:none!important}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-input,select{font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:7px 8px;width:100%;min-width:0}
-input.num{text-align:right;font-variant-numeric:tabular-nums}
-.fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px 14px}
-.fields label,.rate label{display:flex;flex-direction:column;gap:3px;font-size:13px;color:var(--muted)}
-.rates{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end}
-.rate{flex:1 1 150px;max-width:220px}
+
+/* 위 막대 */
+header.top{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:16px;height:56px;margin:0 -24px 24px;padding:0 24px;background:var(--bg);border-bottom:1px solid var(--line)}
+.brand{font-size:16px;font-weight:600;white-space:nowrap}
+.top-hint{margin-left:auto;font-size:12px;color:var(--muted)}
+@media (max-width:640px){.top-hint{display:none}}
+.seg{display:inline-flex;gap:2px;padding:2px;background:var(--raised);border-radius:10px}
+.seg button{height:32px;border:0;background:transparent;color:var(--ink2);padding:0 14px;border-radius:8px;font-weight:500}
+.seg button:hover{background:transparent;color:var(--ink)}
+.seg button.on{background:var(--surface);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.08)}
+
+/* 두 칸 배치 */
+.layout{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:24px;align-items:start}
+.main{display:flex;flex-direction:column;gap:16px;min-width:0}
+.side{position:sticky;top:80px;display:flex;flex-direction:column;gap:12px}
+
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:24px}
+@media (max-width:640px){.card{padding:16px}.wrap{padding:0 12px 96px}header.top{margin:0 -12px 16px;padding:0 12px}}
+.sec{display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px;margin:0 0 16px}
+.sec h2{font-size:17px;font-weight:600;margin:0}
+.sec .seg{margin-left:auto}
+.no{display:inline-grid;place-items:center;width:24px;height:24px;border-radius:6px;background:var(--raised);color:var(--ink2);font-size:13px;font-weight:600;font-variant-numeric:tabular-nums;flex:none}
+h3{font-size:14px;font-weight:600;margin:24px 0 8px}
+.block>h3:first-child{margin-top:0}
+.block+.block{margin-top:24px;padding-top:24px;border-top:1px solid var(--line)}
+.hint{color:var(--muted);font-size:13px;margin:0 0 12px}
+.muted{color:var(--muted);font-size:13px;font-weight:400}
+.warn{color:var(--warn);font-weight:500;font-size:13px;margin:12px 0 0}
+
+/* 입력과 버튼 */
+input,select{font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--field);border-radius:8px;height:36px;padding:0 10px;width:100%;min-width:0;transition:border-color .15s var(--ease),background-color .15s var(--ease)}
+input:hover,select:hover{border-color:var(--ink2)}
+input:focus,select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+input::placeholder{color:var(--muted);opacity:.7}
+input.num,output{text-align:right;font-variant-numeric:tabular-nums}
+input[type=checkbox]{width:16px;height:16px;padding:0;accent-color:var(--accent)}
+input[type=file]{height:auto;padding:8px;border-style:dashed;background:var(--raised);font-size:13px;color:var(--ink2)}
+input[type=file]::file-selector-button{font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--field);border-radius:6px;padding:4px 12px;margin-right:12px;cursor:pointer}
+button{font:inherit;cursor:pointer;height:36px;border:1px solid var(--field);background:var(--surface);color:var(--ink);border-radius:8px;padding:0 14px;transition:background-color .15s var(--ease),border-color .15s var(--ease),color .15s var(--ease)}
+button:hover{background:var(--raised)}
+button:active{transform:scale(.98)}
+button.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent);font-weight:500}
+button.primary:hover{background:var(--accent-ink);border-color:var(--accent-ink)}
+button.block{width:100%;height:40px}
+button.sm{height:30px;padding:0 10px;font-size:13px}
+button.link{height:32px;border:0;background:transparent;color:var(--accent-ink);padding:0 8px;font-weight:500}
+button.link:hover{background:var(--accent-soft)}
+button.link.danger{color:var(--muted)}
+button.link.danger:hover{color:var(--warn);background:var(--raised)}
+button.x{width:28px;height:28px;padding:0;border:0;background:transparent;color:var(--muted);font-size:16px;line-height:1}
+button.x:hover{background:var(--raised);color:var(--ink)}
+button.on{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}
+
+/* 접는 칸 */
+details>summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:8px 12px;flex-wrap:wrap}
+details>summary::-webkit-details-marker{display:none}
+details>summary::after{content:"";width:7px;height:7px;border-right:1.5px solid var(--muted);border-bottom:1.5px solid var(--muted);transform:rotate(45deg);margin-left:auto;transition:transform .2s var(--ease);flex:none}
+details[open]>summary::after{transform:rotate(225deg)}
+details.me{margin-top:20px;border-top:1px solid var(--line);padding-top:16px}
+details.me>summary{font-weight:500}
+details.me[open]>summary{margin-bottom:12px}
+details.att>summary.sec{margin:0}
+details.att[open]>summary.sec{margin-bottom:16px}
+details.ref{margin:0 0 16px;background:var(--raised);border-radius:10px;padding:10px 14px}
+details.ref>summary{font-size:13px;font-weight:500}
+details.ref[open]>summary{margin-bottom:10px}
+
+.fields{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px 16px}
+.fields label,.rate label,.qtop label,.opt{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--ink2)}
+.fields label[for="f-project"]{grid-column:1/-1}
+
+/* 원도급사·수령액·직접지급 줄 */
+.ded{display:flex;flex-direction:column;gap:8px}
+.ded .line{display:grid;grid-template-columns:1fr 150px 28px;gap:8px;align-items:center}
+.ded .line.pr{grid-template-columns:minmax(0,1fr) 96px 28px;max-width:560px}
+.ded .line.v{grid-template-columns:1fr 150px 118px 28px}
+.ded .line.k{grid-template-columns:96px 1fr 150px 28px}
+.ded .line.k.m{grid-template-columns:96px 1fr 150px 140px 28px}
+.ded .line.m{grid-template-columns:1fr 150px 140px 28px}
+.ded .line.v.m{grid-template-columns:1fr 150px 118px 140px 28px}
+@media (max-width:560px){.ded .line,.ded .line.v,.ded .line.m,.ded .line.v.m{grid-template-columns:1fr 1fr 28px}.ded .line .nm{grid-column:1/-1}}
+.addrow{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:8px}
+.addrow select{width:auto}
+.pct{display:inline-flex;align-items:center;gap:6px}
+input.dec{width:72px;text-align:right;padding:0 8px;font-variant-numeric:tabular-nums}
+
+/* 제경비 제외 방식: 계산 장부 */
+.opts{display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px 16px;margin:0 0 16px}
+.opts .opt{flex-direction:row;align-items:center;gap:8px}
+.opts select{width:auto}
+.opts .grow{flex:1}
+.qtop{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px 16px}
+.qtop output{display:block;height:36px;line-height:36px;font-size:15px;font-weight:600;color:var(--ink)}
+.scroll{overflow-x:auto}
+table.qg{border-collapse:separate;border-spacing:0;width:100%;font-variant-numeric:tabular-nums}
+table.qg th{font-size:12px;font-weight:500;color:var(--muted);text-align:right;padding:0 8px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+table.qg th:nth-child(2){text-align:left}
+table.qg td{padding:4px 8px;vertical-align:middle}
+table.qg tbody tr:first-child td{padding-top:12px}
+table.qg td.op{width:28px;padding-right:0;text-align:center;color:var(--muted);font-size:15px;font-weight:500}
+table.qg td.lab{min-width:220px;white-space:nowrap}
+table.qg td.lab .muted{margin-left:6px;font-size:12px}
+table.qg td input.num{min-width:150px}
+table.qg td.out{text-align:right;padding-right:19px;white-space:nowrap}
+table.qg td.del{width:36px;text-align:center}
+table.qg .kind{display:inline-block;width:44px;font-size:12px;color:var(--muted)}
+table.qg input.plain{width:calc(100% - 48px);border-color:transparent;background:transparent;padding:0 6px;margin-left:-6px}
+table.qg input.plain:hover{border-color:var(--field)}
+table.qg input.plain:focus{border-color:var(--accent);background:var(--surface)}
+table.qg tr.sum td{border-top:1px solid var(--field);padding-top:10px;padding-bottom:10px;font-weight:600}
+table.qg tr.sum td.op{color:var(--ink2)}
+table.qg tr.final td{background:var(--accent-soft);color:var(--accent-ink);font-size:15px;border-top-color:transparent}
+table.qg tr.final td:first-child{border-radius:8px 0 0 8px}
+table.qg tr.final td:last-child{border-radius:0 8px 8px 0}
+table.qg tr.add td{padding-top:0;padding-bottom:8px}
+table.qg tr.add select{width:auto;height:30px;font-size:13px;margin-right:4px}
+table.qg tr.gap td{height:12px;padding:0}
+table.qg tr.note td{font-size:12px;color:var(--muted);padding-top:2px;padding-bottom:2px}
+table.qg tr.note td.out{padding-right:19px}
+table.qg tr.rate td .pct{justify-content:flex-end;width:100%}
+
+/* 원가계산서 방식 */
+.rates{display:flex;flex-wrap:wrap;gap:12px 16px;align-items:flex-end}
+.rate{flex:1 1 150px;max-width:200px}
 .rate.chgbox{background:var(--chg-soft);border-radius:8px;padding:8px}
 .rate.chgbox label{color:var(--chg)}
-.pct{display:flex;align-items:center;gap:6px}
-.pct input{font-size:18px;font-weight:700}
-.check{display:flex;gap:8px;align-items:center;font-size:14px;padding:8px 0}
-.check input{width:18px;height:18px}
-.bulk{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:13px;color:var(--muted);margin:12px 0 8px}
-.scroll{overflow-x:auto;border:1px solid var(--line);border-radius:8px}
-table.led{border-collapse:collapse;width:100%;font-size:13px}
-table.led th,table.led td{border-bottom:1px solid var(--line);padding:4px 4px;text-align:left;vertical-align:middle}
-table.led th{font-size:12px;color:var(--muted);font-weight:600;background:var(--bg);white-space:nowrap}
-table.led td.out,table.led th.r{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.rate .pct input{font-size:16px;font-weight:600}
+.check{display:flex;gap:8px;align-items:center;font-size:13px;color:var(--ink2);padding:8px 0}
+.check input{width:16px;height:16px}
+.bulk{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:13px;color:var(--ink2);margin:0 0 12px}
+.bulk select{width:auto;height:30px;font-size:13px}
+.bulk .sep{width:1px;height:20px;background:var(--line);margin:0 4px}
+.imp{display:flex;flex-direction:column;gap:8px;margin:0 0 16px}
+.imp label{font-size:13px;color:var(--ink2)}
+.implog{font-size:13px;color:var(--ink2)}
+.implog ul{margin:4px 0 0;padding-left:18px}
+.implog p{margin:0}
+.scroll.box{border:1px solid var(--line);border-radius:10px}
+table.led{border-collapse:collapse;width:100%;font-size:13px;font-variant-numeric:tabular-nums}
+table.led th,table.led td{border-bottom:1px solid var(--line);padding:4px 6px;text-align:left;vertical-align:middle}
+table.led th{font-size:12px;color:var(--muted);font-weight:500;background:var(--raised);white-space:nowrap;height:32px}
+table.led td.out,table.led th.r{text-align:right;white-space:nowrap}
 table.led td.grp{color:var(--muted);font-size:12px;white-space:nowrap}
-table.led input,table.led select{padding:5px 5px}
+table.led input,table.led select{height:32px;padding:0 6px}
 table.led input.num{min-width:112px}
 table.led input.nm{min-width:118px}
-table.led select{min-width:78px;padding:5px 2px}
+table.led select{min-width:78px;padding:0 2px}
 table.led tr.off td.out{color:var(--muted);text-decoration:line-through}
-table.led tfoot td{font-weight:700;background:var(--bg);border-bottom:0;white-space:nowrap}
+table.led tfoot td{font-weight:600;background:var(--raised);border-bottom:0;white-space:nowrap}
 table.led tfoot tr:last-child td{border-top:1px solid var(--line)}
 .fx{display:flex;flex-wrap:nowrap;gap:4px;align-items:center}
 .fx select{min-width:124px;flex:1 1 124px}
 .fr{display:flex;align-items:center;gap:2px;color:var(--muted);font-size:13px;white-space:nowrap}
 input.auto::placeholder{color:var(--ink);opacity:.8}
-input.dec{width:62px;text-align:right;padding:5px 4px;font-variant-numeric:tabular-nums}
 table.led input.sm2{min-width:0;width:78px}
-.cap{font-size:12px;color:var(--muted);text-align:right;font-variant-numeric:tabular-nums}
-.tag{font-size:11px;border:1px solid var(--line);border-radius:99px;padding:0 6px;color:var(--muted);margin-left:4px;white-space:nowrap}
+.cap{font-size:12px;color:var(--muted);text-align:right}
 .chgcol{background:var(--chg-soft)}
 .nochg .chg{display:none}
 .noadv .fxcol{display:none}
 .amt{display:flex;gap:4px}
-.addrow{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
-.addrow select{width:auto}
-.ded{display:flex;flex-direction:column;gap:8px}
-.ded .line{display:grid;grid-template-columns:1fr 150px auto;gap:6px;align-items:center}
-.ded .line.v{grid-template-columns:1fr 150px 118px auto}
-@media (max-width:560px){.ded .line,.ded .line.v{grid-template-columns:1fr 1fr auto}.ded .line.v .nm{grid-column:1/-1}}
-.ded .line.pr{grid-template-columns:1fr 120px auto}
-.ded .line.k{grid-template-columns:96px 1fr 150px auto}
-.ded .line.k.m{grid-template-columns:96px 1fr 150px 140px auto}
-.ded .line.m{grid-template-columns:1fr 150px 140px auto}
-.ded .line.v.m{grid-template-columns:1fr 150px 118px 140px auto}
-@media (max-width:560px){.ded .line.m,.ded .line.v.m{grid-template-columns:1fr 1fr auto}.ded .line.m .nm{grid-column:1/-1}}
+.two{display:grid;grid-template-columns:1fr;gap:24px}
+.two>div>h3{margin-top:0}
 #bycomp{overflow-x:auto}
-#bycomp h2{margin-top:16px}
-#bycomp table{border-collapse:collapse;width:100%;min-width:760px;font-size:14px}
-#bycomp th,#bycomp td{border-bottom:1px solid var(--line);padding:5px 6px;white-space:nowrap;text-align:left}
-#bycomp th{font-size:12px;color:var(--muted)}
+#bycomp h2{font-size:14px;margin:16px 0 8px}
+#bycomp table{border-collapse:collapse;width:100%;min-width:760px;font-size:13px}
+#bycomp th,#bycomp td{border-bottom:1px solid var(--line);padding:6px;white-space:nowrap;text-align:left}
+#bycomp th{font-size:12px;color:var(--muted);font-weight:500}
 #bycomp td.n{text-align:right;font-variant-numeric:tabular-nums}
 #bycomp td.c{text-align:center}
-#bycomp tr.em td{font-weight:700}
-.two{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px}
-.result{display:grid;grid-template-columns:1fr auto;gap:6px 16px;font-variant-numeric:tabular-nums}
-.result .t{font-weight:700;border-top:1px solid var(--line);padding-top:6px}
+#bycomp tr.em td{font-weight:600}
+.result{display:grid;grid-template-columns:1fr auto;gap:6px 16px;font-variant-numeric:tabular-nums;font-size:13px}
+.result .t{font-weight:600;border-top:1px solid var(--line);padding-top:6px}
 .result .n{text-align:right}
-.result .big{font-size:20px;color:var(--accent)}
-.warn{color:var(--warn);font-weight:600;font-size:14px}
-.banner{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;background:var(--accent-soft);border-radius:8px;padding:8px 12px;font-size:14px}
-.docbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
-.paperwrap{overflow-x:auto}
-.imp{display:flex;flex-direction:column;gap:6px;margin:12px 0;padding:12px;background:var(--accent-soft);border-radius:8px}
-.implog{font-size:13px}
-.implog ul{margin:4px 0 0;padding-left:18px}
-.implog p{margin:0}
-.assets{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;margin-top:10px}
-.asset{display:flex;flex-direction:column;gap:6px;min-width:0}
-.alist{display:flex;flex-direction:column;gap:6px}
-.aitem{display:grid;grid-template-columns:44px 1fr auto;gap:8px;align-items:center;border:1px solid var(--line);border-radius:8px;padding:6px}
+.result .big{font-size:18px;color:var(--accent-ink)}
+.banner{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;background:var(--accent-soft);border-radius:10px;padding:8px 12px;font-size:13px;margin:0 0 16px}
+
+/* 첨부 */
+.assets{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px}
+.asset{display:flex;flex-direction:column;gap:8px;min-width:0}
+.asset>label{font-size:13px;color:var(--ink2)}
+.asset>label b{font-weight:600;color:var(--ink)}
+.alist{display:flex;flex-direction:column;gap:8px}
+.aitem{display:grid;grid-template-columns:44px 1fr 28px;gap:8px;align-items:center;border:1px solid var(--line);border-radius:10px;padding:6px}
 .aitem img{width:44px;height:44px;object-fit:contain;background:#fff;border-radius:4px}
 .aitem .meta{min-width:0;font-size:13px;overflow-wrap:anywhere}
+.aitem .meta input{height:30px}
+
+/* 오른쪽 결과 */
+.sum{padding:20px}
+.sum-lab{font-size:13px;color:var(--ink2)}
+.sum-big{font-size:30px;line-height:1.2;font-weight:600;font-variant-numeric:tabular-nums;color:var(--accent-ink);margin:4px 0 4px;overflow-wrap:anywhere}
+.sum-big .unit{font-size:16px;font-weight:500;color:var(--ink2);margin-left:4px}
+.sum-han{font-size:13px;color:var(--ink2);margin:0 0 16px;word-break:keep-all}
+.sum-list{margin:0 0 16px;padding:0;border-top:1px solid var(--line)}
+.sum-list>div{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid var(--line);font-size:13px}
+.sum-list dt{color:var(--ink2)}
+.sum-list dd{margin:0;font-weight:500;font-variant-numeric:tabular-nums;white-space:nowrap}
+.sum-list .sub dt,.sum-list .sub dd{color:var(--muted);font-weight:400}
+.mini-box{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:12px;cursor:zoom-in;transition:border-color .15s var(--ease)}
+.mini-box:hover{border-color:var(--field)}
+.mini-lab{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin:0 0 8px}
+#mini{zoom:.355;pointer-events:none;user-select:none}
+#mini .paper{border:0;box-shadow:0 0 0 3px #e4e4e4}
+.mbar{display:none;position:fixed;left:0;right:0;bottom:0;z-index:6;align-items:center;gap:12px;padding:12px 16px;background:var(--surface);border-top:1px solid var(--line)}
+.mbar .lab{display:block;font-size:12px;color:var(--muted)}
+.mbar b{font-size:18px;font-weight:600;font-variant-numeric:tabular-nums;color:var(--accent-ink)}
+.mbar button{margin-left:auto}
+
+/* 청구서 화면 */
+#v-doc{display:flex;flex-direction:column;gap:16px}
+.docbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.docbar .hint{margin:0}
+.paperwrap{overflow-x:auto}
+#papers .paper{box-shadow:0 8px 24px rgba(0,0,0,.06)}
 #paper-att .paper{margin-top:16px}
-@media print{body{background:#fff}.wrap{padding:0;max-width:none}.wrap>*:not(#v-doc){display:none!important}.docbar{display:none!important}.paperwrap{overflow:visible}}
-.mode{display:flex;flex-wrap:wrap;gap:8px}
-.mode button{flex:1 1 260px;text-align:left;padding:10px 14px}
-.mode button small{display:block;font-weight:400;font-size:12px;opacity:.85}
-body.simple .m-cost{display:none!important}
-body:not(.simple) .m-simple{display:none!important}
-table.qg input.num{min-width:132px}
-table.qg input.nm{min-width:150px}
-table.qg td:first-child{white-space:nowrap}
-table.qg tr.em td{background:var(--accent-soft);font-weight:700}
-table.qg tr.sub td{color:var(--muted);font-size:12px}
-table.qg .pct{justify-content:flex-end}
-table.qg .pct input{font-size:14px;width:72px}
-.qtop{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px 14px;margin:12px 0}
-.qtop label{display:flex;flex-direction:column;gap:3px;font-size:13px;color:var(--muted)}
-.qtop output{font-size:17px;font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums;padding:6px 0}
-.bulk select{width:auto}
-.bulk .dec{width:70px}
-[hidden]{display:none!important}
+/* 좁은 화면 */
+@media (max-width:1023px){.layout{grid-template-columns:minmax(0,1fr)}.side{position:static}.mini-box{display:none}.mbar{display:flex}}
+@media (max-width:640px){table.qg td.lab{min-width:150px;white-space:normal}table.qg td.lab .muted{display:block;margin:0}table.qg td input.num{min-width:120px}table.qg .kind{display:block;width:auto}table.qg input.plain{width:100%}.opts .grow{display:none}}
+@media print{body{background:#fff}.wrap{padding:0;max-width:none}.wrap>*:not(#v-doc){display:none!important}.docbar{display:none!important}.paperwrap{overflow:visible}#papers .paper{box-shadow:none}}
 </style>
 <style id="papercss"></style>
 </head>
 <body>
 <div class="wrap">
   <header class="top">
-    <h1>하도급 준공금 청구서</h1>
-    <p class="hint">준공 잔액에서 제경비·직불금을 빼고 하도급률을 곱해 청구서를 만듭니다. 입력 내용은 이 기기에 자동 저장됩니다.</p>
+    <div class="brand">하도급 준공금 청구서</div>
+    <nav class="seg" aria-label="화면 전환">
+      <button type="button" id="tab-input" class="on">입력</button>
+      <button type="button" id="tab-doc">청구서</button>
+    </nav>
+    <span class="top-hint">입력 내용은 이 기기에 자동 저장됩니다</span>
   </header>
 
-  <nav class="mode" aria-label="계산 방식">
-    <button type="button" data-mode="simple" id="mode-simple">제경비 제외 방식 <small>준공 잔액 − 제경비(산재·고용 등) − 직불금, 남은 금액 × 하도급률</small></button>
-    <button type="button" data-mode="cost" id="mode-cost">원가계산서 방식 <small>원가계산서 항목별 금액에 하도급률을 적용</small></button>
-  </nav>
-
-  <section class="summary" aria-label="계산 결과 요약">
-    <div><div class="lab" id="l-1">원도급 준공금액 (부가세 포함)</div><div class="val" id="s-supply">0</div></div>
-    <div><div class="lab" id="l-2">기수령액 (선급금·기성금)</div><div class="val" id="s-total">0</div></div>
-    <div><div class="lab" id="l-3">하도급 금액 (잔액 × 하도급률)</div><div class="val" id="s-ded">0</div></div>
-    <div class="final"><div class="lab">금회 청구금액</div><div class="val" id="s-claim">0</div></div>
-  </section>
-
-  <div class="banner m-cost" id="exbanner" hidden>
-    <span>보내 주신 원가계산서 사진의 금액과 요율을 넣어 두었습니다. 다른 공사에 쓸 때는 금액을 지우세요.</span>
-    <button class="sm" id="btn-clear" type="button">금액 지우기</button>
-  </div>
-
-  <nav class="tabs">
-    <button type="button" id="tab-input" class="on">① 금액 입력</button>
-    <button type="button" id="tab-doc">② 청구서 보기</button>
-  </nav>
-
-  <main id="v-input" style="display:flex;flex-direction:column;gap:16px">
-    <section class="card">
-      <h2>기본 정보</h2>
-      <div class="fields" id="fields"></div>
-      <h2 style="margin-top:16px">원도급사</h2>
-      <p class="hint">공동도급이면 회사를 추가하세요. 회사마다 청구금액이 따로 계산됩니다. 지분은 원가계산서 방식과 "잔액을 지분대로 나누기"에 쓰입니다.</p>
-      <div class="ded" id="primes"></div>
-      <div class="addrow"><button type="button" id="btn-addprime">+ 원도급사 추가</button></div>
-      <p class="warn" id="shwarn" hidden></p>
-    </section>
-
-    <section class="card m-simple">
-      <h2>청구 금액 입력</h2>
-      <p class="hint"><b>준공 잔액</b>에는 제경비를 빼기 전 금액을 적고, 아래 <b>제외 항목</b>(산재보험료·고용보험료 등)에 뺄 금액을 적으세요. 제외한 뒤의 금액은 자동으로 계산되고, 여기서 <b>직불금</b>을 뺀 금액에 <b>하도급률</b>을 곱해 청구합니다.</p>
-      <div class="qtop">
-        <label for="q-total">원도급 준공금 (적지 않아도 됨)<input class="num" id="q-total" data-q="total" inputmode="numeric" placeholder="0"></label>
-        <label for="q-pre">선금 공제 (기수령 선금)<input class="num" id="q-pre" data-q="pre" inputmode="numeric" placeholder="0"></label>
-        <label>준공금 − 선금<output id="q-remain">-</output></label>
-      </div>
-      <div class="bulk">
-        <label for="q-rate">하도급률</label><span class="pct"><input class="dec" id="q-rate" data-q="rate" inputmode="decimal"><b>%</b></span>
-        <label for="q-round" style="margin-left:8px">원 미만</label>
-        <select id="q-round" data-q="round"><option value="round">반올림</option><option value="floor">버림</option><option value="ceil">올림</option></select>
-        <button class="sm" type="button" id="btn-qsplit">잔액을 지분대로 나누기</button>
-        <button class="sm" type="button" id="btn-qzero" style="margin-left:auto">금액 전체 삭제</button>
-      </div>
-      <div class="scroll">
-        <table class="led qg"><thead id="qhead"></thead><tbody id="qrows"></tbody></table>
-      </div>
-      <div class="addrow">
-        <select id="q-exname" aria-label="추가할 제외 항목"><option>산재보험료</option><option>고용보험료</option><option>국민건강보험료</option><option>노인장기요양보험료</option><option>국민연금보험료</option><option>퇴직공제부금</option><option>산업안전보건관리비</option><option>환경보전비</option><option>기타경비</option><option>일반관리비</option><option>이윤</option><option value="">직접 입력</option></select>
-        <button type="button" id="btn-addex">+ 제외 항목 추가</button>
-        <datalist id="exlist"><option value="산재보험료"><option value="고용보험료"><option value="국민건강보험료"><option value="노인장기요양보험료"><option value="국민연금보험료"><option value="퇴직공제부금"><option value="산업안전보건관리비"><option value="환경보전비"><option value="기타경비"><option value="일반관리비"><option value="이윤"></datalist>
-        <button type="button" id="btn-addqd">+ 직불금 추가</button>
-      </div>
-      <p class="warn" id="qwarn" hidden></p>
-    </section>
-
-    <section class="card m-cost">
-      <h2>하도급률</h2>
-      <div class="rates">
-        <div class="rate"><label for="r1">당초 계약분 하도급률
-          <span class="pct"><input class="num" id="r1" inputmode="decimal"><b>%</b></span></label></div>
-        <div class="rate chgbox chg"><label for="r2">설계변경분 하도급률
-          <span class="pct"><input class="num" id="r2" inputmode="decimal"><b>%</b></span></label></div>
-        <div class="rate"><label for="cut">공급가액 절사
-          <select id="cut"><option value="1">절사 안 함</option><option value="10">10원 미만</option><option value="100">100원 미만</option><option value="1000">1,000원 미만</option><option value="10000">10,000원 미만</option></select></label></div>
-      </div>
-      <div class="rates" style="margin-top:10px"><div class="rate"><label for="vatr">부가세 원 미만
-          <select id="vatr"><option value="floor">버림</option><option value="round">반올림</option><option value="ceil">올림</option></select></label></div></div>
-      <label class="check" for="haschg"><input type="checkbox" id="haschg"> 설계변경 건이 있음 (증감액에 별도 하도급률 적용)</label>
-      <p class="hint">실질 하도급률(원도급 내역 전체 대비): <b id="eff">-</b></p>
-    </section>
-
-    <section class="card m-cost" id="ledcard">
-      <h2>원가계산서</h2>
-      <p class="hint"><b>엑셀 내역서의 금액을 "원도급 당초 금액" 칸에 그대로 적으세요.</b> 적은 금액이 그대로 들어가고, 적지 않은 항목은 0입니다. 재료비·노무비 같은 직접비에는 하도급률을 곱하고, 제경비는 하도급 직접비에 맞춰 같은 비율로 줄여 계산합니다. 제경비를 <b>제외</b>하면 뒤따르는 일반관리비·이윤에서도 빠지고, <b>전액</b>은 적은 금액 그대로, <b>직접입력</b>은 하도급 금액을 직접 적습니다.</p>
-      <div class="imp">
-        <label for="up-xls"><b>준공내역서 불러오기</b> <span class="hint">엑셀(.xlsx, .xls)의 원가계산서 시트에서 금액과 요율을 읽어 아래 표를 채웁니다</span></label>
-        <input type="file" id="up-xls" accept=".xlsx,.xls,.xlsm,.csv">
-        <div class="implog" id="impmsg" role="status"></div>
-      </div>
-      <div class="bulk">항목 구성:
-        <select id="tpl" aria-label="원가계산서 항목 구성"><option value="std">재료비·직접노무비 구분</option><option value="net">순공사원가 (직접공사비 한 줄)</option></select>
-        <button class="sm" type="button" id="btn-tpl">이 구성으로 바꾸기</button>
-        <span class="hint">내역서가 재료비·노무비를 나누지 않고 직접공사비로 되어 있으면 "순공사원가"를 고르세요. 바꾸면 아래 금액이 지워집니다.</span>
-      </div>
-      <div class="bulk">제경비 한꺼번에:
-        <button class="sm" type="button" data-bulk="rate">모두 요율</button>
-        <button class="sm" type="button" data-bulk="full">모두 전액</button>
-        <button class="sm" type="button" data-bulk="none">모두 제외</button>
-        <label class="check" for="adv" style="padding:0;margin-left:12px"><input type="checkbox" id="adv"> 요율·산식 직접 설정</label>
-        <button class="sm" type="button" id="btn-zero" style="margin-left:auto">금액 전체 삭제</button>
-      </div>
-      <div class="scroll">
-        <table class="led">
-          <thead><tr>
-            <th>구분</th><th>항목</th><th class="fxcol">계산 방법 (기준 × 요율 + 기초액 × 배수)</th><th>적용</th>
-            <th class="r">원도급 당초 금액</th><th class="r chg chgcol">설계변경 증감액</th>
-            <th class="r">하도급 당초분</th><th class="r chg chgcol">하도급 변경분</th><th class="r">하도급 계</th><th></th>
-          </tr></thead>
-          <tbody id="rows"></tbody>
-          <tfoot>
-            <tr><td colspan="2">합계 (공급가액)</td><td class="fxcol"></td><td></td><td class="out" id="t-pb"></td><td class="out chg chgcol" id="t-pc"></td><td class="out" id="t-sb"></td><td class="out chg chgcol" id="t-sc"></td><td class="out" id="t-st"></td><td></td></tr>
-            <tr><td colspan="2">부가가치세</td><td class="fxcol"></td><td></td><td class="out" id="v-pb"></td><td class="out chg chgcol" id="v-pc"></td><td class="out" id="v-sb"></td><td class="out chg chgcol" id="v-sc"></td><td class="out" id="v-st"></td><td></td></tr>
-            <tr><td colspan="2">총계</td><td class="fxcol"></td><td></td><td class="out" id="g-pb"></td><td class="out chg chgcol" id="g-pc"></td><td class="out" id="g-sb"></td><td class="out chg chgcol" id="g-sc"></td><td class="out" id="g-st"></td><td></td></tr>
-          </tfoot>
-        </table>
-      </div>
-      <div class="addrow">
-        <select id="newgrp" aria-label="추가할 항목의 구분"><option>직접공사비</option><option>재료비</option><option>노무비</option><option selected>경비</option><option>일반관리비</option><option>이윤</option><option>기타</option></select>
-        <button type="button" id="btn-addrow">+ 항목 추가</button>
-      </div>
-    </section>
-
-    <div class="two m-cost">
+  <div class="layout" id="v-input">
+    <div class="main">
       <section class="card">
-        <h2>이미 받은 금액 (선급금·기성금)</h2>
-        <p class="hint">발주처·원도급 기준으로 이미 지급된 금액을 부가세 포함으로 적습니다. 원도급 준공금액에서 먼저 빼고, 남은 금액에 하도급률을 적용합니다.</p>
-        <div class="ded" id="paid"></div>
-        <div class="addrow"><button type="button" id="btn-addpaid">+ 수령액 추가</button></div>
+        <header class="sec"><span class="no">1</span><h2>공사와 원도급사</h2></header>
+        <div class="fields" id="fields"></div>
+        <h3>원도급사</h3>
+        <p class="hint">공동도급이면 회사를 추가하세요. 회사마다 청구금액이 따로 계산됩니다</p>
+        <div class="ded" id="primes"></div>
+        <div class="addrow"><button type="button" class="link" id="btn-addprime">+ 원도급사 추가</button></div>
+        <p class="warn" id="shwarn" hidden></p>
+        <details class="me">
+          <summary>청구인 정보 <span class="muted" id="me-sum"></span></summary>
+          <div class="fields" id="fields-me"></div>
+        </details>
       </section>
+
       <section class="card">
-        <h2>원도급사 직접지급액 공제</h2>
-        <p class="hint">원도급사가 우리 대신 자재업체·근로자 등에게 직접 지급한 금액입니다. 하도급 금액에서 뺍니다. 원도급사가 여러 곳이면 지급한 회사를 고르세요.</p>
-        <div class="ded" id="direct"></div>
-        <div class="addrow"><button type="button" id="btn-adddirect">+ 직접지급 추가</button></div>
+        <header class="sec"><span class="no">2</span><h2>청구 금액</h2>
+          <div class="seg" role="group" aria-label="계산 방식">
+            <button type="button" data-mode="simple" id="mode-simple">제경비 제외 방식</button>
+            <button type="button" data-mode="cost" id="mode-cost">원가계산서 방식</button>
+          </div>
+        </header>
+
+        <div class="m-simple">
+          <p class="hint">준공 잔액에서 제외 항목과 직불금을 빼고, 남은 금액에 하도급률을 곱합니다</p>
+          <details class="ref" id="qref">
+            <summary>원도급 준공금과 선금 <span class="muted">선택 · 청구서 내역 맨 위에 표시</span></summary>
+            <div class="qtop">
+              <label for="q-total">원도급 준공금<input class="num" id="q-total" data-q="total" inputmode="numeric" placeholder="0"></label>
+              <label for="q-pre">선금 공제<input class="num" id="q-pre" data-q="pre" inputmode="numeric" placeholder="0"></label>
+              <label>준공금 − 선금<output id="q-remain">-</output></label>
+            </div>
+          </details>
+          <div class="opts">
+            <label class="opt" for="q-rate">기본 하도급률 <span class="pct"><input class="dec" id="q-rate" data-q="rate" inputmode="decimal">%</span></label>
+            <label class="opt" for="q-round">원 미만 <select id="q-round" data-q="round"><option value="round">반올림</option><option value="floor">버림</option><option value="ceil">올림</option></select></label>
+            <span class="grow"></span>
+            <button type="button" class="link" id="btn-qsplit">잔액을 지분대로 나누기</button>
+            <button type="button" class="link danger" id="btn-qzero">금액 전체 삭제</button>
+          </div>
+          <div class="scroll"><table class="qg"><thead id="qhead"></thead><tbody id="qrows"></tbody></table></div>
+          <p class="warn" id="qwarn" hidden></p>
+          <datalist id="exlist"><option value="산재보험료"><option value="고용보험료"><option value="국민건강보험료"><option value="노인장기요양보험료"><option value="국민연금보험료"><option value="퇴직공제부금"><option value="산업안전보건관리비"><option value="환경보전비"><option value="기타경비"><option value="일반관리비"><option value="이윤"></datalist>
+        </div>
+
+        <div class="m-cost">
+          <p class="hint">원가계산서 항목별 금액에 하도급률을 적용하고, 기수령액과 직접지급액을 뺍니다</p>
+          <div class="banner" id="exbanner" hidden>
+            <span>보내 주신 원가계산서 사진의 금액과 요율을 넣어 두었습니다. 다른 공사에 쓸 때는 금액을 지우세요</span>
+            <button class="sm" id="btn-clear" type="button">금액 지우기</button>
+          </div>
+
+          <div class="block">
+            <h3>하도급률</h3>
+            <div class="rates">
+              <div class="rate"><label for="r1">당초 계약분
+                <span class="pct"><input class="dec" id="r1" inputmode="decimal">%</span></label></div>
+              <div class="rate chgbox chg"><label for="r2">설계변경분
+                <span class="pct"><input class="dec" id="r2" inputmode="decimal">%</span></label></div>
+              <div class="rate"><label for="cut">공급가액 절사
+                <select id="cut"><option value="1">절사 안 함</option><option value="10">10원 미만</option><option value="100">100원 미만</option><option value="1000">1,000원 미만</option><option value="10000">10,000원 미만</option></select></label></div>
+              <div class="rate"><label for="vatr">부가세 원 미만
+                <select id="vatr"><option value="floor">버림</option><option value="round">반올림</option><option value="ceil">올림</option></select></label></div>
+            </div>
+            <label class="check" for="haschg"><input type="checkbox" id="haschg"> 설계변경 건이 있음 (증감액에 별도 하도급률 적용)</label>
+            <p class="hint" style="margin:0">실질 하도급률(원도급 내역 전체 대비) <b id="eff">-</b></p>
+          </div>
+
+          <div class="block" id="ledcard">
+            <h3>원가계산서</h3>
+            <div class="imp">
+              <label for="up-xls">준공내역서 엑셀을 넣으면 원가계산서 시트의 금회 금액을 읽어 아래 표를 채웁니다</label>
+              <input type="file" id="up-xls" accept=".xlsx,.xls,.xlsm,.csv">
+              <div class="implog" id="impmsg" role="status"></div>
+            </div>
+            <div class="bulk">
+              항목 구성
+              <select id="tpl" aria-label="원가계산서 항목 구성"><option value="std">재료비·직접노무비 구분</option><option value="net">순공사원가 (직접공사비 한 줄)</option></select>
+              <button class="sm" type="button" id="btn-tpl">이 구성으로 바꾸기</button>
+              <span class="sep"></span>
+              제경비
+              <button class="sm" type="button" data-bulk="rate">모두 요율</button>
+              <button class="sm" type="button" data-bulk="full">모두 전액</button>
+              <button class="sm" type="button" data-bulk="none">모두 제외</button>
+              <span class="sep"></span>
+              <label class="check" for="adv" style="padding:0"><input type="checkbox" id="adv"> 요율·산식 직접 설정</label>
+              <button class="link danger" type="button" id="btn-zero" style="margin-left:auto">금액 전체 삭제</button>
+            </div>
+            <div class="scroll box">
+              <table class="led">
+                <thead><tr>
+                  <th>구분</th><th>항목</th><th class="fxcol">계산 방법 (기준 × 요율 + 기초액 × 배수)</th><th>적용</th>
+                  <th class="r">원도급 당초 금액</th><th class="r chg chgcol">설계변경 증감액</th>
+                  <th class="r">하도급 당초분</th><th class="r chg chgcol">하도급 변경분</th><th class="r">하도급 계</th><th></th>
+                </tr></thead>
+                <tbody id="rows"></tbody>
+                <tfoot>
+                  <tr><td colspan="2">합계 (공급가액)</td><td class="fxcol"></td><td></td><td class="out" id="t-pb"></td><td class="out chg chgcol" id="t-pc"></td><td class="out" id="t-sb"></td><td class="out chg chgcol" id="t-sc"></td><td class="out" id="t-st"></td><td></td></tr>
+                  <tr><td colspan="2">부가가치세</td><td class="fxcol"></td><td></td><td class="out" id="v-pb"></td><td class="out chg chgcol" id="v-pc"></td><td class="out" id="v-sb"></td><td class="out chg chgcol" id="v-sc"></td><td class="out" id="v-st"></td><td></td></tr>
+                  <tr><td colspan="2">총계</td><td class="fxcol"></td><td></td><td class="out" id="g-pb"></td><td class="out chg chgcol" id="g-pc"></td><td class="out" id="g-sb"></td><td class="out chg chgcol" id="g-sc"></td><td class="out" id="g-st"></td><td></td></tr>
+                </tfoot>
+              </table>
+            </div>
+            <div class="addrow">
+              <select id="newgrp" aria-label="추가할 항목의 구분"><option>직접공사비</option><option>재료비</option><option>노무비</option><option selected>경비</option><option>일반관리비</option><option>이윤</option><option>기타</option></select>
+              <button type="button" class="link" id="btn-addrow">+ 항목 추가</button>
+            </div>
+          </div>
+
+          <div class="block two">
+            <div>
+              <h3>이미 받은 금액</h3>
+              <p class="hint">선급금·기성금을 부가세 포함으로 적습니다. 준공금액에서 먼저 빼고 하도급률을 적용합니다</p>
+              <div class="ded" id="paid"></div>
+              <div class="addrow"><button type="button" class="link" id="btn-addpaid">+ 수령액 추가</button></div>
+            </div>
+            <div>
+              <h3>원도급사 직접지급액</h3>
+              <p class="hint">원도급사가 대신 지급한 자재대금 등입니다. 하도급 금액에서 뺍니다</p>
+              <div class="ded" id="direct"></div>
+              <div class="addrow"><button type="button" class="link" id="btn-adddirect">+ 직접지급 추가</button></div>
+            </div>
+          </div>
+
+          <div class="block">
+            <h3>계산 과정</h3>
+            <div class="result" id="result"></div>
+            <div id="bycomp"></div>
+            <p class="warn" id="neg" hidden>공제액이 하도급 금액보다 큽니다. 수령액과 직접지급액을 확인하세요</p>
+          </div>
+        </div>
       </section>
+
+      <details class="card att" id="attcard">
+        <summary class="sec"><span class="no">3</span><h2>도장 · 통장 사본 · 첨부 서류</h2><span class="muted">선택</span></summary>
+        <p class="hint">등록한 파일은 이 기기에만 저장되고, 청구서 뒤에 한 장씩 붙어 출력됩니다</p>
+        <div class="assets">
+          <div class="asset">
+            <label for="up-stamp"><b>회사 도장</b> · 흰 바탕은 자동으로 투명 처리</label>
+            <input type="file" id="up-stamp" accept="image/*">
+            <div class="alist" id="l-stamp"></div>
+          </div>
+          <div class="asset">
+            <label for="up-bank"><b>통장 사본</b> · 이미지 또는 PDF</label>
+            <input type="file" id="up-bank" accept="image/*,application/pdf">
+            <div class="alist" id="l-bank"></div>
+          </div>
+          <div class="asset">
+            <label for="up-att"><b>첨부 서류</b> · 여러 개 선택 가능</label>
+            <input type="file" id="up-att" accept="image/*,application/pdf" multiple>
+            <div class="alist" id="l-att"></div>
+          </div>
+        </div>
+        <p class="hint" id="upmsg" role="status" style="margin:12px 0 0"></p>
+      </details>
     </div>
 
-    <section class="card">
-      <h2>도장 · 통장 사본 · 첨부 서류</h2>
-      <p class="hint">등록한 파일은 이 기기에만 저장되고, 청구서 뒤에 한 장씩 붙어 출력됩니다. 등록하지 않으면 출력되지 않습니다.</p>
-      <div class="assets">
-        <div class="asset">
-          <label for="up-stamp"><b>회사 도장</b> <span class="hint">이미지 · 흰 바탕은 자동으로 투명 처리</span></label>
-          <input type="file" id="up-stamp" accept="image/*">
-          <div class="alist" id="l-stamp"></div>
-        </div>
-        <div class="asset">
-          <label for="up-bank"><b>통장 사본</b> <span class="hint">이미지 또는 PDF</span></label>
-          <input type="file" id="up-bank" accept="image/*,application/pdf">
-          <div class="alist" id="l-bank"></div>
-        </div>
-        <div class="asset">
-          <label for="up-att"><b>첨부 서류</b> <span class="hint">이미지 또는 PDF · 여러 개 선택 가능</span></label>
-          <input type="file" id="up-att" accept="image/*,application/pdf" multiple>
-          <div class="alist" id="l-att"></div>
-        </div>
+    <aside class="side" aria-label="계산 결과">
+      <div class="card sum">
+        <div class="sum-lab">금회 청구금액</div>
+        <div class="sum-big"><span id="s-claim">0</span><span class="unit">원</span></div>
+        <p class="sum-han" id="s-hangul"></p>
+        <dl class="sum-list">
+          <div><dt id="l-1">준공 잔액</dt><dd id="s-supply">0</dd></div>
+          <div><dt id="l-2">제경비 제외 후 금액</dt><dd id="s-total">0</dd></div>
+          <div><dt id="l-3">하도급 대상금액</dt><dd id="s-ded">0</dd></div>
+        </dl>
+        <dl class="sum-list" id="s-comp" hidden></dl>
+        <button type="button" class="primary block" id="btn-go">청구서 보기 · 인쇄</button>
       </div>
-      <p class="hint" id="upmsg" role="status"></p>
-    </section>
+      <div class="mini-box" id="mini-box" role="button" tabindex="0" aria-label="청구서 크게 보기">
+        <div class="mini-lab"><span>청구서 미리보기</span><span>누르면 크게 보기</span></div>
+        <div id="mini" aria-hidden="true"></div>
+      </div>
+      <div class="mbar">
+        <div><span class="lab">금회 청구금액</span><b id="s-claim-m">0</b></div>
+        <button type="button" class="primary" id="btn-go-m">청구서 보기</button>
+      </div>
+    </aside>
+  </div>
 
-    <section class="card m-cost">
-      <h2>청구금액 계산</h2>
-      <div class="result" id="result"></div>
-      <div id="bycomp"></div>
-      <p class="warn" id="neg" hidden>공제액이 하도급 금액보다 큽니다. 수령액과 직접지급액을 확인하세요.</p>
-    </section>
-  </main>
-
-  <main id="v-doc" hidden style="display:flex;flex-direction:column;gap:12px">
+  <main id="v-doc" hidden>
     <div class="docbar">
       <button type="button" class="primary" id="btn-xlsx" hidden>엑셀로 저장</button>
       <button type="button" id="btn-html" hidden>인쇄용 파일 저장</button>
       <button type="button" id="btn-print" hidden>인쇄</button>
-      <span class="hint" id="dlmsg">저장 기능을 확인하는 중입니다.</span>
+      <span class="hint" id="dlmsg">저장 기능을 확인하는 중입니다</span>
     </div>
     <div class="paperwrap"><div id="papers"><div class="paper" id="paper"></div><div id="paper-att"></div></div></div>
   </main>
@@ -530,12 +657,18 @@ let saveT;
 function save(){clearTimeout(saveT);saveT=setTimeout(()=>{try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}},300)}
 
 /* ---------- 입력 화면 그리기 ---------- */
+const ME=['sub','bizno','ceo','addr','bank'];
+function meSum(){const I=S.info,e=$('me-sum');if(e)e.textContent=[I.sub||'상호 미입력',I.ceo?'대표 '+I.ceo:'',I.bank?'계좌 입력됨':'입금계좌 미입력'].filter(Boolean).join(' · ')}
 function renderFields(){
-  $('fields').innerHTML=FIELDS.filter(f=>!(f[3]&&S.mode==='simple')).map(f=>{
+  const vis=FIELDS.filter(f=>!(f[3]&&S.mode==='simple'));
+  const one=f=>{
     const v=S.info[f[0]];
     if(f[2]==='money')return `<label for="f-${f[0]}">${f[1]}<input class="num" id="f-${f[0]}" data-info="${f[0]}" data-money="1" inputmode="numeric" value="${v?fmt(v):''}"></label>`;
     return `<label for="f-${f[0]}">${f[1]}<input id="f-${f[0]}" data-info="${f[0]}" type="${f[2]==='date'?'date':'text'}" value="${esc(v)}"></label>`;
-  }).join('');
+  };
+  $('fields').innerHTML=vis.filter(f=>ME.indexOf(f[0])<0).map(one).join('');
+  $('fields-me').innerHTML=vis.filter(f=>ME.indexOf(f[0])>=0).map(one).join('');
+  meSum();
 }
 function renderRows(){
   $('rows').innerHTML=S.rows.map(x=>{
@@ -589,22 +722,30 @@ function renderQ(){
   $('q-total').value=q.total?fmt(q.total):'';$('q-pre').value=q.pre?fmt(q.pre):'';
   $('q-rate').value=q.rate;$('q-round').value=q.round;
   $('btn-qsplit').hidden=!multi;
-  const nm=p=>esc(p.name||'(회사명 없음)');
-  $('qhead').innerHTML='<tr><th>구분</th>'+P.map(p=>`<th class="r">${multi?nm(p):'금액'}</th>`).join('')+(multi?'<th class="r">합계</th>':'')+'<th></th></tr>';
+  if(q.total||q.pre)$('qref').open=true;
+  const nm=p=>esc(p.name||'(회사명 없음)'),span=P.length+(multi?1:0);
+  $('qhead').innerHTML='<tr><th></th><th>구분</th>'+P.map(p=>`<th>${multi?nm(p):'금액 (원)'}</th>`).join('')+(multi?'<th>합계</th>':'')+'<th></th></tr>';
   const tot=k=>multi?`<td class="out" id="qt-${k}"></td>`:'';
-  const inRow=(lab,k,cellf,del)=>`<tr><td>${lab}</td>${P.map(cellf).join('')}${tot(k)}<td>${del||''}</td></tr>`;
-  const outRow=(lab,k,cls)=>`<tr class="${cls||''}"><td>${lab}</td>${P.map(p=>`<td class="out" id="qo-${k}-${p.id}"></td>`).join('')}${tot(k)}<td></td></tr>`;
+  const tr=(op,lab,cells,k,del,cls)=>`<tr class="${cls||''}"><td class="op">${op}</td><td class="lab">${lab}</td>${cells}${tot(k)}<td class="del">${del||''}</td></tr>`;
   const money=(attrs,v,al)=>`<td><input class="num" ${attrs} inputmode="numeric" value="${v?fmt(v):''}" placeholder="0" aria-label="${al}"></td>`;
-  const itemRows=(list,kind,pre,ph)=>list.map(it=>inRow(
-    `<div class="fx"><span class="fr">${pre}</span><input class="nm" id="qx-${it.id}" data-qi="${kind}" data-id="${it.id}" data-k="name" value="${esc(it.name)}" placeholder="${ph}" aria-label="${ph}"${kind==='ex'?' list="exlist"':''}></div>`,
-    kind+'-'+it.id,p=>money(`data-qi="${kind}" data-id="${it.id}" data-p="${p.id}"`,(it.amt||{})[p.id],nm(p)+' '+esc(it.name||ph)),
-    `<button class="x" type="button" data-act="delqi" data-qi="${kind}" data-id="${it.id}" aria-label="삭제">×</button>`)).join('');
-  let h=inRow('<b>준공 잔액</b> <span class="hint">(제경비 제외 전)</span>','bal',p=>money(`id="qb-${p.id}" data-qc="bal" data-p="${p.id}"`,q.c[p.id].bal,nm(p)+' 준공 잔액'));
-  h+=itemRows(q.exItems,'ex','(−) 제외','제외할 제경비 항목')+outRow('<b>제경비 제외 후 금액</b>','after','em');
-  h+=itemRows(q.direct,'dir','(−) 직불금','직불 내용 (예: 자재대금)');
-  h+=outRow('<b>하도급 대상금액</b>','base','em');
-  h+=`<tr><td>하도급률 <span class="hint">(비우면 위 하도급률)</span></td>${P.map(p=>{const r=q.c[p.id].rate;return `<td><span class="pct"><input class="dec" id="qr-${p.id}" data-qc="rate" data-p="${p.id}" inputmode="decimal" value="${r!=null?r:''}" aria-label="${nm(p)} 하도급률">%</span></td>`}).join('')}${multi?'<td></td>':''}<td></td></tr>`;
-  h+=outRow('<b>청구금액</b>','claim','em')+outRow('세금계산서 공급가액','supply','sub')+outRow('세금계산서 부가가치세','vat','sub');
+  const outs=k=>P.map(p=>`<td class="out" id="qo-${k}-${p.id}"></td>`).join('');
+  const items=(list,kind,tag,ph)=>list.map(it=>tr('−',
+    `<span class="kind">${tag}</span><input class="nm plain" id="qx-${it.id}" data-qi="${kind}" data-id="${it.id}" data-k="name" value="${esc(it.name)}" placeholder="${ph}" aria-label="${tag} 이름"${kind==='ex'?' list="exlist"':''}>`,
+    P.map(p=>money(`data-qi="${kind}" data-id="${it.id}" data-p="${p.id}"`,(it.amt||{})[p.id],nm(p)+' '+esc(it.name||ph))).join(''),
+    kind+'-'+it.id,`<button class="x" type="button" data-act="delqi" data-qi="${kind}" data-id="${it.id}" aria-label="삭제">×</button>`)).join('');
+  const add=html=>`<tr class="add"><td class="op"></td><td colspan="${span+2}">${html}</td></tr>`;
+  const EX=['산재보험료','고용보험료','국민건강보험료','노인장기요양보험료','국민연금보험료','퇴직공제부금','산업안전보건관리비','환경보전비','기타경비','일반관리비','이윤'];
+  let h=tr('','준공 잔액<span class="muted">제경비 빼기 전</span>',P.map(p=>money(`id="qb-${p.id}" data-qc="bal" data-p="${p.id}"`,q.c[p.id].bal,nm(p)+' 준공 잔액')).join(''),'bal');
+  h+=items(q.exItems,'ex','제경비','항목 이름');
+  h+=add(`<select id="q-exname" aria-label="추가할 제외 항목">${EX.map(n=>`<option>${n}</option>`).join('')}<option value="">직접 입력</option></select><button type="button" class="link" id="btn-addex">+ 제외 항목 추가</button>`);
+  h+=tr('=','제경비 제외 후 금액',outs('after'),'after','','sum');
+  h+=items(q.direct,'dir','직불금','내용 (예: 자재대금)');
+  h+=add('<button type="button" class="link" id="btn-addqd">+ 직불금 추가</button>');
+  h+=tr('=','하도급 대상금액',outs('base'),'base','','sum');
+  h+=tr('×','하도급률<span class="muted">비우면 기본값</span>',P.map(p=>{const r=q.c[p.id].rate;return `<td><span class="pct"><input class="dec" id="qr-${p.id}" data-qc="rate" data-p="${p.id}" inputmode="decimal" value="${r!=null?r:''}" aria-label="${nm(p)} 하도급률">%</span></td>`}).join('')+(multi?'<td></td>':''),'','','rate').replace(/<td class="out" id="qt-"><\/td>/,'');
+  h+=tr('=','청구금액',outs('claim'),'claim','','sum final');
+  h+=`<tr class="gap"><td colspan="${span+3}"></td></tr>`;
+  h+=tr('','세금계산서 공급가액',outs('supply'),'supply','','note')+tr('','세금계산서 부가가치세',outs('vat'),'vat','','note');
   $('qrows').innerHTML=h;
 }
 function recalcQ(){
@@ -617,15 +758,23 @@ function recalcQ(){
   ['bal','after','base','claim','supply','vat'].forEach(k=>set('qt-'+k,fmt(R.tot[k])));
   R.exItems.forEach(it=>set('qt-ex-'+it.id,fmt(it.sum)));R.dirItems.forEach(it=>set('qt-dir-'+it.id,fmt(it.sum)));
   $('q-remain').textContent=R.hasTotal?fmt(R.remain)+' 원':'-';
-  $('l-1').textContent='준공 잔액';$('l-2').textContent='제경비 제외 후 금액';$('l-3').textContent='하도급 대상금액 (직불금 공제 후)';
-  $('s-supply').textContent=fmt(R.tot.bal);$('s-total').textContent=fmt(R.tot.after);$('s-ded').textContent=fmt(R.tot.base);$('s-claim').textContent=fmt(R.claim);
+  $('l-1').textContent='준공 잔액';$('l-2').textContent='제경비 제외 후';$('l-3').textContent='하도급 대상금액';
+  $('s-supply').textContent=fmt(R.tot.bal);$('s-total').textContent=fmt(R.tot.after);$('s-ded').textContent=fmt(R.tot.base);
+  sideFinal(R.claim,R.comps.length>1?R.comps.map(c=>[c.name,c.claim]):null);
   const W=[];
   if(R.hasTotal&&R.tot.bal&&R.diff)W.push('준공금 − 선금('+fmt(R.remain)+'원)과 준공 잔액 합계('+fmt(R.tot.bal)+'원)가 '+fmt(Math.abs(R.diff))+'원 다릅니다.');
   if(R.comps.some(c=>c.after<0))W.push('제외 항목 합계가 준공 잔액보다 큽니다.');
   else if(R.comps.some(c=>c.base<0))W.push('공제액이 준공 잔액보다 큽니다. 제경비와 직불금을 확인하세요.');
   $('qwarn').hidden=!W.length;$('qwarn').textContent=W.join(' ');
-  renderPaperSimple(R);
+  renderPaperSimple(R);syncMini();
 }
+function sideFinal(claim,list){
+  $('s-claim').textContent=fmt(claim);$('s-claim-m').textContent=fmt(claim)+' 원';
+  $('s-hangul').textContent='일금 '+(claim<0?'△':'')+hangul(claim,1)+'원정';
+  const c=$('s-comp');c.hidden=!list;
+  if(list)c.innerHTML=list.map(v=>`<div><dt>${esc(v[0]||'(회사명 없음)')}</dt><dd>${fmt(v[1])}</dd></div>`).join('');
+}
+function syncMini(){const p=$('paper');$('mini').innerHTML=`<div class="${p.className}">${p.innerHTML}</div>`}
 // 청구서·엑셀에 함께 쓰는 청구 내역 줄
 function simpleLines(R){
   const multi=R.comps.length>1,L=[];
@@ -665,8 +814,9 @@ function renderAll(){
   recalc();
 }
 function recalc(){
+  meSum();
   if(S.mode==='simple'){recalcQ();save();return}
-  $('l-1').textContent='원도급 준공금액 (부가세 포함)';$('l-2').textContent='기수령액 (선급금·기성금)';$('l-3').textContent='하도급 금액 (잔액 × 하도급률)';
+  $('l-1').textContent='원도급 준공금액';$('l-2').textContent='기수령액';$('l-3').textContent='하도급 금액';
   const R=calc(S);
   document.body.classList.toggle('nochg',!S.hasChg);
   document.body.classList.toggle('noadv',!S.adv);
@@ -685,7 +835,8 @@ function recalc(){
   $('t-pb').textContent=fmt(R.pb);$('t-pc').textContent=fmt(R.pc);$('t-sb').textContent=fmt(R.sb);$('t-sc').textContent=fmt(R.sc);$('t-st').textContent=fmt(R.supply);
   [['pb',R.pb,R.pvat],['pc',R.pc,R.pcvat],['sb',R.sb,R.sbvat],['sc',R.sc,R.scvat],['st',R.supply,R.vat]].forEach(v=>{$('v-'+v[0]).textContent=fmt(v[2]);$('g-'+v[0]).textContent=fmt(v[1]+v[2])});
   $('eff').textContent=R.eff==null?'-':R.eff.toFixed(2)+'%';
-  $('s-supply').textContent=fmt(R.G);$('s-total').textContent=fmt(R.paid);$('s-ded').textContent=fmt(R.H);$('s-claim').textContent=fmt(R.claim);
+  $('s-supply').textContent=fmt(R.G);$('s-total').textContent=fmt(R.paid);$('s-ded').textContent=fmt(R.H);
+  sideFinal(R.claim,R.primes.length>1?R.primes.map(p=>[p.name,p.claim]):null);
   const rp=(R.ratio*100).toFixed(2)+'%';
   const L=[['원도급 준공금액 (부가세 포함)',R.G,1],['선급금 정산액','-'+fmt(R.pre)],['기성금 수령액','-'+fmt(R.gi)],['잔액',R.G-R.paid,1],
     ['하도급률 (하도급 총계 '+fmt(R.total)+' ÷ 원도급 총계)',rp],['하도급 금액 (잔액 × 하도급률)',R.H,1],['원도급사 직접지급액','-'+fmt(R.directSum)],['금회 청구금액',R.claim,2]];
@@ -693,7 +844,7 @@ function recalc(){
   $('neg').hidden=R.claim>=0;
   $('bycomp').innerHTML=primeTable(R);
   const sw=$('shwarn'),bad=S.primes.length>1&&Math.abs(R.shSum-100)>0.001;sw.hidden=!bad;if(bad)sw.textContent='지분 합계가 '+Math.round(R.shSum*1000)/1000+'%입니다. 100%가 되게 맞추세요.';
-  renderPaper(R);
+  renderPaper(R);syncMini();
   save();
 }
 
@@ -825,6 +976,7 @@ document.addEventListener('focusout',e=>{
 document.addEventListener('click',e=>{
   const b=e.target.closest('button');if(!b)return;
   const a=b.dataset.act;
+  if(b.id==='btn-go'||b.id==='btn-go-m'){$('tab-doc').click();return}
   if(b.dataset.mode){S.mode=b.dataset.mode;renderAll()}
   else if(a==='delqi'){const k=b.dataset.qi==='ex'?'exItems':'direct';S.q[k]=S.q[k].filter(i=>i.id!==b.dataset.id);renderQ();recalc()}
   else if(b.id==='btn-addex'||b.id==='btn-addqd'){const x={id:uid(),name:b.id==='btn-addex'?$('q-exname').value:'',amt:{}};(b.id==='btn-addex'?S.q.exItems:S.q.direct).push(x);renderQ();recalc();$('qx-'+x.id).focus()}
@@ -1061,6 +1213,7 @@ function renderAssets(){
   A.bank.forEach(f=>f.pages.forEach((p,i)=>{h+=pg('통장 사본',p,i,f.pages.length)}));
   A.att.forEach((f,k)=>f.pages.forEach((p,i)=>{h+=pg('첨부 '+(k+1)+'. '+(f.title||'첨부 서류'),p,i,f.pages.length)}));
   $('paper-att').innerHTML=h;
+  if(A.stamp||A.bank.length||A.att.length)$('attcard').open=true;
   recalc();
 }
 document.addEventListener('change',async e=>{
@@ -1078,7 +1231,7 @@ document.addEventListener('change',async e=>{
     }catch(err){bad.push(f.name)}
   }
   t.value='';renderAssets();
-  upmsg(bad.length?'읽지 못한 파일: '+bad.join(', ')+' — JPG·PNG 이미지나 암호 없는 PDF로 다시 등록해 주세요.':'등록했습니다. ② 청구서 보기에서 확인하세요.');
+  upmsg(bad.length?'읽지 못한 파일: '+bad.join(', ')+' — JPG·PNG 이미지나 암호 없는 PDF로 다시 등록해 주세요':'등록했습니다. 위의 청구서 화면에서 확인하세요');
   saveA();
 });
 document.addEventListener('click',e=>{
@@ -1090,6 +1243,8 @@ document.addEventListener('click',e=>{
   renderAssets();saveA();
 });
 
+$('mini-box').addEventListener('click',()=>$('tab-doc').click());
+$('mini-box').addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();$('tab-doc').click()}});
 renderAll();
 (async()=>{try{const v=await idb.get('A');if(v&&Array.isArray(v.att)&&Array.isArray(v.bank)){A=v;renderAssets()}}catch(e){}})();
 </script>
