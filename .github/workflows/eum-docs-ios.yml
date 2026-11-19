@@ -1,0 +1,29 @@
+name: 이음과 문서 iOS 빌드 확인
+on:
+  push:
+    branches: [eum-hwp]
+    paths: ['app/ios/**', 'app/www/**', 'app/package.json', '.github/workflows/eum-docs-ios.yml']
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: macos-15
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: 패키지 설치
+        run: npm install
+      - name: 웹 화면을 iOS에 반영
+        run: npx cap sync ios
+      - name: 시뮬레이터용 빌드 (서명 없이 — 코드가 컴파일되는지만 확인)
+        working-directory: app/ios/App
+        run: |
+          xcodebuild -version
+          xcodebuild -project App.xcodeproj -scheme App -configuration Debug \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO build | tail -40
+          test ${PIPESTATUS[0]} -eq 0

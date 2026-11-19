@@ -4,7 +4,8 @@
   "private": true,
   "dependencies": {
     "@capacitor/android": "7.6.10",
-    "@capacitor/core": "7.6.10"
+    "@capacitor/core": "7.6.10",
+    "@capacitor/ios": "^7.6.10"
   },
   "devDependencies": {
     "@capacitor/cli": "7.6.10"
