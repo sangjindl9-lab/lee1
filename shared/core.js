@@ -21,17 +21,23 @@ export const DEFAULT_CONFIG = {
 const KEEP_MIN_DAYS = 90;
 // 활동 기록에 남길 입력값(방 비밀번호처럼 수사와 무관한 값은 남기지 않는다)
 const TRAIL_FIELDS = ['text', 'title', 'body', 'name', 'intro', 'topic', 'cat', 'to', 'id', 'mid', 'cid', 'uid', 'reason', 'memo', 'ref', 'pin', 'productId'];
-const NO_TRAIL = new Set(['conv.read']);
+const NO_TRAIL = new Set(['conv.read', 'push.sub', 'push.unsub', 'notify.set', 'room.mute']);
+// 알림 설정 기본값: push = 휴대폰 알림(앱이 닫혀 있을 때), 나머지는 종류별 켜기/끄기
+export const DEFAULT_NOTIFY = { push: true, request: true, msg: true, room: true, comment: true, preview: true, quiet: false, mutedRooms: [] };
+const NOTIFY_KEYS = ['push', 'request', 'msg', 'room', 'comment', 'preview', 'quiet'];
+// 방해 금지: 한국 시간 밤 10시 ~ 오전 8시
+const quietNow = () => { const h = new Date(Date.now() + 9 * 3600e3).getUTCHours(); return h >= 22 || h < 8; };
 
 const dayKey = (t) => new Date(t + 9 * 3600e3).toISOString().slice(0, 10); // 한국 시간 기준 날짜
 
-export function createCore({ data, save = () => {}, hook = () => {}, adminPassword = '', verifyPurchase = null } = {}) {
+export function createCore({ data, save = () => {}, hook = () => {}, adminPassword = '', verifyPurchase = null, sendPush = null, pushKey = '' } = {}) {
   const busy = new Set(); // 검증 중인 결제 토큰
   const db = Object.assign({ users: {}, talks: [], convs: {}, rooms: {}, posts: [], reports: [], ledger: [], orders: [], logs: [], trail: [], holds: {}, disclosures: [], seq: 1 }, data || {});
   db.config = { ...DEFAULT_CONFIG, ...(db.config || {}) };
   const cfg = () => db.config;
   const admins = new Set(); // 관리자로 로그인한 연결
   const socks = new Map(); // uid -> Set(send)
+  const visible = new Map(); // send -> 화면에 앱이 보이는지
   const nid = () => (db.seq++).toString(36) + Math.random().toString(36).slice(2, 5);
   const line = (s, n) => String(s ?? '').replace(/\s+/g, ' ').trim().slice(0, n);
   const multi = (s, n) => String(s ?? '').trim().slice(0, n);
@@ -47,8 +53,8 @@ export function createCore({ data, save = () => {}, hook = () => {}, adminPasswo
   const pushUsers = () => all({ t: 'users', users: Object.values(db.users).map(pub) });
   const pushMe = (uid) => {
     const u = db.users[uid]; if (!u) return;
-    const { token, ...me } = u;
-    sendTo(uid, { t: 'me', me: { ...me, ledger: db.ledger.filter((l) => l.uid === uid).slice(0, 50), orders: db.orders.filter((o) => o.uid === uid).slice(0, 20) } });
+    const { token, subs, ...me } = u;
+    sendTo(uid, { t: 'me', me: { notify: nf(u), pushOn: !!subs?.length, ...me, ledger: db.ledger.filter((l) => l.uid === uid).slice(0, 50), orders: db.orders.filter((o) => o.uid === uid).slice(0, 20) } });
   };
   const pubConfig = () => { const { banWords, ...c } = cfg(); return c; };
   const pushConfig = () => all({ t: 'config', config: pubConfig() });
@@ -73,6 +79,25 @@ export function createCore({ data, save = () => {}, hook = () => {}, adminPasswo
   const pushRoom = (r) => { const { pw, ...room } = r; r.members.forEach((uid) => sendTo(uid, { t: 'room', room })); };
   const pushPosts = () => all({ t: 'posts', posts: db.posts });
   const toast = (uid, msg) => sendTo(uid, { t: 'toast', msg });
+  const nf = (u) => ({ ...DEFAULT_NOTIFY, ...(u.notify || {}) });
+  const isVisible = (uid) => [...(socks.get(uid) || [])].some((f) => visible.get(f) !== false);
+  // 알림: 앱 화면이 보이면 화면 위 팝업, 아니면 휴대폰 알림(웹 푸시)
+  function notify(uid, kind, { title, body, view, tag, from }) {
+    const u = db.users[uid];
+    if (!u || u.gone || u.banned || u.bot) return;
+    if (from && (u.blocks.includes(from) || db.users[from]?.blocks.includes(uid))) return;
+    const n = nf(u);
+    if (!n[kind]) return;
+    if (kind === 'room' && n.mutedRooms.includes(view?.id)) return;
+    if (isVisible(uid)) return sendTo(uid, { t: 'notify', kind, title, body, view });
+    if (!sendPush || !n.push || !u.subs?.length || (n.quiet && quietNow())) return;
+    const payload = { title, body: n.preview ? body.slice(0, 120) : '새 알림이 도착했습니다.', view, tag };
+    for (const sub of u.subs) {
+      Promise.resolve().then(() => sendPush(sub, payload)).catch((e) => {
+        if (e?.statusCode === 404 || e?.statusCode === 410) { u.subs = u.subs.filter((x) => x.endpoint !== sub.endpoint); save(db); }
+      });
+    }
+  }
 
   function checkProfile(p, selfId) {
     const nick = line(p?.nick, 10);
@@ -122,6 +147,7 @@ export function createCore({ data, save = () => {}, hook = () => {}, adminPasswo
         c = { cost, id: nid(), a: u.id, b: to.id, status: 'pending', msgs: [{ id: nid(), uid: u.id, text, at: Date.now() }], read: { [u.id]: Date.now() }, left: [], at: Date.now() };
         db.convs[c.id] = c;
         hook({ type: 'conv.request', conv: c });
+        notify(to.id, 'request', { title: `${u.nick} 님의 대화 신청`, body: text, view: { type: 'chat', id: c.id }, tag: `conv-${c.id}`, from: u.id });
       }
       c.left = c.left.filter((x) => x !== u.id);
       pushMe(u.id); pushConvs(c.a, c.b); sendTo(u.id, { t: 'goto', view: { type: 'chat', id: c.id } });
@@ -130,6 +156,7 @@ export function createCore({ data, save = () => {}, hook = () => {}, adminPasswo
       const c = db.convs[m.id];
       if (!c || c.b !== u.id || c.status !== 'pending') return;
       c.status = 'open'; c.msgs.push(sysMsg('대화가 시작되었습니다.')); pushConvs(c.a, c.b);
+      notify(c.a, 'msg', { title: `${u.nick} 님이 대화를 수락했어요`, body: '지금 대화를 시작해 보세요.', view: { type: 'chat', id: c.id }, tag: `conv-${c.id}`, from: u.id });
     },
     'conv.reject'(u, m) {
       const c = db.convs[m.id];
@@ -150,6 +177,7 @@ export function createCore({ data, save = () => {}, hook = () => {}, adminPasswo
       c.msgs.push(msg); if (c.msgs.length > 500) c.msgs.splice(0, c.msgs.length - 500);
       c.read[u.id] = msg.at; c.at = msg.at;
       pushConvs(c.a, c.b); hook({ type: 'conv.msg', conv: c, msg });
+      notify(other(c, u.id), 'msg', { title: u.nick, body: text, view: { type: 'chat', id: c.id }, tag: `conv-${c.id}`, from: u.id });
     },
     'conv.read'(u, m) {
       const c = db.convs[m.id];
@@ -232,6 +260,7 @@ export function createCore({ data, save = () => {}, hook = () => {}, adminPasswo
       const msg = { id: nid(), uid: u.id, text, at: Date.now() };
       r.msgs.push(msg); if (r.msgs.length > 300) r.msgs.splice(0, r.msgs.length - 300);
       pushRoom(r); hook({ type: 'room.msg', room: r, msg });
+      r.members.filter((x) => x !== u.id).forEach((x) => notify(x, 'room', { title: r.name, body: `${u.nick}: ${text}`, view: { type: 'room', id: r.id }, tag: `room-${r.id}`, from: u.id }));
     },
     'room.kick'(u, m) {
       const r = db.rooms[m.id];
@@ -259,6 +288,7 @@ export function createCore({ data, save = () => {}, hook = () => {}, adminPasswo
       const p = db.posts.find((x) => x.id === m.id); const text = line(m.text, 300);
       if (!p || !text) return;
       p.comments.push({ id: nid(), uid: u.id, text, at: Date.now() }); pushPosts();
+      if (p.uid !== u.id) notify(p.uid, 'comment', { title: '내 글에 새 댓글', body: `${u.nick}: ${text}`, view: { type: 'post', id: p.id }, tag: `post-${p.id}`, from: u.id });
     },
     'comment.del'(u, m) {
       const p = db.posts.find((x) => x.id === m.id); if (!p) return;
@@ -292,7 +322,31 @@ export function createCore({ data, save = () => {}, hook = () => {}, adminPasswo
       }).catch((e) => { sendTo(u.id, { t: 'iap.fail', token }); toast(u.id, e?.message || '결제를 확인하지 못했습니다.'); })
         .finally(() => busy.delete(token));
     },
+    'notify.set'(u, m) {
+      const n = nf(u);
+      for (const k of NOTIFY_KEYS) if (typeof m[k] === 'boolean') n[k] = m[k];
+      u.notify = n; pushMe(u.id);
+    },
+    'room.mute'(u, m) {
+      const n = nf(u); const on = !n.mutedRooms.includes(m.id);
+      n.mutedRooms = on ? [...n.mutedRooms, line(m.id, 20)].slice(-100) : n.mutedRooms.filter((x) => x !== m.id);
+      u.notify = n; pushMe(u.id); toast(u.id, on ? '이 방의 알림을 껐습니다.' : '이 방의 알림을 켰습니다.');
+    },
+    // 휴대폰 알림 구독 정보(브라우저가 만든 주소와 키). 기기마다 하나, 최대 5개.
+    'push.sub'(u, m) {
+      const sub = m.sub || {};
+      const endpoint = String(sub.endpoint || '');
+      if (!/^https:\/\//.test(endpoint) || endpoint.length > 1000 || typeof sub.keys?.p256dh !== 'string' || typeof sub.keys?.auth !== 'string') fail('알림 등록 정보가 올바르지 않습니다.');
+      const clean = { endpoint, keys: { p256dh: sub.keys.p256dh.slice(0, 200), auth: sub.keys.auth.slice(0, 100) } };
+      u.subs = [...(u.subs || []).filter((x) => x.endpoint !== endpoint), clean].slice(-5);
+      u.notify = { ...nf(u), push: true }; pushMe(u.id);
+    },
+    'push.unsub'(u, m) {
+      u.subs = (u.subs || []).filter((x) => x.endpoint !== m.endpoint);
+      u.notify = { ...nf(u), push: false }; pushMe(u.id);
+    },
     quit(u) {
+      u.subs = [];
       u.gone = true; u.token = null; db.talks = db.talks.filter((t) => t.uid !== u.id);
       Object.values(db.rooms).forEach((r) => r.members.includes(u.id) && handlers['room.leave'](u, { id: r.id }));
       sendTo(u.id, { t: 'bye' }); pushTalks(); pushUsers();
@@ -502,7 +556,7 @@ export function createCore({ data, save = () => {}, hook = () => {}, adminPasswo
   function connect(send, meta = {}) {
     let uid = null; let isAdmin = false; let tries = 0;
     const sync = () => {
-      pushUsers(); pushMe(uid); send({ t: 'config', config: pubConfig() });
+      pushUsers(); pushMe(uid); send({ t: 'config', config: pubConfig() }); send({ t: 'push.key', key: sendPush ? pushKey : '' });
       send({ t: 'talks', talks: talkList() }); send({ t: 'convs', convs: convsOf(uid) });
       send({ t: 'rooms', rooms: roomList() }); send({ t: 'posts', posts: db.posts });
       Object.values(db.rooms).forEach((r) => { if (r.members.includes(uid)) { const { pw, ...room } = r; send({ t: 'room', room }); } });
@@ -511,6 +565,7 @@ export function createCore({ data, save = () => {}, hook = () => {}, adminPasswo
     return {
       recv(m) {
         if (!m || typeof m !== 'object') return;
+        if (m.t === 'vis') { visible.set(send, m.v !== 'hidden'); return; }
         if (m.t === 'admin.login') {
           if (adminPassword && ++tries <= 5 && m.pw === adminPassword) { isAdmin = true; admins.add(send); addLog('admin.login', null, meta); send({ t: 'admin.ok' }); send({ t: 'admin.data', data: adminData() }); } else { addLog('admin.fail', null, meta); send({ t: 'admin.fail', off: !adminPassword }); }
           save(db); return;
@@ -537,7 +592,7 @@ export function createCore({ data, save = () => {}, hook = () => {}, adminPasswo
         } else if (uid) act(uid, m, meta);
       },
       close() {
-        admins.delete(send);
+        admins.delete(send); visible.delete(send);
         if (!uid) return;
         const s = socks.get(uid); s?.delete(send);
         if (s && !s.size) socks.delete(uid);

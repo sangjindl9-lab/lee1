@@ -3,6 +3,7 @@ import { connect, store, DEMO } from './api.js';
 import { REGIONS, AGES, CATS, TOPICS, REPORT_REASONS } from '../shared/core.js';
 import Admin from './Admin.jsx';
 import { playService, playPrices, buy, pending, consume } from './pay.js';
+import { pushSupported, permission, registerSW, enablePush, disablePush, currentSub } from './push.js';
 
 const ICONS = {
   talk: 'M4 5h16v11H10l-6 4z',
@@ -32,13 +33,14 @@ const ago = (t) => {
 };
 const clock = (t) => new Date(t).toLocaleTimeString('ko-KR', { hour: 'numeric', minute: '2-digit' });
 
-const init = { ready: false, need: false, me: null, config: null, users: {}, talks: [], convs: [], rooms: [], room: {}, posts: [] };
+const init = { ready: false, need: false, me: null, config: null, pushKey: '', users: {}, talks: [], convs: [], rooms: [], room: {}, posts: [] };
 function reducer(s, m) {
   switch (m.t) {
     case 'need_profile': return { ...s, need: true, ready: true };
     case 'ready': return { ...s, ready: true, need: false };
     case 'me': return { ...s, me: m.me };
     case 'config': return { ...s, config: m.config };
+    case 'push.key': return { ...s, pushKey: m.key };
     case 'users': return { ...s, users: Object.fromEntries(m.users.map((u) => [u.id, u])) };
     case 'talks': return { ...s, talks: m.talks };
     case 'convs': return { ...s, convs: m.convs };
@@ -377,6 +379,7 @@ function Members({ id, close }) {
           {r.owner === me.id && uid !== me.id && <button className="btn sm ghost danger" onClick={() => send({ t: 'room.kick', id, uid })}>강퇴</button>}
         </div>
       ); })}
+      <button className="btn ghost" onClick={() => send({ t: 'room.mute', id })}>{me.notify?.mutedRooms?.includes(id) ? '이 방 알림 켜기' : '이 방 알림 끄기'}</button>
       <button className="btn ghost danger" onClick={() => { send({ t: 'room.leave', id }); close(); }}>채팅방 나가기</button>
     </Sheet>
   );
@@ -470,6 +473,7 @@ function MyTab() {
       <p className="hint pad">매일 출석 {c.attend}P · 3일 연속 +{c.bonus3}P · 7일 연속 +{c.bonus7}P. 대화 신청 {c.requestCost}P, 토크 상단 고정 {c.pinCost}P.</p>
       <div className="card">
         <Item label="포인트 내역" value="" onClick={() => setSheet({ type: 'ledger' })} />
+        <Item label="알림 설정" value={me.pushOn && me.notify?.push ? '휴대폰 알림 켜짐' : '휴대폰 알림 꺼짐'} onClick={() => setSheet({ type: 'notify' })} />
         <Item label="친구 목록" value={`${me.friends.length}명`} onClick={() => setSheet({ type: 'people', kind: 'friends' })} />
         <Item label="차단 목록" value={`${me.blocks.length}명`} onClick={() => setSheet({ type: 'people', kind: 'blocks' })} />
         <Item label="내가 쓴 토크" value={`${myTalks}개`} onClick={() => setSheet({ type: 'myTalks' })} />
@@ -556,6 +560,54 @@ function Ledger({ close }) {
   );
 }
 
+/* ---------- 알림 설정 ---------- */
+function Switch({ on, onChange, label, desc, disabled }) {
+  return (
+    <button className="sw-row" onClick={() => !disabled && onChange(!on)} disabled={disabled} role="switch" aria-checked={on}>
+      <span className="grow"><b>{label}</b>{desc && <span className="meta">{desc}</span>}</span>
+      <span className={`sw ${on ? 'on' : ''}`}><i /></span>
+    </button>
+  );
+}
+function NotifySheet({ close }) {
+  const { me, s, send, setToast } = useApp();
+  const n = me.notify || {};
+  const [busy, setBusy] = useState(false);
+  const phoneOn = !!(me.pushOn && n.push);
+  const set = (k) => (v) => send({ t: 'notify.set', [k]: v });
+  const togglePhone = async (v) => {
+    setBusy(true);
+    try {
+      if (v) send({ t: 'push.sub', sub: await enablePush(s.pushKey) });
+      else send({ t: 'push.unsub', endpoint: await disablePush() });
+    } catch (e) { setToast(e.message); }
+    setBusy(false);
+  };
+  const perm = permission();
+  return (
+    <Sheet title="알림 설정" onClose={close}>
+      <div className="card sw-card">
+        <Switch on={phoneOn} onChange={togglePhone} disabled={busy || !pushSupported()} label="휴대폰 알림" desc="앱을 닫아 두어도 새 메시지를 휴대폰 알림으로 받습니다." />
+      </div>
+      {!pushSupported() && <p className="warn">{DEMO ? '체험판에서는 휴대폰 알림을 쓸 수 없습니다. 앱 안의 팝업 알림은 동작합니다.' : 'Play 스토어에서 설치한 이음챗 앱이나 크롬에서 휴대폰 알림을 켤 수 있습니다.'}</p>}
+      {pushSupported() && perm === 'denied' && <p className="warn">휴대폰 설정에서 이음챗 알림이 막혀 있습니다. 설정 &gt; 애플리케이션 &gt; 이음챗 &gt; 알림에서 허용해 주세요.</p>}
+      <h4 className="sub">받을 알림</h4>
+      <div className="card sw-card">
+        <Switch on={n.request} onChange={set('request')} label="대화 신청" desc="누군가 나에게 대화를 신청했을 때" />
+        <Switch on={n.msg} onChange={set('msg')} label="1:1 메시지" desc="쪽지 대화의 새 메시지, 대화 수락" />
+        <Switch on={n.room} onChange={set('room')} label="그룹채팅" desc="참여 중인 방의 새 메시지 (방마다 따로 끌 수 있어요)" />
+        <Switch on={n.comment} onChange={set('comment')} label="내 글 댓글" desc="라운지에 쓴 내 글에 댓글이 달렸을 때" />
+      </div>
+      <h4 className="sub">표시 방법</h4>
+      <div className="card sw-card">
+        <Switch on={n.preview} onChange={set('preview')} label="메시지 내용 미리보기" desc="끄면 휴대폰 알림에 내용 대신 '새 알림이 도착했습니다'만 보여요." />
+        <Switch on={n.quiet} onChange={set('quiet')} label="방해 금지 (밤 10시 ~ 오전 8시)" desc="이 시간에는 휴대폰 알림을 보내지 않아요." />
+      </div>
+      <p className="hint">앱을 보고 있을 때는 휴대폰 알림 대신 화면 위에 팝업으로 알려 드립니다. 위에서 끈 종류는 팝업도 뜨지 않습니다.</p>
+    </Sheet>
+  );
+}
+
 /* ---------- 앱 ---------- */
 const TABS = [['talk', '토크', 'talk'], ['mail', '쪽지', 'mail'], ['group', '그룹채팅', 'group'], ['lounge', '라운지', 'board'], ['my', 'MY', 'my']];
 
@@ -572,6 +624,10 @@ export default function App() {
   const isAdminUrl = () => location.pathname === '/admin' || location.hash === '#admin';
   const [adminMode, setAdminMode] = useState(isAdminUrl);
   const [adm, setAdm] = useState({ state: 'out', data: null });
+  const [banner, setBanner] = useState(null);
+  const viewRef = useRef(null);
+  useEffect(() => { viewRef.current = view; }, [view]);
+  const openView = (v) => { if (v?.type && v.id) { setSheet(null); setView(v); setBanner(null); } };
 
   useEffect(() => {
     api.current = connect((m) => {
@@ -583,9 +639,29 @@ export default function App() {
       else if (m.t === 'iap.done' || m.t === 'iap.fail') { iapWait.current[m.token]?.(m.t === 'iap.done'); delete iapWait.current[m.token]; }
       else if (m.t === 'toast') setToast(m.msg);
       else if (m.t === 'goto') setView(m.view);
+      else if (m.t === 'notify') {
+        const cur = viewRef.current;
+        if (!(cur && m.view && cur.type === m.view.type && cur.id === m.view.id) || document.visibilityState === 'hidden') setBanner({ ...m, key: Date.now() });
+      }
       else if (m.t === 'bye') { api.current.reset(); location.reload(); } else dispatch(m);
-    }, (v) => { setOnline(v); if (!v) setAdm({ state: 'out', data: null }); });
+    }, (v) => {
+      setOnline(v); if (!v) setAdm({ state: 'out', data: null });
+      else api.current?.send({ t: 'vis', v: document.visibilityState });
+    });
+    // 앱이 화면에 보이는지 서버에 알린다: 보이면 화면 팝업, 안 보이면 휴대폰 알림
+    const onVis = () => api.current?.send({ t: 'vis', v: document.visibilityState });
+    document.addEventListener('visibilitychange', onVis);
+    registerSW(openView);
+    return () => document.removeEventListener('visibilitychange', onVis);
   }, []);
+  useEffect(() => { if (!banner) return undefined; const t = setTimeout(() => setBanner(null), 4500); return () => clearTimeout(t); }, [banner]);
+  // 알림을 눌러 앱이 열린 경우(?open=chat:ID) 해당 화면으로 이동
+  useEffect(() => {
+    if (!s.ready || !s.me) return;
+    const o = new URLSearchParams(location.search).get('open');
+    if (o) { const [type, id] = o.split(':'); openView({ type, id }); history.replaceState(null, '', location.pathname); }
+    if (s.me.notify?.push) currentSub().then((sub) => { if (sub) api.current?.send({ t: 'push.sub', sub }); }).catch(() => {});
+  }, [s.ready, !!s.me]);
   useEffect(() => { if (!toast) return undefined; const t = setTimeout(() => setToast(''), 2600); return () => clearTimeout(t); }, [toast]);
   useEffect(() => { document.documentElement.dataset.theme = theme; }, [theme]);
   const [, tick] = useState(0);
@@ -646,6 +722,7 @@ export default function App() {
 
         {sheet?.type === 'profile' && <ProfileSheet uid={sheet.uid} talk={sheet.talk} close={close} />}
         {sheet?.type === 'shop' && <Shop close={close} />}
+        {sheet?.type === 'notify' && <NotifySheet close={close} />}
         {sheet?.type === 'ledger' && <Ledger close={close} />}
         {sheet?.type === 'writeTalk' && <WriteTalk close={close} />}
         {sheet?.type === 'report' && <ReportSheet uid={sheet.uid} refText={sheet.ref} close={close} />}
@@ -691,6 +768,12 @@ export default function App() {
             <div className="form"><div className="hint">{DEMO ? '이 브라우저에 저장된 프로필과 대화가 모두 지워집니다.' : '프로필과 토크가 삭제되며 되돌릴 수 없습니다.'}</div>
               <button className="btn danger" onClick={() => { if (DEMO) { api.current.reset(); location.reload(); } else send({ t: 'quit' }); }}>{DEMO ? '초기화' : '탈퇴하기'}</button></div>
           </Sheet>
+        )}
+        {banner && (
+          <button key={banner.key} className="banner" onClick={() => openView(banner.view)} role="status">
+            <span className="banner-ic"><Icon n={banner.kind === 'room' ? 'group' : banner.kind === 'comment' ? 'board' : 'mail'} size={18} /></span>
+            <span className="grow"><b>{banner.title}</b><span className="one">{banner.body}</span></span>
+          </button>
         )}
         {toast && <div className="toast" role="status">{toast}</div>}
       </div>

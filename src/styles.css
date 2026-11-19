@@ -246,3 +246,21 @@ button.pts { font-weight: 700; }
 .a-done { box-shadow: 0 0 0 2px var(--pri), var(--soft); }
 .a-done a.btn { text-decoration: none; }
 @media (max-width: 560px) { .a-tr { grid-template-columns: 1fr 1fr; } .a-tr .ua { grid-column: 1 / -1; } }
+
+/* ---------- 알림 ---------- */
+.sw-card { padding: 2px 14px; }
+.sw-row { display: flex; align-items: center; gap: 12px; width: 100%; padding: 13px 0; border-bottom: 1px solid var(--line); text-align: left; }
+.sw-row:last-child { border-bottom: 0; }
+.sw-row .grow b { display: block; font-size: 15px; }
+.sw-row .grow .meta { display: block; margin-top: 2px; }
+.sw { flex: none; width: 46px; height: 28px; border-radius: 99px; background: var(--line); position: relative; transition: background .15s; }
+.sw i { position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.25); transition: transform .15s; }
+.sw.on { background: var(--pri); }
+.sw.on i { transform: translateX(18px); }
+.banner { position: absolute; left: 10px; right: 10px; top: calc(8px + env(safe-area-inset-top)); z-index: 45; display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 18px; background: var(--card); box-shadow: var(--shadow); text-align: left; animation: drop .2s ease-out; }
+.banner .grow { min-width: 0; }
+.banner b { display: block; font-size: 14px; }
+.banner .one { display: block; font-size: 13px; color: var(--sub); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.banner-ic { flex: none; width: 36px; height: 36px; border-radius: 12px; display: grid; place-items: center; background: var(--grad); color: #fff; }
+@keyframes drop { from { transform: translateY(-16px); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .banner { animation: none; } .sw, .sw i { transition: none; } }

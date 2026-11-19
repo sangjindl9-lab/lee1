@@ -7,6 +7,7 @@ import express from 'express';
 import { WebSocketServer } from 'ws';
 import { createCore } from '../shared/core.js';
 import { verifyPurchase, googleReady } from './google.js';
+import webpush from 'web-push';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DATA_DIR = process.env.DATA_DIR || path.join(root, 'data');
@@ -28,7 +29,15 @@ const save = (db) => {
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
 if (!ADMIN_PASSWORD) console.log('ADMIN_PASSWORD 가 없어 관리자 화면(/admin)은 잠겨 있습니다.');
 if (!googleReady) console.log('GOOGLE_SERVICE_ACCOUNT_JSON / ANDROID_PACKAGE 가 없어 Google 결제 검증이 꺼져 있습니다.');
-const core = createCore({ data, save, adminPassword: ADMIN_PASSWORD, verifyPurchase: googleReady ? verifyPurchase : null });
+// 휴대폰 알림(웹 푸시). 키는 Railway 변수 VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY.
+const VAPID_PUBLIC = process.env.VAPID_PUBLIC_KEY || '';
+const VAPID_PRIVATE = process.env.VAPID_PRIVATE_KEY || '';
+let sendPush = null;
+if (VAPID_PUBLIC && VAPID_PRIVATE) {
+  webpush.setVapidDetails(process.env.VAPID_SUBJECT || 'mailto:pm999@naver.com', VAPID_PUBLIC, VAPID_PRIVATE);
+  sendPush = (sub, payload) => webpush.sendNotification(sub, JSON.stringify(payload), { TTL: 6 * 3600, urgency: 'high' });
+} else console.log('VAPID 키가 없어 휴대폰 알림이 꺼져 있습니다.');
+const core = createCore({ data, save, adminPassword: ADMIN_PASSWORD, verifyPurchase: googleReady ? verifyPurchase : null, sendPush, pushKey: VAPID_PUBLIC });
 
 const app = express();
 app.get('/health', (_q, r) => r.json({ ok: true, users: Object.keys(core.db.users).length }));
@@ -37,6 +46,8 @@ app.get('/.well-known/assetlinks.json', (_q, r) => r.json(process.env.ANDROID_PA
   relation: ['delegate_permission/common.handle_all_urls'],
   target: { namespace: 'android_app', package_name: process.env.ANDROID_PACKAGE, sha256_cert_fingerprints: process.env.ANDROID_SHA256.split(',').map((x) => x.trim()) },
 }] : []));
+// 서비스워커는 항상 최신을 받도록 캐시하지 않는다.
+app.get('/sw.js', (_q, r) => { r.set('Cache-Control', 'no-cache'); r.sendFile(path.join(root, 'dist', 'sw.js')); });
 app.use(express.static(path.join(root, 'dist'), { extensions: ['html'] })); // /privacy → privacy.html
 app.get('*', (_q, r) => r.sendFile(path.join(root, 'dist', 'index.html')));
 
