@@ -17,15 +17,15 @@
   "maskableIconUrl": "https://eumchat-production.up.railway.app/icon-maskable.png",
   "splashScreenFadeOutDuration": 300,
   "signingKey": { "path": "./android.keystore", "alias": "upload" },
-  "appVersionName": "1.0.2",
-  "appVersionCode": 3,
+  "appVersionName": "1.0.3",
+  "appVersionCode": 4,
   "shortcuts": [],
   "generatorApp": "bubblewrap-cli",
   "webManifestUrl": "https://eumchat-production.up.railway.app/manifest.webmanifest",
   "fallbackType": "customtabs",
   "features": { "playBilling": { "enabled": true } },
   "alphaDependencies": { "enabled": true },
-  "enableSiteSettingsShortcut": false,
+  "enableSiteSettingsShortcut": true,
   "isChromeOSOnly": false,
   "isMetaQuest": false,
   "fullScopeUrl": "https://eumchat-production.up.railway.app/",
@@ -34,5 +34,5 @@
   "fingerprints": [],
   "additionalTrustedOrigins": [],
   "retainedBundles": [],
-  "appVersion": "1.0.2"
+  "appVersion": "1.0.3"
 }

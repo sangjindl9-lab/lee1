@@ -31,7 +31,7 @@ jobs:
             grep -n "minifyEnabled\|versionCode" app/build.gradle
             # 시작 시 꺼짐 방지: 언어 설정 서비스(AppLocalesMetadataHolderService)를 앱 설정에 직접 등록
             python3 fix_manifest.py
-            grep -n "AppLocales" app/src/main/AndroidManifest.xml
+            grep -n "AppLocales\|ManageData" app/src/main/AndroidManifest.xml
             chmod +x gradlew
             ./gradlew bundleRelease assembleRelease --no-daemon
           } 2>&1 | tee ../build.log
