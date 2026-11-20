@@ -3,6 +3,8 @@ on:
   push:
     branches: [filemanager2]
   workflow_dispatch: {}
+permissions:
+  contents: write
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -21,3 +23,13 @@ jobs:
         with:
           name: FileManager2-apk
           path: app/build/outputs/apk/debug/*.apk
+      - name: Publish APK to filemanager2-apk branch
+        run: |
+          mkdir /tmp/pub && cp app/build/outputs/apk/debug/app-debug.apk /tmp/pub/FileManager2.apk
+          cd /tmp/pub
+          git init -q -b filemanager2-apk
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add FileManager2.apk
+          git commit -qm "APK ${GITHUB_SHA::7}"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" filemanager2-apk
