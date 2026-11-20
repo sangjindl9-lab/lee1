@@ -204,7 +204,7 @@ fun FileListScreen(
                                 )
                             }
                         }
-                        IconButton(onClick = { p.setGrid(!p.grid) }) {
+                        IconButton(onClick = { p.changeGrid(!p.grid) }) {
                             Icon(if (p.grid) Icons.Rounded.ViewList else Icons.Rounded.GridView, "보기 전환")
                         }
                         Box {

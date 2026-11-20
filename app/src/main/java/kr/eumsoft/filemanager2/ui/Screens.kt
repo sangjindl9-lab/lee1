@@ -618,14 +618,14 @@ fun SettingsScreen(vm: AppVM) {
                 }
             }
             item {
-                SettingRow("격자 보기", "파일을 큰 아이콘으로 표시", { p.setGrid(!p.grid) }) {
-                    Switch(checked = p.grid, onCheckedChange = { p.setGrid(it) })
+                SettingRow("격자 보기", "파일을 큰 아이콘으로 표시", { p.changeGrid(!p.grid) }) {
+                    Switch(checked = p.grid, onCheckedChange = { p.changeGrid(it) })
                 }
             }
             item { SectionTitle("화면 테마") }
             listOf("system" to "시스템 설정 따르기", "light" to "밝게", "dark" to "어둡게").forEach { (k, label) ->
                 item {
-                    SettingRow(label, null, { p.setTheme(k) }) { RadioButton(selected = p.theme == k, onClick = { p.setTheme(k) }) }
+                    SettingRow(label, null, { p.changeTheme(k) }) { RadioButton(selected = p.theme == k, onClick = { p.changeTheme(k) }) }
                 }
             }
             item { SectionTitle("기록") }

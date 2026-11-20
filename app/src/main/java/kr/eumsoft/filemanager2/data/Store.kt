@@ -28,8 +28,8 @@ class Prefs(ctx: Context) {
 
     fun setHidden(v: Boolean) { showHidden = v; sp.edit().putBoolean("hidden", v).apply() }
     fun setSort(m: SortMode, a: Boolean) { sort = m; asc = a; sp.edit().putString("sort", m.name).putBoolean("asc", a).apply() }
-    fun setGrid(v: Boolean) { grid = v; sp.edit().putBoolean("grid", v).apply() }
-    fun setTheme(v: String) { theme = v; sp.edit().putString("theme", v).apply() }
+    fun changeGrid(v: Boolean) { grid = v; sp.edit().putBoolean("grid", v).apply() }
+    fun changeTheme(v: String) { theme = v; sp.edit().putString("theme", v).apply() }
 
     fun isFav(path: String) = path in favorites
     fun toggleFav(path: String) {
