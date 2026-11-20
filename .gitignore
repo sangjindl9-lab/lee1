@@ -1,0 +1,24 @@
+# 환경 변수
+.env
+.env.*
+!.env.example
+
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+next-env.d.ts
+npm-debug.log*
+server.log
+
+# DB · 업로드 테스트 산출물
+prisma/*.db
+prisma/*.db-journal
+prisma/*.db-wal
+prisma/*.db-shm
+storage/
+test-storage/
+tests/.tmp/
+coverage/
+
+.DS_Store

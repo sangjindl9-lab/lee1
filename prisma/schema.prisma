@@ -1,0 +1,284 @@
+// 가족앨범·육아기록 — 데이터 모델 (SQLite / Prisma)
+// SQLite 는 enum 을 지원하지 않으므로 상태값은 String + 애플리케이션 검증(constants)으로 관리한다.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String
+  name         String
+  role         String    @default("PARENT") // PARENT | GRANDPARENT | FAMILY
+  relation     String? // 엄마 | 아빠 | 할머니 | 할아버지 | 이모
+  familyId     String?
+  family       Family?   @relation(fields: [familyId], references: [id])
+  sessions     Session[]
+  uploaded     MediaAsset[]
+  uploadSessions UploadSession[]
+  likes        Like[]
+  comments     Comment[]
+  careRecords  CareRecord[]
+  purchases    Purchase[]
+  inquiries    Inquiry[]
+  adImpressions AdImpression[]
+  createdAt    DateTime  @default(now())
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
+
+model Family {
+  id         String        @id @default(cuid())
+  name       String
+  inviteCode String        @unique
+  members    User[]
+  children   Child[]
+  albums     Album[]
+  tags       Tag[]
+  media      MediaAsset[]
+  care       CareRecord[]
+  purchases  Purchase[]
+  createdAt  DateTime      @default(now())
+}
+
+model Child {
+  id          String       @id @default(cuid())
+  familyId    String
+  family      Family       @relation(fields: [familyId], references: [id])
+  name        String
+  nickname    String // 첫째 | 둘째
+  birthDate   DateTime
+  avatarColor String       @default("#f472b6")
+  albums      Album[]
+  media       MediaAsset[]
+  care        CareRecord[]
+  sortOrder   Int          @default(0)
+  createdAt   DateTime     @default(now())
+
+  @@index([familyId])
+}
+
+model Album {
+  id         String       @id @default(cuid())
+  familyId   String
+  family     Family       @relation(fields: [familyId], references: [id])
+  childId    String
+  child      Child        @relation(fields: [childId], references: [id])
+  name       String
+  visibility String       @default("FAMILY") // FAMILY | PARENTS_ONLY
+  media      MediaAsset[]
+  createdAt  DateTime     @default(now())
+
+  @@index([childId])
+}
+
+model MediaAsset {
+  id             String    @id @default(cuid())
+  familyId       String
+  family         Family    @relation(fields: [familyId], references: [id])
+  childId        String
+  child          Child     @relation(fields: [childId], references: [id])
+  albumId        String
+  album          Album     @relation(fields: [albumId], references: [id])
+  ownerId        String
+  owner          User      @relation(fields: [ownerId], references: [id])
+
+  kind           String // IMAGE | VIDEO
+  fileName       String
+  mimeType       String
+  sizeBytes      Int       @default(0)
+  originalPath   String
+  previewPath    String?
+  thumbPath      String?
+  width          Int?
+  height         Int?
+  durationSec    Float?
+  previewQuality String? // 예: 720p
+  originalQuality String? // 예: 1080p
+
+  // 중복 방지: 같은 앨범 안에서 내용 해시가 같으면 한 번만 저장된다.
+  contentHash    String
+  dedupeKey      String    @unique
+
+  capturedAt     DateTime
+  visibility     String    @default("FAMILY") // FAMILY | PARENTS_ONLY | PRIVATE
+  favorite       Boolean   @default(false)
+  deletedAt      DateTime?
+  deletedById    String?
+
+  tags           MediaTag[]
+  likes          Like[]
+  comments       Comment[]
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @default(now()) @updatedAt
+
+  @@unique([albumId, contentHash])
+  @@index([albumId])
+  @@index([childId, capturedAt])
+  @@index([familyId, deletedAt])
+}
+
+model UploadSession {
+  id            String       @id @default(cuid())
+  userId        String
+  user          User         @relation(fields: [userId], references: [id])
+  familyId      String
+  childId       String
+  albumId       String
+  visibility    String       @default("FAMILY")
+  status        String       @default("OPEN") // OPEN | COMPLETED | ABANDONED
+  totalFiles    Int          @default(0)
+  summaryJson   String?
+  items         UploadItem[]
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @default(now()) @updatedAt
+
+  @@index([userId, createdAt])
+}
+
+model UploadItem {
+  id           String        @id @default(cuid())
+  sessionId    String
+  session      UploadSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  clientFileId String
+  fileName     String
+  mimeType     String
+  sizeBytes    Int           @default(0)
+  status       String        @default("PENDING") // PENDING | UPLOADING | DONE | FAILED
+  attempts     Int           @default(0)
+  mediaId      String?
+  duplicate    Boolean       @default(false)
+  error        String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @default(now()) @updatedAt
+
+  @@unique([sessionId, clientFileId])
+  @@index([sessionId, status])
+}
+
+model CareRecord {
+  id              String   @id @default(cuid())
+  familyId        String
+  family          Family   @relation(fields: [familyId], references: [id])
+  childId         String
+  child           Child    @relation(fields: [childId], references: [id])
+  type            String // SLEEP | FEEDING
+  startAt         DateTime
+  endAt           DateTime?
+  durationMinutes Int?
+  amountMl        Int?
+  note            String?
+  status          String   @default("DONE") // DONE | ONGOING
+  createdById     String
+  createdBy       User     @relation(fields: [createdById], references: [id])
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @default(now()) @updatedAt
+
+  @@index([childId, startAt])
+}
+
+model Tag {
+  id       String     @id @default(cuid())
+  familyId String
+  family   Family     @relation(fields: [familyId], references: [id])
+  name     String
+  media    MediaTag[]
+  createdAt DateTime  @default(now())
+
+  @@unique([familyId, name])
+}
+
+model MediaTag {
+  mediaId  String
+  tagId    String
+  media    MediaAsset @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+  tag      Tag        @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([mediaId, tagId])
+  @@index([tagId])
+}
+
+model Like {
+  id        String     @id @default(cuid())
+  mediaId   String
+  media     MediaAsset @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User       @relation(fields: [userId], references: [id])
+  createdAt DateTime   @default(now())
+
+  @@unique([mediaId, userId])
+}
+
+model Comment {
+  id        String     @id @default(cuid())
+  mediaId   String
+  media     MediaAsset @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User       @relation(fields: [userId], references: [id])
+  body      String
+  createdAt DateTime   @default(now())
+
+  @@index([mediaId, createdAt])
+}
+
+// 광고 제거 구매 (실결제 연동 전 단계의 검증용 레코드. 스토어 영수증 검증 훅에서 채운다.)
+model Purchase {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id])
+  familyId     String
+  family       Family   @relation(fields: [familyId], references: [id])
+  platform     String // GOOGLE_PLAY | APPLE_APP_STORE | WEB_MOCK
+  productId    String
+  purchaseToken String  @unique
+  scope        String // PERSONAL | FAMILY
+  status       String   @default("ACTIVE") // ACTIVE | REVOKED | PENDING
+  purchasedAt  DateTime @default(now())
+  activatedAt  DateTime?
+  expiresAt    DateTime?
+  restoreCount Int      @default(0)
+  rawReceipt   String?
+  createdAt    DateTime @default(now())
+
+  @@index([userId, status])
+  @@index([familyId, status])
+}
+
+// 하루 1회 광고 노출 이력 — (사용자, 슬롯, 날짜) 유니크
+model AdImpression {
+  id             String   @id @default(cuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id])
+  slot           String
+  impressionDate String // YYYY-MM-DD (Asia/Seoul)
+  adId           String
+  createdAt      DateTime @default(now())
+
+  @@unique([userId, slot, impressionDate])
+}
+
+model Inquiry {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  category   String   @default("AD_REMOVAL") // AD_REMOVAL | ETC
+  message    String
+  purchaseId String?
+  status     String   @default("OPEN") // OPEN | ANSWERED
+  createdAt  DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
