@@ -2,7 +2,7 @@ import React, { createContext, useContext, useEffect, useMemo, useReducer, useRe
 import { connect, store, DEMO } from './api.js';
 import { REGIONS, AGES, CATS, TOPICS, REPORT_REASONS } from '../shared/core.js';
 import Admin from './Admin.jsx';
-import { playService, playPrices, buy, pending, consume } from './pay.js';
+import { playService, playPrices, buy, pending, consume, isNativeApp } from './pay.js';
 const SUB_URL = (sku) => `https://play.google.com/store/account/subscriptions?sku=${sku}&package=kr.eumsoft.eumchat`;
 import { pushSupported, permission, registerSW, enablePush, disablePush, currentSub } from './push.js';
 
@@ -725,7 +725,7 @@ function VipSheet({ close }) {
   const subscribe = async () => {
     setBusy(true);
     if (DEMO) await verifyVip(`demo-sub-${Date.now()}`);
-    else { const r = await buy(c.vipSku); if (r) { const ok = await verifyVip(r.token); r.finish(ok); } else setToast('구독이 취소되었습니다.'); }
+    else { let r = null; try { r = await buy(c.vipSku); } catch (e) { setToast(e.message); } if (r) { const ok = await verifyVip(r.token); r.finish(ok); } else setToast('구독이 취소되었습니다.'); }
     setBusy(false);
   };
   return (
@@ -788,7 +788,8 @@ function Shop({ close }) {
   const pay = async (p) => {
     if (DEMO) return setTest(p);
     setBusy(p.id);
-    const r = await buy(p.sku);
+    let r = null;
+    try { r = await buy(p.sku); } catch (e) { setToast(e.message); setBusy(''); return; }
     if (r) { const ok = await verify(p.id, r.token); r.finish(ok); if (ok) consume(svc, r.token); } else setToast('결제가 취소되었습니다.');
     setBusy('');
   };
@@ -857,7 +858,7 @@ function NotifySheet({ close }) {
       <div className="card sw-card">
         <Switch on={phoneOn} onChange={togglePhone} disabled={busy || !pushSupported()} label="휴대폰 알림" desc="앱을 닫아 두어도 새 메시지를 휴대폰 알림으로 받습니다." />
       </div>
-      {!pushSupported() && <p className="warn">{DEMO ? '체험판에서는 휴대폰 알림을 쓸 수 없습니다. 앱 안의 팝업 알림은 동작합니다.' : 'Play 스토어에서 설치한 이음챗 앱이나 크롬에서 휴대폰 알림을 켤 수 있습니다.'}</p>}
+      {!pushSupported() && <p className="warn">{DEMO ? '체험판에서는 휴대폰 알림을 쓸 수 없습니다. 앱 안의 팝업 알림은 동작합니다.' : isNativeApp ? '앱을 보고 있을 때는 화면 팝업으로 알려 드립니다. 앱을 닫았을 때 오는 휴대폰 알림은 다음 업데이트에서 지원합니다.' : 'Play 스토어에서 설치한 이음챗 앱이나 크롬에서 휴대폰 알림을 켤 수 있습니다.'}</p>}
       {pushSupported() && perm === 'denied' && <p className="warn">휴대폰 설정에서 이음챗 알림이 막혀 있습니다. 설정 &gt; 애플리케이션 &gt; 이음챗 &gt; 알림에서 허용해 주세요.</p>}
       <h4 className="sub">받을 알림</h4>
       <div className="card sw-card">
@@ -904,6 +905,19 @@ export default function App() {
   const [banner, setBanner] = useState(null);
   const viewRef = useRef(null);
   useEffect(() => { viewRef.current = view; }, [view]);
+  // 휴대폰 뒤로가기(앱): 열린 창 → 대화방 → 다른 탭 순으로 닫고, 다 닫혔으면 false(앱 종료)
+  const backRef = useRef({});
+  useEffect(() => { backRef.current = { sheet, view, tab }; }, [sheet, view, tab]);
+  useEffect(() => {
+    window.__eumBack = () => {
+      const b = backRef.current;
+      if (b.sheet) { setSheet(null); return true; }
+      if (b.view) { setView(null); return true; }
+      if (b.tab && b.tab !== 'talk') { setTab('talk'); return true; }
+      return false;
+    };
+    return () => { delete window.__eumBack; };
+  }, []);
   const openView = (v) => {
     if (!v?.type || !v.id) return;
     setBanner(null);

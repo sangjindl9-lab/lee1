@@ -1,0 +1,15 @@
+plugins { id 'com.android.application' }
+android {
+    namespace 'kr.eumsoft.eumchat'
+    compileSdk 35
+    defaultConfig {
+        applicationId 'kr.eumsoft.eumchat'
+        minSdk 24
+        targetSdk 35
+        versionCode 5
+        versionName '1.1.0'
+    }
+    buildTypes { release { minifyEnabled false } }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+}
+dependencies { implementation 'com.android.billingclient:billing:7.1.1' }
