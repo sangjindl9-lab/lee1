@@ -186,7 +186,8 @@ public class BillingBridge implements PurchasesUpdatedListener {
     private void query(List<String> ids, String type, Runnable then) {
         List<QueryProductDetailsParams.Product> list = new ArrayList<>();
         for (String s : ids) list.add(QueryProductDetailsParams.Product.newBuilder().setProductId(s).setProductType(type).build());
-        client.queryProductDetailsAsync(QueryProductDetailsParams.newBuilder().setProductList(list).build(), (res, pds) -> act.runOnUiThread(() -> {
+        client.queryProductDetailsAsync(QueryProductDetailsParams.newBuilder().setProductList(list).build(), (res, result) -> act.runOnUiThread(() -> {
+            List<ProductDetails> pds = result == null ? null : result.getProductDetailsList();
             if (pds != null) for (ProductDetails pd : pds) details.put(pd.getProductId(), pd);
             then.run();
         }));

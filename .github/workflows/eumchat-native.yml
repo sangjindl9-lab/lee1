@@ -14,7 +14,7 @@ jobs:
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: 17 }
       - uses: gradle/actions/setup-gradle@v4
-        with: { gradle-version: '8.7' }
+        with: { gradle-version: '8.13' }
       - name: 빌드
         working-directory: android-native
         shell: bash
