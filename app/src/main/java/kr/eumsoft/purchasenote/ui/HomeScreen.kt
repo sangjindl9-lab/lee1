@@ -47,6 +47,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -105,8 +107,11 @@ fun HomeScreen(nav: Nav) {
             }
         },
         floatingActionButton = {
+            val addLabel = stringResource(R.string.add_purchase)
+            // 접근성: 글자 버튼 이름이 읽히도록 이름을 직접 붙임(검수에서 이름 없는 버튼으로 잡힘)
             if (!simple && all?.isNotEmpty() == true) ExtendedFloatingActionButton(onClick = { nav.go(Screen.Add()) },
-                icon = { Icon(Icons.Filled.Add, null) }, text = { Text(stringResource(R.string.add_purchase)) })
+                icon = { Icon(Icons.Filled.Add, null) }, text = { Text(addLabel) },
+                modifier = Modifier.semantics { contentDescription = addLabel })
         },
     ) { pad ->
         val list = all
