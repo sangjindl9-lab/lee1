@@ -17,8 +17,8 @@ jobs:
       - run: yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null || true
       - uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.9'
-      - run: gradle :app:assembleDebug --no-daemon --stacktrace
+          gradle-version: '8.11.1'
+      - run: gradle :app:assembleDebug :app:bundleRelease --no-daemon --stacktrace
       - uses: actions/upload-artifact@v4
         with:
           name: FileManager2-apk
@@ -26,10 +26,11 @@ jobs:
       - name: Publish APK to filemanager2-apk branch
         run: |
           mkdir /tmp/pub && cp app/build/outputs/apk/debug/app-debug.apk /tmp/pub/FileManager2.apk
+          cp app/build/outputs/bundle/release/app-release.aab /tmp/pub/FileManager2-release-unsigned.aab
           cd /tmp/pub
           git init -q -b filemanager2-apk
           git config user.name "github-actions"
           git config user.email "actions@github.com"
-          git add FileManager2.apk
+          git add FileManager2.apk FileManager2-release-unsigned.aab
           git commit -qm "APK ${GITHUB_SHA::7}"
           git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" filemanager2-apk
