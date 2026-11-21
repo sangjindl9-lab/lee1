@@ -85,7 +85,7 @@ print('  업스트림 질의 %d건: 평균 %.0f ms, 최대 %d ms' % (len(v), sum
 log "== 7. 허용 목록 우선순위 (doubleclick.net 허용)"
 tap "Ad Block" 0 2; tap "Allow/Block" 0 2
 dump; p=$(python3 $D/ui.py $O/ui.xml "Domain (e.g. example.com)") && adb shell input tap $p && sleep 1 && adb shell input text "doubleclick.net" && sleep 1
-adb shell input keyevent 111 2>/dev/null; tap "Allow" 0 12
+adb shell input keyevent 111 2>/dev/null; tap "Allow" 0 25
 shot 04_allowlist
 check_pass doubleclick.net "허용 목록 도메인"
 check_block googleadservices.com "다른 광고 도메인은 계속 차단"
