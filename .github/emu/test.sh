@@ -78,7 +78,8 @@ for n in r.iter('node'):
         x1, y1, x2, y2 = map(int, re.findall(r'\d+', n.get('bounds'))); print((x1 + x2) // 2, (y1 + y2) // 2); break
 PY
 )
-[ -n "$P" ] && adb shell input tap $P && sleep 4
+[ -n "$P" ] && adb shell input tap $P && sleep 2
+tap "Add (1)" 0 4 || tap "추가(1)" 0 4
 has "사진 1" && result "사진 선택기로 고른 사진이 등록 화면에 들어옴" || result "사진 선택기 경로 확인 못함(선택기 화면 자동 조작 실패 가능)"
 shot 03c_picked; tap "사진에서 글자 읽기" 0 12; shot 03d_ocr_ja
 has "읽어 온 내용" && result "일본어 영수증 자동 언어 인식 결과 표시" || result "일본어 인식 결과 확인 못함"
@@ -131,8 +132,9 @@ adb shell settings put system font_scale 1.0
 log "== 9. 다크 모드 · 가로 화면"
 adb shell cmd uimode night yes; start; shot 16_dark_home
 tap "무선 이어폰 화이트" 0 3; shot 17_dark_detail; adb shell cmd uimode night no
-adb shell settings put system accelerometer_rotation 0; adb shell settings put system user_rotation 1; sleep 3; shot 18_landscape_detail
-adb shell settings put system user_rotation 0; sleep 2
+adb shell cmd window user-rotation lock 1; sleep 4; shot 18_landscape_detail
+tap "수정" 0 3; shot 18b_landscape_edit; adb shell input keyevent KEYCODE_BACK; sleep 1
+adb shell cmd window user-rotation lock 0; adb shell cmd window user-rotation free; sleep 2
 
 log "== 10. 알림 거부 상태"
 adb shell pm revoke $A android.permission.POST_NOTIFICATIONS; start; shot 19_notif_denied
