@@ -24,7 +24,7 @@ jobs:
           NOTEPRO_SERVER_URL: https://notepro-server-production.up.railway.app
         run: |
           set -o pipefail
-          gradle testDebugUnitTest assembleDebug assembleDebugAndroidTest --no-daemon 2>&1 | tee build.log
+          gradle testDebugUnitTest assembleDebug assembleDebugAndroidTest bundleRelease --no-daemon 2>&1 | tee build.log
       - name: 단위 테스트 결과
         if: always()
         shell: bash
@@ -75,6 +75,7 @@ jobs:
           cp app/build/outputs/apk/debug/app-debug.apk app-debug.apk
           cp app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk app-debug-androidTest.apk
           cp app-debug.apk notepro-internal-test.apk
+          cp app/build/outputs/bundle/release/app-release.aab notepro-release-unsigned.aab
       - uses: actions/upload-artifact@v4
         with: { name: apks, path: "app-debug*.apk" }
       - name: 스토어 배포용 AAB(서명 키가 저장소 비밀값에 있을 때만)
@@ -96,7 +97,7 @@ jobs:
         run: |
           gh release delete notepro-buildlog --yes --cleanup-tag || true
           gh release delete notepro-latest --yes --cleanup-tag || true
-          gh release create notepro-latest notepro-internal-test.apk tests.txt --target "$GITHUB_SHA" --prerelease \
+          gh release create notepro-latest notepro-internal-test.apk notepro-release-unsigned.aab tests.txt --target "$GITHUB_SHA" --prerelease \
             --title "노트프로 (사내 테스트 APK · 스토어 배포용 아님)" \
             --notes "디버그 서명된 사내 테스트용 APK입니다. Google Play 배포용(서명된 AAB)이 아닙니다. 휴대폰에서 내려받아 설치하세요 (Android 8.0 이상)."
 
