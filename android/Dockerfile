@@ -27,4 +27,5 @@ RUN printf '%s' "$KEYSTORE_B64" | tr -d ' \r\n\t"' | base64 -d > /tmp/upload.jks
  && cp app/build/outputs/bundle/release/app-release.aab /out/$DL_TOKEN/family-album-release.aab \
  && cp app/build/outputs/apk/release/app-release.apk /out/$DL_TOKEN/family-album-release.apk \
  && rm -rf /src/app/build /root/.gradle
-CMD ["sh", "-c", "python3 -m http.server ${PORT:-8080} --directory /out"]
+RUN printf '%s\n' 'import http.server,os' 'class H(http.server.SimpleHTTPRequestHandler):' '    def end_headers(self):' '        self.send_header("Access-Control-Allow-Origin","*")' '        super().end_headers()' 'os.chdir("/out")' 'http.server.ThreadingHTTPServer(("0.0.0.0",int(os.environ.get("PORT","8080"))),H).serve_forever()' > /serve.py
+CMD ["python3", "/serve.py"]
