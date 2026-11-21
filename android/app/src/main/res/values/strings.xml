@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">가족앨범</string>
+
+    <string name="download_description">가족앨범에서 내려받는 중</string>
+    <string name="download_started">다운로드를 시작했어요. 알림창에서 확인할 수 있어요.</string>
+    <string name="error_download">다운로드를 시작하지 못했어요.</string>
+    <string name="error_blob_download">이 형식의 파일은 앱에서 바로 저장할 수 없어요.</string>
+    <string name="error_network">인터넷 연결을 확인하고 다시 시도해 주세요.</string>
+    <string name="error_title">앨범을 열 수 없어요</string>
+    <string name="error_no_app">이 기능을 열 수 있는 앱이 없어요.</string>
+    <string name="error_storage_permission">저장 공간 권한이 없어 다운로드할 수 없어요.</string>
+    <string name="retry">다시 시도</string>
+    <string name="upload_chooser_title">사진·동영상 선택</string>
+</resources>

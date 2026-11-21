@@ -1,0 +1,10 @@
+# Android Studio 에서 프로젝트를 열면 이 파일이 자동으로 만들어진다.
+# 로컬에서 명령줄로 빌드할 때는 이 파일을 local.properties 로 복사한 뒤 경로를 채운다.
+# (local.properties 는 .gitignore 에 있어 저장소에 올라가지 않는다.)
+
+# sdk.dir=/home/사용자/Android/Sdk
+# sdk.dir=C\:\\Users\\사용자\\AppData\\Local\\Android\\Sdk
+
+# 앱이 열 웹앱 주소(비우면 https://family-album.onrender.com)
+# 개발 서버를 같은 PC 에서 띄워 테스트할 때: 에뮬레이터에서 호스트 PC 는 10.0.2.2 다.
+# appUrl=http://10.0.2.2:3220

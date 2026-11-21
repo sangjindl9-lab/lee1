@@ -1,0 +1,8 @@
+# 안드로이드 앱(WebView 래퍼) 빌드 산출물
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.idea/
+android/*.iml
+android/captures/

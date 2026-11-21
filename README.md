@@ -90,6 +90,28 @@ npm run verify       # typecheck + test + build
 | 가족 초대 링크 | 시드의 고정 초대코드만 | 초대 코드 발급·수락 API/화면 |
 | 푸시 알림 | 없음 | FCM/APNs 연결 |
 
+## 안드로이드 앱 (android/)
+
+이 웹앱을 그대로 감싸는 안드로이드 WebView 앱입니다. 패키지 `kr.eumsoft.familyalbum`, 앱 이름 `가족앨범`. (minSdk 24 / targetSdk 35)
+
+- 앱이 여는 주소는 빌드 시 `BuildConfig.APP_URL` 로 들어갑니다. 기본값 `https://family-album.onrender.com`.
+  바꾸려면 `-PappUrl=...`, `APP_URL` 환경변수, `android/local.properties` 의 `appUrl=` 중 하나를 씁니다.
+- 사진·동영상 여러 개 고르기(`onShowFileChooser` + `EXTRA_ALLOW_MULTIPLE`), 원본·ZIP 다운로드(`DownloadManager`, 로그인 쿠키 전달),
+  IndexedDB 업로드 복원(`domStorageEnabled`/`databaseEnabled`), 뒤로가기 시 웹 히스토리 우선 이동을 처리합니다.
+
+```bash
+cd android
+./gradlew assembleDebug        # android/app/build/outputs/apk/debug/app-debug.apk
+./gradlew assembleRelease      # 서명 키가 없으면 디버그 키로 서명해 설치 가능한 APK 생성
+```
+
+Android Studio 로는 `android/` 폴더를 열면 됩니다(첫 실행 시 `local.properties` 자동 생성).
+로컬 개발 서버를 보게 하려면 `android/local.properties` 에 `appUrl=http://10.0.2.2:3220`(에뮬레이터 기준)을 넣습니다.
+
+CI 는 `.github/workflows/family-album-apk.yml` 이 담당합니다. `android/**` 변경이 푸시되거나 수동 실행(`workflow_dispatch`, `app_url` 입력)하면
+디버그 APK 를 만들어 Artifact 로 올리고, 태그 푸시나 수동 실행에서 `create_release` 를 켜면 Release 에도 첨부합니다.
+런처 아이콘 PNG 는 `node scripts/gen-android-icons.mjs` 로 다시 만들 수 있습니다.
+
 ## 구조
 
 ```
@@ -102,4 +124,6 @@ src/app/app/           부모 화면
 src/app/simple/        조부모 간편 모드
 tests/                 Vitest 시나리오 (업로드·휴지통·결제·수면·검색)
 scripts/smoke.mjs      실서버 HTTP 스모크 테스트
+android/               안드로이드 WebView 앱 (Gradle Kotlin DSL, kr.eumsoft.familyalbum)
+.github/workflows/     family-album-apk.yml — 디버그 APK 빌드 CI
 ```

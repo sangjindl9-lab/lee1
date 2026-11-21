@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 사진 프레임 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M39,30 H69 A9,9 0 0 1 78,39 V69 A9,9 0 0 1 69,78 H39 A9,9 0 0 1 30,69 V39 A9,9 0 0 1 39,30 Z" />
+
+    <!-- 산 -->
+    <path
+        android:fillColor="#DB2777"
+        android:pathData="M33,73 L45,57 L53,65 L60,56 L76,73 Z" />
+
+    <!-- 해 -->
+    <path
+        android:fillColor="#DB2777"
+        android:pathData="M41,38 m-3.6,0 a3.6,3.6 0 1,0 7.2,0 a3.6,3.6 0 1,0 -7.2,0" />
+</vector>
