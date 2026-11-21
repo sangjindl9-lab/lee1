@@ -23,9 +23,36 @@ jobs:
           print('query_status:', d.get('query_status'), 'APK', len(r))
           assert d.get('query_status')=='ok' and r"
           sha256sum mb_apk.json > mb_apk.json.sha256
+      - name: MalwareBazaar 전체 덤프 → Android APK 행만 추출
+        env: { KEY: "${{ secrets.ABUSECH_AUTH_KEY }}" }
+        run: |
+          ok=""
+          for u in "https://mb-api.abuse.ch/v2/files/exports/$KEY/full.csv.zip" "https://bazaar.abuse.ch/export/csv/full/"; do
+            if curl -sS --fail -L -H "Auth-Key: $KEY" "$u" -o full.zip && unzip -tq full.zip >/dev/null 2>&1; then ok=1; break; fi
+          done
+          [ -n "$ok" ] || { echo "::error::전체 덤프를 받지 못함"; exit 1; }
+          ls -la full.zip
+          python3 - <<'PY2'
+          import csv, io, zipfile, re, collections
+          z = zipfile.ZipFile('full.zip'); name = z.namelist()[0]
+          text = io.TextIOWrapper(z.open(name), encoding='utf-8', errors='replace')
+          out = open('mb_full_apk.csv', 'w', newline=''); w = csv.writer(out)
+          w.writerow(['first_seen_utc','sha256_hash','md5_hash','sha1_hash','reporter','file_name','file_type_guess','mime_type','signature'])
+          total = apk = 0; fam = collections.Counter()
+          for row in csv.reader((l for l in text if not l.startswith('#')), skipinitialspace=True):
+              total += 1
+              if len(row) < 9: continue
+              if row[6].strip().lower() != 'apk' or not re.fullmatch(r'[0-9a-f]{64}', row[1].strip().lower()): continue
+              apk += 1; fam[row[8].strip() or 'n/a'] += 1
+              w.writerow([c.strip() for c in row[:9]])
+          out.close()
+          print(f'전체 {total:,} 행 중 Android APK {apk:,} 건')
+          print('상위 계열:', fam.most_common(25))
+          PY2
+          gzip -kf mb_full_apk.csv && ls -la mb_full_apk.csv.gz
       - name: 릴리스 올리기
         env: { GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }
         run: |
           gh release delete eum-security-threatdata --repo ${{ github.repository }} --yes --cleanup-tag || true
-          gh release create eum-security-threatdata mb_apk.json mb_apk.json.sha256 --repo ${{ github.repository }} --target "$GITHUB_SHA" --prerelease \
+          gh release create eum-security-threatdata mb_apk.json mb_apk.json.sha256 mb_full_apk.csv.gz --repo ${{ github.repository }} --target "$GITHUB_SHA" --prerelease \
             --title "EUM SECURITY PRO · MalwareBazaar APK 해시 (CC0)" --notes "서명 전 원본 데이터. 앱은 Ed25519 로 서명된 db/ 만 사용합니다."
