@@ -117,7 +117,7 @@ class ReminderReceiver : BroadcastReceiver() {
                 if (days !in p.daysList()) return@launch
                 val at = Dates.reminderInstant(LocalDate.ofEpochDay(d), days, p.remindMinute, ZoneId.systemDefault())
                 val now = System.currentTimeMillis()
-                if (now - at > LATE_LIMIT_MS || at - now > 60 * 60 * 1000) { Reminders.schedule(c, p); return@launch }
+                if (now - at > Reminders.LATE_LIMIT_MS || at - now > 60 * 60 * 1000) { Reminders.schedule(c, p); return@launch }
                 Reminders.post(c, p, kind, days)
                 android.util.Log.i("EUMPN", "reminder posted kind=${kind.name} days=$days")
             } finally { pr.finish() }

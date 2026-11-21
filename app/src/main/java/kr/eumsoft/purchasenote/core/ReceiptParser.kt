@@ -43,7 +43,7 @@ object ReceiptParser {
     private val ORDER_NO = rx("(?:주문\\s*번호|주문No\\.?|order\\s*(?:#|no\\.?|number|id)|注文番号|ご注文番号|受注番号|n[º°o]\\.?\\s*de\\s*pedido|n[uú]mero\\s*de\\s*pedido|pedido\\s*(?:n[º°o]\\.?|#))\\s*[:：#]?\\s*([A-Za-z0-9][A-Za-z0-9\\-]{4,})")
     private val TRACKING_NO = rx("(?:(?:운송장|송장)(?:\\s*번호)?|tracking(?:\\s*(?:#|no\\.?|number))?|追跡番号|お問い合わせ番号|伝票番号|n[uú]mero\\s*de\\s*seguimiento|gu[ií]a)\\s*[:：#]?\\s*([A-Za-z0-9][A-Za-z0-9\\-]{5,})")
     private val RELATIVE = rx("((?:수령|배송|도착|구매|받은\\s*날|상품\\s*수령)\\s*(?:후|일로부터|로부터)\\s*\\d+\\s*일)|(within\\s+\\d+\\s+days)|(\\d+\\s*日以内)|(\\d+\\s*d[ií]as(?:\\s+naturales|\\s+h[aá]biles)?)|(\\d+\\s*days\\s+(?:of|after|from))")
-    private val AMOUNT = Regex("(?:(US\\$|MX\\$|CA\\$|A\\$|[₩￦\\$€£¥￥]|KRW|USD|EUR|JPY|MXN)\\s?)?(-?\\d{1,3}(?:[,.\\s\\u00A0]\\d{3})+(?:[.,]\\d{1,2})?|-?\\d+(?:[.,]\\d{1,2})?)\\s?(원|円|€|KRW|USD|EUR|JPY|MXN)?")
+    private val AMOUNT = Regex("(?:(US\\\$|MX\\\$|CA\\\$|A\\\$|[₩￦\\\$€£¥￥]|KRW|USD|EUR|JPY|MXN)\\s?)?(-?\\d{1,3}(?:[,.\\s\\u00A0]\\d{3})+(?:[.,]\\d{1,2})?|-?\\d+(?:[.,]\\d{1,2})?)\\s?(원|円|€|KRW|USD|EUR|JPY|MXN)?")
 
     private fun dateKind(line: String) = DATE_LABELS.firstOrNull { it.second.containsMatchIn(line) }?.first
     private fun amountKind(line: String) = AMOUNT_LABELS.firstOrNull { it.second.containsMatchIn(line) }?.first

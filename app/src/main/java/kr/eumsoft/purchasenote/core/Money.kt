@@ -73,16 +73,16 @@ object Money {
         fun has(r: String) = Regex(r).containsMatchIn(t)
         return when {
             has("(?i)\\bKRW\\b|₩|￦|\\d\\s*원") -> CurrencyGuess("KRW", listOf("KRW"), "₩/원")
-            has("(?i)\\bUSD\\b|US\\$|U\\$S") -> CurrencyGuess("USD", listOf("USD"), "US$")
+            has("(?i)\\bUSD\\b|US\\\$|U\\\$S") -> CurrencyGuess("USD", listOf("USD"), "US$")
             has("(?i)\\bJPY\\b|円|\\d\\s*えん") -> CurrencyGuess("JPY", listOf("JPY"), "円")
             has("(?i)\\bEUR\\b|€") -> CurrencyGuess("EUR", listOf("EUR"), "€")
             has("(?i)\\bCNY\\b|\\bRMB\\b|元|人民币") -> CurrencyGuess("CNY", listOf("CNY"), "元")
             has("(?i)\\bGBP\\b|£") -> CurrencyGuess("GBP", listOf("GBP"), "£")
-            has("(?i)\\bMXN\\b|MX\\$") -> CurrencyGuess("MXN", listOf("MXN"), "MX$")
-            has("(?i)\\bCAD\\b|C\\$|CA\\$") -> CurrencyGuess("CAD", listOf("CAD"), "CA$")
-            has("(?i)\\bAUD\\b|A\\$|AU\\$") -> CurrencyGuess("AUD", listOf("AUD"), "A$")
+            has("(?i)\\bMXN\\b|MX\\\$") -> CurrencyGuess("MXN", listOf("MXN"), "MX$")
+            has("(?i)\\bCAD\\b|C\\\$|CA\\\$") -> CurrencyGuess("CAD", listOf("CAD"), "CA$")
+            has("(?i)\\bAUD\\b|A\\\$|AU\\\$") -> CurrencyGuess("AUD", listOf("AUD"), "A$")
             has("[¥￥]") -> CurrencyGuess(null, listOf("JPY", "CNY"), "¥")
-            has("\\$") -> CurrencyGuess(null, listOf("USD", "CAD", "AUD", "MXN", "ARS", "CLP", "COP"), "$")
+            has("\\\$") -> CurrencyGuess(null, listOf("USD", "CAD", "AUD", "MXN", "ARS", "CLP", "COP"), "$")
             else -> null
         }
     }
