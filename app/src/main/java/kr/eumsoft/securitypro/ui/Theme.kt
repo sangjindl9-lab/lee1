@@ -71,6 +71,9 @@ fun SwitchRow(title: String, sub: String?, checked: Boolean, onChange: (Boolean)
 
 @Composable
 fun KeyValue(k: String, v: String) = Row(Modifier.fillMaxWidth().padding(vertical = 3.dp).semantics(mergeDescendants = true) { contentDescription = "$k: $v" }) {
-    Text(k, Modifier.weight(0.42f), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    Text(v, Modifier.weight(0.58f), style = MaterialTheme.typography.bodyMedium)
+    // 짧은 값(숫자 등)은 이름 칸을 넓게 써서 이름이 어색하게 줄바꿈되지 않게 한다
+    val short = v.length <= 12
+    Text(k, Modifier.weight(if (short) 1f else 0.42f), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    if (short) Text(v, Modifier.padding(start = 12.dp), style = MaterialTheme.typography.bodyMedium)
+    else Text(v, Modifier.weight(0.58f), style = MaterialTheme.typography.bodyMedium)
 }

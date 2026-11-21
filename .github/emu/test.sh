@@ -177,7 +177,7 @@ for i in $(seq 1 60); do has "Scan summary" && break; sleep 2; done; shot play_0
 tap "Security DB" 0 3; shot play_04_db_en
 adb shell cmd locale set-app-locales $P --locales ko-KR 2>/dev/null; adb shell am force-stop $P; sleep 1
 adb shell am start -W -n $P/.ui.MainActivity >/dev/null; sleep 4
-has "웹 보호" && { shot play_05_home_ko; tap "웹 보호" 0 2; shot play_06_webguard_ko; tap "검사" 0 2; shot play_07_scan_ko; tap "보안 DB" 0 3; shot play_08_db_ko; } || log "  (한국어 전환 미지원)"
+has "웹 보호" && { tap "피싱·악성 사이트 차단" 0 8; shot play_05_home_ko; tap "웹 보호" 0 2; shot play_06_webguard_ko; tap "검사" 0 2; shot play_07_scan_ko; tap "보안 DB" 0 3; shot play_08_db_ko; } || log "  (한국어 전환 미지원)"
 dump; grep -qi "ad block\|광고" $O/ui.xml && ng "Play 판 화면에 광고 차단 문구가 보임" || ok "Play 판 화면에 광고 차단 문구 없음"
 
 log "== 19. 크래시 확인"
