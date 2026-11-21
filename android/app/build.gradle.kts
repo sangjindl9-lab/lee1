@@ -18,7 +18,7 @@ val localProperties = Properties().apply {
     if (file.exists()) FileInputStream(file).use { load(it) }
 }
 
-val defaultAppUrl = "https://APP_URL_PLACEHOLDER"
+val defaultAppUrl = "https://eum-balju-production.up.railway.app"
 val resolvedAppUrl: String =
     (findProperty("appUrl") as String?)?.trim()?.takeIf { it.isNotEmpty() }
         ?: System.getenv("APP_URL")?.trim()?.takeIf { it.isNotEmpty() }
