@@ -144,3 +144,72 @@ class ImportParserTest {
         assertTrue(ImportParser.parse("Sign in\nEmail or mobile phone number\nContinue", rule("amazon_us")).isEmpty())
     }
 }
+
+/** 실제 쿠팡 주문내역 목록 모양(2026-11 사용자 화면): 날짜만 있는 줄 + 상품은 사진만(설명=상품명) */
+class CoupangListTest {
+    private val rule = ImportParser.parseRules(File("src/main/assets/import_rules.json").readText()).malls.first { it.id == "coupang" }
+    @Test fun list_with_images_only() {
+        val text = """
+            주문내역
+            주문한 상품을 검색할 수 있어요!
+            자주 산 상품
+            더보기
+            [IMG] 하늘보리 500ml, 20개
+            [IMG] 펩시 콜라 1.5L, 6개
+            2026. 11. 20
+            배송완료
+            오늘(토) 도착 (문앞 전달)
+            [IMG] 로켓프레시
+            [IMG] 남자라면 115g, 4개
+            [IMG] 오뚜기 오동통면 120g, 5개
+            [IMG] 오뚜기 옛날 당면 300g
+            [IMG] 농심 안성탕면 125g, 5개
+            4개 상품 모두 보기
+            배송완료
+            오늘(토) 도착 (문앞 전달)
+            [IMG] 곰곰 한돈 앞다리살 불고기용 500g
+            [IMG] 곰곰 한돈 삼겹살 구이용 500g
+            +5
+            9개 상품 모두 보기
+        """.trimIndent()
+        val items = ImportParser.parse(text, rule, 2026)
+        assertEquals(listOf("남자라면 115g, 4개", "오뚜기 오동통면 120g, 5개", "오뚜기 옛날 당면 300g", "농심 안성탕면 125g, 5개",
+            "곰곰 한돈 앞다리살 불고기용 500g", "곰곰 한돈 삼겹살 구이용 500g"), items.map { it.product })
+        assertTrue(items.all { it.orderDate == LocalDate.of(2026, 11, 20) })
+        assertTrue(items.none { it.product.contains("하늘보리") })   // '자주 산 상품'은 주문이 아님
+        assertNull(items[0].amount)
+    }
+    @Test fun expanded_list_merges_image_and_text_with_price() {
+        val text = """
+            2026. 11. 20
+            배송완료
+            [IMG] 농심 안성탕면 125g, 5개
+            농심 안성탕면 125g, 5개
+            4,580원 1개
+        """.trimIndent()
+        val items = ImportParser.parse(text, rule, 2026)
+        assertEquals(1, items.size); assertEquals("4,580", items[0].amount)
+    }
+    @Test fun order_detail_page() {
+        val text = """
+            주문상세
+            주문일 2026. 11. 20
+            주문번호 31000123456789
+            배송완료
+            [IMG] 농심 안성탕면 125g, 5개
+            농심 안성탕면 125g, 5개
+            4,580원 1개
+            [IMG] 오뚜기 옛날 당면 300g
+            오뚜기 옛날 당면 300g
+            3,290원 1개
+            총 결제금액 7,870원
+            받는 사람
+            홍길동
+        """.trimIndent()
+        val items = ImportParser.parse(text, rule, 2026)
+        assertEquals(listOf("농심 안성탕면 125g, 5개", "오뚜기 옛날 당면 300g"), items.map { it.product })
+        assertEquals(listOf("4,580", "3,290"), items.map { it.amount })
+        assertTrue(items.all { it.orderNo == "31000123456789" && it.orderDate == LocalDate.of(2026, 11, 20) })
+        assertTrue(items.none { it.product.contains("홍길동") })
+    }
+}

@@ -82,6 +82,39 @@ class ImportRow(val item: ImportParser.Item, val exists: Boolean) {
     var withReturn by mutableStateOf(item.returnBy != null)
 }
 
+/**
+ * 화면 글자 읽기: 보이는 글자 + 사진 설명(대체 텍스트, ImportParser.IMG 표시). 입력칸 값·숨은 요소는 읽지 않는다.
+ */
+private const val READ_JS = """(function(){
+var out=[];
+function walk(n){
+ if(n.nodeType===3){var t=n.textContent.replace(/\s+/g,' ').trim(); if(t) out.push(t); return;}
+ if(n.nodeType!==1) return;
+ var tag=n.tagName;
+ if(/^(SCRIPT|STYLE|NOSCRIPT|SVG|INPUT|TEXTAREA|SELECT|IFRAME)$/.test(tag)) return;
+ var st=window.getComputedStyle(n); if(st.display==='none'||st.visibility==='hidden') return;
+ if(tag==='IMG'){var a=(n.getAttribute('alt')||'').replace(/\s+/g,' ').trim(); if(a) out.push('\n[IMG] '+a+'\n'); return;}
+ var block=!/^(SPAN|B|STRONG|EM|I|SMALL|LABEL|SUP|SUB|MARK|FONT)$/.test(tag) && st.display!=='inline';
+ if(block) out.push('\n');
+ for(var c=n.firstChild;c;c=c.nextSibling) walk(c);
+ if(block) out.push('\n');
+}
+walk(document.body);
+return out.join(' ').replace(/[ \t]*\n[ \t\n]*/g,'\n');
+})()"""
+
+private fun expandJs(pattern: String) = """(function(){
+var re=new RegExp(${JSONArray(listOf(pattern)).toString().removePrefix("[").removeSuffix("]")}); var n=0;
+var hits=[];
+document.querySelectorAll('button,[role=button],div,span').forEach(function(e){
+ var t=(e.innerText||'').replace(/\s+/g,' ').trim();
+ if(t.length<40 && re.test(t) && !e.closest('a[href]') && e.offsetParent!==null) hits.push(e);
+});
+// 같은 버튼을 감싼 바깥 요소까지 누르면 다시 접히므로 가장 안쪽 것만
+hits.filter(function(e){ return !hits.some(function(o){ return o!==e && e.contains(o); }); }).forEach(function(e){ e.click(); n++; });
+return n;
+})()"""
+
 /** 쇼핑몰 고르기 */
 @Composable
 fun ImportPickScreen(nav: Nav) {
@@ -130,10 +163,8 @@ fun ShopBrowserScreen(nav: Nav, s: Screen.ShopBrowser) {
 
     BackHandler { val w = web; if (w != null && w.canGoBack()) w.goBack() else nav.back() }
 
-    fun grab() {
-        val w = web ?: return
-        reading = true
-        w.evaluateJavascript("(function(){return document.body ? document.body.innerText : '';})()") { res ->
+    fun read(w: WebView) {
+        w.evaluateJavascript(READ_JS) { res ->
             val text = runCatching { JSONArray("[$res]").getString(0) }.getOrDefault("")
             val url = w.url
             scope.launch {
@@ -147,6 +178,18 @@ fun ShopBrowserScreen(nav: Nav, s: Screen.ShopBrowser) {
                 }
                 nav.go(Screen.ImportReview(rule.id, rows, url?.takeIf { ImportParser.hostAllowed(it) }))
             }
+        }
+    }
+
+    fun grab() {
+        val w = web ?: return
+        reading = true
+        val ex = rule.expand
+        if (ex == null) { read(w); return }
+        // 접힌 상품 목록('N개 상품 모두 보기')을 먼저 펼친 뒤 읽는다. 링크(<a href>)는 누르지 않아 다른 화면으로 넘어가지 않음
+        w.evaluateJavascript(expandJs(ex)) { res ->
+            val n = res?.trim('"')?.toIntOrNull() ?: 0
+            if (n > 0) w.postDelayed({ read(w) }, 1500) else read(w)
         }
     }
 

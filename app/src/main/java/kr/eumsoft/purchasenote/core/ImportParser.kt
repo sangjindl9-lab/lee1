@@ -35,6 +35,10 @@ object ImportParser {
         val skipAfter: Regex?,
         /** 상품 줄 바로 아래에 가격이 있어야 상품으로 본다(가게 이름 줄 등을 거르기 위함) */
         val needPrice: Boolean,
+        /** 사진 설명(대체 텍스트)을 상품명으로 쓴다 — 목록에 사진만 있는 쇼핑몰(쿠팡 등) */
+        val useImageAlt: Boolean = false,
+        /** 읽기 전에 눌러서 펼칠 버튼 글자(예: '4개 상품 모두 보기') */
+        val expand: String? = null,
     ) {
         fun name(lang: String) = names[lang] ?: names["en"] ?: id
     }
@@ -52,7 +56,8 @@ object ImportParser {
                 val url = m.getString("ordersUrl")
                 if (!hostAllowed(url)) null
                 else Rule(m.getString("id"), names, m.getString("currency"), url, rx("anchor")!!, rx("orderNo"), rx("total"),
-                    rx("price")!!, rx("returnBy"), rx("noise")!!, rx("skipAfter"), m.optBoolean("needPrice", false))
+                    rx("price")!!, rx("returnBy"), rx("noise")!!, rx("skipAfter"), m.optBoolean("needPrice", false),
+                    m.optBoolean("useImageAlt", false), if (m.has("expand") && !m.isNull("expand")) m.getString("expand") else null)
             } catch (e: Exception) { null } // 잘못된 항목은 건너뜀
         }
         return Rules(o.getInt("version"), malls)
@@ -70,6 +75,9 @@ object ImportParser {
     )
 
     private val LETTER = Regex("[\\p{L}]")
+    /** 화면 읽기 스크립트가 사진 설명 앞에 붙이는 표시 */
+    const val IMG = "[IMG] "
+    private fun norm(s: String) = s.lowercase().replace(Regex("[\\s,·]+"), "")
 
     fun parse(text: String, rule: Rule, refYear: Int = LocalDate.now().year): List<Item> {
         val lines = text.lines().map { it.trim() }.filter { it.isNotEmpty() }
@@ -86,10 +94,13 @@ object ImportParser {
             val total = rule.total?.find(joined)?.groupValues?.getOrNull(1)
             val ret = rule.returnBy?.find(joined)?.groupValues?.getOrNull(1)?.let { Dates.findAll(it, refYear).firstOrNull()?.sure }
 
-            // 상품 줄 후보: 잡음(버튼·상태·라벨)이 아닌, 글자가 충분한 줄
+            // 상품 줄 후보: 잡음(버튼·상태·라벨)이 아닌, 글자가 충분한 줄. 사진 설명은 규칙이 허락할 때만
+            val text = seg.map { it.removePrefix(IMG).trim() }
+            val isImg = seg.map { it.startsWith(IMG) }
             val cand = BooleanArray(seg.size)
             var skipNext = false
-            seg.forEachIndexed { i, l ->
+            text.forEachIndexed { i, l ->
+                if (isImg[i] && !rule.useImageAlt) return@forEachIndexed
                 if (skipNext) { skipNext = false; return@forEachIndexed }
                 if (rule.skipAfter?.containsMatchIn(l) == true) { skipNext = true; return@forEachIndexed }
                 if (i == 0 || rule.noise.containsMatchIn(l) || rule.price.matches(l.replace(" ", "")) || Dates.findAll(l, refYear).isNotEmpty()) return@forEachIndexed
@@ -98,19 +109,21 @@ object ImportParser {
                 if (rule.price.containsMatchIn(l) && l.length < 25) return@forEachIndexed
                 cand[i] = true
             }
-            // 각 후보 아래 몇 줄 안(다음 후보 전까지)의 가격을 그 상품 가격으로
-            val products = ArrayList<Pair<String, String?>>()
+            // 각 후보 아래 몇 줄 안(다음 후보 전까지)의 가격을 그 상품 가격으로. 같은 상품이 사진·글자로 두 번 나오면 하나로
+            val products = LinkedHashMap<String, Pair<String, String?>>()
             seg.indices.filter { cand[it] }.forEach { i ->
                 var price: String? = null
                 for (j in i + 1 until minOf(seg.size, i + 4)) {
-                    if (cand[j]) break
-                    rule.price.find(seg[j])?.let { price = it.groupValues.getOrNull(1) }
+                    if (cand[j] || isImg[j]) break
+                    rule.price.find(text[j])?.let { price = it.groupValues.getOrNull(1) }
                     if (price != null) break
                 }
-                if (price != null || !rule.needPrice) products += seg[i] to price
+                if (price == null && rule.needPrice && !isImg[i]) return@forEach
+                val key = norm(text[i]); val prev = products[key]
+                if (prev == null || (prev.second == null && price != null)) products[key] = text[i] to (price ?: prev?.second)
             }
             if (products.isEmpty()) return@forEachIndexed
-            products.forEach { (name, price) ->
+            products.values.forEach { (name, price) ->
                 out += Item(name, date, noYear, price ?: if (products.size == 1) total else null, orderNo, ret)
             }
         }
