@@ -6,6 +6,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: write
+concurrency: { group: notepro-apk, cancel-in-progress: true }
 jobs:
   build:
     runs-on: ubuntu-latest

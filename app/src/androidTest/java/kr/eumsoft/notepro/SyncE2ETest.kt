@@ -65,7 +65,9 @@ class SyncE2ETest {
         val devB = UUID.randomUUID().toString()
         apiB.saveTokens(apiB.request("POST", "/v1/auth/login", apiB.deviceInfo(JSONObject().put("email", email).put("password", "password123"), devB), auth = false))
         val pulled = apiB.request("GET", "/v1/sync/pull?since=0&limit=1000").getJSONArray("changes")
-        val strokesOnB = (0 until pulled.length()).count { pulled.getJSONObject(it).getString("entityType") == "stroke" }
+        // 이 기기에 원래 있던 다른 노트도 계정에 함께 올라가므로, 이번 노트의 획만 센다
+        val strokesOnB = (0 until pulled.length()).map { pulled.getJSONObject(it) }
+            .count { it.getString("entityType") == "stroke" && it.getJSONObject("data").optString("notebookId") == nb.id }
         assertEquals(30, strokesOnB)
         val blob = android.util.Base64.encodeToString(StrokeCodec.encode(pts), android.util.Base64.NO_WRAP)
         val ops = JSONArray()
