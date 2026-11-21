@@ -11,8 +11,8 @@ android {
         applicationId = "kr.eumsoft.filemanager2"
         minSdk = 24
         targetSdk = 36
-        versionCode = 4
-        versionName = "1.3"
+        versionCode = 5
+        versionName = "1.4"
     }
     buildTypes {
         release { isMinifyEnabled = false }
@@ -38,4 +38,5 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     implementation("io.coil-kt:coil-compose:2.7.0")
     implementation("io.coil-kt:coil-video:2.7.0")
+    implementation("com.google.android.play:app-update-ktx:2.1.0")
 }
