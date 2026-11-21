@@ -119,6 +119,8 @@ class EumVpnService : VpnService() {
             cleanup("RELOAD"); startVpn(); return
         }
         val paused = s.pausedUntil > System.currentTimeMillis()
+        // 일시 정지가 끝나면 터널을 다시 만들어 Android 시스템 DNS 캐시(정지 중 받은 실제 주소)를 비운다
+        if (state.value == VpnState.PAUSED && !paused) { cleanup("RESUME"); startVpn(); return }
         if (!dns.reapply(s, systemDns, paused)) { cleanup("RELOAD"); startVpn(); return }
         schedulePauseEnd(s.pausedUntil)
         state.value = if (paused) VpnState.PAUSED else VpnState.ON

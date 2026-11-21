@@ -136,6 +136,7 @@ tap "Update now (threat DB + ad filters)" 0 25; shot 12_db_updated
 dump; grep -oE 'text="(최신 버전|버전 [0-9]+ 적용|실패)[^"]*"' $O/ui.xml | head -2 | sed 's/^/  · /' | tee -a $R
 tap "Settings" 0 2; shot 13_settings
 
+adb logcat -d -s EUM_FILTER:W | sed 's/^.*EUM_FILTER: /  · /' | tee -a $R
 log "== 14. 성능 (VPN 실행 중)"
 log "  메모리: $(adb shell dumpsys meminfo $A | grep -m1 'TOTAL' | tr -s ' ' | tr -d '\r')"
 log "  CPU: $(adb shell top -b -n 1 | grep $A | head -1 | tr -s ' ' | tr -d '\r')"

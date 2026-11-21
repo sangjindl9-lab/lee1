@@ -40,6 +40,7 @@ class FilterManager @Inject constructor(
             count
         }
         r.onFailure { e ->
+            android.util.Log.w("EUM_FILTER", "필터 업데이트 실패 ${src.code}: ${e.message}")
             db.dns().updateSource(src.copy(lastResult = "FAIL:${e.message?.take(120)}", updatedAt = System.currentTimeMillis()))
         }
         db.dns().insertHistory(UpdateHistory(time = System.currentTimeMillis(), target = "AD_FILTER:${src.code}",
