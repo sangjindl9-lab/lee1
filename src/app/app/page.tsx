@@ -1,6 +1,7 @@
 import Link from "next/link";
 import AppShell from "@/components/AppShell";
 import AdBanner from "@/components/AdBanner";
+import { isAndroidApp } from "@/lib/platform";
 import prisma from "@/lib/db";
 import { getSessionUser } from "@/lib/auth";
 import { assertFamily } from "@/lib/page-data";
@@ -11,6 +12,7 @@ import { toMediaDTO, type MediaWithRelations } from "@/lib/serialize";
 export const dynamic = "force-dynamic";
 
 export default async function AppHome() {
+  const inApp = await isAndroidApp();
   const user = await getSessionUser();
   const familyId = await assertFamily(user);
   const children = await prisma.child.findMany({
@@ -63,9 +65,9 @@ export default async function AppHome() {
         </div>
       </section>
 
-      <div className="mb-5">
+      {!inApp && (<div className="mb-5">
         <AdBanner slot="today" />
-      </div>
+      </div>)}
 
       <section className="mb-6">
         <h2 className="section-title mb-3">우리 아이</h2>

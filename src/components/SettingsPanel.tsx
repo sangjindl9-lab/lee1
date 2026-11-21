@@ -22,11 +22,13 @@ export default function SettingsPanel({
   initialInquiries,
   members,
   tags,
+  hideBilling = false,
 }: {
   initialEntitlement: Entitlement;
   initialInquiries: Inquiry[];
   members: Array<{ id: string; name: string; relation: string | null; role: string }>;
   tags: Array<{ id: string; name: string; count: number }>;
+  hideBilling?: boolean;
 }) {
   const [entitlement, setEntitlement] = useState(initialEntitlement);
   const [inquiries, setInquiries] = useState(initialInquiries);
@@ -90,6 +92,7 @@ export default function SettingsPanel({
 
   return (
     <div className="space-y-4">
+      <p className="text-right text-xs"><Link href="/privacy" className="font-semibold text-slate-500 underline">개인정보처리방침</Link></p>
       {notice && <div className="rounded-2xl bg-slate-900 px-4 py-2.5 text-xs font-semibold text-white">{notice}</div>}
 
       <section className="card p-5">
@@ -128,7 +131,7 @@ export default function SettingsPanel({
           </div>
         </dl>
 
-        <div className="mt-4 flex flex-wrap gap-2">
+        {!hideBilling && (<div className="mt-4 flex flex-wrap gap-2">
           <button className="btn-soft" onClick={doRecheck} disabled={busy}>
             🔄 결제 상태 재확인
           </button>
@@ -138,7 +141,7 @@ export default function SettingsPanel({
           <button className="btn-primary ml-auto" onClick={() => setShowPurchaseConfirm(true)}>
             광고 제거 상품 보기
           </button>
-        </div>
+        </div>)}
 
         {recheck && (
           <div className="mt-3 rounded-2xl bg-slate-50 p-3 text-xs text-slate-600">

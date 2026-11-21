@@ -1,5 +1,6 @@
 import AppShell from "@/components/AppShell";
 import AdBanner from "@/components/AdBanner";
+import { isAndroidApp } from "@/lib/platform";
 import UploadManager from "@/components/UploadManager";
 import prisma from "@/lib/db";
 import { getSessionUser } from "@/lib/auth";
@@ -8,6 +9,7 @@ import { assertFamily } from "@/lib/page-data";
 export const dynamic = "force-dynamic";
 
 export default async function UploadPage({ searchParams }: { searchParams: Promise<{ childId?: string }> }) {
+  const inApp = await isAndroidApp();
   const user = await getSessionUser();
   const familyId = await assertFamily(user);
   const { childId } = await searchParams;
@@ -31,9 +33,9 @@ export default async function UploadPage({ searchParams }: { searchParams: Promi
           100장을 한 번에 올려도 파일마다 상태를 확인할 수 있고, 실패한 항목만 다시 올릴 수 있어요. 완료 표시는 서버에 원본·미리보기 파일과 앨범 정보가 모두 저장된 뒤에만 나타납니다.
         </p>
       </div>
-      <div className="mb-4">
+      {!inApp && (<div className="mb-4">
         <AdBanner slot="today" />
-      </div>
+      </div>)}
       <UploadManager
         defaultChildId={childId}
         members={members}

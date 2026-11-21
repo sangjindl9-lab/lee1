@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { isAndroidApp } from "@/lib/platform";
 import AppShell from "@/components/AppShell";
 import PurchasePanel from "@/components/PurchasePanel";
 import { getSessionUser } from "@/lib/auth";
@@ -8,6 +10,7 @@ import { getEntitlement, PLATFORMS, PRODUCTS, storeConfigured } from "@/lib/bill
 export const dynamic = "force-dynamic";
 
 export default async function PurchasePage() {
+  if (await isAndroidApp()) redirect("/app/settings");
   const user = await getSessionUser();
   await assertFamily(user);
   const entitlement = await getEntitlement(user!.id);

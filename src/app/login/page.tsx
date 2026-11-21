@@ -33,6 +33,7 @@ export default async function LoginPage() {
           familyName: u.family?.name ?? null,
         }))}
       />
+      <a href="/privacy" className="text-xs font-semibold text-slate-400 underline">개인정보처리방침</a>
     </main>
   );
 }
