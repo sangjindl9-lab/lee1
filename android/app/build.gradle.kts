@@ -33,13 +33,13 @@ val hasReleaseKey: Boolean = releaseStorePath != null && File(releaseStorePath).
 
 android {
     namespace = "kr.eumsoft.familyalbum"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "kr.eumsoft.familyalbum"
         minSdk = 24
-        targetSdk = 35
-        versionCode = 1
+        targetSdk = 36
+        versionCode = 2
         versionName = "1.0.0"
 
         // 웹앱 주소를 앱 코드의 BuildConfig.APP_URL 로 넣는다.

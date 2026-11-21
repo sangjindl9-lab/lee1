@@ -92,7 +92,7 @@ npm run verify       # typecheck + test + build
 
 ## 안드로이드 앱 (android/)
 
-이 웹앱을 그대로 감싸는 안드로이드 WebView 앱입니다. 패키지 `kr.eumsoft.familyalbum`, 앱 이름 `가족앨범`. (minSdk 24 / targetSdk 35)
+이 웹앱을 그대로 감싸는 안드로이드 WebView 앱입니다. 패키지 `kr.eumsoft.familyalbum`, 앱 이름 `가족앨범`. (minSdk 24 / targetSdk 36)
 
 - 앱이 여는 주소는 빌드 시 `BuildConfig.APP_URL` 로 들어갑니다. 기본값 `https://family-album.onrender.com`.
   바꾸려면 `-PappUrl=...`, `APP_URL` 환경변수, `android/local.properties` 의 `appUrl=` 중 하나를 씁니다.
