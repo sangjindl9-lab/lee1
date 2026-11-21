@@ -1,8 +1,8 @@
 {
  "format": 1,
- "version": 2026112102,
- "created": "2026-11-21T14:45:50Z",
- "payload": "threat-db-2026112102.json",
- "sha256": "ada25149fa6878f2bd4ee4236b8fb0438a085b50aa2f6944a4ce2f914be4790e",
- "size": 33930
+ "version": 2026112201,
+ "created": "2026-11-21T15:49:55Z",
+ "payload": "threat-db-2026112201.json",
+ "sha256": "236815998fc1677c4f55bb577adc01500c13217c07ff176f77e9824d6158fd9a",
+ "size": 2745400
 }
