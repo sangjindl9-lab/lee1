@@ -1,0 +1,30 @@
+name: EUM SECURITY PRO · 악성 해시 데이터 수집 (MalwareBazaar)
+# abuse.ch Auth-Key 는 GitHub Secrets 의 ABUSECH_AUTH_KEY 로만 사용한다 (저장소에 넣지 않음).
+# 결과(공개 CC0 데이터)는 릴리스 eum-security-threatdata 에 올리고, 서명은 오프라인 개인키로 따로 한다.
+on:
+  push:
+    branches: [eum-security-pro]
+    paths: [".github/workflows/eum-security-threatdata.yml"]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: MalwareBazaar 최근 Android APK 해시
+        env: { KEY: "${{ secrets.ABUSECH_AUTH_KEY }}" }
+        run: |
+          if [ -z "$KEY" ]; then echo "::error::GitHub Secrets 에 ABUSECH_AUTH_KEY 가 없습니다"; exit 1; fi
+          curl -sS --fail -H "Auth-Key: $KEY" -d "query=get_file_type&file_type=apk&limit=1000" https://mb-api.abuse.ch/api/v1/ -o mb_apk.json
+          python3 -c "
+          import json; d=json.load(open('mb_apk.json')); r=d.get('data') or []
+          print('query_status:', d.get('query_status'), 'APK', len(r))
+          assert d.get('query_status')=='ok' and r"
+          sha256sum mb_apk.json > mb_apk.json.sha256
+      - name: 릴리스 올리기
+        env: { GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }
+        run: |
+          gh release delete eum-security-threatdata --repo ${{ github.repository }} --yes --cleanup-tag || true
+          gh release create eum-security-threatdata mb_apk.json mb_apk.json.sha256 --repo ${{ github.repository }} --target "$GITHUB_SHA" --prerelease \
+            --title "EUM SECURITY PRO · MalwareBazaar APK 해시 (CC0)" --notes "서명 전 원본 데이터. 앱은 Ed25519 로 서명된 db/ 만 사용합니다."

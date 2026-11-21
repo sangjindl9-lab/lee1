@@ -42,7 +42,20 @@ sources = [
     {'code': 'eum_test', 'name': 'EUM 테스트 데이터 (운영 탐지 아님)', 'url': 'https://github.com/sangjindl9-lab/lee1/tree/eum-security-pro/db_src', 'license': 'Apache-2.0', 'test': True, 'checked': now},
     {'code': 'eum_heur', 'name': 'EUM 자체 휴리스틱 규칙 v1 (주의 판정용)', 'url': 'https://github.com/sangjindl9-lab/lee1/tree/eum-security-pro/db_src', 'license': 'Apache-2.0', 'test': False, 'checked': now},
 ]
-if a.bazaar:
+if a.bazaar and a.bazaar.endswith('.json'):
+    # MalwareBazaar API (query=get_file_type&file_type=apk) 응답
+    n = 0
+    for r in json.load(open(a.bazaar)).get('data') or []:
+        sha = (r.get('sha256_hash') or '').lower()
+        if (r.get('file_type') or '').lower() != 'apk' or not re.fullmatch(r'[0-9a-f]{64}', sha): continue
+        sig = r.get('signature') or ''
+        hashes.append({'sha256': sha, 'threat_name': sig or 'Android.Malware.Generic', 'threat_family': sig or 'unknown', 'category': 'MALWARE',
+                       'severity': 'HIGH', 'confidence': 95, 'source': 'MalwareBazaar (abuse.ch)',
+                       'first_seen': (r.get('first_seen') or '')[:10] or None, 'last_seen': (r.get('last_seen') or '')[:10] or None})
+        n += 1
+    sources.append({'code': 'malwarebazaar', 'name': 'MalwareBazaar (abuse.ch) Android APK', 'url': 'https://bazaar.abuse.ch/', 'license': 'CC0-1.0', 'test': False, 'checked': now})
+    print('MalwareBazaar APK hashes:', n)
+elif a.bazaar:
     raw = open(a.bazaar, 'rb').read()
     if a.bazaar.endswith('.zip'):
         z = zipfile.ZipFile(io.BytesIO(raw)); raw = z.read(z.namelist()[0])
