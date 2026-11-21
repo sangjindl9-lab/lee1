@@ -125,6 +125,14 @@ test('파일: 조각 업로드·실패 조각만 재전송·해시 검증·다�
   assert.equal((await call('POST', `/v1/files/${sha}/complete`, A.accessToken)).status, 200);
   const dl = await app.inject({ method: 'GET', url: `/v1/files/${sha}`, headers: { authorization: `Bearer ${A.accessToken}` } });
   assert.equal(createHash('sha256').update(dl.rawPayload).digest('hex'), sha);
+  // DB 저장 방식(볼륨 없는 서버)
+  process.env.STORAGE = 'db';
+  const small = Buffer.from('db-stored-file'); const sha2 = createHash('sha256').update(small).digest('hex');
+  await call('PUT', `/v1/files/${sha2}/chunks/0?total=1`, A.accessToken, small, 'application/octet-stream');
+  assert.equal((await call('POST', `/v1/files/${sha2}/complete`, A.accessToken)).status, 200);
+  const dl2 = await app.inject({ method: 'GET', url: `/v1/files/${sha2}`, headers: { authorization: `Bearer ${A.accessToken}` } });
+  assert.equal(dl2.rawPayload.toString(), 'db-stored-file');
+  delete process.env.STORAGE;
   const X = await signup('f2@test.com');
   assert.equal((await call('GET', `/v1/files/${sha}`, X.accessToken)).status, 404);
   const bk = await call('POST', '/v1/backups', A.accessToken, { sha256: sha, kind: 'auto' });

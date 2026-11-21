@@ -62,8 +62,12 @@ export function fileRoutes(app: FastifyInstance, db: Db) {
     const h = createHash('sha256');
     for (const c of chunks) { const b = readFileSync(join(dir, `${c.idx}.part`)); h.update(b); appendFileSync(assembled, b); }
     if (h.digest('hex') !== sha) { rmSync(assembled); await db.query('DELETE FROM file_chunks WHERE user_id=$1 AND sha256=$2', [u.userId, sha]); rmSync(dir, { recursive: true, force: true }); throw httpError(422, 'checksum_mismatch'); }
-    const key = `objects/${u.userId}/${sha}`;
-    renameSync(assembled, join(root(), key));
+    let key = `objects/${u.userId}/${sha}`;
+    if (process.env.STORAGE === 'db') {
+      // 볼륨이 없는 서버: 파일 내용을 DB에 저장(재배포해도 유지)
+      await db.query('INSERT INTO file_blobs(user_id, sha256, data) VALUES($1,$2,$3) ON CONFLICT DO NOTHING', [u.userId, sha, readFileSync(assembled)]);
+      rmSync(assembled); key = `db:${sha}`;
+    } else renameSync(assembled, join(root(), key));
     await db.query('INSERT INTO stored_files(user_id, sha256, size, object_key) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING', [u.userId, sha, size, key]);
     await db.query('UPDATE users SET storage_used_bytes=storage_used_bytes+$2 WHERE id=$1', [u.userId, size]);
     await db.query(`UPDATE attachments SET object_key=$3, upload_state='complete', updated_at=now() WHERE user_id=$1 AND sha256=$2`, [u.userId, sha, key]);
@@ -77,6 +81,11 @@ export function fileRoutes(app: FastifyInstance, db: Db) {
     const sha = (req.params as any).sha;
     if (!SHA.test(sha)) throw httpError(400, 'bad_sha');
     const f = (await db.query('SELECT object_key, size FROM stored_files WHERE user_id=$1 AND sha256=$2', [u.userId, sha])).rows[0];
+    if (f && String(f.object_key).startsWith('db:')) {
+      const b = (await db.query('SELECT data FROM file_blobs WHERE user_id=$1 AND sha256=$2', [u.userId, sha])).rows[0];
+      if (!b) throw httpError(404, 'not_found');
+      reply.type('application/octet-stream'); return reply.send(b.data);
+    }
     if (!f || !existsSync(join(root(), f.object_key))) throw httpError(404, 'not_found');
     reply.header('content-length', statSync(join(root(), f.object_key)).size).type('application/octet-stream');
     return reply.send(createReadStream(join(root(), f.object_key)));
