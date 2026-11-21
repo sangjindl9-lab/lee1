@@ -157,6 +157,7 @@
     <string name="logout_keeps_notes">로그아웃·계정 전환을 해도 이 기기의 노트는 삭제되지 않습니다.</string>
     <string name="logout_pending_warning">아직 서버로 보내지 못한 변경이 %1$d건 있습니다. 로그아웃해도 이 기기의 노트는 지워지지 않지만, 다른 기기에는 다음 로그인 후에야 반영됩니다. 로그아웃할까요?</string>
     <string name="merge_pdf">PDF 합치기(뒤에 추가)</string>
+    <string name="mic_permission_needed">녹음하려면 마이크 권한이 필요합니다</string>
     <string name="minutes_n">%1$d분마다</string>
     <string name="more">더보기</string>
     <string name="move_page_down">페이지 아래로 이동</string>
@@ -173,6 +174,7 @@
     <string name="no_errors">기록된 오류가 없습니다</string>
     <string name="no_handwriting">이 페이지에 손글씨가 없습니다</string>
     <string name="no_notes">노트가 없습니다. ‘새 노트’ 또는 PDF 가져오기로 시작하세요.</string>
+    <string name="no_recording_for_stroke">이 필기를 쓸 때 녹음된 내용이 없습니다</string>
     <string name="no_results">결과가 없습니다</string>
     <string name="no_signature">저장된 서명이 없습니다. 서명을 쓴 뒤 올가미로 선택하고 ‘내 서명으로 저장’을 누르세요.</string>
     <string name="no_versions">아직 복구 지점이 없습니다</string>
@@ -210,10 +212,23 @@
     <string name="pen_highlighter">형광펜</string>
     <string name="pen_pencil">연필</string>
     <string name="pick_note_for_side">옆 창에 열 노트 선택</string>
+    <string name="play_mode">녹음 재생 모드</string>
+    <string name="play_mode_hint">필기를 누르면 그 필기를 쓰던 순간의 녹음이 재생됩니다</string>
+    <string name="playing">재생 중</string>
     <string name="please_wait">잠시만 기다려 주세요</string>
     <string name="portrait">세로</string>
     <string name="recognition_failed">인식하지 못했습니다</string>
     <string name="recognizing">인식하는 중…</string>
+    <string name="record_consent_body">다른 사람의 목소리를 녹음할 때는 미리 알리고 동의를 받아야 합니다. 나라마다 녹음 관련 법이 다르며(예: 대화 당사자가 아닌 사람의 대화 녹음 금지), 책임은 녹음하는 사람에게 있습니다. 녹음 파일은 이 노트에 저장되고, 로그인한 경우 계정에 동기화됩니다.</string>
+    <string name="record_consent_title">녹음 전 확인</string>
+    <string name="record_failed">녹음을 시작하지 못했습니다</string>
+    <string name="record_pause">일시정지</string>
+    <string name="record_paused">일시정지됨</string>
+    <string name="record_resume">다시 녹음</string>
+    <string name="record_saved">녹음을 저장했습니다. 재생 모드에서 필기를 누르면 그 순간이 재생됩니다.</string>
+    <string name="record_start">녹음 시작</string>
+    <string name="record_stop">녹음 끝</string>
+    <string name="recording">녹음 중</string>
     <string name="recovered_after_crash">앱이 비정상 종료되었지만 저장된 필기는 모두 복원했습니다. 마지막 작업 화면을 다시 열었습니다.</string>
     <string name="redo">다시 실행</string>
     <string name="remove_bookmark">북마크 해제</string>
@@ -293,6 +308,7 @@
     <string name="src_note">주석</string>
     <string name="src_ocr">이미지 글자</string>
     <string name="src_pdf">PDF 글자</string>
+    <string name="stop">정지</string>
     <string name="storage_info">저장 용량</string>
     <string name="storage_used">이 노트가 사용하는 용량: %1$s (필기·첨부·버전 기록 포함)</string>
     <string name="sync_conflicts_n">다른 기기와 동시에 고친 내용 %1$d건은 양쪽 모두 보존했습니다.</string>

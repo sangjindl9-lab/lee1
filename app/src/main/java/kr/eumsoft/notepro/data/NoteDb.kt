@@ -44,7 +44,7 @@ class NoteDb(private val context: Context) : SQLiteOpenHelper(context, NAME, nul
 
     companion object {
         const val NAME = "notepro.db"
-        const val VERSION = 3
+        const val VERSION = 4
 
         /** 버전별 마이그레이션 SQL. 이미 출시된 버전의 SQL은 절대 수정하지 않는다. */
         val MIGRATIONS: Map<Int, List<String>> = mapOf(
@@ -142,6 +142,14 @@ class NoteDb(private val context: Context) : SQLiteOpenHelper(context, NAME, nul
                     page_id TEXT NOT NULL, source TEXT NOT NULL, notebook_id TEXT NOT NULL, text TEXT NOT NULL,
                     updated_at INTEGER NOT NULL, PRIMARY KEY(page_id, source))""",
                 "CREATE INDEX idx_page_text_nb ON page_text(notebook_id)",
+            ),
+            // v4: 녹음(필기 시각과 연결)
+            4 to listOf(
+                """CREATE TABLE recordings(
+                    id TEXT PRIMARY KEY, notebook_id TEXT NOT NULL REFERENCES notebooks(id), attachment_id TEXT NOT NULL REFERENCES attachments(id),
+                    started_at INTEGER NOT NULL, duration_ms INTEGER NOT NULL, consent_at INTEGER NOT NULL,
+                    created_at INTEGER NOT NULL, deleted INTEGER NOT NULL DEFAULT 0)""",
+                "CREATE INDEX idx_recordings_nb ON recordings(notebook_id, started_at)",
             ),
         )
 

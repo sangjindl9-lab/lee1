@@ -125,6 +125,7 @@ class NoteRepository(private val context: Context, private val helper: NoteDb) {
         tx {
             db.execSQL("DELETE FROM pen_strokes WHERE notebook_id=?", arrayOf(id))
             db.execSQL("DELETE FROM page_elements WHERE notebook_id=?", arrayOf(id))
+            db.execSQL("DELETE FROM recordings WHERE notebook_id=?", arrayOf(id))
             db.execSQL("DELETE FROM page_text WHERE notebook_id=?", arrayOf(id))
             db.execSQL("DELETE FROM pages WHERE notebook_id=?", arrayOf(id))
             db.execSQL("DELETE FROM note_tags WHERE notebook_id=?", arrayOf(id))

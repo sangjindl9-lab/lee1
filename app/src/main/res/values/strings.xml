@@ -157,6 +157,7 @@
     <string name="logout_keeps_notes">Signing out or switching accounts never deletes notes on this device.</string>
     <string name="logout_pending_warning">%1$d changes haven’t reached the server yet. Signing out won’t delete notes on this device, but other devices get them only after you sign in again. Sign out?</string>
     <string name="merge_pdf">Merge PDF (append)</string>
+    <string name="mic_permission_needed">Microphone permission is needed to record</string>
     <string name="minutes_n">Every %1$d min</string>
     <string name="more">More</string>
     <string name="move_page_down">Move page down</string>
@@ -173,6 +174,7 @@
     <string name="no_errors">No errors recorded</string>
     <string name="no_handwriting">No handwriting on this page</string>
     <string name="no_notes">No notes yet. Start with “New note” or import a PDF.</string>
+    <string name="no_recording_for_stroke">No recording was made while this was written</string>
     <string name="no_results">No results</string>
     <string name="no_signature">No signature saved. Write it, select it with the lasso and tap “Save as my signature”.</string>
     <string name="no_versions">No restore points yet</string>
@@ -210,10 +212,23 @@
     <string name="pen_highlighter">Highlighter</string>
     <string name="pen_pencil">Pencil</string>
     <string name="pick_note_for_side">Pick a note for the side pane</string>
+    <string name="play_mode">Playback mode</string>
+    <string name="play_mode_hint">Tap handwriting to play the recording from when it was written</string>
+    <string name="playing">Playing</string>
     <string name="please_wait">Please wait</string>
     <string name="portrait">Portrait</string>
     <string name="recognition_failed">Recognition failed</string>
     <string name="recognizing">Recognizing…</string>
+    <string name="record_consent_body">Tell people and get their consent before recording their voices. Recording laws differ by country (e.g. recording conversations you are not part of may be illegal), and you are responsible. Recordings are stored in this note and synced to your account when signed in.</string>
+    <string name="record_consent_title">Before recording</string>
+    <string name="record_failed">Couldn’t start recording</string>
+    <string name="record_pause">Pause</string>
+    <string name="record_paused">Paused</string>
+    <string name="record_resume">Resume</string>
+    <string name="record_saved">Recording saved. In play mode, tap handwriting to hear that moment.</string>
+    <string name="record_start">Start recording</string>
+    <string name="record_stop">Stop recording</string>
+    <string name="recording">Recording</string>
     <string name="recovered_after_crash">The app closed unexpectedly, but all saved handwriting was restored and your last workspace reopened.</string>
     <string name="redo">Redo</string>
     <string name="remove_bookmark">Remove bookmark</string>
@@ -293,6 +308,7 @@
     <string name="src_note">Note</string>
     <string name="src_ocr">Scanned text</string>
     <string name="src_pdf">PDF text</string>
+    <string name="stop">Stop</string>
     <string name="storage_info">Storage used</string>
     <string name="storage_used">This note uses %1$s (handwriting, attachments and versions)</string>
     <string name="sync_conflicts_n">%1$d edits made at the same time on another device were kept on both sides.</string>

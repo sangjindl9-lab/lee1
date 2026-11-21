@@ -41,7 +41,7 @@ import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
 
-enum class Tool { PEN, ERASER, LASSO, TEXT }
+enum class Tool { PEN, ERASER, LASSO, TEXT, PLAY }
 enum class EraserMode { STROKE, AREA }
 
 /**
@@ -62,6 +62,8 @@ class NoteCanvasView(context: Context, private val pdf: PdfStore, private val se
         fun onStylusDetected() {}
         /** 텍스트 도구로 페이지를 눌렀을 때(기존 주석을 눌렀으면 element) */
         fun onTextTap(pageId: String, x: Float, y: Float, element: kr.eumsoft.notepro.core.PageElement?) {}
+        /** 재생 모드에서 획을 눌렀을 때(녹음 구간 재생) */
+        fun onStrokeTap(stroke: Stroke) {}
     }
 
     var listener: Listener? = null
@@ -549,7 +551,7 @@ class NoteCanvasView(context: Context, private val pdf: PdfStore, private val se
                 cursorR = eraserSize * scale
                 eraseAt(x, y)
             }
-            Tool.TEXT -> { drawPage = hitPage(x, y, tmp); holdX = x; holdY = y }
+            Tool.TEXT, Tool.PLAY -> { drawPage = hitPage(x, y, tmp); holdX = x; holdY = y }
             Tool.LASSO -> {
                 val pi = hitPage(x, y, tmp)
                 val b = Geometry.unionBounds(selection)
@@ -597,7 +599,7 @@ class NoteCanvasView(context: Context, private val pdf: PdfStore, private val se
                 for (h in 0 until ev.historySize) eraseAt(ev.getHistoricalX(idx, h), ev.getHistoricalY(idx, h))
                 eraseAt(x, y)
             }
-            Tool.TEXT -> {}
+            Tool.TEXT, Tool.PLAY -> {}
             Tool.LASSO -> {
                 if (moving) {
                     toPage(selPage, x, y, tmp); moveDx = tmp[0] - moveStartX; moveDy = tmp[1] - moveStartY
@@ -627,6 +629,14 @@ class NoteCanvasView(context: Context, private val pdf: PdfStore, private val se
                 } else resetDraw()
             }
             Tool.ERASER -> { s?.endBatch("erase"); resetDraw(); cursorX = -1f }
+            Tool.PLAY -> {
+                val x = ev.getX(idx); val y = ev.getY(idx)
+                if (s != null && drawPage in pages.indices && hypot(x - holdX, y - holdY) < 12 * density) {
+                    toPage(drawPage, x, y, tmp)
+                    s.strokesOf(pages[drawPage].id).lastOrNull { Geometry.hitStroke(it, tmp[0], tmp[1], 10f / scale + 4f) }?.let { listener?.onStrokeTap(it) }
+                }
+                resetDraw()
+            }
             Tool.TEXT -> {
                 val x = ev.getX(idx); val y = ev.getY(idx)
                 if (s != null && drawPage in pages.indices && hypot(x - holdX, y - holdY) < 12 * density) {

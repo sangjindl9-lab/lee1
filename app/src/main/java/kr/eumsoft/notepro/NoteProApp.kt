@@ -28,6 +28,7 @@ class NoteProApp : Application() {
     lateinit var pdf: PdfStore; private set
     lateinit var backup: BackupManager; private set
     lateinit var sync: SyncEngine; private set
+    lateinit var recorder: kr.eumsoft.notepro.media.Recorder; private set
     /** 라이브러리 화면 새로고침(동기화로 노트가 바뀌었을 때) */
     var onLibraryChanged: (() -> Unit)? = null
 
@@ -69,6 +70,7 @@ class NoteProApp : Application() {
         pdf = PdfStore(this, repo, files)
         backup = BackupManager(this, repo, files)
         PaperPainter.labels = resources.getStringArray(R.array.template_labels)
+        recorder = kr.eumsoft.notepro.media.Recorder(this, repo, files)
         val tokens = TokenStore(this)
         sync = SyncEngine(repo, files, tokens, Api(tokens)) { changed ->
             changed.forEach { sessions.reloadFromDb(it) }

@@ -246,6 +246,7 @@ fun EditorPane(state: AppState, pane: PaneState, activity: MainActivity, modifie
         if (penPanel) PenPanel(state, pane) { penPanel = false }
         if (eraserPanel) EraserPanel(pane)
         if (pane.selection > 0) SelectionBar(state, pane)
+        RecordingBar(state)
 
         // ---------- 캔버스 ----------
         Box(Modifier.fillMaxWidth().weight(1f)) {
@@ -265,6 +266,12 @@ fun EditorPane(state: AppState, pane: PaneState, activity: MainActivity, modifie
                                     override fun onSelectionChanged(count: Int) { pane.selection = count; if (count > 0) pane.tool = Tool.LASSO }
                                     override fun onRequestUndo() { pane.session?.undo() }
                                     override fun onUserInteraction() { pane.lastTouch = System.currentTimeMillis() }
+                                    override fun onStrokeTap(stroke: kr.eumsoft.notepro.core.Stroke) {
+                                        val nb = session.notebook.id
+                                        Io.async({ app.recorder.recordings(nb) }) { r ->
+                                            if (r.getOrNull()?.let { app.recorder.playAt(it, stroke.createdAt) } != true) state.toast = ctx.getString(R.string.no_recording_for_stroke)
+                                        }
+                                    }
                                     override fun onTextTap(pageId: String, x: Float, y: Float, element: kr.eumsoft.notepro.core.PageElement?) {
                                         textEdit = Triple(pageId, x to y, element)
                                     }
@@ -376,6 +383,7 @@ fun ToolBar(state: AppState, pane: PaneState, onPen: () -> Unit, onEraser: () ->
         ToolButton(Icons.Default.AutoFixNormal, stringResource(R.string.eraser), pane.tool == Tool.ERASER, { if (pane.tool == Tool.ERASER) onEraser() else pane.tool = Tool.ERASER })
         ToolButton(Icons.Default.HighlightAlt, stringResource(R.string.lasso), pane.tool == Tool.LASSO, { pane.tool = Tool.LASSO })
         ToolButton(Icons.Default.TextFields, stringResource(R.string.text_tool), pane.tool == Tool.TEXT, { pane.tool = Tool.TEXT })
+        RecordButtons(state, pane)
         Spacer(Modifier.width(6.dp))
         // 펜 프리셋(자주 쓰는 펜 고정)
         presets.value.forEach { pr ->
