@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 영수증 + 체크 표시 (오리지널 도형) -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#FFFFFF" android:pathData="M34,28h40v50l-5,-4 -5,4 -5,-4 -5,4 -5,-4 -5,4 -5,-4 -5,4z"/>
+    <path android:fillColor="#1F5E57" android:pathData="M41,38h26v4h-26z M41,47h18v4h-18z"/>
+    <path android:strokeColor="#1F5E57" android:strokeWidth="5" android:strokeLineCap="round" android:strokeLineJoin="round" android:fillColor="#00000000" android:pathData="M43,61l6,6 12,-12"/>
+</vector>
