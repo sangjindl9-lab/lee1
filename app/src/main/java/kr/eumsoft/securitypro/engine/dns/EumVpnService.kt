@@ -87,8 +87,12 @@ class EumVpnService : VpnService() {
             for (p in s.excludedApps) runCatching { b.addDisallowedApplication(p) }
             b.setConfigureIntent(PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE))
             val fd = b.establish() ?: error("VPN 권한이 없습니다")
+            // DnsTunListener 가 fd 를 소유하고 종료 시 직접 닫으므로 소유권을 넘긴다 (이중 close 방지)
+            val raw = fd.detachFd()
+            listener = try {
+                DnsTunListener(raw, MTU) { req, rh -> dns.handle(req) { rh.onReply(it) } }
+            } catch (e: Throwable) { ParcelFileDescriptor.adoptFd(raw).close(); throw e }
             tun = fd
-            listener = DnsTunListener(fd.fd, MTU) { req, rh -> dns.handle(req) { rh.onReply(it) } }
             val ms = System.currentTimeMillis() - t0
             sessionId = runBlocking { db.dns().insertVpnSession(VpnSession(startedAt = t0, connectMs = ms)) }
             watchNetwork()

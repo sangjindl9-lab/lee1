@@ -72,7 +72,7 @@ private fun Root(vm: MainVm, openSession: Long) {
         NavigationBar {
             tabs.forEach { t ->
                 val sel = back?.destination?.route == t.route
-                NavigationBarItem(sel, { nav.navigate(t.route) { popUpTo("home") { saveState = true }; launchSingleTop = true; restoreState = true } },
+                NavigationBarItem(sel, { nav.navigate(t.route) { popUpTo("home"); launchSingleTop = true } },
                     { Icon(t.icon, null) }, label = { Text(stringResource(t.label)) })
             }
         }

@@ -88,8 +88,8 @@ class DnsEngine @Inject constructor(
         set.dnsCacheSize = 2000
         set.isOptimisticCache = true
         set.blockedResponseTtlSecs = 10
-        set.adblockRulesBlockingMode = DnsProxySettings.BlockingMode.ADDRESS
-        set.hostsRulesBlockingMode = DnsProxySettings.BlockingMode.ADDRESS
+        set.adblockRulesBlockingMode = DnsProxySettings.BlockingMode.UNSPECIFIED_ADDRESS
+        set.hostsRulesBlockingMode = DnsProxySettings.BlockingMode.UNSPECIFIED_ADDRESS
         set.filterParams = if (paused) emptyList() else filterParams(s)
         return set
     }

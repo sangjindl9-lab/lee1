@@ -15,8 +15,8 @@ ok(){ log "  [통과] $*"; }
 ng(){ log "  [실패] $*"; }
 # 셸에서 도메인 해석 결과(IP) — ping 의 첫 줄 "PING host (IP)" 에서 IP 만 꺼낸다
 resolve(){ adb shell "ping -c 1 -W 3 $1 2>&1 | head -1" | tr -d '\r' | sed -n 's/^PING [^ ]* (\([^)]*\)).*/\1/p'; }
-check_block(){ local ip; ip=$(resolve $1); if [ "$ip" = "0.0.0.0" ] || [ "$ip" = "::" ]; then ok "$2: $1 → $ip (차단)"; else ng "$2: $1 → '${ip:-해석 실패}' (차단 안 됨)"; fi; }
-check_pass(){ local ip; ip=$(resolve $1); if [ -n "$ip" ] && [ "$ip" != "0.0.0.0" ]; then ok "$2: $1 → $ip (정상 해석)"; else ng "$2: $1 → '${ip:-해석 실패}'"; fi; }
+check_block(){ local ip; ip=$(resolve $1); if [ "$ip" = "0.0.0.0" ] || [ "$ip" = "127.0.0.1" ] || [ "$ip" = "::" ]; then ok "$2: $1 → $ip (차단)"; else ng "$2: $1 → '${ip:-해석 실패}' (차단 안 됨)"; fi; }
+check_pass(){ local ip; ip=$(resolve $1); if [ -n "$ip" ] && [ "$ip" != "0.0.0.0" ] && [ "$ip" != "127.0.0.1" ]; then ok "$2: $1 → $ip (정상 해석)"; else ng "$2: $1 → '${ip:-해석 실패}'"; fi; }
 
 adb logcat -c
 adb shell settings put global hide_error_dialogs 1
@@ -85,15 +85,15 @@ print('  업스트림 질의 %d건: 평균 %.0f ms, 최대 %d ms' % (len(v), sum
 log "== 7. 허용 목록 우선순위 (doubleclick.net 허용)"
 tap "Ad Block" 0 2; tap "Allow/Block" 0 2
 dump; p=$(python3 $D/ui.py $O/ui.xml "Domain (e.g. example.com)") && adb shell input tap $p && sleep 1 && adb shell input text "doubleclick.net" && sleep 1
-adb shell input keyevent 111 2>/dev/null; tap "Allow" 0 4
+adb shell input keyevent 111 2>/dev/null; tap "Allow" 0 12
 shot 04_allowlist
 check_pass doubleclick.net "허용 목록 도메인"
 check_block googleadservices.com "다른 광고 도메인은 계속 차단"
 
 log "== 8. 일시 정지 5분 → 재개"
-tap "Status" 0 2; tap "5 min" 0 4
+tap "Status" 0 2; tap "5 min" 0 12
 check_pass googleadservices.com "일시 정지 중"
-tap "Resume now" 0 4
+tap "Resume now" 0 12
 check_block googleadservices.com "재개 후"
 shot 05_adblock_status
 
@@ -108,9 +108,9 @@ check_block googleadservices.com "Wi-Fi 다시 켬"
 adb logcat -d -s EUM_VPN:I | grep "네트워크 변경" | tail -3 | sed 's/^.*EUM_VPN: /  · /' | tee -a $R
 
 log "== 10. 화면 · 통계 · 차단 기록"
-tap "Stats" 0 2; shot 06_stats
 tap "Block log" 0 2; shot 07_blocklog
 has "googleadservices.com" && ok "차단 기록에 도메인 표시" || ng "차단 기록 표시"
+tap "Stats" 0 2; shot 06_stats
 tap "Filters" 0 2; shot 08_filters
 
 log "== 11. 악성코드 빠른 검사"
