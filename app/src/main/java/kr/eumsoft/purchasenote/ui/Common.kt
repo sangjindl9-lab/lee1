@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
@@ -35,7 +36,6 @@ import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -51,7 +51,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kr.eumsoft.purchasenote.R
 import kr.eumsoft.purchasenote.core.Dates
@@ -108,14 +107,18 @@ fun SectionTitle(text: String, modifier: Modifier = Modifier) =
     Text(text, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold,
         modifier = modifier.padding(top = 16.dp, bottom = 8.dp).semantics { heading() })
 
-@OptIn(ExperimentalMaterial3Api::class)
+/** 상단 바. TopAppBar(고정 높이) 대신 내용에 맞게 늘어나서 글자 200%에서도 잘리지 않는다 */
 @Composable
-fun BackBar(title: String, onBack: () -> Unit, actions: @Composable () -> Unit = {}) {
-    TopAppBar(
-        title = { Text(title, maxLines = 2, overflow = TextOverflow.Ellipsis) },
-        navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back)) } },
-        actions = { actions() },
-    )
+fun BackBar(title: String, onBack: (() -> Unit)?, actions: @Composable () -> Unit = {}) {
+    Surface(color = MaterialTheme.colorScheme.surface) {
+        Row(Modifier.fillMaxWidth().statusBarsPadding().heightIn(min = 64.dp).padding(start = 4.dp, end = 4.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            if (onBack != null) IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back)) }
+            else Spacer(Modifier.width(12.dp))
+            Text(title, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f).padding(vertical = 8.dp).semantics { heading() })
+            actions()
+        }
+    }
 }
 
 /** 구매 목록 한 줄 */

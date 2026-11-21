@@ -4,14 +4,14 @@
 로그인·서버 없이 기기 안에서만 동작합니다. (`site/` 는 Railway에 올리는 개인정보처리방침·지원 페이지)
 
 - 기술: Kotlin · Jetpack Compose · Room · ML Kit 기기 내 글자 인식(한국어·일본어·라틴) · AlarmManager
-- 최소 Android 8.0 (API 26), 대상 API 35
+- 최소 Android 8.0 (API 26), 대상 API 36
 - 언어: 한국어·영어·일본어·스페인어 (기본/미지원 언어 = 영어). 문구 원본은 `tools/gen_strings.py`
 
 ## 빌드
 GitHub Actions(`.github/workflows/eum-purchase-note.yml`)가 이 브랜치에 push될 때마다
 단위 테스트 → 사내 테스트 APK → 에뮬레이터 검수까지 실행하고 릴리스에 올립니다.
 
-로컬 재빌드: JDK 17 + Android SDK(35) + Gradle 8.9
+로컬 재빌드: JDK 17 + Android SDK(36) + Gradle 8.11.1
 ```
 gradle testDebugUnitTest assembleDebug          # 사내 테스트 APK: app/build/outputs/apk/debug/app-debug.apk
 python3 tools/gen_strings.py                    # 문구 수정 후 4개 언어 리소스 다시 생성

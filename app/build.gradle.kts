@@ -6,11 +6,11 @@ plugins {
 }
 android {
     namespace = "kr.eumsoft.purchasenote"
-    compileSdk = 35
+    compileSdk = 36
     defaultConfig {
         applicationId = "kr.eumsoft.purchasenote"
         minSdk = 26
-        targetSdk = 35
+        targetSdk = 36
         versionCode = 1
         versionName = "0.1.0-internal"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

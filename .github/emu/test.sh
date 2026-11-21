@@ -11,7 +11,7 @@ tap(){ dump; p=$(python3 $D/ui.py $O/ui.xml "$1" ${2:-0}) || { log "  (화면에
 has(){ dump; grep -q "$1" $O/ui.xml; }
 a11y(){ dump; cp $O/ui.xml $O/dump_$1.xml; python3 $D/a11y.py $O/ui.xml $DEN "$1" | tee -a $R; }
 start(){ adb shell am force-stop $A; adb shell am start -W -n $A/.ui.MainActivity >/dev/null; sleep 3; }
-alarms(){ adb shell dumpsys alarm | grep -o "walarm\*:$A.REMIND[^ ]*" > $O/alarms_$1.txt; echo "$(wc -l < $O/alarms_$1.txt)개(서로 다른 것 $(sort -u $O/alarms_$1.txt | wc -l)개)"; }
+alarms(){ adb shell dumpsys alarm | awk '/^ *RTC(_WAKEUP)? #[0-9]+: Alarm\{/{a=1;next} a&&/tag=/{print;a=0}' | grep -o "walarm\*:$A.REMIND[^ ]*" > $O/alarms_$1.txt; echo "대기 중 $(wc -l < $O/alarms_$1.txt)개(서로 다른 것 $(sort -u $O/alarms_$1.txt | wc -l)개)"; }
 result(){ log "  → $1"; }
 
 adb logcat -c
@@ -39,18 +39,20 @@ PY
 adb logcat -d -s PNTEST:I | sed 's/^.*PNTEST: //' > $O/ocr_log.txt
 
 log "== 2. 첫 실행 안내 (한국어)"
-adb shell cmd locale set-app-locales $A --locales ko-KR
+adb shell am start -W -n $A/.ui.MainActivity >/dev/null; sleep 3
+adb shell cmd locale set-app-locales $A --locales ko-KR; sleep 2
+log "  앱 언어: $(adb shell cmd locale get-app-locales $A | tr -d '\r')"
 start; shot 01_onboarding_ko; a11y onboarding
 tap "다음"; shot 01b_onboarding_2; tap "다음"; shot 01c_onboarding_3; tap "시작하기"
 shot 02_home_empty_ko; has "첫 구매를 저장해 보세요" && result "빈 홈: 추가 버튼·공유 안내 표시" || result "빈 홈 확인 실패"
 
 log "== 3. 비행기 모드에서 주문 화면 공유 → 글자 읽기 → 저장"
 adb shell cmd connectivity airplane-mode enable; sleep 2
-adb push $D/../../app/src/androidTest/assets/receipts/receipt_ko.png /sdcard/Pictures/receipt_ko.png >/dev/null
-adb shell am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d file:///sdcard/Pictures/receipt_ko.png >/dev/null 2>&1; sleep 4
-MID=$(adb shell content query --uri content://media/external/images/media --projection _id:_display_name 2>/dev/null | tr -d '\r' | grep "receipt_ko.png" | grep -o "_id=[0-9]*" | head -1 | cut -d= -f2)
-log "  미디어 ID: ${MID:-없음}"
-adb shell am start -W -a android.intent.action.SEND -t image/png --eu android.intent.extra.STREAM content://media/external/images/media/$MID --grant-read-uri-permission -n $A/.ui.MainActivity >/dev/null 2>&1; sleep 4
+EXT=/sdcard/Android/data/$A/files; adb shell mkdir -p $EXT
+adb push app/src/androidTest/assets/receipts/receipt_ko.png $EXT/receipt_ko.png >/dev/null
+SHARE="file://$EXT/receipt_ko.png"
+log "  공유 파일: $SHARE (셸에서 다른 앱 권한 부여가 안 되어 앱 전용 폴더 파일로 공유 동작을 재현)"
+adb shell am start -W -a android.intent.action.SEND -t image/png --eu android.intent.extra.STREAM $SHARE -n $A/.ui.MainActivity >/dev/null 2>&1; sleep 4
 shot 03_share_ko; a11y add_screen
 has "사진 1" && result "공유한 사진이 등록 화면에 들어옴" || result "공유 사진이 안 보임(공유 권한 문제일 수 있음)"
 tap "사진에서 글자 읽기" 0 10; shot 04_ocr_ko
@@ -60,13 +62,32 @@ tap "저장" 0 4; shot 05_saved_detail
 has "주문번호\|상태" && result "저장 후 상세 화면 이동" || result "저장 확인 실패"
 adb shell cmd connectivity airplane-mode disable
 
+log "== 3b. 시스템 사진 선택 화면으로 사진 추가"
+adb push app/src/androidTest/assets/receipts/receipt_ja.png /sdcard/Pictures/receipt_ja.png >/dev/null
+adb shell am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d file:///sdcard/Pictures/receipt_ja.png >/dev/null 2>&1; sleep 3
+start; tap "구매 추가" 0 3; tap "사진 추가" 0 4; shot 03b_picker
+dump; P=$(python3 - <<'PY'
+import re, xml.etree.ElementTree as ET
+r = ET.parse('emu/ui.xml').getroot()
+for n in r.iter('node'):
+    d = (n.get('content-desc') or '') + (n.get('text') or '')
+    if n.get('clickable') == 'true' and re.search(r'(Photo|사진|image|이미지).*(taken|촬영|on|\d)', d, re.I):
+        x1, y1, x2, y2 = map(int, re.findall(r'\d+', n.get('bounds'))); print((x1 + x2) // 2, (y1 + y2) // 2); break
+PY
+)
+[ -n "$P" ] && adb shell input tap $P && sleep 4
+has "사진 1" && result "사진 선택기로 고른 사진이 등록 화면에 들어옴" || result "사진 선택기 경로 확인 못함(선택기 화면 자동 조작 실패 가능)"
+shot 03c_picked; tap "사진에서 글자 읽기" 0 12; shot 03d_ocr_ja
+has "읽어 온 내용" && result "일본어 영수증 자동 언어 인식 결과 표시" || result "일본어 인식 결과 확인 못함"
+adb shell input keyevent KEYCODE_BACK; sleep 1; tap "버리기" 0 2
+
 log "== 4. 앱 재실행 후 영수증 다시 열기"
 start; tap "무선 이어폰 화이트" 0 3; tap "사진 1" 0 3; shot 06_reopen_receipt
 has "맞춤" && result "재실행 후 원본 사진 확대 보기 열림" || result "영수증 다시 열기 실패"
 adb shell input keyevent KEYCODE_BACK; sleep 1
 
 log "== 5. 같은 사진 다시 공유 → 기존 기록 먼저"
-adb shell am start -W -a android.intent.action.SEND -t image/png --eu android.intent.extra.STREAM content://media/external/images/media/$MID --grant-read-uri-permission -n $A/.ui.MainActivity >/dev/null 2>&1; sleep 4
+adb shell am start -W -a android.intent.action.SEND -t image/png --eu android.intent.extra.STREAM $SHARE -n $A/.ui.MainActivity >/dev/null 2>&1; sleep 4
 shot 07_duplicate_share
 has "이미 저장한 사진이에요" && result "중복 안내 표시(다른 상품 추가 가능)" || result "중복 안내 없음"
 tap "다른 상품 추가"; adb shell input keyevent KEYCODE_BACK; sleep 1; tap "버리기" 0 2

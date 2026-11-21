@@ -270,9 +270,6 @@ fun AddScreen(nav: Nav, s: Screen.Add) {
                 Button(onClick = { trySave(false) }, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
                     Icon(Icons.Filled.Check, null); Spacer(Modifier.width(8.dp)); Text(stringResource(R.string.save), style = MaterialTheme.typography.titleMedium)
                 }
-                if (s.editId == null) OutlinedButton(onClick = { trySave(true) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                    Icon(Icons.Filled.PlaylistAdd, null); Spacer(Modifier.width(8.dp)); Text(stringResource(R.string.save_and_next))
-                }
             }
         },
     ) { pad ->
@@ -351,6 +348,10 @@ fun AddScreen(nav: Nav, s: Screen.Add) {
             }
             if (!kr.eumsoft.purchasenote.reminder.Reminders.notificationsAllowed(c) && prefs.askedNotification)
                 InfoBanner(stringResource(R.string.notif_off_info), Icons.Filled.NotificationsOff)
+            Spacer(Modifier.height(16.dp))
+            if (s.editId == null) OutlinedButton(onClick = { trySave(true) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                Icon(Icons.Filled.PlaylistAdd, null); Spacer(Modifier.width(8.dp)); Text(stringResource(R.string.save_and_next))
+            }
             Spacer(Modifier.height(24.dp))
         }
     }

@@ -53,7 +53,7 @@ object Money {
             nf.minimumFractionDigits = d; nf.maximumFractionDigits = d
             val s = nf.format(BigDecimal.valueOf(minor, d))
             // 여러 나라가 같은 기호를 쓰는 경우 혼동을 줄이기 위해 코드도 붙인다.
-            if (code in AMBIGUOUS_SYMBOL_CODES && !s.contains(code)) "$s $code" else s
+            if (code in AMBIGUOUS_SYMBOL_CODES && s.none { it in 'A'..'Z' || it in 'a'..'z' }) "$s $code" else s
         } catch (e: Exception) { BigDecimal.valueOf(minor, d).toPlainString() + " " + code }
     }
 

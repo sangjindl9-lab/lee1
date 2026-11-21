@@ -27,7 +27,6 @@ import androidx.compose.material.icons.filled.TextIncrease
 import androidx.compose.material.icons.filled.ViewAgenda
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
@@ -36,7 +35,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -81,7 +79,6 @@ fun rememberEnableNotifications(): () -> Unit {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(nav: Nav) {
     val c = LocalContext.current
@@ -95,15 +92,17 @@ fun HomeScreen(nav: Nav) {
 
     Scaffold(
         topBar = {
-            TopAppBar(title = { Text(stringResource(R.string.app_name)) }, actions = {
+            Column {
+                BackBar(stringResource(R.string.app_name), onBack = null) {
+                    if (!simple) IconButton(onClick = { nav.go(Screen.Search()) }) { Icon(Icons.Filled.Search, stringResource(R.string.search)) }
+                    IconButton(onClick = { nav.go(Screen.Settings) }) { Icon(Icons.Filled.Settings, stringResource(R.string.settings)) }
+                }
                 // 누구나 바로 켤 수 있는 큰 글씨·간편 보기 (나이를 묻지 않음)
-                TextButton(onClick = { val v = !(simple && large); prefs.setSimple(v); prefs.setLarge(v) }, modifier = Modifier.heightIn(min = 48.dp)) {
-                    Icon(Icons.Filled.TextIncrease, null); Spacer(Modifier.width(4.dp))
+                TextButton(onClick = { val v = !(simple && large); prefs.setSimple(v); prefs.setLarge(v) }, modifier = Modifier.padding(start = 8.dp).heightIn(min = 48.dp)) {
+                    Icon(Icons.Filled.TextIncrease, null); Spacer(Modifier.width(6.dp))
                     Text(stringResource(if (simple && large) R.string.easy_off else R.string.easy_on))
                 }
-                if (!simple) IconButton(onClick = { nav.go(Screen.Search()) }) { Icon(Icons.Filled.Search, stringResource(R.string.search)) }
-                IconButton(onClick = { nav.go(Screen.Settings) }) { Icon(Icons.Filled.Settings, stringResource(R.string.settings)) }
-            })
+            }
         },
         floatingActionButton = {
             if (!simple && all?.isNotEmpty() == true) ExtendedFloatingActionButton(onClick = { nav.go(Screen.Add()) },
