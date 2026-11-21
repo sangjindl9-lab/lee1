@@ -3,6 +3,7 @@ package kr.eumsoft.securitypro.engine.dns
 import android.content.Context
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kr.eumsoft.securitypro.data.AdFilterSource
 import kr.eumsoft.securitypro.data.AppDb
@@ -23,16 +24,31 @@ class FilterManager @Inject constructor(
     private val dir = File(ctx.filesDir, "filters").apply { mkdirs() }
     fun fileOf(id: Int) = File(dir, "$id.txt")
 
-    suspend fun ensureDefaults() = db.dns().insertSourcesIfMissing(FilterCatalog.defaults)
+    private val lock = kotlinx.coroutines.sync.Mutex()
+
+    /** 기본 목록을 넣고, 앱 업데이트로 바뀐 출처 정보(주소·이름·라이선스)는 사용자 설정(켜짐 여부)을 유지한 채 갱신한다. */
+    suspend fun ensureDefaults() {
+        db.dns().insertSourcesIfMissing(FilterCatalog.defaults)
+        val now = db.dns().sourcesNow().associateBy { it.id }
+        for (d in FilterCatalog.defaults) {
+            val cur = now[d.id] ?: continue
+            if (cur.url != d.url || cur.code != d.code || cur.name != d.name || cur.license != d.license || cur.category != d.category)
+                db.dns().updateSource(cur.copy(code = d.code, name = d.name, url = d.url, license = d.license, category = d.category,
+                    ruleCount = if (cur.url != d.url) 0 else cur.ruleCount, lastResult = if (cur.url != d.url) null else cur.lastResult,
+                    updatedAt = System.currentTimeMillis()))
+        }
+    }
 
     /** 목록 하나를 내려받는다. 성공하면 원자적으로 교체한다. */
-    suspend fun update(src: AdFilterSource): Result<Int> = withContext(Dispatchers.IO) {
-        if (src.url.isBlank()) return@withContext Result.success(src.ruleCount)
+    suspend fun update(src: AdFilterSource): Result<Int> = withContext(Dispatchers.IO + kotlinx.coroutines.NonCancellable) { lock.withLock { updateLocked(src) } }
+
+    private suspend fun updateLocked(src: AdFilterSource): Result<Int> {
+        if (src.url.isBlank()) return Result.success(src.ruleCount)
         val r = runCatching {
             val text = download(src.url, MAX_BYTES)
             require(FilterParser.looksValid(text)) { "필터 형식이 아님" }
             val count = FilterParser.countRules(text)
-            val tmp = File(dir, "${src.id}.tmp")
+            val tmp = File(dir, "${src.id}.${System.nanoTime()}.tmp")
             tmp.writeText(text)
             check(tmp.renameTo(fileOf(src.id))) { "파일 교체 실패" }
             db.dns().updateSource(src.copy(ruleCount = count, lastUpdatedAt = System.currentTimeMillis(),
@@ -46,18 +62,18 @@ class FilterManager @Inject constructor(
         db.dns().insertHistory(UpdateHistory(time = System.currentTimeMillis(), target = "AD_FILTER:${src.code}",
             success = r.isSuccess, fromVersion = src.sha256?.take(12) ?: "-",
             toVersion = if (r.isSuccess) "rules=${r.getOrNull()}" else "-", message = r.exceptionOrNull()?.message ?: "OK"))
-        r
+        return r
     }
 
     /** 사용 중인(또는 아직 받지 않은) 목록을 모두 갱신. 반환: (성공 수, 실패 수) */
-    suspend fun updateAll(onlyEnabled: Boolean = true): Pair<Int, Int> {
+    suspend fun updateAll(onlyEnabled: Boolean = true): Pair<Int, Int> = withContext(Dispatchers.IO + kotlinx.coroutines.NonCancellable) {
         ensureDefaults()
         var ok = 0; var fail = 0
         for (s in db.dns().sourcesNow()) {
             if (s.url.isBlank() || (onlyEnabled && !s.enabled)) continue
             if (update(s).isSuccess) ok++ else fail++
         }
-        return ok to fail
+        ok to fail
     }
 
     fun hasFile(id: Int) = fileOf(id).let { it.exists() && it.length() > 0 }

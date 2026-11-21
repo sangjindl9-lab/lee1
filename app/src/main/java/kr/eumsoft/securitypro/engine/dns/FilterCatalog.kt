@@ -20,8 +20,9 @@ object FilterCatalog {
             "https://s3.amazonaws.com/lists.disconnect.me/simple_tracking.txt", "GPL-3.0", true),
         AdFilterSource(4, "phishing_database", "Phishing.Database (active domains)", "PHISHING",
             "https://raw.githubusercontent.com/mitchellkrogza/Phishing.Database/master/phishing-domains-ACTIVE.txt", "MIT", true),
-        AdFilterSource(5, "urlhaus", "URLhaus malware hosts (abuse.ch)", "MALWARE",
-            "https://urlhaus.abuse.ch/downloads/hostfile/", "CC0-1.0", true),
+        // URLhaus hostfile 은 2026-11 기준 HTTP 410(제공 종료) → HaGeZi 위협 인텔리전스(악성·피싱·C2) 로 교체
+        AdFilterSource(5, "hagezi_tif_mini", "HaGeZi Threat Intelligence Feeds (mini)", "MALWARE",
+            "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/tif.mini.txt", "GPL-3.0", true),
         AdFilterSource(ID_USER_BLOCK, "user_block", "사용자 차단 목록", "CUSTOM", "", "-", true),
         AdFilterSource(ID_THREAT, "eum_threat_domains", "EUM 위협 도메인 (서명된 DB)", "MALWARE", "", "CC0-1.0", true),
     )

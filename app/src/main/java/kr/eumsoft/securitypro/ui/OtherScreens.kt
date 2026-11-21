@@ -103,9 +103,9 @@ fun LicensesScreen() = Column(Modifier.verticalScroll(rememberScrollState()).pad
         "ed25519-dalek" to "BSD-3-Clause",
         "AndroidX · Jetpack Compose · Room · WorkManager · DataStore · Hilt(Dagger)" to "Apache License 2.0",
         "Kotlin · kotlinx.coroutines" to "Apache License 2.0",
-        "AdGuard DNS filter / Disconnect Tracking" to "GPL-3.0 — 앱에 포함하지 않으며 사용자 기기가 원 출처에서 직접 내려받음",
+        "AdGuard DNS filter / Disconnect Tracking / HaGeZi Threat Intelligence Feeds" to "GPL-3.0 — 앱에 포함하지 않으며 사용자 기기가 원 출처에서 직접 내려받음",
         "StevenBlack hosts · Phishing.Database" to "MIT — 기기가 원 출처에서 직접 내려받음",
-        "URLhaus · MalwareBazaar (abuse.ch)" to "CC0-1.0",
+        "MalwareBazaar (abuse.ch, 운영 DB 적재 시)" to "CC0-1.0",
     ).forEach { (n, l) -> InfoCard { Text(n, style = MaterialTheme.typography.titleMedium); Text(l, style = MaterialTheme.typography.bodyMedium) } }
 }
 
