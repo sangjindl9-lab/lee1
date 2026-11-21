@@ -1,4 +1,4 @@
-// 이음 견적발주 — 웹 서버 (Express + PostgreSQL)
+// 이음 견적서·발주서 — 웹 서버 (Express + PostgreSQL)
 // 회원가입·로그인, 발주자·거래처·발주서 저장, 계정 삭제, 정적 화면 제공
 "use strict";
 const path = require("path");

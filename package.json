@@ -2,7 +2,7 @@
   "name": "eum-balju",
   "version": "1.0.0",
   "private": true,
-  "description": "이음 견적발주 — 견적서·발주서 작성·PDF 출력 웹/안드로이드 앱",
+  "description": "이음 견적서·발주서 — 견적서·발주서 작성·PDF 출력 웹/안드로이드 앱",
   "main": "server.js",
   "engines": { "node": ">=20" },
   "scripts": {

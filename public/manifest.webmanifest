@@ -1,6 +1,6 @@
 {
-  "name": "이음 견적발주",
-  "short_name": "이음 견적발주",
+  "name": "이음 견적서·발주서",
+  "short_name": "이음 견적서·발주서",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#eef0f4",
