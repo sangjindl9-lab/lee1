@@ -1,6 +1,6 @@
-# 노트프로 개인정보처리방침 (초안 — 출시 전 법률 검토 필요)
+# 노트프로 개인정보처리방침
 
-시행일: 출시일 / 운영자: 이음소프트웨어 / 문의: pm999@naver.com
+시행일: 2026년 11월 21일 / 운영자: 이음소프트웨어 / 문의: pm999@naver.com
 
 ## 1. 수집 항목과 목적
 | 항목 | 언제 | 목적 | 보관 |
@@ -25,8 +25,8 @@
 전송 구간 TLS, 비밀번호 bcrypt 해시, 사용자별 데이터 격리, 백업 파일 AES-256 암호화, 관리자의 노트 내용 열람 불가.
 
 ## 5. 국외 이전
-서버 위치(Railway 지역)와 AI 제공업체 소재지(미국)에 따라 국외 이전이 발생할 수 있으며, 출시 전 고지 문구를 확정합니다.
+로그인해 동기화하면 노트 데이터가 노트프로 서버(클라우드 사업자 Railway, 미국 등)에 저장되고, AI 기능을 쓰면 해당 글자가 AI 제공업체(미국)로 전송될 수 있습니다. 로그인하지 않으면 국외 이전은 없습니다.
 
 ---
-# NotePro Privacy Policy (draft — legal review required before launch)
+# NotePro Privacy Policy
 Without signing in, all notes stay on the device. When signed in, notes, attachments and recordings are synced to the NotePro server. AI features send the selected page text to an AI provider only after consent. Handwriting and document text recognition run on device. You can export your data, delete your account and sign out devices in “Account & sync”.
