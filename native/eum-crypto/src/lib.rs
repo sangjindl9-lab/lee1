@@ -4,7 +4,7 @@ use jni::JNIEnv;
 
 /// Ed25519 서명 검증 (위협 DB 업데이트 무결성).
 pub fn verify_ed25519(public_key: &[u8], msg: &[u8], sig: &[u8]) -> bool {
-    use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+    use ed25519_dalek::{Signature, VerifyingKey};
     let Ok(pk) = <[u8; 32]>::try_from(public_key) else { return false };
     let Ok(sg) = <[u8; 64]>::try_from(sig) else { return false };
     let Ok(vk) = VerifyingKey::from_bytes(&pk) else { return false };

@@ -37,9 +37,9 @@ jobs:
           export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/$NDK_VERSION"
           OUT=../jniLibs; mkdir -p $OUT
           echo "== ABI 별 빌드 결과" > ../rust-abi.txt
-          cargo ndk -P 29 -t arm64-v8a -t x86_64 -t armeabi-v7a -o $OUT build --release -p eum-crypto
+          cargo ndk --platform 29 -t arm64-v8a -t x86_64 -t armeabi-v7a -o $OUT build --release -p eum-crypto
           for t in arm64-v8a x86_64 armeabi-v7a; do
-            if cargo ndk -P 29 -t $t -o $OUT build --release -p eum-yara 2> ../yara-$t.err; then echo "eum-yara $t: OK" >> ../rust-abi.txt
+            if cargo ndk --platform 29 -t $t -o $OUT build --release -p eum-yara 2> ../yara-$t.err; then echo "eum-yara $t: OK" >> ../rust-abi.txt
             else echo "eum-yara $t: 실패 (경량 패턴 엔진으로 대체) — $(grep -m3 '^error' ../yara-$t.err | tr '\n' ' ')" >> ../rust-abi.txt; fi
           done
           find $OUT -name '*.so' -exec ls -la {} \; | tee -a ../rust-abi.txt
