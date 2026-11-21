@@ -14,11 +14,14 @@ ARG APP_URL
 ARG KEYSTORE_B64
 ARG KEYSTORE_PASSWORD
 ARG DL_TOKEN
-RUN echo "$KEYSTORE_B64" | base64 -d > /tmp/upload.jks \
+RUN printf '%s' "$KEYSTORE_B64" | tr -d ' \r\n\t"' | base64 -d > /tmp/upload.jks \
+ && PW=$(printf '%s' "$KEYSTORE_PASSWORD" | tr -d ' \r\n\t"') \
+ && echo "[builder] KEYSTORE_B64 길이=$(printf '%s' "$KEYSTORE_B64" | wc -c), jks 크기=$(wc -c < /tmp/upload.jks), 비밀번호 길이=${#PW}" \
+ && keytool -list -keystore /tmp/upload.jks -storepass "$PW" | grep -i "upload" \
  && chmod +x gradlew \
  && ./gradlew --no-daemon -q bundleRelease assembleRelease \
       -PappUrl="$APP_URL" -PreleaseStoreFile=/tmp/upload.jks \
-      -PreleaseStorePassword="$KEYSTORE_PASSWORD" -PreleaseKeyAlias=upload -PreleaseKeyPassword="$KEYSTORE_PASSWORD" \
+      -PreleaseStorePassword="$PW" -PreleaseKeyAlias=upload -PreleaseKeyPassword="$PW" \
  && rm -f /tmp/upload.jks \
  && mkdir -p /out/$DL_TOKEN \
  && cp app/build/outputs/bundle/release/app-release.aab /out/$DL_TOKEN/family-album-release.aab \
