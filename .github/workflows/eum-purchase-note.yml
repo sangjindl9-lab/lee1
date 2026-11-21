@@ -41,7 +41,24 @@ jobs:
         env: { GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }
         run: |
           grep -E "^e: |error:|FAILED|What went wrong|Exception|warning:.*unresolved" -A3 build.log | head -400 > errors.txt || true
-          gh release delete eum-purchase-note-buildlog --yes --cleanup-tag || true
+          # 공개 저장소에서 로그인 없이 볼 수 있도록 오류를 주석(annotation)으로도 남긴다 (여러 줄을 묶어 9개 이하)
+          python3 - <<'PY'
+          import re
+          log = open('build.log', encoding='utf-8', errors='replace').read().splitlines()
+          errs = [re.sub(r'^e: file://\S*/app/src/', 'app/src/', l) for l in log if l.startswith('e: ') or l.startswith('ERROR') or ' error:' in l]
+          i = next((k for k, l in enumerate(log) if 'What went wrong' in l), None)
+          if i is not None: errs.append(' / '.join(log[i:i + 8]))
+          try: errs += [l for l in open('tests.txt') if l.startswith('FAIL') or l.startswith('    ')][:40]
+          except Exception: pass
+          chunk, out = '', []
+          for e in errs[:120]:
+              e = e.strip().replace('%', '%25')
+              if len(chunk) + len(e) > 3500: out.append(chunk); chunk = ''
+              chunk += e + '%0A'
+          if chunk: out.append(chunk)
+          for c in out[:9]: print('::error::' + c)
+          PY
+          touch tests.txt
           gh release create eum-purchase-note-buildlog build.log errors.txt tests.txt --target "$GITHUB_SHA" --prerelease --title "이음 구매노트 빌드 로그" --notes "빌드 실패 로그"
       - name: APK 권한 확인
         run: |

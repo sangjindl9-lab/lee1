@@ -70,7 +70,7 @@ import kr.eumsoft.purchasenote.data.Prefs
 import kr.eumsoft.purchasenote.data.Repo
 import java.time.LocalDate
 
-const val SITE = "https://eum-purchase-note.up.railway.app"
+const val SITE = "https://eum-purchase-note-production.up.railway.app"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
