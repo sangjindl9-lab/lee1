@@ -74,6 +74,16 @@ elif a.bazaar:
     sources.append({'code': 'malwarebazaar', 'name': 'MalwareBazaar (abuse.ch) Android APK', 'url': 'https://bazaar.abuse.ch/', 'license': 'CC0-1.0', 'test': False, 'checked': now})
     print('MalwareBazaar APK hashes:', n)
 
+# 이전에 배포한 운영 해시(MalwareBazaar 등)를 누적한다 — API 는 최근 표본만 주므로 덮어쓰지 않는다
+prev = glob.glob(os.path.join(ROOT, 'db', 'threat-db-*.json'))
+if prev:
+    old = json.load(open(prev[0]))
+    have = {h['sha256'] for h in hashes}
+    kept = [h for h in old.get('hashes', []) if h.get('category') != 'TEST' and h['sha256'] not in have]
+    hashes += kept
+    for src in old.get('sources', []):
+        if src['code'] not in {x['code'] for x in sources}: sources.append(src)
+    print('이전 DB 에서 누적:', len(kept))
 payload = {'version': version, 'sources': sources, 'hashes': hashes, 'yara': yara, 'patterns': patterns, 'false_positives': [],
            'domains': {'phishing': ['phishing-test.eum-security.invalid'], 'malware': ['malware-test.eum-security.invalid']}}
 pbytes = json.dumps(payload, ensure_ascii=True, separators=(',', ':')).encode()

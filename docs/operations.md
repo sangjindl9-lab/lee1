@@ -23,7 +23,7 @@
 
 ## 위협 DB 업데이트 절차
 1. 규칙 수정: `db_src/yara/*.yar`, `db_src/patterns.json`
-2. (선택) MalwareBazaar 실데이터: abuse.ch 무료 Auth-Key 로 full CSV 를 받아 `--bazaar` 로 지정
+2. MalwareBazaar 실데이터: GitHub Secrets `ABUSECH_AUTH_KEY`(등록됨) → Actions 의 'MalwareBazaar' 워크플로 실행 → 릴리스 `eum-security-threatdata` 의 mb_apk.json 을 받아 `--bazaar mb_apk.json` 으로 지정 (이전 DB 해시는 자동 누적)
 3. 생성·서명: `python3 tools/build_threat_db.py --key eum_db_signing_key.pem [--bazaar full.csv.zip]`
    - 버전은 기본 UTC `YYYYMMDDHH` — 항상 이전보다 커야 합니다 (앱이 같거나 낮은 버전을 롤백으로 거부)
 4. `db/` 를 커밋·push → 앱이 하루 1회(또는 보안 DB 화면 '지금 업데이트') 서명·SHA-256 확인 후 원자적으로 교체
