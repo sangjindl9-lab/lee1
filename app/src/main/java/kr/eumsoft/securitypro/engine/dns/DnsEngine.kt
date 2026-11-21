@@ -57,9 +57,10 @@ class DnsEngine @Inject constructor(
     @Synchronized
     fun reapply(s: AppSettings, systemDns: List<String>, paused: Boolean): Boolean {
         val p = proxy ?: return false
-        val r = p.reapplySettings(buildSettings(s, systemDns, paused), EnumSet.of(DnsProxy.ReapplyOption.SETTINGS, DnsProxy.ReapplyOption.FILTERS))
-        Log.i(TAG, "DnsProxy 설정 재적용")
-        return r != null
+        return try {
+            p.reapplySettings(buildSettings(s, systemDns, paused), EnumSet.of(DnsProxy.ReapplyOption.SETTINGS, DnsProxy.ReapplyOption.FILTERS))
+            Log.i(TAG, "DnsProxy 설정 재적용"); true
+        } catch (e: Exception) { Log.w(TAG, "설정 재적용 실패 → 다시 시작", e); false }
     }
 
     @Synchronized

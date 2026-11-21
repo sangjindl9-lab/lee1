@@ -40,29 +40,29 @@ interface InstalledAppDao {
 }
 
 @Dao
-interface ThreatDao {
-    @Query("SELECT * FROM threat_hashes WHERE sha256 = :h LIMIT 1") suspend fun findHash(h: String): ThreatHash?
-    @Query("SELECT COUNT(*) FROM threat_hashes") fun hashCount(): Flow<Int>
-    @Query("SELECT COUNT(*) FROM threat_rules WHERE kind = :kind") fun ruleCount(kind: String): Flow<Int>
-    @Query("SELECT * FROM threat_rules WHERE kind = :kind") suspend fun rules(kind: String): List<ThreatRule>
-    @Query("SELECT * FROM threat_db_versions") fun versions(): Flow<List<ThreatDbVersion>>
-    @Query("SELECT * FROM threat_db_versions WHERE component = :c") suspend fun version(c: String): ThreatDbVersion?
-    @Query("SELECT * FROM threat_sources ORDER BY name") fun sources(): Flow<List<ThreatSource>>
-    @Query("SELECT value FROM security_settings WHERE `key` = :k") suspend fun setting(k: String): String?
-    @Upsert suspend fun putSetting(s: SecuritySetting)
+abstract class ThreatDao {
+    @Query("SELECT * FROM threat_hashes WHERE sha256 = :h LIMIT 1") abstract suspend fun findHash(h: String): ThreatHash?
+    @Query("SELECT COUNT(*) FROM threat_hashes") abstract fun hashCount(): Flow<Int>
+    @Query("SELECT COUNT(*) FROM threat_rules WHERE kind = :kind") abstract fun ruleCount(kind: String): Flow<Int>
+    @Query("SELECT * FROM threat_rules WHERE kind = :kind") abstract suspend fun rules(kind: String): List<ThreatRule>
+    @Query("SELECT * FROM threat_db_versions") abstract fun versions(): Flow<List<ThreatDbVersion>>
+    @Query("SELECT * FROM threat_db_versions WHERE component = :c") abstract suspend fun version(c: String): ThreatDbVersion?
+    @Query("SELECT * FROM threat_sources ORDER BY name") abstract fun sources(): Flow<List<ThreatSource>>
+    @Query("SELECT value FROM security_settings WHERE `key` = :k") abstract suspend fun setting(k: String): String?
+    @Upsert abstract suspend fun putSetting(s: SecuritySetting)
 
-    @Query("DELETE FROM threat_hashes") suspend fun clearHashes()
-    @Query("DELETE FROM threat_rules") suspend fun clearRules()
-    @Query("DELETE FROM threat_sources") suspend fun clearSources()
-    @Query("DELETE FROM threat_hashes WHERE sha256 IN (:hashes)") suspend fun deleteHashes(hashes: List<String>)
-    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertHashes(h: List<ThreatHash>)
-    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertRules(r: List<ThreatRule>)
-    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertSources(s: List<ThreatSource>)
-    @Upsert suspend fun putVersion(v: ThreatDbVersion)
+    @Query("DELETE FROM threat_hashes") abstract suspend fun clearHashes()
+    @Query("DELETE FROM threat_rules") abstract suspend fun clearRules()
+    @Query("DELETE FROM threat_sources") abstract suspend fun clearSources()
+    @Query("DELETE FROM threat_hashes WHERE sha256 IN (:hashes)") abstract suspend fun deleteHashes(hashes: List<String>)
+    @Insert(onConflict = OnConflictStrategy.REPLACE) abstract suspend fun insertHashes(h: List<ThreatHash>)
+    @Insert(onConflict = OnConflictStrategy.REPLACE) abstract suspend fun insertRules(r: List<ThreatRule>)
+    @Insert(onConflict = OnConflictStrategy.REPLACE) abstract suspend fun insertSources(s: List<ThreatSource>)
+    @Upsert abstract suspend fun putVersion(v: ThreatDbVersion)
 
     /** 위협 DB 전체를 한 트랜잭션으로 교체한다 (원자적 교체 — 중간에 실패하면 기존 데이터 유지). */
     @Transaction
-    suspend fun replaceAll(
+    open suspend fun replaceAll(
         hashes: List<ThreatHash>, rules: List<ThreatRule>, sources: List<ThreatSource>,
         falsePositives: List<String>, versions: List<ThreatDbVersion>,
     ) {
