@@ -351,16 +351,8 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun requiredMediaPermissions(): List<String> = when {
-        Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> listOf(
-            Manifest.permission.READ_MEDIA_IMAGES,
-            Manifest.permission.READ_MEDIA_VIDEO,
-        )
-        Build.VERSION.SDK_INT <= Build.VERSION_CODES.S_V2 -> listOf(
-            Manifest.permission.READ_EXTERNAL_STORAGE,
-        )
-        else -> emptyList()
-    }
+    /** 시스템 선택기(ACTION_GET_CONTENT)는 선택한 파일에 대한 URI 권한을 주므로 별도 권한을 요구하지 않는다. */
+    private fun requiredMediaPermissions(): List<String> = emptyList()
 
     private fun requestMediaPermissionsIfNeeded() {
         val missing = requiredMediaPermissions().filter {

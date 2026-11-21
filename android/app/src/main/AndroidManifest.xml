@@ -4,12 +4,8 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
-    <!-- 사진·동영상 고르기/업로드 (API 33+ 세분화 권한, 그 이하는 기존 저장소 권한) -->
-    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
-    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
-    <uses-permission
-        android:name="android.permission.READ_EXTERNAL_STORAGE"
-        android:maxSdkVersion="32" />
+    <!-- 사진·동영상 고르기는 시스템 선택기(ACTION_GET_CONTENT)가 URI 권한을 주므로 미디어 읽기 권한이 필요 없다.
+         (Google Play 사진·동영상 권한 정책 대응) -->
 
     <!-- 원본/ZIP 다운로드를 DownloadManager 로 내려받기 (API 28 이하만 권한 필요) -->
     <uses-permission
