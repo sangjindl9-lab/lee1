@@ -224,6 +224,8 @@ app.get("/vendor/html2canvas.min.js", (req, res) => res.sendFile(nm("html2canvas
 app.get("/vendor/jspdf.umd.min.js", (req, res) => res.sendFile(nm("jspdf/dist/jspdf.umd.min.js"), { maxAge: "30d" }));
 app.get(["/privacy", "/privacy.html"], (req, res) => res.sendFile(path.join(__dirname, "public/privacy.html")));
 app.get(["/delete-account", "/delete-account.html"], (req, res) => res.sendFile(path.join(__dirname, "public/delete-account.html")));
+// 스토어 등록용 이미지(아이콘·그래픽·스크린샷)는 다른 사이트에서도 가져갈 수 있게 연다.
+app.use("/store", (req, res, next) => { res.setHeader("Access-Control-Allow-Origin", "*"); next(); });
 app.use(express.static(path.join(__dirname, "public"), {
   setHeaders(res, p) { if (p.endsWith(".html")) res.setHeader("Cache-Control", "no-cache"); },
 }));
