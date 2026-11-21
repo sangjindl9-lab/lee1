@@ -311,3 +311,56 @@ object FileOps {
         return out
     }
 }
+
+// ---- 중복 파일 찾기 ----
+object Duplicates {
+    private const val MIN_SIZE = 1024L
+
+    /** 같은 크기 → 같은 MD5 인 파일들을 묶어서 돌려줌. progress(현재, 전체) */
+    fun find(showHidden: Boolean, trashDir: File, progress: (Int, Int) -> Unit): List<List<FItem>> {
+        val root = FileOps.root
+        val bySize = HashMap<Long, MutableList<File>>()
+        root.walkTopDown()
+            .onEnter { d ->
+                d == root || ((showHidden || !d.name.startsWith(".")) &&
+                    d.absolutePath != trashDir.absolutePath &&
+                    !d.absolutePath.endsWith("/Android/data") && !d.absolutePath.endsWith("/Android/obb"))
+            }
+            .filter { it.isFile && (showHidden || !it.name.startsWith(".")) }
+            .forEach { f ->
+                val s = f.length()
+                if (s >= MIN_SIZE) bySize.getOrPut(s) { mutableListOf() }.add(f)
+            }
+        val candidates = bySize.values.filter { it.size > 1 }
+        val total = candidates.sumOf { it.size }
+        var done = 0
+        val groups = ArrayList<List<FItem>>()
+        for (same in candidates) {
+            val byHash = HashMap<String, MutableList<File>>()
+            for (f in same) {
+                val h = runCatching { md5(f) }.getOrNull()
+                done++
+                if (done % 5 == 0 || done == total) progress(done, total)
+                if (h != null) byHash.getOrPut(h) { mutableListOf() }.add(f)
+            }
+            byHash.values.filter { it.size > 1 }.forEach { g ->
+                groups += g.sortedBy { it.lastModified() }.map { it.toItem() }
+            }
+        }
+        // 낭비 용량이 큰 묶음부터
+        return groups.sortedByDescending { g -> g.first().size * (g.size - 1) }
+    }
+
+    private fun md5(f: File): String {
+        val md = java.security.MessageDigest.getInstance("MD5")
+        val buf = ByteArray(256 * 1024)
+        FileInputStream(f).use { ins ->
+            while (true) {
+                val n = ins.read(buf)
+                if (n <= 0) break
+                md.update(buf, 0, n)
+            }
+        }
+        return md.digest().joinToString("") { "%02x".format(it) }
+    }
+}
