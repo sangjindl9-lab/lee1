@@ -43,7 +43,7 @@ log "== 2. 앱 시작 · 시작 시간 (시스템 언어 영어 — UI 조작은
 adb shell pm grant $A android.permission.POST_NOTIFICATIONS 2>/dev/null
 adb shell cmd locale set-app-locales $A --locales ko-KR 2>/dev/null
 adb shell am force-stop $A
-log "  콜드 스타트: $(adb shell am start -W -n $A/.ui.MainActivity | grep -E 'TotalTime|WaitTime' | tr -d '\r' | tr '\n' ' ')"
+log "  콜드 스타트: $(adb shell am start -W -n $A/kr.eumsoft.securitypro.ui.MainActivity | grep -E 'TotalTime|WaitTime' | tr -d '\r' | tr '\n' ' ')"
 sleep 3; shot 01_onboarding
 tap "Next"; tap "Next"; tap "Get started"; sleep 2; shot 02_home
 
@@ -146,11 +146,11 @@ adb shell dumpsys batterystats --charged $A 2>/dev/null | grep -m3 -iE "Estimate
 log "== 15. 앱 종료 후 재실행 (설정 유지 · VPN 유지)"
 adb shell am force-stop $A; sleep 3
 log "  강제 종료 후 VPN: $(adb shell dumpsys connectivity | grep -c 'Transports: VPN') (0 이면 꺼짐 — 사용자가 다시 켜야 함)"
-adb shell am start -W -n $A/.ui.MainActivity >/dev/null; sleep 4; shot 14_relaunch
+adb shell am start -W -n $A/kr.eumsoft.securitypro.ui.MainActivity >/dev/null; sleep 4; shot 14_relaunch
 has "Get started" && ng "재실행 시 첫 안내가 다시 나옴(설정 유지 실패)" || ok "재실행 후 첫 안내 생략 (설정 유지)"
 
 log "== 16. VPN 끄기 → 네트워크 복구"
-adb shell am start -W -n $A/.ui.MainActivity >/dev/null; sleep 2
+adb shell am start -W -n $A/kr.eumsoft.securitypro.ui.MainActivity >/dev/null; sleep 2
 tap "Home" 0 2
 has 'checked="true"' && tap "Block ads, trackers & phishing" 0 5
 for i in $(seq 1 15); do adb shell dumpsys connectivity | grep -q "Transports: VPN" || break; sleep 1; done
@@ -159,7 +159,7 @@ AFTER_AD=$(resolve doubleclick.net); log "  VPN 끈 뒤 doubleclick.net → ${AF
 
 log "== 17. 한국어 화면 (스토어 스크린샷, API 33+ 앱별 언어)"
 adb shell cmd locale set-app-locales $A --locales ko-KR 2>/dev/null; adb shell am force-stop $A; sleep 1
-adb shell am start -W -n $A/.ui.MainActivity >/dev/null; sleep 4; shot 15_home_ko
+adb shell am start -W -n $A/kr.eumsoft.securitypro.ui.MainActivity >/dev/null; sleep 4; shot 15_home_ko
 has "광고 차단" && { ok "한국어 화면 전환"; tap "광고 차단" 0 2; shot 16_adblock_ko; tap "검사" 0 2; shot 17_scan_ko; } || log "  (앱별 언어 전환 미지원 또는 실패)"
 
 log "== 18. Play 판 (광고·추적 차단 제외) 화면 · 차단 범위"
