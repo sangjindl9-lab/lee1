@@ -10,6 +10,8 @@
     <!-- 설치 앱 악성코드 검사가 핵심 기능이므로 사용 (Play Console 에서 사용 목적 신고) -->
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="QueryAllPackagesPermission" />
+    <!-- 라이브러리의 ACCESS_WIFI_STATE 때문에 Wi-Fi 가 필수로 잡히지 않도록 -->
+    <uses-feature android:name="android.hardware.wifi" android:required="false" />
 
     <application
         android:name=".App"
