@@ -1,5 +1,4 @@
 import { redirect } from "next/navigation";
-import prisma from "@/lib/db";
 import { getSessionUser } from "@/lib/auth";
 import LoginForm from "@/components/LoginForm";
 
@@ -8,11 +7,6 @@ export const dynamic = "force-dynamic";
 export default async function LoginPage() {
   const session = await getSessionUser();
   if (session) redirect(session.role === "PARENT" ? "/app" : "/simple");
-
-  const users = await prisma.user.findMany({
-    orderBy: [{ role: "asc" }, { name: "asc" }],
-    select: { email: true, name: true, relation: true, role: true, family: { select: { name: true } } },
-  });
 
   return (
     <main className="mx-auto flex min-h-dvh max-w-5xl flex-col items-center justify-center gap-8 px-5 py-12">
@@ -24,15 +18,7 @@ export default async function LoginPage() {
         </p>
       </div>
 
-      <LoginForm
-        demoUsers={users.map((u) => ({
-          email: u.email,
-          name: u.name,
-          relation: u.relation,
-          role: u.role,
-          familyName: u.family?.name ?? null,
-        }))}
-      />
+      <LoginForm />
       <a href="/privacy" className="text-xs font-semibold text-slate-400 underline">개인정보처리방침</a>
     </main>
   );

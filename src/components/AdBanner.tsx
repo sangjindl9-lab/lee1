@@ -32,20 +32,7 @@ export default function AdBanner({ slot }: { slot: string }) {
   }, [slot]);
 
   if (!state) return null;
-  if (state.reason === "AD_FREE") {
-    return (
-      <div className="rounded-2xl border border-emerald-100 bg-emerald-50/60 px-4 py-2 text-xs font-semibold text-emerald-700">
-        광고 제거가 적용되어 이 화면에는 광고가 표시되지 않습니다.
-      </div>
-    );
-  }
-  if (!state.show) {
-    return (
-      <div className="rounded-2xl border border-slate-100 bg-white/60 px-4 py-2 text-[11px] text-slate-400">
-        오늘의 광고는 한 번만 표시됩니다. (다음 광고는 내일)
-      </div>
-    );
-  }
+  if (!state.show) return null;
   return (
     <div
       data-testid="ad-banner"

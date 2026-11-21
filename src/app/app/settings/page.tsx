@@ -3,18 +3,19 @@ import SettingsPanel from "@/components/SettingsPanel";
 import prisma from "@/lib/db";
 import { getSessionUser } from "@/lib/auth";
 import { assertFamily } from "@/lib/page-data";
-import { getEntitlement, listInquiries } from "@/lib/billing";
+import { listInquiries } from "@/lib/billing";
 import { listTags } from "@/lib/library";
-import { isAndroidApp } from "@/lib/platform";
+import { formatBytes, getUsage } from "@/lib/plans";
+import { formatKstDateTime } from "@/lib/date";
 
 export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
   const user = await getSessionUser();
-  const inApp = await isAndroidApp();
   const familyId = await assertFamily(user);
-  const [entitlement, inquiries, members, tags] = await Promise.all([
-    getEntitlement(user!.id),
+  const [usage, family, inquiries, members, tags] = await Promise.all([
+    getUsage(familyId),
+    prisma.family.findUnique({ where: { id: familyId }, select: { inviteCode: true } }),
     listInquiries(user!.id),
     prisma.user.findMany({ where: { familyId }, select: { id: true, name: true, relation: true, role: true }, orderBy: { role: "asc" } }),
     listTags(familyId),
@@ -24,9 +25,23 @@ export default async function SettingsPage() {
     <AppShell active="/app/settings">
       <div className="mb-4">
         <h1 className="text-xl font-black tracking-tight text-slate-900">설정</h1>
-        <p className="text-xs text-slate-500">{inApp ? "가족 구성원·태그·문의를 확인할 수 있습니다." : "광고 제거 적용 상태·구매 복원·문의는 이 화면에서만 확인할 수 있습니다."}</p>
+        <p className="text-xs text-slate-500">요금제·저장 공간, 가족 초대, 문의, 계정을 관리합니다.</p>
       </div>
-      <SettingsPanel initialEntitlement={entitlement} initialInquiries={inquiries} members={members} tags={tags} hideBilling={inApp} />
+      <SettingsPanel
+        usage={{
+          planId: usage.plan.id,
+          planName: usage.plan.name,
+          usedLabel: formatBytes(usage.usedBytes),
+          quotaLabel: formatBytes(usage.quotaBytes),
+          percent: usage.percent,
+          expiresAt: usage.planExpiresAt ? formatKstDateTime(new Date(usage.planExpiresAt)) : null,
+        }}
+        inviteCode={user!.role === "PARENT" ? family?.inviteCode ?? null : null}
+        initialInquiries={inquiries}
+        members={members}
+        tags={tags}
+        isParent={user!.role === "PARENT"}
+      />
     </AppShell>
   );
 }

@@ -1,10 +1,17 @@
 import { createHash, randomUUID } from "node:crypto";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import sharp from "sharp";
 import type { MediaAsset } from "@prisma/client";
 import prisma from "./db";
 import { MEDIA_KIND, MAX_UPLOAD_BYTES } from "./constants";
-import { ensureStorage, extensionFor, removeStored, writeStored } from "./storage";
+import { extensionFor, readStored, removeStored, storedSize, writeStored } from "./storage";
+import { addUsage, planOf, type PlanDef } from "./plans";
+
+const run = promisify(execFile);
 
 export class MediaError extends Error {
   code: string;
@@ -27,116 +34,211 @@ export function kindFromMime(mimeType: string, fileName = ""): "IMAGE" | "VIDEO"
   throw new MediaError("UNSUPPORTED_TYPE", "지원하지 않는 파일 형식입니다.");
 }
 
-type StoredFiles = {
+export function newObjectBase(familyId: string): string {
+  return `f/${familyId}/${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`;
+}
+
+type Processed = {
   originalPath: string;
   previewPath: string | null;
   thumbPath: string | null;
   width: number | null;
   height: number | null;
+  durationSec: number | null;
   previewQuality: string | null;
   originalQuality: string | null;
+  storedBytes: number;
+  compressed: boolean;
+  mimeType: string;
 };
 
 /**
- * 이미지: 원본 바이트는 그대로 보관하고, 빠른 열람용 미리보기(1280px webp)와
- * 썸네일(480px webp)을 별도 생성한다. 동영상: 원본과 미리보기 화질 정보를 분리 표기.
+ * 이미지 처리: 미리보기(1280px webp)·썸네일(480px webp).
+ * 무료 요금제는 원본 대신 고화질 압축본(긴 변 2048px JPEG)으로 바꿔 저장한다.
  */
-export async function storeMediaFiles(
-  buffer: Buffer,
-  kind: "IMAGE" | "VIDEO",
-  fileName: string,
-  mimeType: string,
-): Promise<StoredFiles> {
-  await ensureStorage();
-  const id = randomUUID();
-  const base = `${id}-${Date.now().toString(36)}`;
-
-  if (kind === MEDIA_KIND.IMAGE) {
-    const originalPath = `originals/${base}${extensionFor(fileName, mimeType)}`;
-    let width: number | null = null;
-    let height: number | null = null;
-    let preview: Buffer;
-    let thumb: Buffer;
-    try {
-      const image = sharp(buffer, { failOn: "none" }).rotate();
-      const meta = await image.metadata();
-      width = meta.width ?? null;
-      height = meta.height ?? null;
-      preview = await sharp(buffer, { failOn: "none" })
-        .rotate()
-        .resize({ width: 1280, withoutEnlargement: true })
-        .webp({ quality: 80 })
-        .toBuffer();
-      thumb = await sharp(buffer, { failOn: "none" })
-        .rotate()
-        .resize({ width: 480, withoutEnlargement: true })
-        .webp({ quality: 72 })
-        .toBuffer();
-    } catch {
-      // 이미지 디코딩 실패 시에도 원본은 보관하되 미리보기는 만들지 못했음을 남긴다.
-      await writeStored(originalPath, buffer);
-      return {
-        originalPath,
-        previewPath: null,
-        thumbPath: null,
-        width: null,
-        height: null,
-        previewQuality: "미리보기 생성 실패",
-        originalQuality: "원본",
-      };
-    }
-    const previewPath = `previews/${base}.webp`;
-    const thumbPath = `thumbs/${base}.webp`;
-    await Promise.all([
-      writeStored(originalPath, buffer),
-      writeStored(previewPath, preview),
-      writeStored(thumbPath, thumb),
+async function processImage(buffer: Buffer, base: string, originalPath: string, mimeType: string, plan: PlanDef): Promise<Processed> {
+  let width: number | null = null;
+  let height: number | null = null;
+  let originalBytes = buffer.byteLength;
+  let finalOriginal = originalPath;
+  let finalMime = mimeType;
+  let compressed = false;
+  try {
+    const meta = await sharp(buffer, { failOn: "none" }).rotate().metadata();
+    width = meta.width ?? null;
+    height = meta.height ?? null;
+    const [preview, thumb] = await Promise.all([
+      sharp(buffer, { failOn: "none" }).rotate().resize({ width: 1280, withoutEnlargement: true }).webp({ quality: 80 }).toBuffer(),
+      sharp(buffer, { failOn: "none" }).rotate().resize({ width: 480, withoutEnlargement: true }).webp({ quality: 72 }).toBuffer(),
     ]);
+    if (!plan.keepOriginals) {
+      const small = await sharp(buffer, { failOn: "none" })
+        .rotate()
+        .resize({ width: 2048, height: 2048, fit: "inside", withoutEnlargement: true })
+        .jpeg({ quality: 85, mozjpeg: true })
+        .toBuffer();
+      if (small.byteLength < buffer.byteLength) {
+        finalOriginal = `${base}-hq.jpg`;
+        finalMime = "image/jpeg";
+        await writeStored(finalOriginal, small, "image/jpeg");
+        if (finalOriginal !== originalPath) await removeStored([originalPath]);
+        originalBytes = small.byteLength;
+        compressed = true;
+      }
+    }
+    const previewPath = `${base}-p.webp`;
+    const thumbPath = `${base}-t.webp`;
+    await Promise.all([writeStored(previewPath, preview, "image/webp"), writeStored(thumbPath, thumb, "image/webp")]);
     return {
-      originalPath,
+      originalPath: finalOriginal,
       previewPath,
       thumbPath,
       width,
       height,
-      previewQuality: "미리보기 1280px WebP",
-      originalQuality: "원본 화질 그대로",
+      durationSec: null,
+      previewQuality: "미리보기 1280px",
+      originalQuality: compressed ? "고화질 압축본 (무료 요금제)" : "원본 화질 그대로",
+      storedBytes: originalBytes + preview.byteLength + thumb.byteLength,
+      compressed,
+      mimeType: finalMime,
+    };
+  } catch {
+    return {
+      originalPath,
+      previewPath: null,
+      thumbPath: null,
+      width: null,
+      height: null,
+      durationSec: null,
+      previewQuality: "미리보기 생성 실패",
+      originalQuality: "원본",
+      storedBytes: originalBytes,
+      compressed: false,
+      mimeType,
     };
   }
+}
 
-  // VIDEO
-  const originalPath = `originals/${base}${extensionFor(fileName, mimeType)}`;
-  const thumbPath = `thumbs/${base}.webp`;
-  await writeStored(originalPath, buffer);
-  // 서버에 ffmpeg 이 없으므로 영상 자체의 축소본 대신 재생 포스터를 만든다.
-  const placeholder = Buffer.from(
-    `<svg xmlns="http://www.w3.org/2000/svg" width="720" height="405">
-       <rect width="720" height="405" fill="#0f172a"/>
-       <circle cx="360" cy="202" r="64" fill="#f9a8d4" opacity="0.9"/>
-       <polygon points="340,170 340,234 396,202" fill="#0f172a"/>
-       <text x="360" y="320" font-size="24" fill="#e2e8f0" text-anchor="middle" font-family="sans-serif">${escapeXml(
-         fileName,
-       ).slice(0, 40)}</text>
-     </svg>`,
-  );
+let ffmpegChecked: boolean | null = null;
+async function hasFfmpeg(): Promise<boolean> {
+  if (ffmpegChecked !== null) return ffmpegChecked;
   try {
-    const thumb = await sharp(placeholder).webp({ quality: 76 }).toBuffer();
-    await writeStored(thumbPath, thumb);
+    await run("ffmpeg", ["-version"]);
+    ffmpegChecked = true;
   } catch {
-    /* 포스터 생성 실패는 치명적이지 않다 */
+    ffmpegChecked = false;
   }
+  return ffmpegChecked;
+}
+
+/**
+ * 동영상 처리 (ffmpeg): 길이 확인, 포스터(썸네일), 720p 미리보기.
+ * 무료 요금제는 원본 대신 720p 본만 보관한다. 길이 제한을 넘으면 실패로 처리한다.
+ */
+async function processVideo(buffer: Buffer, base: string, originalPath: string, mimeType: string, plan: PlanDef, fileName: string): Promise<Processed> {
+  if (!(await hasFfmpeg())) return placeholderVideo(buffer, base, originalPath, mimeType, fileName);
+
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "fa-v-"));
+  try {
+    const input = path.join(dir, `in${path.extname(originalPath) || ".mp4"}`);
+    await fs.writeFile(input, buffer);
+    const probe = await run("ffprobe", ["-v", "error", "-show_entries", "format=duration:stream=width,height", "-of", "json", input]);
+    const info = JSON.parse(probe.stdout) as { format?: { duration?: string }; streams?: Array<{ width?: number; height?: number }> };
+    const durationSec = Number(info.format?.duration ?? 0) || null;
+    const vstream = info.streams?.find((s) => s.width && s.height);
+    if (plan.maxVideoSec && durationSec && durationSec > plan.maxVideoSec + 1) {
+      throw new MediaError(
+        "VIDEO_TOO_LONG",
+        `${plan.name} 요금제는 동영상을 ${Math.round(plan.maxVideoSec / 60)}분까지 올릴 수 있어요. 더 긴 영상은 상위 요금제에서 올릴 수 있습니다.`,
+      );
+    }
+    const posterFile = path.join(dir, "poster.jpg");
+    await run("ffmpeg", ["-y", "-ss", "1", "-i", input, "-frames:v", "1", "-vf", "scale=480:-2", posterFile]).catch(() =>
+      run("ffmpeg", ["-y", "-i", input, "-frames:v", "1", "-vf", "scale=480:-2", posterFile]),
+    );
+    const poster = await fs.readFile(posterFile);
+    const thumb = await sharp(poster).webp({ quality: 74 }).toBuffer();
+    const thumbPath = `${base}-t.webp`;
+
+    const previewFile = path.join(dir, "p720.mp4");
+    await run(
+      "ffmpeg",
+      ["-y", "-i", input, "-vf", "scale='min(1280,iw)':-2", "-c:v", "libx264", "-preset", "veryfast", "-crf", "26", "-c:a", "aac", "-b:a", "96k", "-movflags", "+faststart", previewFile],
+      { maxBuffer: 1024 * 1024 * 16 },
+    );
+    const preview = await fs.readFile(previewFile);
+    const previewPath = `${base}-p.mp4`;
+    await Promise.all([writeStored(thumbPath, thumb, "image/webp"), writeStored(previewPath, preview, "video/mp4")]);
+
+    if (!plan.keepOriginals) {
+      // 무료: 720p 본을 원본 자리로 쓰고, 큰 원본은 지운다.
+      await removeStored([originalPath]);
+      return {
+        originalPath: previewPath,
+        previewPath,
+        thumbPath,
+        width: vstream?.width ?? null,
+        height: vstream?.height ?? null,
+        durationSec,
+        previewQuality: "720p",
+        originalQuality: "720p (무료 요금제)",
+        storedBytes: preview.byteLength + thumb.byteLength,
+        compressed: true,
+        mimeType: "video/mp4",
+      };
+    }
+    return {
+      originalPath,
+      previewPath,
+      thumbPath,
+      width: vstream?.width ?? null,
+      height: vstream?.height ?? null,
+      durationSec,
+      previewQuality: "720p",
+      originalQuality: vstream?.height ? `원본 ${vstream.height}p` : "원본",
+      storedBytes: buffer.byteLength + preview.byteLength + thumb.byteLength,
+      compressed: false,
+      mimeType,
+    };
+  } catch (e) {
+    if (e instanceof MediaError) throw e;
+    // 읽을 수 없는 영상 형식: 원본은 그대로 두고 자리표시 썸네일만 만든다
+    console.warn("[media] 동영상 변환 실패, 원본만 보관", fileName, e instanceof Error ? e.message : e);
+    return placeholderVideo(buffer, base, originalPath, mimeType, fileName);
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true }).catch(() => undefined);
+  }
+}
+
+async function placeholderVideo(buffer: Buffer, base: string, originalPath: string, mimeType: string, fileName: string): Promise<Processed> {
+  const thumb = await sharp(Buffer.from(posterSvg(fileName))).webp({ quality: 76 }).toBuffer();
+  const thumbPath = `${base}-t.webp`;
+  await writeStored(thumbPath, thumb, "image/webp");
   return {
     originalPath,
     previewPath: null,
     thumbPath,
-    width: 1920,
-    height: 1080,
-    previewQuality: "미리보기 720p (자동 변환)",
-    originalQuality: "원본 1080p",
+    width: null,
+    height: null,
+    durationSec: null,
+    previewQuality: "미리보기 없음",
+    originalQuality: "원본",
+    storedBytes: buffer.byteLength + thumb.byteLength,
+    compressed: false,
+    mimeType,
   };
 }
 
-function escapeXml(s: string): string {
-  return s.replace(/[<>&"']/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;", "'": "&#39;" })[c] ?? c);
+function posterSvg(fileName: string) {
+  const name = fileName.replace(/[<>&"']/g, "").slice(0, 40);
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="720" height="405"><rect width="720" height="405" fill="#0f172a"/><circle cx="360" cy="202" r="64" fill="#f9a8d4" opacity="0.9"/><polygon points="340,170 340,234 396,202" fill="#0f172a"/><text x="360" y="320" font-size="24" fill="#e2e8f0" text-anchor="middle" font-family="sans-serif">${name}</text></svg>`;
+}
+
+async function processBuffer(buffer: Buffer, media: Pick<MediaAsset, "kind" | "originalPath" | "mimeType" | "fileName">, plan: PlanDef) {
+  const base = media.originalPath.replace(/\.[^./]+$/, "");
+  return media.kind === MEDIA_KIND.IMAGE
+    ? processImage(buffer, base, media.originalPath, media.mimeType, plan)
+    : processVideo(buffer, base, media.originalPath, media.mimeType, plan, media.fileName);
 }
 
 export type CreateMediaInput = {
@@ -155,24 +257,35 @@ export type CreateMediaInput = {
 export type CreateMediaResult = { media: MediaAsset; duplicate: boolean };
 
 /**
- * 저장 순서: 파일(원본+미리보기) → DB 레코드. 둘 다 성공해야 완료로 본다.
+ * 서버 경유 업로드(대체 경로·시드). 저장 순서: 원본 → 처리(미리보기·압축) → DB 기록 → 사용량 반영.
  * 이미 같은 앨범에 같은 내용(해시)이 있으면 새로 만들지 않고 기존 항목을 돌려준다.
  */
 export async function createMedia(input: CreateMediaInput): Promise<CreateMediaResult> {
-  if (input.buffer.byteLength === 0) {
-    throw new MediaError("EMPTY_FILE", "빈 파일은 저장할 수 없습니다.");
-  }
-  if (input.buffer.byteLength > MAX_UPLOAD_BYTES) {
-    throw new MediaError("TOO_LARGE", "파일이 너무 큽니다. (최대 60MB)");
-  }
+  if (input.buffer.byteLength === 0) throw new MediaError("EMPTY_FILE", "빈 파일은 저장할 수 없습니다.");
+  if (input.buffer.byteLength > MAX_UPLOAD_BYTES) throw new MediaError("TOO_LARGE", "파일이 너무 큽니다.");
   const kind = kindFromMime(input.mimeType, input.fileName);
   const contentHash = sha256(input.buffer);
   const dedupeKey = `${input.albumId}:${contentHash}`;
 
   const existing = await prisma.mediaAsset.findUnique({ where: { dedupeKey } });
-  if (existing) return { media: existing, duplicate: true };
+  if (existing && (existing.status === "UPLOADING" || existing.status === "FAILED")) {
+    // 직접 업로드가 중간에 실패해 서버 경유로 다시 올리는 경우: 잡아 둔 기록을 정리하고 새로 만든다.
+    await purgeMedia(existing);
+  } else if (existing) {
+    return { media: existing, duplicate: true };
+  }
 
-  const files = await storeMediaFiles(input.buffer, kind, input.fileName, input.mimeType);
+  const family = await prisma.family.findUnique({ where: { id: input.familyId } });
+  const plan = planOf(family?.plan);
+  const base = newObjectBase(input.familyId);
+  const originalPath = `${base}${extensionFor(input.fileName, input.mimeType)}`;
+  await writeStored(originalPath, input.buffer, input.mimeType);
+  const files = await processBuffer(input.buffer, { kind, originalPath, mimeType: input.mimeType, fileName: input.fileName }, plan).catch(
+    async (e) => {
+      await removeStored([originalPath]);
+      throw e;
+    },
+  );
   try {
     const media = await prisma.mediaAsset.create({
       data: {
@@ -182,15 +295,19 @@ export async function createMedia(input: CreateMediaInput): Promise<CreateMediaR
         ownerId: input.ownerId,
         kind,
         fileName: input.fileName,
-        mimeType: input.mimeType,
+        mimeType: files.mimeType,
         sizeBytes: input.buffer.byteLength,
         originalPath: files.originalPath,
         previewPath: files.previewPath,
         thumbPath: files.thumbPath,
         width: files.width,
         height: files.height,
+        durationSec: files.durationSec,
         previewQuality: files.previewQuality,
         originalQuality: files.originalQuality,
+        storedBytes: files.storedBytes,
+        compressed: files.compressed,
+        status: "READY",
         contentHash,
         dedupeKey,
         capturedAt: input.capturedAt,
@@ -198,9 +315,9 @@ export async function createMedia(input: CreateMediaInput): Promise<CreateMediaR
         favorite: input.favorite ?? false,
       },
     });
+    await addUsage(input.familyId, files.storedBytes);
     return { media, duplicate: false };
   } catch (error) {
-    // 동시 업로드로 유니크 제약에 걸린 경우: 방금 쓴 파일을 지우고 기존 레코드를 사용한다.
     await removeStored([files.originalPath, files.previewPath, files.thumbPath]);
     const raced = await prisma.mediaAsset.findUnique({ where: { dedupeKey } });
     if (raced) return { media: raced, duplicate: true };
@@ -208,6 +325,58 @@ export async function createMedia(input: CreateMediaInput): Promise<CreateMediaR
   }
 }
 
+/**
+ * 직접 업로드 후 작업 서버가 호출: 저장소의 원본을 내려받아 미리보기·압축·변환을 만들고 사용량을 확정한다.
+ * 업로드 허가 때 원본 크기만큼 사용량을 먼저 잡아 두었으므로, 여기서는 차이만 반영한다.
+ */
+export async function processUploadedMedia(mediaId: string): Promise<void> {
+  const media = await prisma.mediaAsset.findUnique({ where: { id: mediaId }, include: { family: true } });
+  if (!media || media.status === "READY") return;
+  const buffer = await readStored(media.originalPath);
+  if (!buffer) throw new MediaError("FILE_MISSING", "올린 파일을 저장소에서 찾지 못했습니다.");
+  const plan = planOf(media.family.plan);
+  try {
+    const files = await processBuffer(buffer, media, plan);
+    await prisma.mediaAsset.update({
+      where: { id: media.id },
+      data: {
+        status: "READY",
+        mimeType: files.mimeType,
+        originalPath: files.originalPath,
+        previewPath: files.previewPath,
+        thumbPath: files.thumbPath,
+        width: files.width,
+        height: files.height,
+        durationSec: files.durationSec,
+        previewQuality: files.previewQuality,
+        originalQuality: files.originalQuality,
+        storedBytes: files.storedBytes,
+        compressed: files.compressed,
+      },
+    });
+    await addUsage(media.familyId, files.storedBytes - media.storedBytes);
+  } catch (e) {
+    if (e instanceof MediaError && e.code === "VIDEO_TOO_LONG") {
+      // 길이 초과: 올린 파일을 지우고 잡아 둔 사용량을 돌려준다.
+      await removeStored([media.originalPath]);
+      await prisma.mediaAsset.update({ where: { id: media.id }, data: { status: "FAILED", storedBytes: 0, previewQuality: e.message } });
+      await addUsage(media.familyId, -media.storedBytes);
+      await prisma.uploadItem.updateMany({ where: { mediaId: media.id }, data: { status: "FAILED", error: e.message } });
+      return;
+    }
+    throw e;
+  }
+}
+
+/** 저장소에서 파일을 지우고 사용량에서 뺀다 (휴지통 영구 삭제·계정 삭제) */
+export async function purgeMedia(media: Pick<MediaAsset, "id" | "familyId" | "originalPath" | "previewPath" | "thumbPath" | "storedBytes">) {
+  await removeStored([media.originalPath, media.previewPath, media.thumbPath]);
+  await prisma.mediaAsset.delete({ where: { id: media.id } }).catch(() => undefined);
+  await addUsage(media.familyId, -media.storedBytes);
+}
+
 export async function deleteMediaFiles(media: Pick<MediaAsset, "originalPath" | "previewPath" | "thumbPath">) {
   await removeStored([media.originalPath, media.previewPath, media.thumbPath]);
 }
+
+export { storedSize };

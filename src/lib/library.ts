@@ -21,7 +21,9 @@ export class LibraryError extends Error {
 
 /** 조부모·가족 계정에는 '부모만 공개'·'나만 보기' 항목을 보여주지 않는다. */
 export function visibilityWhere(viewerRole: string | undefined) {
-  return viewerRole === "PARENT" || viewerRole == null ? {} : { visibility: "FAMILY" };
+  // 직접 업로드가 끝나지 않았거나 실패한 항목은 앨범에 보이지 않는다
+  const status = { status: { in: ["READY", "PROCESSING"] } };
+  return viewerRole === "PARENT" || viewerRole == null ? status : { ...status, visibility: "FAMILY" };
 }
 
 export async function listAlbumMedia(opts: {

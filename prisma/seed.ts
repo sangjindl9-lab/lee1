@@ -50,6 +50,8 @@ function makeVideoStub(): Buffer {
 }
 
 async function reset() {
+  await prisma.job.deleteMany();
+  await prisma.subscription.deleteMany();
   await prisma.mediaTag.deleteMany();
   await prisma.like.deleteMany();
   await prisma.comment.deleteMany();

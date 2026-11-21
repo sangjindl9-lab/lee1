@@ -109,4 +109,5 @@ export const ADS: Record<string, { id: string; title: string; body: string; cta:
   },
 };
 
-export const MAX_UPLOAD_BYTES = 60 * 1024 * 1024;
+export const MAX_UPLOAD_BYTES = 60 * 1024 * 1024; // 서버 경유 업로드 한도
+export const MAX_DIRECT_UPLOAD_BYTES = 500 * 1024 * 1024; // 저장소 직접 업로드 한도

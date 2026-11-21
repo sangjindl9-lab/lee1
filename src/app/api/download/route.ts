@@ -3,7 +3,7 @@ import prisma from "@/lib/db";
 import { requireSessionUser } from "@/lib/auth";
 import { fail, handleRouteError } from "@/lib/api";
 import { csvEscape, zipResponse, type ZipEntry } from "@/lib/zip";
-import { resolveStored } from "@/lib/storage";
+import { planOf } from "@/lib/plans";
 import { kstDateKey } from "@/lib/date";
 
 /**
@@ -21,6 +21,14 @@ export async function GET(req: NextRequest) {
     const from = p.get("from");
     const to = p.get("to");
 
+    const family = await prisma.family.findUnique({ where: { id: user.familyId } });
+    const plan = planOf(family?.plan);
+    if (!plan.zipDownload && mediaIds.length > 20) {
+      return fail("PLAN_REQUIRED", "무료 요금제는 한 번에 20장까지 묶어 받을 수 있어요. 기간 전체 ZIP은 유료 요금제에서 쓸 수 있습니다.", 402);
+    }
+    if (!plan.zipDownload && !mediaIds.length) {
+      return fail("PLAN_REQUIRED", "기간 전체 원본 ZIP은 유료 요금제에서 쓸 수 있습니다.", 402);
+    }
     if (!mediaIds.length && !childId) return fail("NO_TARGET", "다운로드할 사진을 선택하거나 아이를 지정해 주세요.");
 
     const where = {
@@ -45,12 +53,17 @@ export async function GET(req: NextRequest) {
       orderBy: [{ capturedAt: "asc" }],
     });
     if (!media.length) return fail("EMPTY_SELECTION", "조건에 맞는 사진이 없습니다.", 404);
+    // 서버를 거쳐 나가는 전송량(비용)을 묶음당 2GB 로 제한한다
+    const total = media.reduce((sum, m) => sum + m.sizeBytes, 0);
+    if (total > 2 * 1024 ** 3) {
+      return fail("ZIP_TOO_LARGE", "한 번에 2GB까지 묶어 받을 수 있어요. 기간을 나눠서 받아 주세요.", 413);
+    }
 
     const entries: ZipEntry[] = media.map((m) => {
       const ext = m.fileName.includes(".") ? m.fileName.slice(m.fileName.lastIndexOf(".")) : "";
       const base = m.fileName.replace(/\.[^.]+$/, "");
       const name = `${m.child?.name ?? "아이"}/${kstDateKey(m.capturedAt)}_${base}${ext}`;
-      return { path: resolveStored(m.originalPath), name };
+      return { key: m.originalPath, name };
     });
 
     const header = ["파일명", "아이", "촬영일", "구분", "공개범위", "태그", "해시(SHA-256)"].join(",");

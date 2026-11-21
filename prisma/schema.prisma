@@ -1,12 +1,12 @@
-// 가족앨범·육아기록 — 데이터 모델 (SQLite / Prisma)
-// SQLite 는 enum 을 지원하지 않으므로 상태값은 String + 애플리케이션 검증(constants)으로 관리한다.
+// 가족앨범·육아기록 — 데이터 모델 (PostgreSQL / Prisma)
+// 상태값은 String + 애플리케이션 검증(constants)으로 관리한다.
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -28,6 +28,8 @@ model User {
   purchases    Purchase[]
   inquiries    Inquiry[]
   adImpressions AdImpression[]
+  subscriptions Subscription[]
+  isAdmin      Boolean   @default(false)
   createdAt    DateTime  @default(now())
 }
 
@@ -51,6 +53,12 @@ model Family {
   media      MediaAsset[]
   care       CareRecord[]
   purchases  Purchase[]
+  subscriptions Subscription[]
+  // 요금제: FREE | FAMILY_50 | FAMILY_200 | FAMILY_1TB (plans.ts)
+  plan          String        @default("FREE")
+  planExpiresAt DateTime?
+  // 저장소에 실제로 쌓인 바이트(원본+미리보기+썸네일). 업로드 허가 시 상한과 비교한다.
+  usedBytes     BigInt        @default(0)
   createdAt  DateTime      @default(now())
 }
 
@@ -108,6 +116,12 @@ model MediaAsset {
   durationSec    Float?
   previewQuality String? // 예: 720p
   originalQuality String? // 예: 1080p
+  // READY | PROCESSING | UPLOADING | FAILED — 직접 업로드·작업 서버 처리 상태
+  status         String    @default("READY")
+  // 저장소에 실제로 쓰인 총 바이트(원본+미리보기+썸네일) — 가족 사용량 계산용
+  storedBytes    Int       @default(0)
+  // 무료 요금제: 원본 대신 고화질 압축본으로 보관했는지
+  compressed     Boolean   @default(false)
 
   // 중복 방지: 같은 앨범 안에서 내용 해시가 같으면 한 번만 저장된다.
   contentHash    String
@@ -281,4 +295,43 @@ model Inquiry {
   createdAt  DateTime @default(now())
 
   @@index([userId, createdAt])
+}
+
+// 작업 대기열 (미리보기·압축본·동영상 변환, 가족 삭제 등). FOR UPDATE SKIP LOCKED 로 꺼낸다.
+model Job {
+  id        String   @id @default(cuid())
+  type      String // PROCESS_MEDIA | DELETE_FAMILY_FILES | RECHECK_SUBSCRIPTIONS
+  payload   String
+  status    String   @default("QUEUED") // QUEUED | RUNNING | DONE | FAILED
+  attempts  Int      @default(0)
+  runAfter  DateTime @default(now())
+  error     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  @@index([status, runAfter])
+}
+
+// Google Play 정기결제 (서버 검증 결과)
+model Subscription {
+  id            String   @id @default(cuid())
+  familyId      String
+  family        Family   @relation(fields: [familyId], references: [id])
+  userId        String
+  user          User     @relation(fields: [userId], references: [id])
+  productId     String // family_50 | family_200 | family_1tb
+  basePlanId    String? // monthly | yearly
+  plan          String // FAMILY_50 | FAMILY_200 | FAMILY_1TB
+  purchaseToken String   @unique
+  linkedToken   String?
+  state         String // SUBSCRIPTION_STATE_ACTIVE | _IN_GRACE_PERIOD | _ON_HOLD | _CANCELED | _EXPIRED | _PAUSED | _PENDING
+  autoRenewing  Boolean  @default(true)
+  expiresAt     DateTime?
+  acknowledged  Boolean  @default(false)
+  lastCheckedAt DateTime @default(now())
+  raw           String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @default(now()) @updatedAt
+
+  @@index([familyId, state])
 }

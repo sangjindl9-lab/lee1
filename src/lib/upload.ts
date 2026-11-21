@@ -1,7 +1,17 @@
 import type { UploadItem, UploadSession } from "@prisma/client";
 import prisma from "./db";
-import { MAX_UPLOAD_BYTES, UPLOAD_STATUS, UPLOAD_STATUS_LABEL } from "./constants";
-import { createMedia } from "./media";
+import { MAX_DIRECT_UPLOAD_BYTES, MAX_UPLOAD_BYTES, UPLOAD_STATUS, UPLOAD_STATUS_LABEL } from "./constants";
+import { createMedia, kindFromMime, newObjectBase } from "./media";
+import { addUsage, assertQuota, planOf, type PlanDef } from "./plans";
+import { extensionFor, signedPutUrl, storedSize, useS3 } from "./storage";
+import { enqueue } from "./jobs";
+
+/** 저장될 크기 추정 (무료는 압축 보관이라 원본보다 작다) */
+export function estimateStoredBytes(plan: PlanDef, mimeType: string, size: number): number {
+  const isVideo = mimeType.startsWith("video/");
+  if (!plan.keepOriginals) return isVideo ? Math.min(size, 40 * 1024 * 1024) : Math.min(size, 1.2 * 1024 * 1024);
+  return Math.round(size * 1.1);
+}
 
 export type UploadFileInput = {
   clientFileId: string;
@@ -35,6 +45,11 @@ export async function createUploadSession(input: {
   if (!child) throw new UploadError("CHILD_NOT_FOUND", "아이를 찾을 수 없습니다.", 404);
   const album = await prisma.album.findFirst({ where: { id: input.albumId, childId: child.id } });
   if (!album) throw new UploadError("ALBUM_NOT_FOUND", "앨범을 찾을 수 없습니다.", 404);
+
+  const family = await prisma.family.findUnique({ where: { id: input.familyId } });
+  const plan = planOf(family?.plan);
+  const estimate = input.files.reduce((sum, f) => sum + estimateStoredBytes(plan, f.mimeType, f.sizeBytes), 0);
+  await assertQuota(input.familyId, estimate);
 
   const seen = new Set<string>();
   for (const f of input.files) {
@@ -174,6 +189,10 @@ export async function uploadItem(input: {
   try {
     if (input.buffer.byteLength === 0) throw new Error("빈 파일입니다.");
     if (input.buffer.byteLength > MAX_UPLOAD_BYTES) throw new Error("파일이 너무 큽니다. (최대 60MB)");
+    {
+      const fam = await prisma.family.findUnique({ where: { id: session.familyId } });
+      await assertQuota(session.familyId, estimateStoredBytes(planOf(fam?.plan), input.mimeType || item.mimeType, input.buffer.byteLength));
+    }
     const capturedAt = input.capturedAt ?? new Date();
     const { media, duplicate } = await createMedia({
       familyId: session.familyId,
@@ -264,4 +283,113 @@ export async function recalcSession(sessionId: string): Promise<UploadSummary> {
     },
   });
   return summary;
+}
+
+/**
+ * 직접 업로드 준비: 같은 내용이 이미 있으면 중복으로 바로 완료, 아니면 용량을 확인·예약하고
+ * 저장소에 올릴 서명 주소를 준다. 저장소가 S3 가 아니면 서버 경유(proxy)로 올리라고 답한다.
+ */
+export async function prepareDirectUpload(input: {
+  userId: string;
+  sessionId: string;
+  itemId: string;
+  contentHash: string;
+  sizeBytes: number;
+  mimeType: string;
+  fileName: string;
+  capturedAt: Date | null;
+}) {
+  const session = await prisma.uploadSession.findUnique({ where: { id: input.sessionId } });
+  if (!session || session.userId !== input.userId) throw new UploadError("SESSION_NOT_FOUND", "업로드 세션을 찾을 수 없습니다.", 404);
+  const item = await prisma.uploadItem.findFirst({ where: { id: input.itemId, sessionId: session.id } });
+  if (!item) throw new UploadError("ITEM_NOT_FOUND", "업로드 항목을 찾을 수 없습니다.", 404);
+  if (!useS3) return { mode: "proxy" as const };
+  if (!/^[a-f0-9]{64}$/.test(input.contentHash)) throw new UploadError("BAD_HASH", "파일 확인값이 올바르지 않습니다.");
+  if (input.sizeBytes <= 0) throw new UploadError("EMPTY_FILE", "빈 파일입니다.");
+  if (input.sizeBytes > MAX_DIRECT_UPLOAD_BYTES) throw new UploadError("TOO_LARGE", "파일이 너무 큽니다. (최대 500MB)");
+
+  const dedupeKey = `${session.albumId}:${input.contentHash}`;
+  const existing = await prisma.mediaAsset.findUnique({ where: { dedupeKey } });
+  if (existing && existing.status !== "UPLOADING" && existing.status !== "FAILED") {
+    await prisma.uploadItem.update({
+      where: { id: item.id },
+      data: { status: UPLOAD_STATUS.DONE, mediaId: existing.id, duplicate: true, error: null, attempts: { increment: 1 } },
+    });
+    await recalcSession(session.id);
+    return { mode: "duplicate" as const, mediaId: existing.id };
+  }
+
+  const mimeType = input.mimeType || item.mimeType || "application/octet-stream";
+  const fileName = input.fileName || item.fileName;
+  const kind = kindFromMime(mimeType, fileName);
+  const family = await prisma.family.findUnique({ where: { id: session.familyId } });
+  const plan = planOf(family?.plan);
+  // 처리 전에는 원본 크기 그대로 사용량을 잡아 둔다 (처리 후 실제 크기로 맞춘다)
+  await assertQuota(session.familyId, estimateStoredBytes(plan, mimeType, input.sizeBytes));
+
+  let media = existing;
+  if (media) {
+    // 중단된 이전 시도 재사용
+    await addUsage(session.familyId, -media.storedBytes);
+    media = await prisma.mediaAsset.update({ where: { id: media.id }, data: { status: "UPLOADING", storedBytes: input.sizeBytes, sizeBytes: input.sizeBytes } });
+  } else {
+    const originalPath = `${newObjectBase(session.familyId)}${extensionFor(fileName, mimeType)}`;
+    media = await prisma.mediaAsset.create({
+      data: {
+        familyId: session.familyId,
+        childId: session.childId,
+        albumId: session.albumId,
+        ownerId: input.userId,
+        kind,
+        fileName,
+        mimeType,
+        sizeBytes: input.sizeBytes,
+        originalPath,
+        contentHash: input.contentHash,
+        dedupeKey,
+        capturedAt: input.capturedAt ?? new Date(),
+        visibility: session.visibility,
+        status: "UPLOADING",
+        storedBytes: input.sizeBytes,
+        previewQuality: "처리 중",
+      },
+    });
+  }
+  await addUsage(session.familyId, input.sizeBytes);
+  await prisma.uploadItem.update({
+    where: { id: item.id },
+    data: { status: UPLOAD_STATUS.UPLOADING, mediaId: media.id, attempts: { increment: 1 }, error: null },
+  });
+  const url = await signedPutUrl(media.originalPath, mimeType, input.sizeBytes);
+  return { mode: "direct" as const, mediaId: media.id, url, headers: { "Content-Type": mimeType } };
+}
+
+/** 직접 업로드 완료 확인: 저장소에 같은 크기의 파일이 있는지 보고 처리 작업을 건다. */
+export async function completeDirectUpload(input: { userId: string; sessionId: string; itemId: string }): Promise<UploadItemResult> {
+  const session = await prisma.uploadSession.findUnique({ where: { id: input.sessionId } });
+  if (!session || session.userId !== input.userId) throw new UploadError("SESSION_NOT_FOUND", "업로드 세션을 찾을 수 없습니다.", 404);
+  const item = await prisma.uploadItem.findFirst({ where: { id: input.itemId, sessionId: session.id } });
+  if (!item?.mediaId) throw new UploadError("ITEM_NOT_FOUND", "업로드 항목을 찾을 수 없습니다.", 404);
+  const media = await prisma.mediaAsset.findUnique({ where: { id: item.mediaId } });
+  if (!media) throw new UploadError("MEDIA_NOT_FOUND", "업로드 기록을 찾을 수 없습니다.", 404);
+
+  if (media.status === "UPLOADING") {
+    const size = await storedSize(media.originalPath);
+    if (size === null || size !== media.sizeBytes) {
+      const updated = await prisma.uploadItem.update({
+        where: { id: item.id },
+        data: { status: UPLOAD_STATUS.FAILED, error: "저장소에 파일이 다 올라가지 않았습니다. 다시 올려 주세요." },
+      });
+      await recalcSession(session.id);
+      return { status: updated.status, statusLabel: UPLOAD_STATUS_LABEL[updated.status], mediaId: null, duplicate: false, error: updated.error, attempts: updated.attempts };
+    }
+    await prisma.mediaAsset.update({ where: { id: media.id }, data: { status: "PROCESSING" } });
+    await enqueue("PROCESS_MEDIA", { mediaId: media.id });
+  }
+  const updated = await prisma.uploadItem.update({
+    where: { id: item.id },
+    data: { status: UPLOAD_STATUS.DONE, error: null },
+  });
+  await recalcSession(session.id);
+  return { status: updated.status, statusLabel: UPLOAD_STATUS_LABEL[updated.status], mediaId: media.id, duplicate: false, error: null, attempts: updated.attempts };
 }

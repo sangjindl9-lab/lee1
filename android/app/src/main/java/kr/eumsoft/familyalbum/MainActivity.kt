@@ -48,6 +48,8 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
 
+    private var billing: BillingBridge? = null
+
     /** WebView 가 요청한 파일 선택 콜백. 한 번만 응답해야 한다. */
     private var fileChooserCallback: ValueCallback<Array<Uri>>? = null
 
@@ -165,6 +167,9 @@ class MainActivity : AppCompatActivity() {
 
         webView.setBackgroundColor(ContextCompat.getColor(this, R.color.app_background))
 
+        // Google Play 정기결제 연결 (앱 안에서만 노출)
+        billing = BillingBridge(this, webView).also { webView.addJavascriptInterface(it, "FamilyAlbumBilling") }
+
         webView.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(
                 view: WebView?,
@@ -270,8 +275,14 @@ class MainActivity : AppCompatActivity() {
      */
     private fun handleUri(uri: Uri): Boolean {
         return when (uri.scheme?.lowercase()) {
-            // 웹앱 화면은 WebView 안에서 이동한다.
-            "http", "https", "javascript" -> false
+            // 웹앱 화면은 WebView 안에서 이동한다. 다른 사이트는 결제 연결이 노출되지 않게 브라우저로 연다.
+            "http", "https" -> if (uri.host.equals(Uri.parse(BuildConfig.APP_URL).host, ignoreCase = true)) {
+                false
+            } else {
+                openExternally(uri)
+                true
+            }
+            "javascript" -> false
             // 전화·메일·마켓 등은 기기 앱으로 넘긴다.
             else -> {
                 openExternally(uri)
@@ -406,6 +417,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        billing?.destroy()
         if (::binding.isInitialized) {
             binding.webView.destroy()
         }

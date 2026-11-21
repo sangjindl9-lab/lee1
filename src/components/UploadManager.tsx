@@ -69,6 +69,59 @@ const STATUS_LABEL: Record<UploadStatus, string> = {
   FAILED: "실패",
 };
 
+type SendResult = { ok: boolean; mediaId?: string | null; duplicate?: boolean; message?: string };
+
+async function sha256Hex(file: File): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/** 서버 경유 업로드 (저장소 직접 업로드가 안 될 때의 대체 경로) */
+async function sendProxy(sid: string, row: { itemId?: string; fileName: string }, file: File, capturedAt: string, simulateFail = false): Promise<SendResult> {
+  const form = new FormData();
+  form.append("file", file, row.fileName);
+  form.append("capturedAt", capturedAt);
+  const headers: Record<string, string> = {};
+  if (simulateFail) headers["x-simulate-fail"] = "1";
+  const res = await fetch(`/api/uploads/${sid}/items/${row.itemId}`, { method: "POST", body: form, headers });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) return { ok: false, message: data?.error?.message };
+  return { ok: true, mediaId: data.item?.mediaId, duplicate: data.item?.duplicate };
+}
+
+/**
+ * 저장소로 바로 올린다: 서버에 허가(용량 확인·서명 주소)를 받고 → 저장소에 PUT → 완료 알림.
+ * 사진 바이트가 서버를 거치지 않아 서버 전송 비용이 들지 않는다. 직접 업로드가 막히면 서버 경유로 다시 시도한다.
+ */
+async function sendDirectOrProxy(sid: string, row: { itemId?: string; fileName: string; mimeType: string }, file: File, capturedAt: string): Promise<SendResult> {
+  let contentHash = "";
+  try {
+    contentHash = await sha256Hex(file);
+  } catch {
+    return sendProxy(sid, row, file, capturedAt);
+  }
+  const prep = await fetch(`/api/uploads/${sid}/items/${row.itemId}/direct`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ contentHash, sizeBytes: file.size, mimeType: file.type || row.mimeType, fileName: row.fileName, capturedAt }),
+  });
+  const plan = await prep.json().catch(() => ({}));
+  if (!prep.ok) return { ok: false, message: plan?.error?.message };
+  if (plan.mode === "duplicate") return { ok: true, mediaId: plan.mediaId, duplicate: true };
+  if (plan.mode !== "direct" || !plan.url) return sendProxy(sid, row, file, capturedAt);
+  try {
+    const put = await fetch(plan.url, { method: "PUT", body: file, headers: plan.headers ?? {} });
+    if (!put.ok) throw new Error(`PUT ${put.status}`);
+  } catch {
+    if (file.size <= 60 * 1024 * 1024) return sendProxy(sid, row, file, capturedAt);
+    return { ok: false, message: "저장소에 올리지 못했습니다. 연결을 확인하고 다시 시도해 주세요." };
+  }
+  const done = await fetch(`/api/uploads/${sid}/items/${row.itemId}/complete`, { method: "POST" });
+  const data = await done.json().catch(() => ({}));
+  if (!done.ok) return { ok: false, message: data?.error?.message };
+  return { ok: true, mediaId: data.item?.mediaId, duplicate: false };
+}
+
 let counter = 0;
 const newClientId = () => `c${Date.now().toString(36)}-${(counter++).toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 
@@ -302,18 +355,15 @@ export default function UploadManager({
             prev.map((r) => (r.clientFileId === row.clientFileId ? { ...r, status: "UPLOADING", error: null } : r)),
           );
           try {
-            const form = new FormData();
-            form.append("file", row.file as File, row.fileName);
-            form.append("capturedAt", new Date((row.file as File).lastModified || Date.now()).toISOString());
-            const headers: Record<string, string> = {};
-            if (row.failOnce && (row.attempts ?? 0) === 0) headers["x-simulate-fail"] = "1";
-            const res = await fetch(`/api/uploads/${sid}/items/${row.itemId}`, { method: "POST", body: form, headers });
-            const data = await res.json().catch(() => ({}));
-            if (!res.ok) {
+            const file = row.file as File;
+            const capturedAt = new Date(file.lastModified || Date.now()).toISOString();
+            const simulate = row.failOnce && (row.attempts ?? 0) === 0;
+            const data = simulate ? await sendProxy(sid, row, file, capturedAt, true) : await sendDirectOrProxy(sid, row, file, capturedAt);
+            if (!data.ok) {
               setRows((prev) =>
                 prev.map((r) =>
                   r.clientFileId === row.clientFileId
-                    ? { ...r, status: "FAILED", error: data?.error?.message ?? "전송에 실패했습니다.", attempts: (r.attempts ?? 0) + 1 }
+                    ? { ...r, status: "FAILED", error: data.message ?? "전송에 실패했습니다.", attempts: (r.attempts ?? 0) + 1 }
                     : r,
                 ),
               );
@@ -324,8 +374,8 @@ export default function UploadManager({
                     ? {
                         ...r,
                         status: "DONE",
-                        mediaId: data.item.mediaId,
-                        duplicate: data.item.duplicate,
+                        mediaId: data.mediaId,
+                        duplicate: data.duplicate,
                         error: null,
                         attempts: (r.attempts ?? 0) + 1,
                       }

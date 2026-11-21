@@ -3,7 +3,8 @@ import { MediaError } from "./media";
 import { UploadError } from "./upload";
 import { LibraryError } from "./library";
 import { CareError } from "./care";
-import { BillingError } from "./billing";
+import { BillingError } from "./play-billing";
+import { QuotaError } from "./plans";
 import { UnauthorizedError } from "./auth";
 
 export function json(data: unknown, status = 200) {
@@ -28,6 +29,9 @@ export function handleRouteError(error: unknown) {
       { ok: false, error: { code: error.code, message: error.message }, fieldErrors: error.fieldErrors ?? {} },
       { status: error.status },
     );
+  }
+  if (error instanceof QuotaError) {
+    return fail(error.code, error.message, error.status, { usage: { usedBytes: error.usage.usedBytes, quotaBytes: error.usage.quotaBytes, plan: error.usage.plan.id } });
   }
   if (error instanceof BillingError) return fail(error.code, error.message, error.status);
   console.error("[api] unhandled", error);
