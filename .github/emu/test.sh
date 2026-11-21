@@ -14,7 +14,7 @@ has(){ dump; grep -q "$1" $O/ui.xml; }
 ok(){ log "  [통과] $*"; }
 ng(){ log "  [실패] $*"; }
 # 셸에서 도메인 해석 결과(IP) — ping 의 첫 줄 "PING host (IP)" 에서 IP 만 꺼낸다
-resolve(){ adb shell "ping -c 1 -W 3 $1 2>&1 | head -1" | tr -d '\r' | sed -n 's/.*(\([0-9a-f.:]*\)).*/\1/p'; }
+resolve(){ adb shell "ping -c 1 -W 3 $1 2>&1 | head -1" | tr -d '\r' | sed -n 's/^PING [^ ]* (\([^)]*\)).*/\1/p'; }
 check_block(){ local ip; ip=$(resolve $1); if [ "$ip" = "0.0.0.0" ] || [ "$ip" = "::" ]; then ok "$2: $1 → $ip (차단)"; else ng "$2: $1 → '${ip:-해석 실패}' (차단 안 됨)"; fi; }
 check_pass(){ local ip; ip=$(resolve $1); if [ -n "$ip" ] && [ "$ip" != "0.0.0.0" ]; then ok "$2: $1 → $ip (정상 해석)"; else ng "$2: $1 → '${ip:-해석 실패}'"; fi; }
 
@@ -38,13 +38,13 @@ print("  요약:", (re.findall(r'(OK \(\d+ tests?\)|FAILURES!!!.*|Tests run: .*)
 PY
 adb logcat -d -s EUMTEST:I | sed 's/^.*EUMTEST: /  · /' | tee -a $R
 
-log "== 2. 앱 시작 (한국어) · 시작 시간"
+log "== 2. 앱 시작 · 시작 시간 (시스템 언어 영어 — UI 조작은 영어 화면 기준)"
 adb shell pm grant $A android.permission.POST_NOTIFICATIONS 2>/dev/null
 adb shell cmd locale set-app-locales $A --locales ko-KR 2>/dev/null
 adb shell am force-stop $A
 log "  콜드 스타트: $(adb shell am start -W -n $A/.ui.MainActivity | grep -E 'TotalTime|WaitTime' | tr -d '\r' | tr '\n' ' ')"
 sleep 3; shot 01_onboarding
-tap "다음"; tap "다음"; tap "시작하기"; sleep 2; shot 02_home
+tap "Next"; tap "Next"; tap "Get started"; sleep 2; shot 02_home
 
 log "== 3. 정상 DNS (VPN 켜기 전)"
 check_pass example.com "VPN 전 정상 사이트"
@@ -53,8 +53,8 @@ BASE_AD=$(resolve doubleclick.net); log "  VPN 전 doubleclick.net → ${BASE_AD
 log "== 4. 광고 차단 VPN 연결"
 adb shell appops set $A ACTIVATE_VPN allow
 T0=$(date +%s%3N)
-tap "광고·추적·피싱 차단" 0 6
-for i in $(seq 1 40); do adb shell dumpsys connectivity 2>/dev/null | grep -q "VPN CONNECTED\|type: VPN\[\|VPN, " && break; sleep 1; done
+tap "Block ads, trackers & phishing" 0 6
+for i in $(seq 1 40); do adb shell dumpsys connectivity 2>/dev/null | grep -q "Transports: VPN" && break; sleep 1; done
 log "  VPN 연결 감지까지: $(( $(date +%s%3N) - T0 )) ms (UI 누름 포함)"
 adb shell dumpsys connectivity | grep -m2 -E "VPN|tun" | tr -d '\r' | sed 's/^/  · /' | tee -a $R
 adb logcat -d -s EUM_VPN:I | tail -3 | sed 's/^.*EUM_VPN: /  · /' | tee -a $R
@@ -83,17 +83,17 @@ v=[int(x) for x in open('emu/latency.txt') if x.strip()]
 print('  업스트림 질의 %d건: 평균 %.0f ms, 최대 %d ms' % (len(v), sum(v)/len(v), max(v)) if v else '  (지연 기록 없음)')" | tee -a $R
 
 log "== 7. 허용 목록 우선순위 (doubleclick.net 허용)"
-tap "광고 차단" 0 2; tap "허용·차단" 0 2
-dump; p=$(python3 $D/ui.py $O/ui.xml "도메인 (예: example.com)") && adb shell input tap $p && sleep 1 && adb shell input text "doubleclick.net" && sleep 1
-adb shell input keyevent 111 2>/dev/null; tap "허용" 0 4
+tap "Ad Block" 0 2; tap "Allow/Block" 0 2
+dump; p=$(python3 $D/ui.py $O/ui.xml "Domain (e.g. example.com)") && adb shell input tap $p && sleep 1 && adb shell input text "doubleclick.net" && sleep 1
+adb shell input keyevent 111 2>/dev/null; tap "Allow" 0 4
 shot 04_allowlist
 check_pass doubleclick.net "허용 목록 도메인"
 check_block googleadservices.com "다른 광고 도메인은 계속 차단"
 
 log "== 8. 일시 정지 5분 → 재개"
-tap "상태" 0 2; tap "5분" 0 4
+tap "Status" 0 2; tap "5 min" 0 4
 check_pass googleadservices.com "일시 정지 중"
-tap "지금 다시 차단" 0 4
+tap "Resume now" 0 4
 check_block googleadservices.com "재개 후"
 shot 05_adblock_status
 
@@ -108,33 +108,33 @@ check_block googleadservices.com "Wi-Fi 다시 켬"
 adb logcat -d -s EUM_VPN:I | grep "네트워크 변경" | tail -3 | sed 's/^.*EUM_VPN: /  · /' | tee -a $R
 
 log "== 10. 화면 · 통계 · 차단 기록"
-tap "통계" 0 2; shot 06_stats
-tap "차단 기록" 0 2; shot 07_blocklog
+tap "Stats" 0 2; shot 06_stats
+tap "Block log" 0 2; shot 07_blocklog
 has "googleadservices.com" && ok "차단 기록에 도메인 표시" || ng "차단 기록 표시"
-tap "필터" 0 2; shot 08_filters
+tap "Filters" 0 2; shot 08_filters
 
 log "== 11. 악성코드 빠른 검사"
-tap "검사" 0 2; shot 09_scan
+tap "Scan" 0 2; shot 09_scan
 T1=$(date +%s)
-tap "빠른 검사" 0 3
-for i in $(seq 1 90); do has "검사 요약" && break; sleep 2; done
+tap "Quick scan" 0 3
+for i in $(seq 1 90); do has "Scan summary" && break; sleep 2; done
 log "  빠른 검사 소요: $(( $(date +%s) - T1 )) 초"
 shot 10_scan_result
-has "검사 요약" && ok "검사 결과 화면" || ng "검사 결과 화면"
+has "Scan summary" && ok "검사 결과 화면" || ng "검사 결과 화면"
 dump; grep -oE 'text="(대상|위험|주의|검사 불가)[^"]*"' $O/ui.xml | head -6 | sed 's/^/  · /' | tee -a $R
 
 log "== 12. 설치 앱 정밀 검사 + 검사 중지"
-tap "검사" 0 2; tap "설치 앱 정밀 검사" 0 6
-has "검사 중지" && { tap "검사 중지" 0 3; ok "검사 중지 버튼 동작"; } || log "  (이미 끝났거나 표시 안 됨)"
-sleep 3; tap "검사" 0 2; dump; grep -c "CANCELLED" $O/ui.xml | sed 's/^/  · 중지된 세션 표시 수: /' | tee -a $R
+tap "Scan" 0 2; tap "Full installed-app scan" 0 6
+has "Stop scan" && { tap "Stop scan" 0 3; ok "검사 중지 버튼 동작"; } || log "  (이미 끝났거나 표시 안 됨)"
+sleep 3; tap "Scan" 0 2; dump; grep -c "CANCELLED" $O/ui.xml | sed 's/^/  · 중지된 세션 표시 수: /' | tee -a $R
 
 log "== 13. 보안 DB · 설정 화면"
-tap "보안 DB" 0 3; shot 11_db
-has "규칙" && ok "보안 DB 화면" || ng "보안 DB 화면"
+tap "Security DB" 0 3; shot 11_db
+has "rules" && ok "보안 DB 화면" || ng "보안 DB 화면"
 dump; grep -oE 'text="yara-x[^"]*"' $O/ui.xml | head -2 | sed 's/^/  · /' | tee -a $R
-tap "지금 업데이트 (위협 DB + 광고 필터)" 0 20; shot 12_db_updated
+tap "Update now (threat DB + ad filters)" 0 25; shot 12_db_updated
 dump; grep -oE 'text="(최신 버전|버전 [0-9]+ 적용|실패)[^"]*"' $O/ui.xml | head -2 | sed 's/^/  · /' | tee -a $R
-tap "설정" 0 2; shot 13_settings
+tap "Settings" 0 2; shot 13_settings
 
 log "== 14. 성능 (VPN 실행 중)"
 log "  메모리: $(adb shell dumpsys meminfo $A | grep -m1 'TOTAL' | tr -s ' ' | tr -d '\r')"
@@ -143,23 +143,22 @@ adb shell dumpsys batterystats --charged $A 2>/dev/null | grep -m3 -iE "Estimate
 
 log "== 15. 앱 종료 후 재실행 (설정 유지 · VPN 유지)"
 adb shell am force-stop $A; sleep 3
-log "  강제 종료 후 VPN: $(adb shell dumpsys connectivity | grep -c 'VPN CONNECTED\|type: VPN\[') (0 이면 꺼짐 — 사용자가 다시 켜야 함)"
+log "  강제 종료 후 VPN: $(adb shell dumpsys connectivity | grep -c 'Transports: VPN') (0 이면 꺼짐 — 사용자가 다시 켜야 함)"
 adb shell am start -W -n $A/.ui.MainActivity >/dev/null; sleep 4; shot 14_relaunch
-has "시작하기" && ng "재실행 시 첫 안내가 다시 나옴(설정 유지 실패)" || ok "재실행 후 첫 안내 생략 (설정 유지)"
+has "Get started" && ng "재실행 시 첫 안내가 다시 나옴(설정 유지 실패)" || ok "재실행 후 첫 안내 생략 (설정 유지)"
 
 log "== 16. VPN 끄기 → 네트워크 복구"
 adb shell am start -W -n $A/.ui.MainActivity >/dev/null; sleep 2
-tap "홈" 0 2
-has 'checked="true"' && tap "광고·추적·피싱 차단" 0 5
-for i in $(seq 1 15); do adb shell dumpsys connectivity | grep -q "VPN CONNECTED\|type: VPN\[" || break; sleep 1; done
+tap "Home" 0 2
+has 'checked="true"' && tap "Block ads, trackers & phishing" 0 5
+for i in $(seq 1 15); do adb shell dumpsys connectivity | grep -q "Transports: VPN" || break; sleep 1; done
 check_pass example.com "VPN 끈 뒤 정상 사이트"
 AFTER_AD=$(resolve doubleclick.net); log "  VPN 끈 뒤 doubleclick.net → ${AFTER_AD:-해석 실패} (VPN 전: ${BASE_AD:-해석 실패})"
 
-log "== 17. 영어 화면 (스토어 스크린샷)"
-adb shell cmd locale set-app-locales $A --locales en-US 2>/dev/null; adb shell am force-stop $A
-adb shell am start -W -n $A/.ui.MainActivity >/dev/null; sleep 4; shot 15_home_en
-tap "Ad Block" 0 2; shot 16_adblock_en
-tap "Scan" 0 2; shot 17_scan_en
+log "== 17. 한국어 화면 (스토어 스크린샷, API 33+ 앱별 언어)"
+adb shell cmd locale set-app-locales $A --locales ko-KR 2>/dev/null; adb shell am force-stop $A; sleep 1
+adb shell am start -W -n $A/.ui.MainActivity >/dev/null; sleep 4; shot 15_home_ko
+has "광고 차단" && { ok "한국어 화면 전환"; tap "광고 차단" 0 2; shot 16_adblock_ko; tap "검사" 0 2; shot 17_scan_ko; } || log "  (앱별 언어 전환 미지원 또는 실패)"
 
 log "== 18. 크래시 확인"
 CR=$(adb logcat -d -b crash | grep -c "$A")
