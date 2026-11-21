@@ -28,3 +28,4 @@ adb shell input tap $((X/2)) $((Y*36/100)); sleep 3
 adb shell input tap $((X/2)) $((Y*40/100)); sleep 3
 shot 04_folder
 ls -la shots
+# v1

@@ -1,5 +1,8 @@
 name: FileManager2 screenshots
 on:
+  push:
+    branches: [filemanager2]
+    paths: ['.github/shots.sh', '.github/workflows/screenshots.yml']
   workflow_dispatch: {}
 permissions:
   contents: write
