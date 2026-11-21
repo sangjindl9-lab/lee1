@@ -44,7 +44,7 @@ private fun assetFile(name: String): Uri {
 class OcrDeviceTest {
     private fun read(name: String, s: Recognizer.Script = Recognizer.Script.AUTO): ReceiptParser.Result {
         val bmp = BitmapFactory.decodeStream(InstrumentationRegistry.getInstrumentation().context.assets.open("receipts/$name"))
-        val (used, lines) = runBlocking<Unit> { Recognizer.read(bmp, s) }
+        val (used, lines) = runBlocking { Recognizer.read(bmp, s) }
         Log.i(TAG, "OCR $name script=$used lines=${lines.size}: ${lines.joinToString(" | ")}")
         return ReceiptParser.parse(lines, 2027)
     }
