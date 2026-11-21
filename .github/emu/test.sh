@@ -26,7 +26,7 @@ adb install -r app-debug.apk | tee -a $R
 adb install -r app-debug-androidTest.apk | tee -a $R
 
 log "== 1. 기기 테스트 (네이티브 YARA-X·Ed25519, APK 분석, 매니페스트 파서, Room 스키마)"
-adb shell am instrument -w -r -e class $A.DeviceEngineTest $A.test/androidx.test.runner.AndroidJUnitRunner > $O/instrument.txt 2>&1
+adb shell am instrument -w -r -e class kr.eumsoft.securitypro.DeviceEngineTest $A.test/androidx.test.runner.AndroidJUnitRunner > $O/instrument.txt 2>&1
 python3 - <<'PY' | tee -a $R
 import re
 t = open('emu/instrument.txt', encoding='utf-8', errors='replace').read()

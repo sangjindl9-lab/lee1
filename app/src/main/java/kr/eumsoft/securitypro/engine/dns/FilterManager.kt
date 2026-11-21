@@ -45,15 +45,16 @@ class FilterManager @Inject constructor(
     private suspend fun updateLocked(src: AdFilterSource): Result<Int> {
         if (src.url.isBlank()) return Result.success(src.ruleCount)
         val r = runCatching {
-            val text = download(src.url, MAX_BYTES)
-            require(FilterParser.looksValid(text)) { "필터 형식이 아님" }
-            val count = FilterParser.countRules(text)
+            // 수십 MB 목록을 메모리에 올리지 않고 파일로 바로 받으면서 규칙 수·SHA-256 을 계산한다
             val tmp = File(dir, "${src.id}.${System.nanoTime()}.tmp")
-            tmp.writeText(text)
-            check(tmp.renameTo(fileOf(src.id))) { "파일 교체 실패" }
-            db.dns().updateSource(src.copy(ruleCount = count, lastUpdatedAt = System.currentTimeMillis(),
-                lastResult = "OK", sha256 = Hashing.sha256(text.toByteArray()), updatedAt = System.currentTimeMillis()))
-            count
+            try {
+                val (count, sha) = downloadToFile(src.url, tmp, MAX_BYTES)
+                require(count > 0) { "필터 형식이 아님" }
+                check(tmp.renameTo(fileOf(src.id))) { "파일 교체 실패" }
+                db.dns().updateSource(src.copy(ruleCount = count, lastUpdatedAt = System.currentTimeMillis(),
+                    lastResult = "OK", sha256 = sha, updatedAt = System.currentTimeMillis()))
+                count
+            } finally { tmp.delete() }
         }
         r.onFailure { e ->
             android.util.Log.w("EUM_FILTER", "필터 업데이트 실패 ${src.code}: ${e.message}")
@@ -80,6 +81,33 @@ class FilterManager @Inject constructor(
 
     companion object {
         const val MAX_BYTES = 40L * 1024 * 1024
+
+        /** 받은 내용을 파일로 저장하고 (규칙 수, SHA-256) 을 돌려준다. HTML 오류 페이지는 거부한다. */
+        fun downloadToFile(url: String, out: File, maxBytes: Long): Pair<Int, String> {
+            require(url.startsWith("https://")) { "HTTPS 주소만 허용" }
+            val c = URL(url).openConnection() as HttpURLConnection
+            c.connectTimeout = 15_000; c.readTimeout = 30_000
+            c.setRequestProperty("User-Agent", "EUM-Security-Pro/1.0")
+            try {
+                if (c.responseCode !in 200..299) error("HTTP ${c.responseCode}")
+                val md = java.security.MessageDigest.getInstance("SHA-256")
+                var count = 0; var total = 0L; var head = true
+                c.inputStream.use { ins ->
+                    val dis = java.security.DigestInputStream(ins, md)
+                    out.bufferedWriter().use { w ->
+                        dis.bufferedReader(Charsets.UTF_8).forEachLine { line ->
+                            total += line.length + 1
+                            if (total > maxBytes) error("파일이 너무 큼")
+                            if (head) { val l = line.lowercase(); require(!l.contains("<html") && !l.contains("<!doctype")) { "필터 형식이 아님" } }
+                            if (total > 2000) head = false
+                            if (FilterParser.isRule(line)) count++
+                            w.write(line); w.write("\n")
+                        }
+                    }
+                }
+                return count to Hashing.hex(md.digest())
+            } finally { c.disconnect() }
+        }
 
         fun download(url: String, maxBytes: Long): String {
             require(url.startsWith("https://")) { "HTTPS 주소만 허용" }
