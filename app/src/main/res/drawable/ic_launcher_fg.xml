@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 노트프로 아이콘: 종이 한 장 위의 펜 곡선 (자체 디자인) -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#FFF7F5F0" android:pathData="M34,28h32l10,10v42a2,2 0,0 1,-2,2H34a2,2 0,0 1,-2,-2V30a2,2 0,0 1,2,-2z"/>
+    <path android:fillColor="#FFD9D2C3" android:pathData="M66,28l10,10H68a2,2 0,0 1,-2,-2z"/>
+    <path android:strokeColor="#FFE8613C" android:strokeWidth="4.5" android:strokeLineCap="round"
+        android:pathData="M40,66c6,-14 10,-14 12,-6s6,8 10,-2s8,-10 10,-4"/>
+    <path android:strokeColor="#FFB9C6D8" android:strokeWidth="1.6" android:strokeLineCap="round" android:pathData="M40,46h24M40,53h28"/>
+</vector>
