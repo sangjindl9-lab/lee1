@@ -42,6 +42,17 @@ private val Dark = darkColorScheme(
 @Composable
 fun FM2Theme(mode: String, content: @Composable () -> Unit) {
     val dark = when (mode) { "light" -> false; "dark" -> true; else -> isSystemInDarkTheme() }
+    val view = androidx.compose.ui.platform.LocalView.current
+    if (!view.isInEditMode) {
+        androidx.compose.runtime.SideEffect {
+            val act = view.context as? android.app.Activity
+            if (act != null) {
+                val c = androidx.core.view.WindowCompat.getInsetsController(act.window, view)
+                c.isAppearanceLightStatusBars = !dark
+                c.isAppearanceLightNavigationBars = !dark
+            }
+        }
+    }
     MaterialTheme(
         colorScheme = if (dark) Dark else Light,
         shapes = Shapes(

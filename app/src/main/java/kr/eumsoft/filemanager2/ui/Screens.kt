@@ -146,7 +146,11 @@ fun Root(vm: AppVM, resumeTick: Int) {
         if (vm.message == m) vm.message = null
     }
 
-    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+    androidx.compose.material3.Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background,
+        contentColor = MaterialTheme.colorScheme.onBackground,
+    ) { Box(Modifier.fillMaxSize()) {
         if (!granted) {
             PermissionScreen { granted = hasStorageAccess(ctx) }
         } else {
@@ -185,7 +189,7 @@ fun Root(vm: AppVM, resumeTick: Int) {
         }
         SnackbarHost(snack, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 64.dp))
         vm.busy?.let { BusyDialog(it) }
-    }
+    } }
 }
 
 @Composable

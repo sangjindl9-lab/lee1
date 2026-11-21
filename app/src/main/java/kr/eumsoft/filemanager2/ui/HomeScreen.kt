@@ -90,12 +90,12 @@ fun HomeScreen(vm: AppVM) {
     val favs = vm.prefs.favorites
 
     LazyColumn(
-        Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
+        Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).statusBarsPadding(),
         contentPadding = PaddingValues(bottom = 40.dp),
     ) {
         item {
             Row(
-                Modifier.fillMaxWidth().statusBarsPadding().padding(start = 22.dp, end = 8.dp, top = 14.dp, bottom = 6.dp),
+                Modifier.fillMaxWidth().padding(start = 22.dp, end = 8.dp, top = 14.dp, bottom = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(Modifier.weight(1f)) {

@@ -243,7 +243,7 @@ fun BusyDialog(label: String) {
         ) {
             CircularProgressIndicator(Modifier.size(28.dp), strokeWidth = 3.dp)
             Spacer(Modifier.width(18.dp))
-            Text(label, style = MaterialTheme.typography.bodyLarge)
+            Text(label, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
         }
     }
 }
