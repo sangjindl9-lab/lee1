@@ -2,7 +2,7 @@
 
 발주자(우리 회사) 여러 곳 등록, 도장 이미지 업로드, 거래처 등록, 발주서 작성·보관, A4 PDF 저장을 하는 웹 + 안드로이드 앱입니다.
 
-- 웹: https://eum-balju-production.up.railway.app
+- 웹: https://balju.ieumerp.kr
 - 개인정보처리방침: `/privacy` · 계정 삭제 안내: `/delete-account`
 
 ## 구성
