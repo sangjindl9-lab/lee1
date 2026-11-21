@@ -2,7 +2,7 @@
 const http = require("http"), fs = require("fs"), path = require("path");
 const ROOT = path.join(__dirname, "public");
 const LANGS = ["ko", "en", "ja", "es"];
-const TYPES = { ".html": "text/html; charset=utf-8", ".css": "text/css", ".png": "image/png", ".txt": "text/plain; charset=utf-8" };
+const TYPES = { ".html": "text/html; charset=utf-8", ".css": "text/css", ".png": "image/png", ".txt": "text/plain; charset=utf-8", ".json": "application/json; charset=utf-8" };
 const HDR = { "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer", "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; img-src 'self'" };
 
 http.createServer((req, res) => {

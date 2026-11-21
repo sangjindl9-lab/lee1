@@ -14,7 +14,8 @@
   1) 주문 화면 열기 → 2) 공유 누르기 → 3) 이음 구매노트 선택 → 읽어 온 내용 확인 후 저장
 
   ■ 주요 기능
-  · 사진 속 글자를 휴대폰 안에서 읽고, 맞는 값을 직접 골라 저장 (자동으로 확정하지 않아요)
+  · 쿠팡·네이버·아마존 주문 내역 화면에서 여러 건을 한 번에 가져오기
+  · 사진 속 글자를 휴대폰 안에서 읽고 확실한 값은 자동으로 채움 (애매한 값은 직접 선택)
   · 반품·교환·AS 기한 3일 전·당일 알림 (시간·횟수 변경 가능)
   · 기한 지남 / 오늘 / 3일 이내를 홈에서 한눈에
   · 상품명·구매처·주문번호 검색, 상태·기간 필터
@@ -23,7 +24,7 @@
   · 암호를 건 백업 파일로 휴대폰 바꿀 때 옮기기
 
   ■ 개인정보
-  가입·로그인·광고·추적이 없습니다. 앱에 인터넷 권한이 없어 기록과 사진은 휴대폰 밖으로 나가지 않습니다.
+  가입·광고·추적이 없습니다. 기록과 사진은 휴대폰 밖으로 보내지 않습니다. 쇼핑몰 가져오기는 쇼핑몰 사이트에 직접 로그인하는 방식이라 아이디·비밀번호를 앱이 보지 않습니다.
 
   ※ 기한은 영수증에 적혀 있거나 직접 확인한 날짜만 저장합니다. 법정 기간이나 쇼핑몰 정책은 추정하지 않습니다.
 
@@ -37,7 +38,8 @@
   1) Open the order screen → 2) Tap Share → 3) Choose EUM Purchase Note → check what was read and save
 
   FEATURES
-  • Reads text in photos on your phone; you tap the correct values (nothing is confirmed automatically)
+  • Import several orders at once from your Amazon, Coupang or Naver order list
+  • Reads text in photos on your phone and fills in clear values (you pick when unclear)
   • Reminders 3 days before and on the day (change time or turn off)
   • Past due / today / within 3 days at a glance
   • Search by product, store or order number; filter by status and period
@@ -46,7 +48,7 @@
   • Encrypted backup file for moving to a new phone
 
   PRIVACY
-  No sign-up, ads or tracking. The app has no internet permission, so your records and photos never leave your phone.
+  No sign-up, ads or tracking. Your records and photos never leave your phone. When importing from a shop, you sign in on the shop's own site — the app never sees your password.
 
   Deadlines are saved only when written on the receipt or entered by you. The app does not guess legal periods or store policies.
 
@@ -60,7 +62,8 @@
   1) 注文画面を開く → 2) 共有をタップ → 3) EUM 購入ノートを選ぶ → 読み取った内容を確認して保存
 
   ■ 主な機能
-  ・写真の文字を端末内で読み取り、正しい値を自分で選んで保存(自動では確定しません)
+  ・Amazon・Coupang・NAVERの注文履歴から複数件をまとめて取り込み
+  ・写真の文字を端末内で読み取り、確かな値は自動入力(あいまいな値は自分で選択)
   ・期限の3日前と当日に通知(時刻・回数を変更可能)
   ・期限切れ/今日/3日以内をホームでひと目で確認
   ・商品名・購入先・注文番号で検索、状態・期間で絞り込み
@@ -69,7 +72,7 @@
   ・暗号化バックアップで機種変更にも対応
 
   ■ プライバシー
-  登録・広告・追跡はありません。アプリにインターネット権限がないため、記録と写真は端末の外に出ません。
+  登録・広告・追跡はありません。記録と写真は端末の外に送りません。ショップからの取り込みはショップのサイトにご自身でログインする方式で、アプリはパスワードを見ません。
 
   ※ 期限はレシートに書かれている日付、または自分で確認した日付だけを保存します。法定期間やショップの規約は推測しません。
 
@@ -83,7 +86,8 @@
   1) Abre el pedido → 2) Toca Compartir → 3) Elige EUM Notas de Compra → revisa lo leído y guarda
 
   FUNCIONES
-  • Lee el texto de las fotos en tu teléfono; tú tocas los valores correctos (nada se confirma solo)
+  • Importa varios pedidos a la vez desde tu lista de Amazon, Coupang o Naver
+  • Lee el texto de las fotos en el teléfono y rellena los valores claros (eliges tú cuando hay dudas)
   • Avisos 3 días antes y el mismo día (cambia la hora o desactívalos)
   • Vencidos / hoy / próximos 3 días de un vistazo
   • Busca por producto, tienda o número de pedido; filtra por estado y periodo
@@ -92,7 +96,7 @@
   • Copia cifrada para cambiar de teléfono
 
   PRIVACIDAD
-  Sin registro, anuncios ni seguimiento. La app no tiene permiso de internet: tus datos y fotos no salen del teléfono.
+  Sin registro, anuncios ni seguimiento. Tus datos y fotos no salen del teléfono. Al importar de una tienda, inicias sesión en su propia web: la app nunca ve tu contraseña.
 
   Los plazos solo se guardan si están escritos en el recibo o los escribes tú. La app no supone plazos legales ni políticas de las tiendas.
 
