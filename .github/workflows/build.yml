@@ -1,7 +1,10 @@
 name: Build Electrician Helper
 on:
   push:
-  workflow_dispatch:
+    branches: [electrician-helper]
+  workflow_dispatch: {}
+permissions:
+  contents: write
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -9,9 +12,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: "17" }
-      - uses: android-actions/setup-android@v3
+      - run: yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null || true
       - uses: gradle/actions/setup-gradle@v4
-        with: { gradle-version: "8.9" }
+        with: { gradle-version: "8.11.1" }
       - name: Prepare signing key
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
@@ -32,3 +35,15 @@ jobs:
           path: |
             app/build/outputs/apk/**/*.apk
             app/build/outputs/bundle/release/*.aab
+      - name: Publish to electrician-helper-apk branch
+        run: |
+          mkdir /tmp/pub
+          cp app/build/outputs/apk/debug/app-debug.apk /tmp/pub/ElectricianHelper.apk
+          cp app/build/outputs/bundle/release/app-release.aab /tmp/pub/ElectricianHelper-release.aab
+          cd /tmp/pub
+          git init -q -b electrician-helper-apk
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add .
+          git commit -qm "APK ${GITHUB_SHA::7}"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" electrician-helper-apk
