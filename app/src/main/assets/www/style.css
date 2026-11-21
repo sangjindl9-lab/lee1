@@ -1,0 +1,90 @@
+:root{
+  --bg:#F3F5F8; --card:#FFFFFF; --ink:#16212E; --sub:#5A6878; --line:#DDE3EA;
+  --bar:#0F2A47; --accent:#F5A400; --accent-ink:#1B1300; --ok:#1F9D55; --bad:#D64545;
+  --formula:#FFF6DD; --radius:14px;
+}
+@media (prefers-color-scheme: dark){
+  :root{ --bg:#0D1520; --card:#162231; --ink:#E7EDF4; --sub:#93A3B5; --line:#26364A; --bar:#0A1C30; --formula:#2A2412; }
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--bg);color:var(--ink);
+  font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans","Noto Sans KR","Noto Sans JP","Noto Sans SC","Noto Sans Devanagari",sans-serif;
+  font-size:16px;line-height:1.55}
+#bar{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:6px;height:56px;padding:0 6px;
+  background:var(--bar);color:#fff;padding-top:env(safe-area-inset-top)}
+#bar h1{flex:1;margin:0;font-size:18px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#bar button{background:none;border:0;color:#fff;width:44px;height:44px;display:grid;place-items:center;border-radius:50%}
+#bar button:active{background:rgba(255,255,255,.12)}
+#back.hide{visibility:hidden}
+main{padding:14px 14px 40px;max-width:760px;margin:0 auto}
+
+.hero{display:flex;align-items:center;gap:14px;padding:16px;border-radius:var(--radius);
+  background:linear-gradient(135deg,#123A63,#0F2A47);color:#fff;margin-bottom:14px}
+.hero svg{flex:none}
+.hero b{display:block;font-size:19px}
+.hero span{font-size:13.5px;opacity:.85}
+.search{width:100%;padding:12px 14px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--ink);font-size:16px;margin-bottom:14px}
+.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+@media(min-width:560px){.grid{grid-template-columns:repeat(4,1fr)}}
+.tile{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px 12px;text-align:center;cursor:pointer;
+  display:flex;flex-direction:column;align-items:center;gap:8px;min-height:118px;justify-content:center}
+.tile:active{transform:scale(.97)}
+.tile .ic{width:48px;height:48px;border-radius:12px;display:grid;place-items:center}
+.tile .lb{font-weight:600;font-size:14.5px;line-height:1.3}
+.tile .ct{font-size:12px;color:var(--sub)}
+
+.list{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+.row{display:flex;align-items:center;gap:12px;padding:13px 14px;border-bottom:1px solid var(--line);cursor:pointer}
+.row:last-child{border-bottom:0}
+.row:active{background:rgba(127,127,127,.08)}
+.row .n{flex:none;width:30px;height:30px;border-radius:8px;background:var(--accent);color:var(--accent-ink);display:grid;place-items:center;font-size:13px;font-weight:700}
+.row .em{flex:none;font-size:24px;width:30px;text-align:center}
+.row .tx{flex:1;min-width:0}
+.row .tx b{display:block;font-weight:600;font-size:15px}
+.row .tx small{display:block;color:var(--sub);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .chev{color:var(--sub)}
+
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin-bottom:12px}
+.card h2{margin:0 0 8px;font-size:19px}
+.card h3{margin:16px 0 6px;font-size:16px}
+.card p{margin:0 0 10px}
+.card ul,.card ol{margin:0 0 10px;padding-left:22px}
+.card li{margin:3px 0}
+.formula{background:var(--formula);border-left:4px solid var(--accent);padding:9px 12px;border-radius:8px;margin:8px 0 12px;
+  font-family:"Cambria Math","STIX Two Math",Georgia,serif;font-size:17px}
+.fig{background:#fff;border:1px solid var(--line);border-radius:12px;padding:8px;margin:4px 0 14px;text-align:center}
+.fig img{width:100%;max-width:560px;height:auto;display:block;margin:0 auto}
+.note{font-size:13px;color:var(--sub)}
+.warn{background:rgba(214,69,69,.1);border-left:4px solid var(--bad);padding:10px 12px;border-radius:8px;margin:0 0 12px;font-size:14.5px}
+
+label.f{display:block;margin:0 0 12px}
+label.f span{display:block;font-size:13.5px;color:var(--sub);margin-bottom:4px}
+.inp{display:flex;align-items:center;border:1px solid var(--line);border-radius:10px;background:var(--bg);overflow:hidden}
+.inp input,.inp select{flex:1;min-width:0;border:0;background:transparent;color:var(--ink);padding:12px;font-size:17px;outline:none}
+.inp em{font-style:normal;color:var(--sub);padding:0 12px;font-size:14px}
+.seg{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+.seg button{flex:1;padding:10px 8px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font-size:14px}
+.seg button.on{background:var(--bar);color:#fff;border-color:var(--bar)}
+.btns{display:flex;gap:10px;margin-top:4px}
+.btn{flex:1;padding:13px;border-radius:12px;border:0;font-size:16px;font-weight:650;background:var(--accent);color:var(--accent-ink)}
+.btn.ghost{background:transparent;border:1px solid var(--line);color:var(--ink)}
+.res{margin-top:14px;display:none}
+.res.show{display:block}
+.res .r{display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px dashed var(--line)}
+.res .r:last-child{border-bottom:0}
+.res .r b{font-size:18px;color:var(--ok)}
+.err{color:var(--bad);font-size:14px;margin-top:10px}
+
+.qprog{height:6px;border-radius:3px;background:var(--line);overflow:hidden;margin-bottom:14px}
+.qprog i{display:block;height:100%;background:var(--accent)}
+.opt{display:block;width:100%;text-align:left;padding:13px 14px;margin:0 0 10px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--ink);font-size:15.5px}
+.opt.ok{border-color:var(--ok);background:rgba(31,157,85,.12)}
+.opt.no{border-color:var(--bad);background:rgba(214,69,69,.12)}
+.score{font-size:46px;font-weight:800;text-align:center;margin:6px 0}
+.term{padding:12px 14px;border-bottom:1px solid var(--line)}
+.term:last-child{border-bottom:0}
+.term b{display:block}
+.term span{color:var(--sub);font-size:14px}
+.empty{text-align:center;color:var(--sub);padding:30px 0}
+.foot{text-align:center;color:var(--sub);font-size:12px;margin-top:22px}
+mark{background:var(--accent);color:var(--accent-ink);border-radius:3px;padding:0 2px}
