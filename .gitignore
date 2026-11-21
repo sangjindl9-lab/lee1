@@ -1,0 +1,9 @@
+.gradle/
+build/
+local.properties
+*.iml
+.idea/
+native/eum-yara/target/
+m2/
+*.keystore
+*.jks

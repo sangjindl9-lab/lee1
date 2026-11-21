@@ -1,0 +1,22 @@
+[package]
+name = "eum-yara"
+version = "1.0.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+[lib]
+name = "eumyara"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+yara-x = "=1.24.0"
+jni = { version = "0.21", default-features = false }
+serde_json = "1"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 4
+strip = true
+panic = "unwind"

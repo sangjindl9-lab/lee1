@@ -1,0 +1,10 @@
+// EUM SECURITY PRO: DnsLibs 를 우리 앱에 필요한 ABI 만 빌드한다 (빌드 시간 단축).
+project(':lib') {
+    plugins.withId('com.android.library') {
+        android {
+            defaultConfig {
+                ndk { abiFilters 'arm64-v8a', 'armeabi-v7a', 'x86_64' }
+            }
+        }
+    }
+}

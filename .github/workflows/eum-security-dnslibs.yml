@@ -1,0 +1,92 @@
+name: EUM SECURITY PRO · AdGuard DnsLibs 네이티브 빌드
+# AdGuard DnsLibs(Apache-2.0)를 소스에서 직접 빌드해 Android AAR(로컬 Maven 저장소 zip)을 만든다.
+# 앱 빌드(eum-security-pro.yml)는 이 결과물을 내려받아 사용한다.
+on:
+  push:
+    branches: [eum-security-pro]
+    paths: [".github/workflows/eum-security-dnslibs.yml", "native/dnslibs/**"]
+  workflow_dispatch:
+permissions:
+  contents: write
+env:
+  DNSLIBS_COMMIT: f223ce8f26fc676967a3992fe2ce86dc1f7448e1   # master, 2026-11-18
+  DNSLIBS_VERSION: 2.10.2-eum.f223ce8
+  NDK_VERSION: 29.0.14206865
+jobs:
+  dnslibs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 17 }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - name: DnsLibs 소스 받기
+        run: |
+          git clone https://github.com/AdguardTeam/DnsLibs dnslibs-src
+          cd dnslibs-src && git checkout "$DNSLIBS_COMMIT"
+      - name: 도구 설치 (Conan, NDK)
+        run: |
+          pip install "conan>=2.0.5,<3" pyyaml
+          conan --version
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$NDK_VERSION" "platforms;android-34" > /dev/null
+          ls "$ANDROID_HOME/ndk"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.conan2/p
+          key: conan-dnslibs-${{ env.DNSLIBS_COMMIT }}-v1
+      - name: Conan 사용자 정의 레시피 등록 (NativeLibsCommon)
+        run: |
+          conan profile detect --force
+          cd dnslibs-src && python3 scripts/bootstrap_conan_deps.py
+      - name: Gradle 설정 정리
+        working-directory: dnslibs-src/platform/android/dnsproxy
+        run: |
+          # 지원 종료된 jcenter 와 외부에서 접근할 수 없는 사내 저장소를 공개 저장소로 바꾼다.
+          sed -i "s/jcenter()/mavenCentral()/g" build.gradle
+          sed -i "/art.int.agrd.dev/,+0d" build.gradle
+          python3 - <<'PY'
+          import re
+          p='build.gradle'; s=open(p).read()
+          s=re.sub(r"maven \{\s*\}", "", s)
+          open(p,'w').write(s)
+          PY
+          cat build.gradle
+          cp "$GITHUB_WORKSPACE/native/dnslibs/additional.gradle" additional.gradle
+          CMAKE_BIN=$(dirname "$(which cmake)")
+          {
+            echo "sdk.dir=$ANDROID_HOME"
+            echo "ndk.dir=$ANDROID_HOME/ndk/$NDK_VERSION"
+            echo "cmake.dir=$(dirname "$CMAKE_BIN")"
+          } > local.properties
+          cat local.properties; cmake --version | head -1
+      - name: AAR 빌드 + 로컬 Maven 게시
+        working-directory: dnslibs-src/platform/android/dnsproxy
+        shell: bash
+        run: |
+          set -o pipefail
+          ./gradlew :lib:publishToMavenLocal -PdnsLibsVersion="$DNSLIBS_VERSION" --no-daemon --stacktrace 2>&1 | tee "$GITHUB_WORKSPACE/dnslibs-build.log"
+      - name: 결과 확인
+        run: |
+          find ~/.m2/repository/com/adguard -type f | tee files.txt
+          AAR=$(find ~/.m2/repository/com/adguard -name '*.aar' | head -1)
+          unzip -l "$AAR" | grep '\.so' | tee -a files.txt
+          cd ~/.m2/repository && zip -qr "$GITHUB_WORKSPACE/dnslibs-m2.zip" com/adguard
+          cd "$GITHUB_WORKSPACE" && sha256sum dnslibs-m2.zip | tee dnslibs-m2.zip.sha256
+      - name: 릴리스 올리기
+        env: { GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }
+        run: |
+          gh release delete eum-security-dnslibs --yes --cleanup-tag || true
+          gh release create eum-security-dnslibs dnslibs-m2.zip dnslibs-m2.zip.sha256 files.txt --target "$GITHUB_SHA" --prerelease \
+            --title "EUM SECURITY PRO · AdGuard DnsLibs AAR ($DNSLIBS_VERSION)" \
+            --notes "AdGuard DnsLibs (Apache-2.0) commit $DNSLIBS_COMMIT 를 소스에서 빌드한 Android AAR. ABI: arm64-v8a, armeabi-v7a, x86_64"
+      - name: 실패 로그 올리기
+        if: failure()
+        env: { GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }
+        run: |
+          touch dnslibs-build.log
+          tail -400 dnslibs-build.log > dnslibs-tail.log
+          grep -nE "error|FAILED|What went wrong|CMake Error|ERROR" dnslibs-build.log | head -200 > dnslibs-errors.txt || true
+          gh release delete eum-security-dnslibs-log --yes --cleanup-tag || true
+          gh release create eum-security-dnslibs-log dnslibs-build.log dnslibs-tail.log dnslibs-errors.txt --target "$GITHUB_SHA" --prerelease --title "DnsLibs 빌드 실패 로그" --notes "실패 로그"
