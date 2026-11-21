@@ -18,7 +18,7 @@ import kr.eumsoft.notepro.ui.canvas.NoteCanvasView
 import kr.eumsoft.notepro.ui.canvas.Tool
 import java.util.UUID
 
-enum class Screen { LIBRARY, WORKSPACE, SETTINGS }
+enum class Screen { LIBRARY, WORKSPACE, SETTINGS, ACCOUNT }
 
 /** 창(패널) 하나의 상태. 각 창은 배율·스크롤·도구를 따로 가진다. */
 class PaneState(val nbId: String, initialView: String?, pen: PenPreset) {

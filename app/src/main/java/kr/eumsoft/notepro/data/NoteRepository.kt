@@ -95,7 +95,7 @@ class NoteRepository(private val context: Context, private val helper: NoteDb) {
         db.insertOrThrow("notebooks", null, nbValues(nb))
         pages.forEach { db.insertOrThrow("pages", null, pageValues(it)) }
         setTagsInTx(nb.id, nb.tags)
-        op(nb.id, null, nb.id, "notebook.create")
+        recordAll(nb.id)
     }
 
     fun updateNotebookMeta(nb: NotebookData) = tx {
@@ -153,7 +153,7 @@ class NoteRepository(private val context: Context, private val helper: NoteDb) {
             snap.pages.forEach { p -> db.insertOrThrow("pages", null, pageValues(p.copy(id = pageMap.getValue(p.id), notebookId = newId, attachmentId = p.attachmentId?.let { attachMap[it] }, createdAt = now, updatedAt = now))) }
             snap.strokes.forEach { s -> db.insertOrThrow("pen_strokes", null, strokeValues(s.copy(id = Stroke.newId(), pageId = pageMap.getValue(s.pageId)), newId)) }
             setTagsInTx(newId, snap.notebook.tags)
-            op(newId, null, newId, "notebook.duplicate")
+            recordAll(newId)
         }
         return newId
     }
@@ -163,7 +163,7 @@ class NoteRepository(private val context: Context, private val helper: NoteDb) {
         "SELECT t.name FROM note_tags nt JOIN tags t ON t.id=nt.tag_id WHERE nt.notebook_id=? ORDER BY t.name", arrayOf(nbId),
     ).use { c -> c.map { it.getString(0) } }
 
-    private fun setTagsInTx(nbId: String, tags: List<String>) {
+    fun setTagsInTx(nbId: String, tags: List<String>) {
         db.execSQL("DELETE FROM note_tags WHERE notebook_id=?", arrayOf(nbId))
         for (name in tags.map { it.trim() }.filter { it.isNotEmpty() }.distinct()) {
             var tagId = db.rawQuery("SELECT id FROM tags WHERE name=?", arrayOf(name)).use { if (it.moveToFirst()) it.getString(0) else null }
@@ -189,20 +189,20 @@ class NoteRepository(private val context: Context, private val helper: NoteDb) {
     fun upsertPages(nbId: String, pages: List<PageData>, opType: String) = tx {
         for (p in pages) upsert("pages", pageValues(p))
         touchNb(nbId)
-        op(nbId, pages.firstOrNull()?.id, pages.firstOrNull()?.id, opType)
+        for (p in pages) opEntity("page", p.id, nbId, "upsert")
     }
 
     /** 페이지 삭제(복구 가능). 획은 그대로 둔다. */
     fun deletePage(nbId: String, pageId: String, reindexed: List<PageData>) = tx {
         db.execSQL("UPDATE pages SET deleted=1, deleted_at=?, updated_at=? WHERE id=?", arrayOf(now(), now(), pageId))
-        for (p in reindexed) db.execSQL("UPDATE pages SET page_index=? WHERE id=?", arrayOf(p.index, p.id))
+        for (p in reindexed) { db.execSQL("UPDATE pages SET page_index=? WHERE id=?", arrayOf(p.index, p.id)); opEntity("page", p.id, nbId, "upsert") }
         touchNb(nbId); op(nbId, pageId, pageId, "page.delete")
     }
 
     fun restorePage(nbId: String, pageId: String, atIndex: Int) = tx {
         db.execSQL("UPDATE pages SET page_index=page_index+1 WHERE notebook_id=? AND deleted=0 AND page_index>=?", arrayOf(nbId, atIndex))
         db.execSQL("UPDATE pages SET deleted=0, deleted_at=NULL, page_index=?, updated_at=? WHERE id=?", arrayOf(atIndex, now(), pageId))
-        touchNb(nbId); op(nbId, pageId, pageId, "page.restore")
+        touchNb(nbId); recordAllPages(nbId)
     }
 
     // ---------------- 획 ----------------
@@ -234,7 +234,8 @@ class NoteRepository(private val context: Context, private val helper: NoteDb) {
         for (id in remove) db.execSQL("UPDATE pen_strokes SET deleted=1, updated_at=? WHERE id=?", arrayOf(now, id))
         for (s in add) upsert("pen_strokes", strokeValues(s, nbId))
         touchNb(nbId)
-        op(nbId, add.firstOrNull()?.pageId, (add.firstOrNull()?.id ?: remove.firstOrNull()), opType)
+        for (st in add) opEntity("stroke", st.id, nbId, "upsert")
+        for (id in remove) opEntity("stroke", id, nbId, "delete")
     }
 
     fun snapshot(nbId: String): NotebookSnapshot? {
@@ -250,7 +251,7 @@ class NoteRepository(private val context: Context, private val helper: NoteDb) {
         s.pages.forEach { upsert("pages", pageValues(it.copy(deleted = false))) }
         s.strokes.forEach { upsert("pen_strokes", strokeValues(it, id)) }
         db.update("notebooks", ContentValues().apply { put("title", s.notebook.title); put("updated_at", now) }, "id=?", arrayOf(id))
-        op(id, null, id, "notebook.restoreVersion")
+        recordAll(id)
     }
 
     /**
@@ -277,7 +278,7 @@ class NoteRepository(private val context: Context, private val helper: NoteDb) {
                 db.insertOrThrow("pen_strokes", null, strokeValues(if (exists) st.copy(id = Stroke.newId(), pageId = pid) else st, nbId))
             }
             setTagsInTx(nbId, s.notebook.tags)
-            op(nbId, null, nbId, "notebook.import")
+            recordAll(nbId)
         }
         return nbId
     }
@@ -325,7 +326,7 @@ class NoteRepository(private val context: Context, private val helper: NoteDb) {
         return strokes + att + ver
     }
 
-    fun pendingSyncOps(): Int = db.rawQuery("SELECT COUNT(*) FROM sync_operations WHERE status='pending'", null).use { it.moveToFirst(); it.getInt(0) }
+    fun pendingSyncOps(): Int = db.rawQuery("SELECT COUNT(DISTINCT entity_id) FROM sync_operations WHERE status='pending'", null).use { it.moveToFirst(); it.getInt(0) }
 
     /** PRAGMA quick_check + 전체 획 CRC 검사. 결과 문자열 목록(비어 있으면 정상). */
     fun integrityCheck(): List<String> {
@@ -351,20 +352,41 @@ class NoteRepository(private val context: Context, private val helper: NoteDb) {
     // ---------------- 내부 ----------------
     private fun touchNb(nbId: String) = db.execSQL("UPDATE notebooks SET updated_at=? WHERE id=?", arrayOf(now(), nbId))
 
-    private fun op(nbId: String, pageId: String?, entityId: String?, type: String) {
+    /** 예전 형식 호출: "folder.x" / "notebook.x" / "page.delete" 등 → 대상 종류로 변환 */
+    private fun op(nbId: String, @Suppress("UNUSED_PARAMETER") pageId: String?, entityId: String?, type: String) {
+        val kind = type.substringBefore('.')
+        val entity = if (kind in setOf("folder", "notebook", "page", "stroke")) kind else "notebook"
+        val opType = if (type.endsWith(".delete") && entity != "notebook" || type == "notebook.purge") "delete" else "upsert"
+        opEntity(entity, entityId ?: nbId, nbId, opType)
+    }
+
+    /** 동기화 아웃박스 기록(대상 하나당 한 줄). 전송 시점에 대상의 현재 상태를 읽어 보낸다. */
+    fun opEntity(entityType: String, entityId: String, nbId: String, opType: String) {
         db.insertOrThrow("sync_operations", null, ContentValues().apply {
-            put("op_id", UUID.randomUUID().toString()); put("notebook_id", nbId); put("page_id", pageId); put("entity_id", entityId)
-            put("op_type", type); put("device_id", deviceId); put("created_at", now())
+            put("op_id", UUID.randomUUID().toString()); put("notebook_id", nbId); put("entity_id", entityId); put("entity_type", entityType)
+            put("op_type", opType); put("device_id", deviceId); put("created_at", now())
         })
     }
 
+    /** 노트 한 권의 모든 대상을 전송 대기에 올림(복제·복원·가져오기·생성 후). */
+    fun recordAll(nbId: String) {
+        opEntity("notebook", nbId, nbId, "upsert")
+        db.rawQuery("SELECT id FROM attachments WHERE notebook_id=?", arrayOf(nbId)).use { c -> while (c.moveToNext()) opEntity("attachment", c.getString(0), nbId, "upsert") }
+        recordAllPages(nbId)
+        db.rawQuery("SELECT id FROM pen_strokes WHERE notebook_id=?", arrayOf(nbId)).use { c -> while (c.moveToNext()) opEntity("stroke", c.getString(0), nbId, "upsert") }
+    }
+
+    private fun recordAllPages(nbId: String) {
+        db.rawQuery("SELECT id FROM pages WHERE notebook_id=?", arrayOf(nbId)).use { c -> while (c.moveToNext()) opEntity("page", c.getString(0), nbId, "upsert") }
+    }
+
     /** FK가 걸린 행을 지우지 않도록 REPLACE 대신 UPDATE→INSERT. */
-    private fun upsert(table: String, cv: ContentValues) {
+    fun upsert(table: String, cv: ContentValues) {
         val id = cv.getAsString("id")
         if (db.update(table, cv, "id=?", arrayOf(id)) == 0) db.insertOrThrow(table, null, cv)
     }
 
-    private inline fun <T> tx(block: () -> T): T {
+    inline fun <T> tx(block: () -> T): T {
         val d = db
         d.beginTransaction()
         try {

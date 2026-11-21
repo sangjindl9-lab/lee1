@@ -108,11 +108,20 @@ fun Root(state: AppState, activity: MainActivity) {
     }
     // 자동 복구 지점 주기 확인
     LaunchedEffect(Unit) { while (true) { delay(60_000); state.app.sessions.tickAutoVersions() } }
+    // 동기화: 시작 시 + 2분마다(로그인한 경우만, 네트워크 재연결 시에도 자동)
+    LaunchedEffect(Unit) {
+        state.app.onLibraryChanged = { if (state.screen == Screen.LIBRARY) state.refreshLibrary() }
+        while (true) { state.app.sync.requestSync(); delay(120_000) }
+    }
     when (state.screen) {
         Screen.LIBRARY -> LibraryScreen(state, activity)
         Screen.SETTINGS -> {
             BackHandler { state.screen = if (state.panes.isEmpty()) Screen.LIBRARY else Screen.WORKSPACE }
             SettingsScreen(state, activity) { state.screen = if (state.panes.isEmpty()) Screen.LIBRARY else Screen.WORKSPACE }
+        }
+        Screen.ACCOUNT -> {
+            BackHandler { state.screen = if (state.panes.isEmpty()) Screen.LIBRARY else Screen.WORKSPACE }
+            AccountScreen(state, activity) { state.screen = if (state.panes.isEmpty()) Screen.LIBRARY else Screen.WORKSPACE }
         }
         Screen.WORKSPACE -> {
             BackHandler { state.closeAll() }

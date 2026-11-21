@@ -69,6 +69,8 @@ class PdfStore(private val context: Context, private val repo: NoteRepository, p
                 put("created_at", now); put("updated_at", now)
             })
             repo.addAttachment(attachId, nbId, "pdf", name, "application/pdf", size, md.digest().joinToString("") { "%02x".format(it) })
+            repo.opEntity("notebook", nbId, nbId, "upsert")
+            repo.opEntity("attachment", attachId, nbId, "upsert")
             repo.db.setTransactionSuccessful()
         } finally { repo.db.endTransaction() }
         repo.upsertPages(nbId, pages, "pdf.import")

@@ -20,6 +20,14 @@ object Io {
         }
     }
 
+    /** 다른 스레드(동기화 등)에서 DB 작업을 실행하고 결과를 기다린다. Io 스레드 안에서 부르면 안 된다. */
+    fun <T> call(work: () -> T): T {
+        check(Thread.currentThread().name != "notepro-db") { "Io.call from Io thread" }
+        val f = java.util.concurrent.FutureTask<T>(work)
+        executor.execute(f)
+        try { return f.get() } catch (e: java.util.concurrent.ExecutionException) { throw e.cause ?: e }
+    }
+
     /** 앞서 넣은 작업이 모두 끝날 때까지 기다린다(앱이 백그라운드로 갈 때 저장 완료 보장). */
     fun flush(timeoutMs: Long = 3000): Boolean {
         val latch = CountDownLatch(1)

@@ -2,7 +2,7 @@ name: 노트프로 APK 빌드·검수
 on:
   push:
     branches: [notepro]
-    paths-ignore: ["site/**", "docs/**"]
+    paths-ignore: ["site/**", "docs/**", "server/**", "admin/**"]
   workflow_dispatch:
 permissions:
   contents: write
@@ -85,8 +85,22 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    services:
+      postgres:
+        image: postgres:16
+        env: { POSTGRES_PASSWORD: pw }
+        ports: ["5432:5432"]
+        options: --health-cmd pg_isready --health-interval 5s --health-retries 10
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: 서버 실행(동기화 E2E용)
+        working-directory: server
+        run: |
+          npm ci && npm run build
+          DATABASE_URL=postgres://postgres:pw@localhost:5432/postgres JWT_SECRET=e2e-secret-e2e-secret-e2e-secret-12345 STORAGE_DIR=/tmp/st PORT=8080 nohup node build/src/index.js > /tmp/server.log 2>&1 &
+          for i in $(seq 1 30); do curl -sf localhost:8080/health && break; sleep 1; done
       - uses: actions/download-artifact@v4
         with: { name: apks }
       - name: KVM
@@ -108,6 +122,7 @@ jobs:
         env: { GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }
         run: |
           ls emu || exit 0
+          cp /tmp/server.log emu/ 2>/dev/null || true
           cd emu && rm -f ui.xml && zip -q ../emu-results.zip * && cd ..
           gh release delete notepro-test --yes --cleanup-tag || true
           gh release create notepro-test emu/report.txt emu-results.zip --target "$GITHUB_SHA" --prerelease \

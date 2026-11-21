@@ -10,9 +10,11 @@ android {
         applicationId = "kr.eumsoft.notepro"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0-stage1"
+        versionCode = 2
+        versionName = "0.2.0-stage2"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        val server = (project.findProperty("noteproServer") as String?) ?: System.getenv("NOTEPRO_SERVER_URL") ?: ""
+        buildConfigField("String", "SERVER_URL", "\"$server\"")
     }
     buildFeatures { compose = true; buildConfig = true }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }

@@ -42,11 +42,20 @@ adb shell am instrument -w -e class $PKG.CrashKillTest#verifyAfterKill $RUN > em
 result emu/kill_verify.txt "CrashKillTest.verifyAfterKill (종료 직전 커밋된 획 모두 보존 + 무결성)"
 adb shell run-as $PKG cat files/crash_result.txt | tee -a $R; echo | tee -a $R
 
+log "== 2-1. 실제 서버와 기기 간 동기화(E2E)"
+adb shell am instrument -w -e class $PKG.SyncE2ETest $RUN > emu/sync_e2e.txt 2>&1
+result emu/sync_e2e.txt "SyncE2ETest (가입→업로드→다른 기기 수신→다른 기기 추가→내려받기→로그아웃 후 노트 유지)"
+adb shell run-as $PKG cat files/sync_result.txt | tee -a $R; echo | tee -a $R
+
 log "== 3. UI 자동 조작: 새 노트 → 필기 → 강제 종료 → 재시작"
-adb shell am start -W -n $PKG/.ui.MainActivity >/dev/null; sleep 5; shot 01_launch
-tap_text "OK"; sleep 1
-tap_text "New note"; sleep 2; shot 02_new_note_dialog
-tap_text "Create"; sleep 4; shot 03_editor
+# 에뮬레이터 런처 ANR 창이 뜨면 먼저 닫는다(앱 문제 아님)
+adb shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS >/dev/null 2>&1
+adb shell am start -W -n $PKG/.ui.MainActivity >/dev/null; sleep 6
+for k in 1 2 3; do tap_text "Wait"; sleep 1; done
+shot 01_launch
+tap_text "OK"; sleep 1; tap_text "Wait"
+tap_text "New note"; sleep 2; tap_text "Wait"; shot 02_new_note_dialog
+tap_text "Create"; sleep 4; tap_text "Wait"; shot 03_editor
 W=$(adb shell wm size | grep -oE '[0-9]+x[0-9]+' | tail -1 | cut -dx -f1); H=$(adb shell wm size | grep -oE '[0-9]+x[0-9]+' | tail -1 | cut -dx -f2)
 for i in 0 1 2 3 4 5; do
   y=$((H/3 + i*90)); adb shell input swipe $((W/5)) $y $((W*4/5)) $((y+40)) 500

@@ -44,7 +44,7 @@ class NoteDb(private val context: Context) : SQLiteOpenHelper(context, NAME, nul
 
     companion object {
         const val NAME = "notepro.db"
-        const val VERSION = 1
+        const val VERSION = 2
 
         /** 버전별 마이그레이션 SQL. 이미 출시된 버전의 SQL은 절대 수정하지 않는다. */
         val MIGRATIONS: Map<Int, List<String>> = mapOf(
@@ -100,6 +100,32 @@ class NoteDb(private val context: Context) : SQLiteOpenHelper(context, NAME, nul
                 """CREATE TABLE app_errors(
                     id INTEGER PRIMARY KEY AUTOINCREMENT, created_at INTEGER NOT NULL, kind TEXT NOT NULL,
                     message TEXT NOT NULL, detail TEXT)""",
+            ),
+            // v2: 서버 동기화(2단계). 기존 기록은 대상 종류가 없으므로, 모든 대상을 새로 전송 대기에 올린다
+            //     → 비회원으로 쓰던 노트도 로그인하면 그대로 계정에 연결된다.
+            2 to listOf(
+                "ALTER TABLE notebook_folders ADD COLUMN server_rev INTEGER NOT NULL DEFAULT 0",
+                "ALTER TABLE notebooks ADD COLUMN server_rev INTEGER NOT NULL DEFAULT 0",
+                "ALTER TABLE pages ADD COLUMN server_rev INTEGER NOT NULL DEFAULT 0",
+                "ALTER TABLE pen_strokes ADD COLUMN server_rev INTEGER NOT NULL DEFAULT 0",
+                "ALTER TABLE attachments ADD COLUMN server_rev INTEGER NOT NULL DEFAULT 0",
+                "ALTER TABLE attachments ADD COLUMN uploaded INTEGER NOT NULL DEFAULT 0",
+                "ALTER TABLE sync_operations ADD COLUMN entity_type TEXT",
+                "ALTER TABLE sync_operations ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0",
+                "ALTER TABLE sync_operations ADD COLUMN last_error TEXT",
+                "UPDATE sync_operations SET status='superseded' WHERE entity_type IS NULL",
+                "CREATE INDEX idx_syncops_entity ON sync_operations(entity_id, status)",
+                """INSERT INTO sync_operations(op_id, notebook_id, entity_id, entity_type, op_type, device_id, created_at, status)
+                   SELECT lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-a' || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))), id, id, 'folder', CASE deleted WHEN 1 THEN 'delete' ELSE 'upsert' END, 'migrated', created_at, 'pending' FROM notebook_folders""",
+                """INSERT INTO sync_operations(op_id, notebook_id, entity_id, entity_type, op_type, device_id, created_at, status)
+                   SELECT lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-a' || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))), id, id, 'notebook', 'upsert', 'migrated', created_at, 'pending' FROM notebooks""",
+                """INSERT INTO sync_operations(op_id, notebook_id, entity_id, entity_type, op_type, device_id, created_at, status)
+                   SELECT lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-a' || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))), notebook_id, id, 'attachment', 'upsert', 'migrated', created_at, 'pending' FROM attachments""",
+                """INSERT INTO sync_operations(op_id, notebook_id, entity_id, entity_type, op_type, device_id, created_at, status)
+                   SELECT lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-a' || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))), notebook_id, id, 'page', 'upsert', 'migrated', created_at, 'pending' FROM pages""",
+                """INSERT INTO sync_operations(op_id, notebook_id, entity_id, entity_type, op_type, device_id, created_at, status)
+                   SELECT lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-a' || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))), notebook_id, id, 'stroke', CASE deleted WHEN 1 THEN 'delete' ELSE 'upsert' END, 'migrated', created_at, 'pending' FROM pen_strokes""",
+                """CREATE TABLE sync_state(key TEXT PRIMARY KEY, value TEXT NOT NULL)""",
             ),
         )
 

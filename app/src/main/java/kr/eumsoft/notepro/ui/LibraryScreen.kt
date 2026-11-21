@@ -125,6 +125,7 @@ fun LibraryScreen(state: AppState, activity: MainActivity) {
             TopAppBar(
                 title = { Text(stringResource(if (state.pickForSide) R.string.pick_note_for_side else R.string.app_name), fontWeight = FontWeight.Bold) },
                 actions = {
+                    SyncBadge(state)
                     IconButton({ pdfPicker.launch(arrayOf("application/pdf")) }) { Icon(Icons.Default.Add, stringResource(R.string.import_pdf)) }
                     IconButton({ menu = true }) { Icon(Icons.Default.MoreVert, stringResource(R.string.more)) }
                     DropdownMenu(menu, { menu = false }) {
@@ -140,6 +141,7 @@ fun LibraryScreen(state: AppState, activity: MainActivity) {
                                 else str(R.string.integrity_problems) + "\n" + problems.take(20).joinToString("\n")
                             }
                         })
+                        DropdownMenuItem({ Text(stringResource(R.string.account_sync)) }, { menu = false; state.screen = Screen.ACCOUNT })
                         DropdownMenuItem({ Text(stringResource(R.string.settings)) }, { menu = false; state.screen = Screen.SETTINGS })
                     }
                 },

@@ -13,6 +13,9 @@ import kr.eumsoft.notepro.data.SettingsStore
 import kr.eumsoft.notepro.data.VersionManager
 import kr.eumsoft.notepro.pdf.PdfStore
 import kr.eumsoft.notepro.render.PaperPainter
+import kr.eumsoft.notepro.sync.Api
+import kr.eumsoft.notepro.sync.SyncEngine
+import kr.eumsoft.notepro.sync.TokenStore
 import java.io.File
 
 class NoteProApp : Application() {
@@ -24,6 +27,9 @@ class NoteProApp : Application() {
     lateinit var sessions: SessionManager; private set
     lateinit var pdf: PdfStore; private set
     lateinit var backup: BackupManager; private set
+    lateinit var sync: SyncEngine; private set
+    /** 라이브러리 화면 새로고침(동기화로 노트가 바뀌었을 때) */
+    var onLibraryChanged: (() -> Unit)? = null
 
     /** 창 사이 복사·붙여넣기용 앱 내부 클립보드(필기 획). */
     var strokeClipboard: List<Stroke> = emptyList()
@@ -63,6 +69,17 @@ class NoteProApp : Application() {
         pdf = PdfStore(this, repo, files)
         backup = BackupManager(this, repo, files)
         PaperPainter.labels = resources.getStringArray(R.array.template_labels)
+        val tokens = TokenStore(this)
+        sync = SyncEngine(repo, files, tokens, Api(tokens)) { changed ->
+            changed.forEach { sessions.reloadFromDb(it) }
+            onLibraryChanged?.invoke()
+        }
+        // 인터넷이 다시 연결되면 자동 동기화
+        try {
+            (getSystemService(CONNECTIVITY_SERVICE) as android.net.ConnectivityManager).registerDefaultNetworkCallback(object : android.net.ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: android.net.Network) { Io.main.postDelayed({ sync.requestSync() }, 1500) }
+            })
+        } catch (_: Exception) { }
 
         val crash = previousCrash
         Io.run {
