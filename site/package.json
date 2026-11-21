@@ -1,0 +1,8 @@
+{
+  "name": "eum-purchase-note-site",
+  "version": "1.0.0",
+  "private": true,
+  "description": "이음 구매노트 개인정보처리방침·지원 페이지",
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=18" }
+}

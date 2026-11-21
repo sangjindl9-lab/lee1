@@ -43,6 +43,11 @@ jobs:
           grep -E "^e: |error:|FAILED|What went wrong|Exception|warning:.*unresolved" -A3 build.log | head -400 > errors.txt || true
           gh release delete eum-purchase-note-buildlog --yes --cleanup-tag || true
           gh release create eum-purchase-note-buildlog build.log errors.txt tests.txt --target "$GITHUB_SHA" --prerelease --title "이음 구매노트 빌드 로그" --notes "빌드 실패 로그"
+      - name: APK 권한 확인
+        run: |
+          AAPT=$(ls -d $ANDROID_HOME/build-tools/*/ | sort -V | tail -1)aapt2
+          echo "== APK 권한 (실제 빌드 결과)" >> tests.txt
+          $AAPT dump permissions app/build/outputs/apk/debug/app-debug.apk | tee -a tests.txt
       - name: APK 정리
         run: |
           cp app/build/outputs/apk/debug/app-debug.apk app-debug.apk
