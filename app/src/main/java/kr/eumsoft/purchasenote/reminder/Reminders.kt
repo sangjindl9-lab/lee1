@@ -60,18 +60,18 @@ object Reminders {
     }
 
     /** 이 구매의 알림을 모두 지우고 현재 기한·상태대로 다시 건다 */
-    fun schedule(c: Context, p: Purchase) {
+    fun schedule(c: Context, p: Purchase): Int {
         cancel(c, p.id)
         val am = c.getSystemService(AlarmManager::class.java)
+        var n = 0
         for (pl in plan(p, System.currentTimeMillis(), ZoneId.systemDefault())) {
             val pi = pending(c, p.id, pl.kind, pl.days, PendingIntent.FLAG_UPDATE_CURRENT) ?: continue
-            am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, pl.at, pi)
+            am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, pl.at, pi); n++
         }
+        return n
     }
 
-    suspend fun rescheduleAll(c: Context) {
-        AppDb.get(c).dao().allOnce().forEach { schedule(c, it) }
-    }
+    suspend fun rescheduleAll(c: Context): Int = AppDb.get(c).dao().allOnce().sumOf { schedule(c, it) }
 
     fun ensureChannel(c: Context) {
         val nm = c.getSystemService(NotificationManager::class.java)
@@ -130,7 +130,7 @@ class RescheduleReceiver : BroadcastReceiver() {
     override fun onReceive(c: Context, i: Intent) {
         val pr = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
-            try { Reminders.rescheduleAll(c); android.util.Log.i("EUMPN", "rescheduled after ${i.action}") } finally { pr.finish() }
+            try { val n = Reminders.rescheduleAll(c); android.util.Log.i("EUMPN", "rescheduled after ${i.action}: $n alarms") } finally { pr.finish() }
         }
     }
 }
