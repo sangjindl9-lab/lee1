@@ -180,6 +180,22 @@ adb shell am start -W -n $P/.ui.MainActivity >/dev/null; sleep 4
 has "웹 보호" && { tap "피싱·악성 사이트 차단" 0 8; shot play_05_home_ko; tap "웹 보호" 0 2; shot play_06_webguard_ko; tap "검사" 0 2; shot play_07_scan_ko; tap "보안 DB" 0 3; shot play_08_db_ko; } || log "  (한국어 전환 미지원)"
 dump; grep -qi "ad block\|광고" $O/ui.xml && ng "Play 판 화면에 광고 차단 문구가 보임" || ok "Play 판 화면에 광고 차단 문구 없음"
 
+if [ "$API" -ge 34 ]; then
+  log "== 18b. Play 심사용 시연 동영상 (VPN·설치 앱 검사)"
+  adb shell am force-stop $P; sleep 1
+  adb shell screenrecord --time-limit 150 /sdcard/demo.mp4 & RP=$!; sleep 2
+  adb shell am start -W -n $P/.ui.MainActivity >/dev/null; sleep 4
+  tap "피싱·악성 사이트 차단" 0 6; tap "피싱·악성 사이트 차단" 0 10
+  adb shell cmd statusbar expand-notifications; sleep 4; adb shell cmd statusbar collapse; sleep 2
+  tap "웹 보호" 0 4
+  tap "검사" 0 2; tap "설치 앱 정밀 검사" 0 3
+  for i in $(seq 1 40); do has "검사 요약" && break; sleep 2; done; sleep 4
+  adb shell input swipe 540 1600 540 600 800; sleep 3
+  adb shell input swipe 540 1600 540 600 800; sleep 3
+  adb shell pkill -INT screenrecord; sleep 4; wait $RP 2>/dev/null
+  adb pull /sdcard/demo.mp4 $O/play_demo_ko.mp4 >/dev/null && ok "시연 동영상 저장 ($(du -h $O/play_demo_ko.mp4 | cut -f1))" || ng "시연 동영상 저장 실패"
+fi
+
 log "== 19. 크래시 확인"
 CR=$(adb logcat -d -b crash | grep -c "kr.eumsoft.securitypro")
 [ "$CR" = "0" ] && ok "크래시 0건" || { ng "크래시 $CR건"; adb logcat -d -b crash | grep -A20 "$A" | head -60 > $O/crash.txt; }
