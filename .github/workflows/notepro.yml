@@ -9,6 +9,8 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      HAS_KEY: ${{ secrets.NOTEPRO_KEYSTORE_B64 != '' && 'true' || 'false' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -17,6 +19,8 @@ jobs:
         with: { gradle-version: "8.11.1" }
       - name: 단위 테스트 + 테스트 APK 빌드
         shell: bash
+        env:
+          NOTEPRO_SERVER_URL: https://notepro-server-production.up.railway.app
         run: |
           set -o pipefail
           gradle testDebugUnitTest assembleDebug assembleDebugAndroidTest --no-daemon 2>&1 | tee build.log
@@ -72,6 +76,20 @@ jobs:
           cp app-debug.apk notepro-internal-test.apk
       - uses: actions/upload-artifact@v4
         with: { name: apks, path: "app-debug*.apk" }
+      - name: 스토어 배포용 AAB(서명 키가 저장소 비밀값에 있을 때만)
+        if: ${{ env.HAS_KEY == 'true' }}
+        env:
+          NOTEPRO_SERVER_URL: https://notepro-server-production.up.railway.app
+          NOTEPRO_KEYSTORE_PASSWORD: ${{ secrets.NOTEPRO_KEYSTORE_PASSWORD }}
+          NOTEPRO_KEY_ALIAS: ${{ secrets.NOTEPRO_KEY_ALIAS }}
+          NOTEPRO_KEY_PASSWORD: ${{ secrets.NOTEPRO_KEY_PASSWORD }}
+        run: |
+          echo "${{ secrets.NOTEPRO_KEYSTORE_B64 }}" | base64 -d > /tmp/notepro.jks
+          NOTEPRO_KEYSTORE=/tmp/notepro.jks gradle bundleRelease --no-daemon
+          cp app/build/outputs/bundle/release/app-release.aab notepro-release.aab
+      - uses: actions/upload-artifact@v4
+        if: ${{ env.HAS_KEY == 'true' }}
+        with: { name: release-aab, path: notepro-release.aab }
       - name: 사내 테스트 APK 올리기
         env: { GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }
         run: |

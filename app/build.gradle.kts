@@ -16,6 +16,22 @@ android {
         val server = (project.findProperty("noteproServer") as String?) ?: System.getenv("NOTEPRO_SERVER_URL") ?: ""
         buildConfigField("String", "SERVER_URL", "\"$server\"")
     }
+    signingConfigs {
+        // 스토어 서명 키는 저장소에 넣지 않는다 — CI 비밀값(NOTEPRO_KEYSTORE 등)으로만 주입
+        create("release") {
+            System.getenv("NOTEPRO_KEYSTORE")?.let { storeFile = file(it) }
+            storePassword = System.getenv("NOTEPRO_KEYSTORE_PASSWORD")
+            keyAlias = System.getenv("NOTEPRO_KEY_ALIAS")
+            keyPassword = System.getenv("NOTEPRO_KEY_PASSWORD")
+        }
+    }
+    buildTypes {
+        release {
+            // 코드 축소(R8)는 PDFBox·ML Kit 규칙 검증 후 켠다(6단계 남은 작업)
+            isMinifyEnabled = false
+            if (System.getenv("NOTEPRO_KEYSTORE") != null) signingConfig = signingConfigs.getByName("release")
+        }
+    }
     buildFeatures { compose = true; buildConfig = true }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget = "17" }
