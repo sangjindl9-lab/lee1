@@ -1,0 +1,12 @@
+node_modules/
+.env
+*.jks
+*.keystore
+# 안드로이드 빌드 산출물
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.idea/
+android/*.iml
+android/captures/

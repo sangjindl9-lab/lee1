@@ -1,0 +1,19 @@
+{
+  "name": "eum-balju",
+  "version": "1.0.0",
+  "private": true,
+  "description": "이음 발주서 — 발주서 작성·PDF 출력 웹/안드로이드 앱",
+  "main": "server.js",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node server.js",
+    "icons": "python3 scripts/gen-icons.py"
+  },
+  "dependencies": {
+    "bcryptjs": "2.4.3",
+    "express": "4.21.2",
+    "html2canvas": "1.4.1",
+    "jspdf": "2.5.1",
+    "pg": "8.13.1"
+  }
+}
