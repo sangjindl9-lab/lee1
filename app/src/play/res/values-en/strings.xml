@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="tab_adblock">Web Guard</string>
+    <string name="adblock_switch">Block phishing &amp; malicious sites</string>
+    <string name="home_adblock">Web protection status</string>
+    <string name="home_status_vpn_off">Phishing &amp; malicious-site blocking is off</string>
+    <string name="home_blocked_today">Dangerous-site requests blocked today</string>
+    <string name="home_blocked_note">Counts DNS requests to phishing and malware sites that were blocked.</string>
+    <string name="vpn_channel">Web protection VPN status</string>
+    <string name="vpn_noti_connecting">Connecting web protection…</string>
+    <string name="vpn_noti_on">Blocking phishing &amp; malicious sites (local VPN)</string>
+    <string name="onb1_title">Blocks phishing and malicious sites</string>
+    <string name="onb1_body">A local VPN that runs only on your device blocks DNS requests to phishing and malware sites. Regular traffic does not go through it, so browsing stays fast and your data never goes to our servers. Android will ask you to allow the VPN connection when you turn it on.</string>
+    <string name="ab_limits_text">• Only known phishing and malware domains are blocked at DNS level. New sites or malicious content hidden on legitimate sites may not be blocked.\n• Apps that use their own encrypted DNS (DoH), or a fixed Android Private DNS, are not protected.\n• Cannot run together with another VPN.\n• HTTPS content is never decrypted.</string>
+    <string name="ab_apps_help">Apps you switch off bypass the VPN and are not protected. Use this if blocking breaks an app.</string>
+    <string name="privacy_body">• Web protection is a local VPN that works only on your device. Regular internet traffic does not pass through it; only DNS requests are checked on-device against phishing and malware domains and then sent to the DNS server you chose.\n• DNS block logs and scan history are stored only on your device and deleted automatically after the retention period.\n• Your installed-app list, DNS logs and APK files are never sent to any server.\n• Updates only download block lists and the threat DB; the threat DB is applied only after its Ed25519 signature is verified.\n• The QUERY_ALL_PACKAGES permission is used only to scan installed apps for malware.\n• Contact: pm999@naver.com</string>
+    <string name="db_ad_filters">Block lists</string>
+    <string name="db_update_now">Update now (threat DB + block lists)</string>
+</resources>

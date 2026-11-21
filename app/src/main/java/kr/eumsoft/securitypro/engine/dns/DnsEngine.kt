@@ -104,7 +104,7 @@ class DnsEngine @Inject constructor(
             val f = filters.fileOf(src.id)
             if (f.exists() && f.length() > 0) out += FilterParams(src.id, f.absolutePath, false)
         }
-        val userBlock = db.dns().blockedNow().joinToString("\n") { FilterParser.blockRule(it.domain) }
+        val userBlock = if (!kr.eumsoft.securitypro.BuildConfig.AD_BLOCK) "" else db.dns().blockedNow().joinToString("\n") { FilterParser.blockRule(it.domain) }
         if (userBlock.isNotEmpty()) out += FilterParams(FilterCatalog.ID_USER_BLOCK, userBlock, true)
         // 허용 목록은 가장 높은 우선순위($important)로 넣어 다른 모든 차단 규칙보다 앞선다.
         val allow = db.dns().allowedNow().joinToString("\n") { FilterParser.allowRule(it.domain) }

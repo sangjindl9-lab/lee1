@@ -19,6 +19,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kr.eumsoft.securitypro.BuildConfig
 import kr.eumsoft.securitypro.R
 import kr.eumsoft.securitypro.data.AppSettings
 import kr.eumsoft.securitypro.engine.dns.EumVpnService
@@ -62,8 +63,10 @@ private fun StatusTab(main: MainVm, vm: AdBlockVm, requestVpn: () -> Unit) {
         }
         Section(stringResource(R.string.ab_protection))
         InfoCard {
-            SwitchRow(stringResource(R.string.ab_ads), null, s.adBlock, { vm.setCategory("AD", it) })
-            SwitchRow(stringResource(R.string.ab_tracking), null, s.trackingBlock, { vm.setCategory("TRACKING", it) })
+            if (BuildConfig.AD_BLOCK) {
+                SwitchRow(stringResource(R.string.ab_ads), null, s.adBlock, { vm.setCategory("AD", it) })
+                SwitchRow(stringResource(R.string.ab_tracking), null, s.trackingBlock, { vm.setCategory("TRACKING", it) })
+            }
             SwitchRow(stringResource(R.string.ab_phishing), stringResource(R.string.ab_phishing_sub), s.phishingBlock, { vm.setCategory("PHISHING", it) })
         }
         Section(stringResource(R.string.ab_pause))
@@ -129,14 +132,16 @@ private fun ListsTab(vm: AdBlockVm) {
                 singleLine = true, isError = error, supportingText = { if (error) Text(stringResource(R.string.ab_domain_invalid)) })
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button({ if (vm.allow(input)) input = "" else error = true }, Modifier.weight(1f).heightIn(min = 52.dp)) { Text(stringResource(R.string.ab_allow)) }
-                OutlinedButton({ if (vm.block(input)) input = "" else error = true }, Modifier.weight(1f).heightIn(min = 52.dp)) { Text(stringResource(R.string.ab_block)) }
+                if (BuildConfig.AD_BLOCK) OutlinedButton({ if (vm.block(input)) input = "" else error = true }, Modifier.weight(1f).heightIn(min = 52.dp)) { Text(stringResource(R.string.ab_block)) }
             }
             Section(stringResource(R.string.ab_allowlist) + " (${allowed.size})")
             Text(stringResource(R.string.ab_allow_priority), style = MaterialTheme.typography.bodyMedium)
         }
         items(allowed, key = { "a" + it.domain }) { DomainRow(it.domain) { vm.unallow(it.domain) } }
-        item { Section(stringResource(R.string.ab_blocklist) + " (${blocked.size})") }
-        items(blocked, key = { "b" + it.domain }) { DomainRow(it.domain) { vm.unblock(it.domain) } }
+        if (BuildConfig.AD_BLOCK) {
+            item { Section(stringResource(R.string.ab_blocklist) + " (${blocked.size})") }
+            items(blocked, key = { "b" + it.domain }) { DomainRow(it.domain) { vm.unblock(it.domain) } }
+        }
     }
 }
 
@@ -201,6 +206,7 @@ private fun StatsTab(vm: AdBlockVm) {
             KeyValue(stringResource(R.string.st_today), "%,d".format(today))
             KeyValue(stringResource(R.string.st_total), "%,d".format(total))
             listOf("AD" to R.string.st_ad, "TRACKING" to R.string.st_tracking, "PHISHING" to R.string.st_phishing, "MALWARE" to R.string.st_malware, "CUSTOM" to R.string.st_custom)
+                .filter { BuildConfig.AD_BLOCK || it.first == "PHISHING" || it.first == "MALWARE" }
                 .forEach { (c, label) -> KeyValue(stringResource(label), "%,d".format(cats.firstOrNull { it.category == c }?.n ?: 0)) }
             KeyValue(stringResource(R.string.st_rules), "%,d".format(sources.filter { it.enabled }.sumOf { it.ruleCount }))
             Text(stringResource(R.string.home_blocked_note), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)

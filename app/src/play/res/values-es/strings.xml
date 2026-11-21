@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="tab_adblock">Protección web</string>
+    <string name="adblock_switch">Bloquear phishing y sitios maliciosos</string>
+    <string name="home_adblock">Estado de la protección web</string>
+    <string name="home_status_vpn_off">El bloqueo de phishing y sitios maliciosos está desactivado</string>
+    <string name="home_blocked_today">Solicitudes a sitios peligrosos bloqueadas hoy</string>
+    <string name="home_blocked_note">Cuenta las solicitudes DNS a sitios de phishing y malware bloqueadas.</string>
+    <string name="vpn_channel">Estado de la VPN de protección web</string>
+    <string name="vpn_noti_connecting">Conectando la protección web…</string>
+    <string name="vpn_noti_on">Bloqueando phishing y sitios maliciosos (VPN local)</string>
+    <string name="onb1_title">Bloquea sitios de phishing y maliciosos</string>
+    <string name="onb1_body">Una VPN local que funciona solo en su dispositivo bloquea las solicitudes DNS a sitios de phishing y malware. El tráfico normal no pasa por ella, así que no se ralentiza y sus datos no van a ningún servidor. Android le pedirá permiso para la conexión VPN al activarla.</string>
+    <string name="ab_limits_text">• Solo se bloquean dominios conocidos de phishing y malware a nivel DNS. Puede no bloquear sitios nuevos ni contenido malicioso oculto en sitios legítimos.\n• Las apps con DNS cifrado propio (DoH) o un DNS privado fijo de Android no quedan protegidas.\n• No funciona junto con otra VPN.\n• Nunca descifra contenido HTTPS.</string>
+    <string name="ab_apps_help">Las apps desactivadas no pasan por la VPN y no quedan protegidas. Úselo si el bloqueo impide que una app funcione.</string>
+    <string name="privacy_body">• La protección web es una VPN local que funciona solo en su dispositivo. El tráfico normal no pasa por ella; solo las solicitudes DNS se comprueban en el dispositivo contra dominios de phishing y malware y se envían al servidor DNS elegido.\n• Los registros de bloqueo DNS y de análisis se guardan solo en su dispositivo y se borran automáticamente tras el periodo de conservación.\n• Nunca se envían a ningún servidor su lista de apps, registros DNS ni archivos APK.\n• Las actualizaciones solo descargan listas de bloqueo y la base de amenazas, que solo se aplica tras verificar su firma Ed25519.\n• El permiso QUERY_ALL_PACKAGES se usa solo para analizar apps instaladas en busca de malware.\n• Contacto: pm999@naver.com</string>
+    <string name="db_ad_filters">Listas de bloqueo</string>
+    <string name="db_update_now">Actualizar ahora (amenazas + listas)</string>
+</resources>

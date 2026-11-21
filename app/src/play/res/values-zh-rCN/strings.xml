@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="tab_adblock">网页防护</string>
+    <string name="adblock_switch">拦截钓鱼和恶意网站</string>
+    <string name="home_adblock">网页防护状态</string>
+    <string name="home_status_vpn_off">钓鱼和恶意网站拦截已关闭</string>
+    <string name="home_blocked_today">今日拦截的危险网站请求</string>
+    <string name="home_blocked_note">拦截的指向钓鱼和恶意软件网站的 DNS 请求数。</string>
+    <string name="vpn_channel">网页防护 VPN 状态</string>
+    <string name="vpn_noti_connecting">正在连接网页防护…</string>
+    <string name="vpn_noti_on">正在拦截钓鱼和恶意网站(本地 VPN)</string>
+    <string name="onb1_title">拦截钓鱼和恶意网站</string>
+    <string name="onb1_body">通过仅在设备内运行的本地 VPN 拦截指向钓鱼和恶意软件网站的 DNS 请求。普通流量不经过 VPN,因此不会变慢,您的数据也不会发送到外部服务器。开启时 Android 会请求允许 VPN 连接。</string>
+    <string name="ab_limits_text">• 仅在 DNS 层面拦截已知的钓鱼和恶意域名。新出现的网站或隐藏在正常网站中的恶意内容可能无法拦截。\n• 使用自有加密 DNS(DoH)的应用,或指定了 Android 私人 DNS 服务器时,将无法保护。\n• 不能与其他 VPN 同时使用。\n• 不会解密 HTTPS 内容。</string>
+    <string name="ab_apps_help">关闭的应用不经过 VPN,不受保护。当拦截导致应用异常时使用。</string>
+    <string name="privacy_body">• 网页防护是仅在设备内运行的本地 VPN。普通网络流量不经过 VPN,仅 DNS 请求在设备内检查是否为钓鱼或恶意域名后,发送到您选择的 DNS 服务器。\n• DNS 拦截记录和扫描记录仅保存在设备内,超过保留期限后自动删除。\n• 不会将已安装应用列表、DNS 记录或 APK 文件发送到任何服务器。\n• 更新时仅下载拦截列表和威胁库,威胁库在验证 Ed25519 签名后才会应用。\n• QUERY_ALL_PACKAGES 权限仅用于扫描已安装应用中的恶意软件。\n• 联系:pm999@naver.com</string>
+    <string name="db_ad_filters">拦截列表</string>
+    <string name="db_update_now">立即更新(威胁库 + 拦截列表)</string>
+</resources>

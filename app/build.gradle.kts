@@ -28,6 +28,14 @@ android {
         ksp { arg("room.schemaLocation", "$projectDir/schemas") }
     }
 
+    // play: Google Play 판 (Play 정책상 광고·추적 차단 제외 — 피싱·악성 사이트 차단 + 악성코드 검사)
+    // full: 홈페이지 배포 판 (광고·추적 차단 포함)
+    flavorDimensions += "dist"
+    productFlavors {
+        create("play") { dimension = "dist"; buildConfigField("boolean", "AD_BLOCK", "false") }
+        create("full") { dimension = "dist"; applicationIdSuffix = ".full"; versionNameSuffix = "-full"; buildConfigField("boolean", "AD_BLOCK", "true") }
+    }
+
     signingConfigs {
         if (releaseStore != null) create("release") {
             storeFile = File(releaseStore)

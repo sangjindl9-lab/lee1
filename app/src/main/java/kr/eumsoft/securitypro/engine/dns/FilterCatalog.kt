@@ -11,7 +11,7 @@ object FilterCatalog {
     const val ID_USER_ALLOW = 901      // 사용자 허용 목록 (DB: allowed_domains, @@ 규칙)
     const val ID_THREAT = 902          // 서명된 위협 DB 의 악성·피싱 도메인
 
-    val defaults = listOf(
+    private val all = listOf(
         AdFilterSource(1, "adguard_dns", "AdGuard DNS filter", "AD",
             "https://adguardteam.github.io/AdGuardSDNSFilter/Filters/filter.txt", "GPL-3.0", true),
         AdFilterSource(2, "stevenblack", "StevenBlack Unified hosts", "AD",
@@ -27,11 +27,14 @@ object FilterCatalog {
         AdFilterSource(ID_THREAT, "eum_threat_domains", "EUM 위협 도메인 (서명된 DB)", "MALWARE", "", "CC0-1.0", true),
     )
 
+    /** Play 판에는 광고·추적·사용자 차단 목록을 넣지 않는다 (피싱·악성 도메인만) */
+    val defaults = all.filter { kr.eumsoft.securitypro.BuildConfig.AD_BLOCK || it.category == "PHISHING" || it.category == "MALWARE" }
+
     /** 스위치(광고/추적/피싱)와 카테고리 연결. 악성 도메인은 피싱 보호 스위치에 포함된다. */
     fun categoryEnabled(cat: String, ad: Boolean, tracking: Boolean, phishing: Boolean): Boolean = when (cat) {
-        "AD" -> ad
-        "TRACKING" -> tracking
+        "AD" -> ad && kr.eumsoft.securitypro.BuildConfig.AD_BLOCK
+        "TRACKING" -> tracking && kr.eumsoft.securitypro.BuildConfig.AD_BLOCK
         "PHISHING", "MALWARE" -> phishing
-        else -> true
+        else -> kr.eumsoft.securitypro.BuildConfig.AD_BLOCK
     }
 }

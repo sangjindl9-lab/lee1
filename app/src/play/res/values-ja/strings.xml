@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="tab_adblock">Web保護</string>
+    <string name="adblock_switch">フィッシング・悪性サイトをブロック</string>
+    <string name="home_adblock">Web保護の状態</string>
+    <string name="home_status_vpn_off">フィッシング・悪性サイトのブロックがオフです</string>
+    <string name="home_blocked_today">本日ブロックした危険サイトへのリクエスト</string>
+    <string name="home_blocked_note">フィッシング・マルウェア配布サイトへのDNSリクエストをブロックした件数です。</string>
+    <string name="vpn_channel">Web保護VPNの状態</string>
+    <string name="vpn_noti_connecting">Web保護に接続中…</string>
+    <string name="vpn_noti_on">フィッシング・悪性サイトをブロック中(ローカルVPN)</string>
+    <string name="onb1_title">フィッシング・悪性サイトをブロックします</string>
+    <string name="onb1_body">端末内だけで動作するローカルVPNで、フィッシング・マルウェア配布サイトへのDNSリクエストを遮断します。通常の通信はVPNを通らないので速度が落ちず、データが外部サーバーに送られることもありません。オンにするとAndroidがVPN接続の許可を求めます。</string>
+    <string name="ab_limits_text">• DNSレベルで既知のフィッシング・悪性ドメインのみをブロックします。新しいサイトや正規サイトに隠れた悪性コンテンツは防げない場合があります。\n• 独自の暗号化DNS(DoH)を使うアプリや、AndroidのプライベートDNSを特定サーバーに指定した場合は保護されません。\n• 他のVPNと同時に使えません。\n• HTTPSの内容は復号しません。</string>
+    <string name="ab_apps_help">オフにしたアプリはVPNを通らず、保護されません。ブロックでアプリが動かない場合に使ってください。</string>
+    <string name="privacy_body">• Web保護は端末内だけで動作するローカルVPNです。通常の通信はVPNを通らず、DNSリクエストのみ端末内でフィッシング・悪性ドメインか確認してから選択したDNSサーバーへ送ります。\n• DNSブロック履歴とスキャン履歴は端末内にのみ保存され、保存期間が過ぎると自動削除されます。\n• インストール済みアプリ一覧、DNS履歴、APKファイルを外部サーバーへ送信しません。\n• 更新時はブロックリストと脅威DBをダウンロードするだけで、脅威DBはEd25519署名を検証してから適用します。\n• QUERY_ALL_PACKAGES権限はインストール済みアプリのマルウェア検査にのみ使用します。\n• お問い合わせ: pm999@naver.com</string>
+    <string name="db_ad_filters">ブロックリスト</string>
+    <string name="db_update_now">今すぐ更新(脅威DB+ブロックリスト)</string>
+</resources>

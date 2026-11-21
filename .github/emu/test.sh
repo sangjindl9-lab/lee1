@@ -1,7 +1,8 @@
 #!/bin/bash
 # EUM SECURITY PRO 에뮬레이터 실동작 검수 (실기기 아님). 결과: emu/report.txt + 화면 PNG + 로그
 API=${1:-?}
-A=kr.eumsoft.securitypro
+A=kr.eumsoft.securitypro.full
+P=kr.eumsoft.securitypro
 D=.github/emu
 O=emu; mkdir -p $O
 R=$O/report.txt
@@ -161,8 +162,26 @@ adb shell cmd locale set-app-locales $A --locales ko-KR 2>/dev/null; adb shell a
 adb shell am start -W -n $A/.ui.MainActivity >/dev/null; sleep 4; shot 15_home_ko
 has "광고 차단" && { ok "한국어 화면 전환"; tap "광고 차단" 0 2; shot 16_adblock_ko; tap "검사" 0 2; shot 17_scan_ko; } || log "  (앱별 언어 전환 미지원 또는 실패)"
 
-log "== 18. 크래시 확인"
-CR=$(adb logcat -d -b crash | grep -c "$A")
+log "== 18. Play 판 (광고·추적 차단 제외) 화면 · 차단 범위"
+adb install -r app-play-debug.apk | tee -a $R
+adb shell pm grant $P android.permission.POST_NOTIFICATIONS 2>/dev/null
+adb shell am start -W -n $P/.ui.MainActivity >/dev/null; sleep 4
+tap "Next"; tap "Next"; tap "Get started"; sleep 2
+adb shell appops set $P ACTIVATE_VPN allow
+tap "Block phishing & malicious sites" 0 25
+check_pass doubleclick.net "Play 판은 광고 도메인을 막지 않음"
+check_block phishing-test.eum-security.invalid "Play 판 피싱 테스트 도메인"
+check_pass example.com "Play 판 정상 사이트"
+shot play_01_home_en; tap "Web Guard" 0 2; shot play_02_webguard_en; tap "Scan" 0 2; tap "Quick scan" 0 3
+for i in $(seq 1 60); do has "Scan summary" && break; sleep 2; done; shot play_03_result_en
+tap "Security DB" 0 3; shot play_04_db_en
+adb shell cmd locale set-app-locales $P --locales ko-KR 2>/dev/null; adb shell am force-stop $P; sleep 1
+adb shell am start -W -n $P/.ui.MainActivity >/dev/null; sleep 4
+has "웹 보호" && { shot play_05_home_ko; tap "웹 보호" 0 2; shot play_06_webguard_ko; tap "검사" 0 2; shot play_07_scan_ko; tap "보안 DB" 0 3; shot play_08_db_ko; } || log "  (한국어 전환 미지원)"
+dump; grep -qi "ad block\|광고" $O/ui.xml && ng "Play 판 화면에 광고 차단 문구가 보임" || ok "Play 판 화면에 광고 차단 문구 없음"
+
+log "== 19. 크래시 확인"
+CR=$(adb logcat -d -b crash | grep -c "kr.eumsoft.securitypro")
 [ "$CR" = "0" ] && ok "크래시 0건" || { ng "크래시 $CR건"; adb logcat -d -b crash | grep -A20 "$A" | head -60 > $O/crash.txt; }
 adb logcat -d > $O/logcat.txt
 log "== 끝"

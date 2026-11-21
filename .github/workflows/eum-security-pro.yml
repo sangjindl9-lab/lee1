@@ -91,15 +91,15 @@ jobs:
           RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: |
           set -o pipefail
-          gradle :app:kspDebugKotlin --no-daemon 2>&1 | tee build.log
-          gradle testDebugUnitTest assembleDebug assembleDebugAndroidTest assembleRelease bundleRelease lintDebug --no-daemon 2>&1 | tee -a build.log
+          gradle :app:kspFullDebugKotlin --no-daemon 2>&1 | tee build.log
+          gradle testFullDebugUnitTest assembleFullDebug assemblePlayDebug assembleFullDebugAndroidTest assembleFullRelease bundlePlayRelease lintPlayDebug --no-daemon 2>&1 | tee -a build.log
       - name: 단위 테스트 결과
         if: always()
         run: |
           python3 - <<'PY' > tests.txt || true
           import glob, xml.etree.ElementTree as ET
           tot=fail=0
-          for f in sorted(glob.glob('app/build/test-results/testDebugUnitTest/*.xml')):
+          for f in sorted(glob.glob('app/build/test-results/testFullDebugUnitTest/*.xml')):
               for tc in ET.parse(f).getroot().iter('testcase'):
                   tot+=1; bad=[c for c in tc if c.tag in('failure','error')]; fail+=bool(bad)
                   print(('FAIL ' if bad else 'PASS ')+tc.get('classname').split('.')[-1]+'.'+tc.get('name'))
@@ -111,14 +111,16 @@ jobs:
         run: |
           AAPT=$(ls -d $ANDROID_HOME/build-tools/*/ | sort -V | tail -1)
           mkdir -p out
-          cp app/build/outputs/apk/debug/app-debug.apk out/
-          cp app/build/outputs/apk/release/app-release.apk out/
-          cp app/build/outputs/bundle/release/app-release.aab out/
-          cp app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk out/
+          cp app/build/outputs/apk/full/debug/app-full-debug.apk out/app-debug.apk
+          cp app/build/outputs/apk/play/debug/app-play-debug.apk out/app-play-debug.apk
+          cp app/build/outputs/apk/full/release/app-full-release.apk out/app-release.apk
+          cp app/build/outputs/bundle/playRelease/app-play-release.aab out/app-play-release.aab
+          cp app/build/outputs/apk/androidTest/full/debug/app-full-debug-androidTest.apk out/app-debug-androidTest.apk
           {
             echo "== 서명 방식: $SIGNING"
-            echo "== badging (release)"; ${AAPT}aapt2 dump badging out/app-release.apk | grep -E "^package|sdkVersion|targetSdk|native-code|application-label:"
-            echo "== 권한 (release)"; ${AAPT}aapt2 dump permissions out/app-release.apk
+            echo "== badging (전체판 release)"; ${AAPT}aapt2 dump badging out/app-release.apk | grep -E "^package|sdkVersion|targetSdk|native-code|application-label:"
+            echo "== 권한 (전체판 release)"; ${AAPT}aapt2 dump permissions out/app-release.apk
+            echo "== Play판 AAB 패키지"; unzip -p out/app-play-release.aab base/manifest/AndroidManifest.xml | strings | grep -m1 "kr.eumsoft"
             echo "== APK 서명 검증"; ${AAPT}apksigner verify --print-certs out/app-release.apk | head -5
             echo "== 네이티브 라이브러리"; unzip -l out/app-release.apk | grep '\.so$'
             echo "== 크기"; ls -la out
@@ -127,8 +129,7 @@ jobs:
           } | tee verify.txt
           (cd out && sha256sum *.apk *.aab > SHA256SUMS.txt)
           cp app/schemas/kr.eumsoft.securitypro.data.AppDb/1.json out/room-schema-v1.json || true
-          grep -E "Error|Warning" -c app/build/reports/lint-results-debug.txt 2>/dev/null || true
-          cp app/build/reports/lint-results-debug.txt out/lint.txt 2>/dev/null || cp app/build/reports/lint-results-debug.html out/lint.html 2>/dev/null || true
+                    cp app/build/reports/lint-results-playDebug.txt out/lint.txt 2>/dev/null || cp app/build/reports/lint-results-playDebug.html out/lint.html 2>/dev/null || true
       - uses: actions/upload-artifact@v4
         with: { name: apks, path: out }
       - name: 릴리스 올리기 (사내 테스트)
@@ -136,9 +137,9 @@ jobs:
         run: |
           gh release delete eum-security-pro-latest --yes --cleanup-tag || true
           cp out/app-release.apk eum-security-pro.apk
-          gh release create eum-security-pro-latest eum-security-pro.apk out/app-release.aab out/app-debug.apk out/SHA256SUMS.txt verify.txt tests.txt rust-licenses.txt out/room-schema-v1.json --target "$GITHUB_SHA" --prerelease \
+          gh release create eum-security-pro-latest eum-security-pro.apk out/app-play-release.aab out/app-play-debug.apk out/app-debug.apk out/SHA256SUMS.txt verify.txt tests.txt rust-licenses.txt out/room-schema-v1.json --target "$GITHUB_SHA" --prerelease \
             --title "EUM SECURITY PRO (테스트 빌드)" \
-            --notes "설치용 APK: eum-security-pro.apk (서명: $SIGNING). AAB 는 Play 업로드 키가 GitHub Secrets 에 등록된 경우에만 Play 제출용입니다. Android 10 이상."
+            --notes "eum-security-pro.apk = 전체판(광고 차단 포함, 홈페이지 배포용, 서명: $SIGNING). app-play-release.aab = Google Play 판(광고·추적 차단 제외, 업로드 키로 별도 서명 필요). Android 10 이상."
       - name: 실패 로그 올리기
         if: failure()
         env: { GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }

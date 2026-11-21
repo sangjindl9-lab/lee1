@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="tab_adblock">웹 보호</string>
+    <string name="adblock_switch">피싱·악성 사이트 차단</string>
+    <string name="home_adblock">웹 보호 상태</string>
+    <string name="home_status_vpn_off">피싱·악성 사이트 차단이 꺼져 있습니다</string>
+    <string name="home_blocked_today">오늘 차단한 위험 사이트 요청</string>
+    <string name="home_blocked_note">피싱·악성코드 유포 사이트로 가는 DNS 요청을 차단한 건수입니다.</string>
+    <string name="vpn_channel">웹 보호 VPN 상태</string>
+    <string name="vpn_noti_connecting">웹 보호 연결 중…</string>
+    <string name="vpn_noti_on">피싱·악성 사이트 차단 중 (로컬 VPN)</string>
+    <string name="onb1_title">피싱·악성 사이트를 차단합니다</string>
+    <string name="onb1_body">기기 안에서만 동작하는 로컬 VPN 으로 피싱·악성코드 유포 사이트로 가는 DNS 요청을 막습니다. 일반 인터넷 통신은 VPN 을 거치지 않으므로 속도가 느려지지 않고, 내 데이터가 외부 서버로 가지 않습니다. 켤 때 Android 가 VPN 연결 허용을 물어봅니다.</string>
+    <string name="ab_limits_text">• DNS 수준에서 알려진 피싱·악성 도메인만 차단합니다. 새로 생긴 사이트나 정상 사이트에 숨겨진 악성 콘텐츠는 막지 못할 수 있습니다.\n• 앱이 자체 암호화 DNS(DoH)를 쓰거나 Android 개인 DNS 가 특정 서버로 지정되면 보호되지 않습니다.\n• 다른 VPN 과 동시에 사용할 수 없습니다.\n• HTTPS 내용을 복호화하지 않습니다.</string>
+    <string name="ab_apps_help">끈 앱은 VPN 을 거치지 않아 피싱·악성 사이트 차단이 적용되지 않습니다. 차단 때문에 앱이 잘 안 될 때 사용하세요.</string>
+    <string name="privacy_body">• 웹 보호는 기기 안에서만 동작하는 로컬 VPN 입니다. 일반 인터넷 트래픽은 VPN 을 거치지 않으며, DNS 요청만 기기 안에서 피싱·악성 도메인 여부를 확인한 뒤 선택한 DNS 서버로 보냅니다.\n• DNS 차단 기록과 검사 기록은 기기 안에만 저장되며 설정한 보관 기간이 지나면 자동 삭제됩니다.\n• 설치 앱 목록, DNS 기록, APK 파일을 외부 서버로 보내지 않습니다.\n• 업데이트 시에는 차단 목록과 위협 DB 를 내려받기만 하며, 위협 DB 는 Ed25519 서명을 검증한 뒤에만 적용합니다.\n• 설치된 앱 전체 조회 권한(QUERY_ALL_PACKAGES)은 설치 앱 악성코드 검사에만 사용합니다.\n• 문의: pm999@naver.com</string>
+    <string name="db_ad_filters">차단 목록</string>
+    <string name="db_update_now">지금 업데이트 (위협 DB + 차단 목록)</string>
+</resources>
