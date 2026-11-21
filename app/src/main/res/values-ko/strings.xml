@@ -60,7 +60,23 @@
     <string name="script_latin">영어·스페인어 (로마자)</string>
     <string name="script_note">한국어·일본어·로마자 글자를 읽을 수 있어요. 다른 문자는 사진을 저장하고 직접 입력해 주세요.</string>
     <string name="cand_title">읽어 온 내용</string>
-    <string name="cand_hint">자동으로 넣지 않아요. 맞는 값을 눌러서 고르세요.</string>
+    <string name="cand_hint">확실한 값은 칸에 채웠어요. 다른 값을 쓰려면 아래에서 눌러 고르세요.</string>
+    <string name="autofill_done">자동으로 채운 칸: %1$s. 맞는지 확인하고 저장하세요.</string>
+    <string name="import_title">쇼핑몰에서 가져오기</string>
+    <string name="import_login_note">쇼핑몰 사이트에 직접 로그인하세요. 이 앱은 아이디·비밀번호를 보거나 저장하지 않고, 주문 정보도 휴대폰 밖으로 보내지 않아요.</string>
+    <string name="import_other_note">목록에 없는 쇼핑몰은 주문 화면을 공유해서 등록하세요.</string>
+    <string name="import_unverified">쇼핑몰이 화면을 바꾸면 빠지거나 잘못 읽을 수 있어요. 저장 전에 꼭 확인해 주세요.</string>
+    <string name="import_go_orders">주문 내역으로</string>
+    <string name="import_hint">로그인한 뒤 주문 내역 화면에서 누르세요. 더 불러오려면 아래로 내린 뒤 다시 누르면 돼요.</string>
+    <string name="import_this_page">이 화면 가져오기</string>
+    <string name="import_loading">읽는 중…</string>
+    <string name="import_none">이 화면에서 주문을 찾지 못했어요. 주문 내역 화면을 연 뒤 다시 눌러 주세요.</string>
+    <string name="import_review_title">가져올 주문 확인</string>
+    <string name="import_already">이미 저장됨</string>
+    <string name="import_no_year">날짜(%1$s)에 연도가 없어 주문일은 비워 둬요.</string>
+    <string name="import_return_from_page">화면에 적힌 반품 기한도 저장: %1$s</string>
+    <string name="clear_shop_login">쇼핑몰 로그인 정보 지우기</string>
+    <string name="shop_login_cleared">쇼핑몰 로그인 정보를 지웠어요.</string>
     <string name="cand_dates">날짜 (누르면 주문일로 사용)</string>
     <string name="cand_deadlines">영수증에 적힌 기한 (누르면 사용)</string>
     <string name="cand_amounts">금액</string>
@@ -176,7 +192,7 @@
     <string name="set_reminders">알림 기본값</string>
     <string name="set_reminders_note">새 구매에 적용돼요. 구매마다 바꿀 수 있어요.</string>
     <string name="set_privacy">개인정보</string>
-    <string name="privacy_summary">가입·광고·추적이 없어요. 구매 기록과 사진은 이 휴대폰에만 저장되고, 글자 읽기도 휴대폰 안에서 해요. 서버로 보내지 않아요.</string>
+    <string name="privacy_summary">가입·광고·추적이 없어요. 구매 기록과 사진은 이 휴대폰에만 저장되고, 글자 읽기도 휴대폰 안에서 해요. 인터넷은 직접 고른 쇼핑몰 사이트를 열 때와 가져오기 규칙을 받을 때만 쓰고, 기록은 보내지 않아요.</string>
     <string name="privacy_full">개인정보 처리방침 전체 보기 (웹)</string>
     <string name="set_backup">백업·복원</string>
     <string name="backup_note">요청할 때만 암호를 건 파일을 고른 위치에 저장해요. 암호를 잊으면 복원할 수 없어요.</string>
@@ -219,6 +235,12 @@
     </plurals>
     <plurals name="result_count">
         <item quantity="other">%d건</item>
+    </plurals>
+    <plurals name="import_save_n">
+        <item quantity="other">선택한 %d건 저장</item>
+    </plurals>
+    <plurals name="import_saved">
+        <item quantity="other">%d건 저장했어요.</item>
     </plurals>
     <plurals name="same_order_items">
         <item quantity="other">같은 주문의 다른 상품 %d개</item>

@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.EventNote
 import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material.icons.filled.TextIncrease
 import androidx.compose.material.icons.filled.ViewAgenda
 import androidx.compose.material3.Button
@@ -134,6 +135,11 @@ fun HomeScreen(nav: Nav) {
                 }
             }
             if (list.isEmpty()) item { EmptyState(simple, onAdd = { nav.go(Screen.Add()) }, onGuide = { nav.go(Screen.Onboarding) }) }
+            if (!simple) item {
+                FilledTonalButton(onClick = { nav.go(Screen.ImportPick) }, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(top = 4.dp)) {
+                    Icon(Icons.Filled.Storefront, null); Spacer(Modifier.width(8.dp)); Text(stringResource(R.string.import_title))
+                }
+            }
             if (upcoming.isNotEmpty()) {
                 listOf(Dates.Bucket.OVERDUE to R.string.group_overdue, Dates.Bucket.TODAY to R.string.group_today, Dates.Bucket.SOON to R.string.group_soon).forEach { (b, title) ->
                     val g = upcoming.filter { it.third == b }

@@ -60,7 +60,23 @@
     <string name="script_latin">英語・スペイン語(ラテン文字)</string>
     <string name="script_note">韓国語・日本語・ラテン文字を読み取れます。その他の文字は写真を保存して手入力してください。</string>
     <string name="cand_title">読み取った内容</string>
-    <string name="cand_hint">自動では入力しません。正しい値をタップして選んでください。</string>
+    <string name="cand_hint">確かな値は入力済みです。別の値を使うときは下からタップして選んでください。</string>
+    <string name="autofill_done">自動入力した項目: %1$s。確認してから保存してください。</string>
+    <string name="import_title">ショッピングサイトから取り込む</string>
+    <string name="import_login_note">ショッピングサイトにご自身でログインしてください。このアプリはIDやパスワードを見たり保存したりせず、注文情報も端末の外に送りません。</string>
+    <string name="import_other_note">一覧にないショップは、注文画面を共有して登録してください。</string>
+    <string name="import_unverified">ショップが画面を変えると、抜けや読み違いが起きることがあります。保存前に必ず確認してください。</string>
+    <string name="import_go_orders">注文履歴へ</string>
+    <string name="import_hint">ログインして注文履歴を開いてから押してください。さらに読み込むには下にスクロールしてもう一度押します。</string>
+    <string name="import_this_page">この画面を取り込む</string>
+    <string name="import_loading">読み取り中…</string>
+    <string name="import_none">この画面で注文が見つかりませんでした。注文履歴を開いてもう一度押してください。</string>
+    <string name="import_review_title">取り込む注文の確認</string>
+    <string name="import_already">保存済み</string>
+    <string name="import_no_year">日付(%1$s)に年がないため、注文日は空欄にします。</string>
+    <string name="import_return_from_page">画面に表示された返品期限も保存: %1$s</string>
+    <string name="clear_shop_login">ショッピングサイトのログイン情報を消去</string>
+    <string name="shop_login_cleared">ログイン情報を消去しました。</string>
     <string name="cand_dates">日付(タップで注文日に使用)</string>
     <string name="cand_deadlines">レシートに書かれた期限(タップで使用)</string>
     <string name="cand_amounts">金額</string>
@@ -176,7 +192,7 @@
     <string name="set_reminders">通知の既定値</string>
     <string name="set_reminders_note">新しい購入に使われます。購入ごとに変更できます。</string>
     <string name="set_privacy">プライバシー</string>
-    <string name="privacy_summary">登録・広告・追跡はありません。購入記録と写真はこの端末だけに保存され、文字の読み取りも端末内で行います。サーバーには送信しません。</string>
+    <string name="privacy_summary">登録・広告・追跡はありません。購入記録と写真はこの端末だけに保存され、文字の読み取りも端末内で行います。インターネットは選んだショッピングサイトを開くときと取り込みルールの取得にだけ使い、記録は送信しません。</string>
     <string name="privacy_full">プライバシーポリシー全文を見る(ウェブ)</string>
     <string name="set_backup">バックアップと復元</string>
     <string name="backup_note">依頼したときだけ、暗号化したファイルを選んだ場所に保存します。パスワードを忘れると復元できません。</string>
@@ -219,6 +235,12 @@
     </plurals>
     <plurals name="result_count">
         <item quantity="other">%d件</item>
+    </plurals>
+    <plurals name="import_save_n">
+        <item quantity="other">選んだ%d件を保存</item>
+    </plurals>
+    <plurals name="import_saved">
+        <item quantity="other">%d件保存しました。</item>
     </plurals>
     <plurals name="same_order_items">
         <item quantity="other">同じ注文のほかの商品 %d 点</item>

@@ -26,6 +26,9 @@ sealed class Screen {
     data object Settings : Screen()
     data object Onboarding : Screen()
     data class Detail(val id: Long) : Screen()
+    data object ImportPick : Screen()
+    data class ShopBrowser(val mallId: String) : Screen()
+    class ImportReview(val mallId: String, val rows: List<ImportRow>, val pageUrl: String?) : Screen()
     /** editId: 수정할 구매, sameOrderOf: 같은 주문에 상품 추가할 원본 */
     class Add(val editId: Long? = null, val shared: List<Uri> = emptyList(), val sharedText: String? = null, val sameOrderOf: Long? = null) : Screen() {
         val draft = Draft()
@@ -70,6 +73,9 @@ class MainActivity : AppCompatActivity() {
                         Screen.Onboarding -> OnboardingScreen(onDone = { n.back() })
                         is Screen.Detail -> DetailScreen(n, s.id)
                         is Screen.Add -> AddScreen(n, s)
+                        Screen.ImportPick -> ImportPickScreen(n)
+                        is Screen.ShopBrowser -> ShopBrowserScreen(n, s)
+                        is Screen.ImportReview -> ImportReviewScreen(n, s)
                     }
                 }
             }

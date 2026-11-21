@@ -24,6 +24,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.DeleteForever
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Schedule
@@ -157,6 +158,16 @@ fun SettingsScreen(nav: Nav) {
                 }
             }
 
+            SectionTitle(stringResource(R.string.import_title))
+            Text(stringResource(R.string.import_login_note), style = MaterialTheme.typography.bodyMedium)
+            OutlinedButton(onClick = {
+                android.webkit.CookieManager.getInstance().removeAllCookies(null)
+                android.webkit.WebStorage.getInstance().deleteAllData()
+                scope.launch { snack.showSnackbar(c.getString(R.string.shop_login_cleared)) }
+            }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(top = 8.dp)) {
+                Icon(Icons.Filled.Lock, null); Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.clear_shop_login))
+            }
+
             SectionTitle(stringResource(R.string.set_data))
             Text(stringResource(R.string.uninstall_note), style = MaterialTheme.typography.bodyMedium)
             OutlinedButton(onClick = { askDeleteAll = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(top = 8.dp)) {
@@ -176,7 +187,9 @@ fun SettingsScreen(nav: Nav) {
             dismissButton = { TextButton(onClick = { timeOpen = false }) { Text(stringResource(R.string.cancel)) } })
     }
     if (askDeleteAll) ConfirmDialog(stringResource(R.string.delete_all), stringResource(R.string.delete_all_text), stringResource(R.string.delete_all),
-        onConfirm = { scope.launch { withContext(Dispatchers.IO) { Repo(c).deleteAll() }; snack.showSnackbar(c.getString(R.string.deleted_all)) } }, onDismiss = { askDeleteAll = false })
+        onConfirm = {
+            android.webkit.CookieManager.getInstance().removeAllCookies(null); android.webkit.WebStorage.getInstance().deleteAllData()
+            scope.launch { withContext(Dispatchers.IO) { Repo(c).deleteAll() }; snack.showSnackbar(c.getString(R.string.deleted_all)) } }, onDismiss = { askDeleteAll = false })
 
     pwFor?.let { mode ->
         PasswordDialog(confirm = mode == "export", onDismiss = { pwFor = null; restoreUri = null }) { pw ->

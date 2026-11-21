@@ -60,7 +60,23 @@
     <string name="script_latin">English · Spanish (Latin letters)</string>
     <string name="script_note">Reading works for Korean, Japanese and Latin letters. Other scripts: the photo is saved and you type the details.</string>
     <string name="cand_title">What we found</string>
-    <string name="cand_hint">Nothing is filled in automatically. Tap the value that is correct.</string>
+    <string name="cand_hint">Clear values were filled in. To use a different value, tap it below.</string>
+    <string name="autofill_done">Filled in automatically: %1$s. Check them, then save.</string>
+    <string name="import_title">Import from a shopping site</string>
+    <string name="import_login_note">You sign in on the shopping site yourself. This app never sees or saves your ID or password, and order data stays on your phone.</string>
+    <string name="import_other_note">For other shops, share the order screen to save it.</string>
+    <string name="import_unverified">If a shop changes its pages, importing may miss or misread items. Please check before saving.</string>
+    <string name="import_go_orders">Orders</string>
+    <string name="import_hint">Sign in, open your order list, then tap below. Scroll down to load more, then tap again.</string>
+    <string name="import_this_page">Import this page</string>
+    <string name="import_loading">Reading…</string>
+    <string name="import_none">No orders were found on this page. Open the order list and try again.</string>
+    <string name="import_review_title">Check orders to import</string>
+    <string name="import_already">Already saved</string>
+    <string name="import_no_year">The date (%1$s) has no year, so the order date is left empty.</string>
+    <string name="import_return_from_page">Also save the return deadline shown on the page: %1$s</string>
+    <string name="clear_shop_login">Clear shopping site sign-ins</string>
+    <string name="shop_login_cleared">Shopping site sign-ins were cleared.</string>
     <string name="cand_dates">Dates (tap to use as order date)</string>
     <string name="cand_deadlines">Deadlines written on the receipt (tap to use)</string>
     <string name="cand_amounts">Amounts</string>
@@ -176,7 +192,7 @@
     <string name="set_reminders">Default reminders</string>
     <string name="set_reminders_note">Used for new purchases. Each purchase can be changed.</string>
     <string name="set_privacy">Privacy</string>
-    <string name="privacy_summary">No sign-up, no ads, no tracking. Purchases and photos stay on this phone; text is read on the phone. Nothing is sent to a server.</string>
+    <string name="privacy_summary">No sign-up, no ads, no tracking. Purchases and photos stay on this phone; text is read on the phone. The internet is used only to open shopping sites you choose and to download import rules — your records are never sent.</string>
     <string name="privacy_full">Read the full privacy policy (web)</string>
     <string name="set_backup">Backup and restore</string>
     <string name="backup_note">Saves an encrypted file only when you ask, to a place you choose. Keep the password — without it the file can\'t be restored.</string>
@@ -224,6 +240,14 @@
     <plurals name="result_count">
         <item quantity="one">%d purchase</item>
         <item quantity="other">%d purchases</item>
+    </plurals>
+    <plurals name="import_save_n">
+        <item quantity="one">Save %d selected</item>
+        <item quantity="other">Save %d selected</item>
+    </plurals>
+    <plurals name="import_saved">
+        <item quantity="one">Saved %d purchase.</item>
+        <item quantity="other">Saved %d purchases.</item>
     </plurals>
     <plurals name="same_order_items">
         <item quantity="one">%d other item in this order</item>

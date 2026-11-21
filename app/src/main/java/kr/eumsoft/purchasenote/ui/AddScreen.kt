@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.RemoveCircle
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material.icons.filled.TextSnippet
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -87,6 +88,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kr.eumsoft.purchasenote.R
+import kr.eumsoft.purchasenote.core.AutoFill
 import kr.eumsoft.purchasenote.core.Money
 import kr.eumsoft.purchasenote.core.ReceiptParser
 import kr.eumsoft.purchasenote.data.ImageStore
@@ -137,6 +139,28 @@ class Draft {
     var productError by mutableStateOf(false)
     var currencyError by mutableStateOf(false)
     var amountError by mutableStateOf(false)
+    /** 자동으로 채운 칸 이름(확인 안내용) */
+    var autoFilled by mutableStateOf<List<Int>>(emptyList())
+
+    /** 확실한 값만, 비어 있는 칸에만 채운다. 사용자가 이미 넣은 값은 바꾸지 않음 */
+    fun applyFill(f: AutoFill.Fill) {
+        val got = ArrayList<Int>()
+        if (product.isBlank() && f.product != null) { product = f.product; productError = false; got += R.string.field_product }
+        if (store.isBlank() && f.store != null) { store = f.store; got += R.string.field_store }
+        if (orderDate == null && f.orderDate != null) { orderDate = f.orderDate; got += R.string.field_order_date }
+        if (amount.isBlank() && f.amount != null) {
+            amount = f.amount; got += R.string.field_amount
+            if (f.currency != null) { currency = f.currency; currencyHint = null }
+            else if (f.currencyHint != null) { currency = null; currencyHint = f.currencyHint }
+        }
+        if (orderNumber.isBlank() && f.orderNumber != null) { orderNumber = f.orderNumber; got += R.string.field_order_no }
+        if (returnBy == null && f.returnBy != null) { returnBy = f.returnBy; got += R.string.deadline_return }
+        if (exchangeBy == null && f.exchangeBy != null) { exchangeBy = f.exchangeBy; got += R.string.deadline_exchange }
+        if (warrantyBy == null && f.warrantyBy != null) { warrantyBy = f.warrantyBy; got += R.string.deadline_warranty }
+        autoFilled = (autoFilled + got).distinct()
+        if (got.isNotEmpty()) showMore = true
+    }
+
     val dirty get() = product.isNotBlank() || images.isNotEmpty() || store.isNotBlank() || amount.isNotBlank()
 
     fun loadFrom(p: Purchase, imgs: List<StoredImage>) {
@@ -204,7 +228,7 @@ fun AddScreen(nav: Nav, s: Screen.Add) {
             s.sharedText?.takeIf { it.isNotBlank() }?.let { t ->
                 Regex("https?://\\S+").find(t)?.let { if (d.link.isBlank()) d.link = it.value }
                 val ls = t.lines().filter { it.isNotBlank() }
-                d.lines = ls; d.result = ReceiptParser.parse(ls)
+                d.lines = ls; d.result = ReceiptParser.parse(ls).also { d.applyFill(AutoFill.from(it)) }
             }
         }
     }
@@ -233,7 +257,7 @@ fun AddScreen(nav: Nav, s: Screen.Add) {
                 } catch (e: Exception) { failed++ }
             }
             d.lines = all
-            d.result = if (all.isEmpty()) null else ReceiptParser.parse(all)
+            d.result = if (all.isEmpty()) null else ReceiptParser.parse(all).also { d.applyFill(AutoFill.from(it)) }
             d.readMessage = when {
                 all.isEmpty() && failed > 0 -> c.getString(R.string.ocr_failed)
                 all.isEmpty() -> c.getString(R.string.ocr_nothing)
@@ -274,6 +298,10 @@ fun AddScreen(nav: Nav, s: Screen.Add) {
         },
     ) { pad ->
         Column(Modifier.padding(pad).fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
+            if (s.editId == null && s.sameOrderOf == null && d.images.isEmpty()) OutlinedButton(onClick = { nav.go(Screen.ImportPick) },
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(top = 8.dp)) {
+                Icon(Icons.Filled.Storefront, null); Spacer(Modifier.width(8.dp)); Text(stringResource(R.string.import_title))
+            }
             // ---- 사진 ----
             SectionTitle(stringResource(R.string.section_photos))
             if (d.images.isEmpty()) Text(stringResource(R.string.photos_hint), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -301,6 +329,7 @@ fun AddScreen(nav: Nav, s: Screen.Add) {
                 CircularProgressIndicator(Modifier.width(24.dp).height(24.dp)); Spacer(Modifier.width(8.dp)); Text(stringResource(R.string.reading))
             }
             d.readMessage?.let { Text(it, Modifier.padding(vertical = 6.dp).semantics { liveRegion = LiveRegionMode.Polite }, style = MaterialTheme.typography.bodyMedium) }
+            if (d.autoFilled.isNotEmpty()) InfoBanner(stringResource(R.string.autofill_done, d.autoFilled.map { stringResource(it) }.joinToString(", ")), Icons.Filled.Info)
             d.result?.let { CandidatePanel(d, it) }
 
             // ---- 기본 정보 ----

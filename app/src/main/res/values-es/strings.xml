@@ -60,7 +60,23 @@
     <string name="script_latin">Inglés · Español (alfabeto latino)</string>
     <string name="script_note">Se pueden leer coreano, japonés y alfabeto latino. Con otras escrituras, se guarda la foto y tú escribes los datos.</string>
     <string name="cand_title">Lo que encontramos</string>
-    <string name="cand_hint">No se rellena nada automáticamente. Toca el valor correcto.</string>
+    <string name="cand_hint">Se rellenaron los valores claros. Para usar otro valor, tócalo abajo.</string>
+    <string name="autofill_done">Rellenado automáticamente: %1$s. Revísalo y guarda.</string>
+    <string name="import_title">Importar de una tienda en línea</string>
+    <string name="import_login_note">Inicias sesión tú en la tienda. Esta app nunca ve ni guarda tu usuario o contraseña, y los pedidos no salen de tu teléfono.</string>
+    <string name="import_other_note">Para otras tiendas, comparte la pantalla del pedido.</string>
+    <string name="import_unverified">Si la tienda cambia sus páginas, pueden faltar datos o leerse mal. Revísalo antes de guardar.</string>
+    <string name="import_go_orders">Pedidos</string>
+    <string name="import_hint">Inicia sesión, abre tus pedidos y toca abajo. Para cargar más, baja y vuelve a tocar.</string>
+    <string name="import_this_page">Importar esta página</string>
+    <string name="import_loading">Leyendo…</string>
+    <string name="import_none">No se encontraron pedidos en esta página. Abre la lista de pedidos y vuelve a intentarlo.</string>
+    <string name="import_review_title">Revisa los pedidos</string>
+    <string name="import_already">Ya guardado</string>
+    <string name="import_no_year">La fecha (%1$s) no tiene año, así que se deja vacía.</string>
+    <string name="import_return_from_page">Guardar también el plazo de devolución de la página: %1$s</string>
+    <string name="clear_shop_login">Borrar inicios de sesión de tiendas</string>
+    <string name="shop_login_cleared">Se borraron los inicios de sesión.</string>
     <string name="cand_dates">Fechas (toca para usar como fecha del pedido)</string>
     <string name="cand_deadlines">Plazos escritos en el recibo (toca para usar)</string>
     <string name="cand_amounts">Importes</string>
@@ -176,7 +192,7 @@
     <string name="set_reminders">Avisos predeterminados</string>
     <string name="set_reminders_note">Se aplica a compras nuevas. Puedes cambiarlo en cada una.</string>
     <string name="set_privacy">Privacidad</string>
-    <string name="privacy_summary">Sin registro, sin anuncios, sin seguimiento. Las compras y fotos quedan en este teléfono y el texto se lee en el teléfono. No se envía nada a un servidor.</string>
+    <string name="privacy_summary">Sin registro, anuncios ni seguimiento. Las compras y fotos quedan en este teléfono y el texto se lee en él. Internet solo se usa para abrir las tiendas que eliges y descargar las reglas de importación; tus datos nunca se envían.</string>
     <string name="privacy_full">Leer la política de privacidad completa (web)</string>
     <string name="set_backup">Copia de seguridad y restauración</string>
     <string name="backup_note">Guarda un archivo cifrado solo cuando lo pides, donde tú elijas. Sin la contraseña no se puede restaurar.</string>
@@ -224,6 +240,14 @@
     <plurals name="result_count">
         <item quantity="one">%d compra</item>
         <item quantity="other">%d compras</item>
+    </plurals>
+    <plurals name="import_save_n">
+        <item quantity="one">Guardar %d seleccionado</item>
+        <item quantity="other">Guardar %d seleccionados</item>
+    </plurals>
+    <plurals name="import_saved">
+        <item quantity="one">Se guardó %d compra.</item>
+        <item quantity="other">Se guardaron %d compras.</item>
     </plurals>
     <plurals name="same_order_items">
         <item quantity="one">%d artículo más de este pedido</item>

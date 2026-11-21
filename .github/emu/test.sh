@@ -60,6 +60,7 @@ shot 03_share_ko; a11y add_screen
 has "사진 1" && result "공유한 사진이 등록 화면에 들어옴" || result "공유 사진이 안 보임(공유 권한 문제일 수 있음)"
 tap "사진에서 글자 읽기" 0 10; shot 04_ocr_ko
 has "읽어 온 내용" && result "글자 읽기 결과 후보 표시" || result "글자 읽기 결과 없음"
+has "자동으로 채운 칸" && result "확실한 값 자동 채움 안내 표시" || result "자동 채움 안내 없음"
 tap "무선 이어폰 화이트" 0 2; shot 04b_candidate_picked
 tap "저장" 0 4; shot 05_saved_detail
 has "주문번호\|상태" && result "저장 후 상세 화면 이동" || result "저장 확인 실패"
@@ -111,6 +112,17 @@ grep -q "2027030412345678" $O/notification.txt && result "주의: 알림에 주�
 grep -qi "vis=PRIVATE\|visibility=0\|VISIBILITY_PRIVATE" $O/notification.txt && result "잠금화면 공개 범위: PRIVATE(상품명 숨김 버전 사용)" || result "잠금화면 공개 범위 표시를 dumpsys에서 찾지 못함"
 adb shell cmd statusbar expand-notifications; sleep 2; shot 09_notification; adb shell cmd statusbar collapse
 adb logcat -d -s EUMPN:I | sed 's/^.*EUMPN *: //' >> $O/eumpn.txt
+
+log "== 6b. 쇼핑몰에서 가져오기 (로그인은 하지 않음: 화면·안전장치만 확인)"
+start; tap "쇼핑몰에서 가져오기" 0 3; shot 21_import_pick
+has "아마존 (미국)" && result "쇼핑몰 목록 표시(쿠팡·네이버·아마존)" || result "쇼핑몰 목록 확인 실패"
+tap "아마존 (미국)" 0 15; shot 22_import_amazon
+tap "이 화면 가져오기" 0 3; shot 23_import_none
+has "주문을 찾지 못했어요" && result "주문 내역이 아닌 화면(로그인 화면)에서는 아무것도 가져오지 않음" || result "가져오기 버튼 반응 확인 못함"
+adb shell input keyevent KEYCODE_BACK; sleep 1; adb shell input keyevent KEYCODE_BACK; sleep 1
+tap "쿠팡" 0 15; shot 24_import_coupang; adb shell input keyevent KEYCODE_BACK; sleep 1
+tap "네이버 쇼핑(네이버페이)" 0 15; shot 25_import_naver
+adb shell input keyevent KEYCODE_BACK; sleep 1; adb shell input keyevent KEYCODE_BACK; sleep 1
 
 log "== 7. 4개 언어 + 미지원 언어 + 긴 번역문"
 for L in en-US ja-JP es-ES fr-FR; do

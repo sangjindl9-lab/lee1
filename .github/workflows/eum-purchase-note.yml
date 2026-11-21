@@ -65,6 +65,8 @@ jobs:
           AAPT=$(ls -d $ANDROID_HOME/build-tools/*/ | sort -V | tail -1)aapt2
           echo "== APK 권한 (실제 빌드 결과)" >> tests.txt
           $AAPT dump permissions app/build/outputs/apk/debug/app-debug.apk | tee -a tests.txt
+          echo "== ML Kit 사용 통계 전송 구성요소(없어야 함)" >> tests.txt
+          ($AAPT dump xmltree --file AndroidManifest.xml app/build/outputs/apk/debug/app-debug.apk | grep -i "datatransport" || echo "없음") | tee -a tests.txt
       - name: APK 정리
         run: |
           cp app/build/outputs/apk/debug/app-debug.apk app-debug.apk
