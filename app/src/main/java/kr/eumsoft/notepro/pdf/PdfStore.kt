@@ -155,7 +155,7 @@ class PdfStore(private val context: Context, private val repo: NoteRepository, p
         val text = decodeText(bytes)
         val tmp = File(context.cacheDir, "text-import.pdf")
         val doc = PdfDocument()
-        val tp = TextPaint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { textSize = 11f; color = Color.BLACK }
+        val tp = TextPaint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { textSize = 11f; this.color = Color.BLACK }
         val layout = StaticLayout.Builder.obtain(text, 0, text.length, tp, 595 - 100).setAlignment(Layout.Alignment.ALIGN_NORMAL).setLineSpacing(2f, 1f).build()
         val pageH = 842 - 100
         var line = 0; var pageNo = 1
