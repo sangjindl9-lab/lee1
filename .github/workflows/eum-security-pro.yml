@@ -1,0 +1,201 @@
+name: EUM SECURITY PRO · 빌드·테스트·검수
+on:
+  push:
+    branches: [eum-security-pro]
+    paths-ignore: ["docs/**", "db/**", "README.md", ".github/workflows/eum-security-dnslibs.yml", "native/dnslibs/**"]
+  workflow_dispatch:
+permissions:
+  contents: write
+env:
+  NDK_VERSION: 29.0.14206865
+jobs:
+  rust:
+    name: Rust 네이티브 (YARA-X · Ed25519)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: NDK·Rust 타깃
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$NDK_VERSION" > /dev/null
+          rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
+          cargo install cargo-ndk --locked --version 3.5.4 || cargo install cargo-ndk --locked
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            native/target
+          key: rust-android-${{ hashFiles('native/Cargo.lock', 'native/**/Cargo.toml') }}
+      - name: 호스트 단위 테스트 (규칙 컴파일·일치/불일치·서명 위조 거부)
+        working-directory: native
+        run: cargo test --release 2>&1 | tee ../rust-test.log
+      - name: Android 빌드
+        working-directory: native
+        shell: bash
+        env: { ANDROID_NDK_HOME: "${{ env.ANDROID_HOME }}/ndk/${{ env.NDK_VERSION }}" }
+        run: |
+          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/$NDK_VERSION"
+          OUT=../jniLibs; mkdir -p $OUT
+          echo "== ABI 별 빌드 결과" > ../rust-abi.txt
+          cargo ndk -P 29 -t arm64-v8a -t x86_64 -t armeabi-v7a -o $OUT build --release -p eum-crypto
+          for t in arm64-v8a x86_64 armeabi-v7a; do
+            if cargo ndk -P 29 -t $t -o $OUT build --release -p eum-yara 2> ../yara-$t.err; then echo "eum-yara $t: OK" >> ../rust-abi.txt
+            else echo "eum-yara $t: 실패 (경량 패턴 엔진으로 대체) — $(grep -m3 '^error' ../yara-$t.err | tr '\n' ' ')" >> ../rust-abi.txt; fi
+          done
+          find $OUT -name '*.so' -exec ls -la {} \; | tee -a ../rust-abi.txt
+          cat ../rust-abi.txt
+      - name: Rust 의존성 라이선스 목록
+        working-directory: native
+        run: cargo metadata --format-version 1 | python3 -c "import json,sys;m=json.load(sys.stdin);print('\n'.join(sorted(set(p['name']+' '+p['version']+' — '+(p.get('license') or '?') for p in m['packages']))))" > ../rust-licenses.txt
+      - uses: actions/upload-artifact@v4
+        with: { name: jnilibs, path: jniLibs }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rust-logs
+          path: |
+            rust-abi.txt
+            rust-licenses.txt
+            rust-test.log
+            yara-*.err
+
+  build:
+    needs: rust
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 17 }
+      - uses: gradle/actions/setup-gradle@v4
+        with: { gradle-version: "8.11.1" }
+      - uses: actions/download-artifact@v4
+        with: { name: jnilibs, path: app/src/main/jniLibs }
+      - uses: actions/download-artifact@v4
+        with: { name: rust-logs, path: . }
+      - name: AdGuard DnsLibs AAR 받기 (eum-security-dnslibs 릴리스)
+        run: |
+          curl -sSfL -o dnslibs-m2.zip https://github.com/${{ github.repository }}/releases/download/eum-security-dnslibs/dnslibs-m2.zip
+          curl -sSfL -o dnslibs-m2.zip.sha256 https://github.com/${{ github.repository }}/releases/download/eum-security-dnslibs/dnslibs-m2.zip.sha256
+          sha256sum -c dnslibs-m2.zip.sha256
+          mkdir -p m2 && unzip -q dnslibs-m2.zip -d m2 && find m2 -name '*.aar'
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$NDK_VERSION" > /dev/null
+      - name: 릴리스 서명 키 (GitHub Secrets, 없으면 디버그 서명)
+        env: { KS: "${{ secrets.RELEASE_KEYSTORE_B64 }}" }
+        run: |
+          if [ -n "$KS" ]; then echo "$KS" | base64 -d > "$RUNNER_TEMP/release.jks"; echo "RELEASE_STORE_FILE=$RUNNER_TEMP/release.jks" >> $GITHUB_ENV; echo "SIGNING=release" >> $GITHUB_ENV
+          else echo "SIGNING=debug" >> $GITHUB_ENV; fi
+      - name: 정적 분석 · 단위 테스트 · APK · AAB
+        shell: bash
+        env:
+          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+        run: |
+          set -o pipefail
+          gradle :app:kspDebugKotlin --no-daemon 2>&1 | tee build.log
+          gradle testDebugUnitTest assembleDebug assembleDebugAndroidTest assembleRelease bundleRelease lintDebug --no-daemon 2>&1 | tee -a build.log
+      - name: 단위 테스트 결과
+        if: always()
+        run: |
+          python3 - <<'PY' > tests.txt || true
+          import glob, xml.etree.ElementTree as ET
+          tot=fail=0
+          for f in sorted(glob.glob('app/build/test-results/testDebugUnitTest/*.xml')):
+              for tc in ET.parse(f).getroot().iter('testcase'):
+                  tot+=1; bad=[c for c in tc if c.tag in('failure','error')]; fail+=bool(bad)
+                  print(('FAIL ' if bad else 'PASS ')+tc.get('classname').split('.')[-1]+'.'+tc.get('name'))
+                  for b in bad: print('    '+(b.get('message') or '')[:500])
+          print(f'TOTAL {tot}, FAILED {fail}')
+          PY
+          cat tests.txt
+      - name: 산출물 검증 · SHA-256
+        run: |
+          AAPT=$(ls -d $ANDROID_HOME/build-tools/*/ | sort -V | tail -1)
+          mkdir -p out
+          cp app/build/outputs/apk/debug/app-debug.apk out/
+          cp app/build/outputs/apk/release/app-release.apk out/
+          cp app/build/outputs/bundle/release/app-release.aab out/
+          cp app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk out/
+          {
+            echo "== 서명 방식: $SIGNING"
+            echo "== badging (release)"; ${AAPT}aapt2 dump badging out/app-release.apk | grep -E "^package|sdkVersion|targetSdk|native-code|application-label:"
+            echo "== 권한 (release)"; ${AAPT}aapt2 dump permissions out/app-release.apk
+            echo "== APK 서명 검증"; ${AAPT}apksigner verify --print-certs out/app-release.apk | head -5
+            echo "== 네이티브 라이브러리"; unzip -l out/app-release.apk | grep '\.so$'
+            echo "== 크기"; ls -la out
+            echo "== SHA-256"; (cd out && sha256sum *.apk *.aab)
+            echo; cat rust-abi.txt
+          } | tee verify.txt
+          (cd out && sha256sum *.apk *.aab > SHA256SUMS.txt)
+          cp app/schemas/kr.eumsoft.securitypro.data.AppDb/1.json out/room-schema-v1.json || true
+          grep -E "Error|Warning" -c app/build/reports/lint-results-debug.txt 2>/dev/null || true
+          cp app/build/reports/lint-results-debug.txt out/lint.txt 2>/dev/null || cp app/build/reports/lint-results-debug.html out/lint.html 2>/dev/null || true
+      - uses: actions/upload-artifact@v4
+        with: { name: apks, path: out }
+      - name: 릴리스 올리기 (사내 테스트)
+        env: { GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }
+        run: |
+          gh release delete eum-security-pro-latest --yes --cleanup-tag || true
+          cp out/app-release.apk eum-security-pro.apk
+          gh release create eum-security-pro-latest eum-security-pro.apk out/app-release.aab out/app-debug.apk out/SHA256SUMS.txt verify.txt tests.txt rust-licenses.txt out/room-schema-v1.json --target "$GITHUB_SHA" --prerelease \
+            --title "EUM SECURITY PRO (테스트 빌드)" \
+            --notes "설치용 APK: eum-security-pro.apk (서명: $SIGNING). AAB 는 Play 업로드 키가 GitHub Secrets 에 등록된 경우에만 Play 제출용입니다. Android 10 이상."
+      - name: 실패 로그 올리기
+        if: failure()
+        env: { GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }
+        run: |
+          touch build.log tests.txt
+          grep -E "^e: |error:|FAILED|What went wrong|Exception" -A3 build.log | head -300 > errors.txt || true
+          python3 - <<'PY'
+          import re
+          log = open('build.log', encoding='utf-8', errors='replace').read().splitlines()
+          errs = [re.sub(r'^e: file://\S*/app/src/', 'app/src/', l) for l in log if l.startswith('e: ') or ' error:' in l]
+          i = next((k for k, l in enumerate(log) if 'What went wrong' in l), None)
+          if i is not None: errs.append(' / '.join(log[i:i + 10]))
+          errs += [l for l in open('tests.txt') if l.startswith('FAIL') or l.startswith('    ')][:40]
+          chunk, out = '', []
+          for e in errs[:150]:
+              e = e.strip().replace('%', '%25')
+              if len(chunk) + len(e) > 3500: out.append(chunk); chunk = ''
+              chunk += e + '%0A'
+          if chunk: out.append(chunk)
+          for c in out[:9]: print('::error::' + c)
+          PY
+          gh release delete eum-security-pro-buildlog --yes --cleanup-tag || true
+          gh release create eum-security-pro-buildlog build.log errors.txt tests.txt --target "$GITHUB_SHA" --prerelease --title "EUM SECURITY PRO 빌드 실패 로그" --notes "실패 로그"
+
+  emulator:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [29, 34]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: apks }
+      - name: KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules; sudo udevadm trigger --name-match=kvm
+      - name: 에뮬레이터 검수 (Android API ${{ matrix.api }})
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api }}
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot
+          script: bash .github/emu/test.sh ${{ matrix.api }} || true
+      - name: 결과 올리기
+        if: always()
+        env: { GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }
+        run: |
+          ls emu || exit 0
+          cd emu && rm -f ui.xml && zip -q ../emu-${{ matrix.api }}.zip * && cd ..
+          cp emu/report.txt report-api${{ matrix.api }}.txt
+          gh release delete eum-security-pro-test-api${{ matrix.api }} --yes --cleanup-tag || true
+          gh release create eum-security-pro-test-api${{ matrix.api }} report-api${{ matrix.api }}.txt emu-${{ matrix.api }}.zip --target "$GITHUB_SHA" --prerelease \
+            --title "EUM SECURITY PRO 에뮬레이터 검수 (API ${{ matrix.api }})" --notes "에뮬레이터(실기기 아님) 자동 검수 결과"

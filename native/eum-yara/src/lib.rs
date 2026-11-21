@@ -1,5 +1,5 @@
-//! EUM SECURITY PRO — YARA-X JNI 연결 모듈.
-//! Kotlin 쪽 kr.eumsoft.securitypro.engine.yara.YaraNative 와 1:1 대응한다.
+//! EUM SECURITY PRO — YARA-X JNI 연결 모듈 (libeumyara.so).
+//! Kotlin 쪽 kr.eumsoft.securitypro.engine.NativeCore 와 1:1 대응한다.
 
 use jni::objects::{JByteArray, JClass, JString};
 use jni::sys::{jint, jlong, jstring};
@@ -50,7 +50,7 @@ fn throw(env: &mut JNIEnv, msg: &str) {
 }
 
 #[no_mangle]
-pub extern "system" fn Java_kr_eumsoft_securitypro_engine_yara_YaraNative_nativeVersion(
+pub extern "system" fn Java_kr_eumsoft_securitypro_engine_NativeCore_nativeVersion(
     env: JNIEnv,
     _c: JClass,
 ) -> jstring {
@@ -60,7 +60,7 @@ pub extern "system" fn Java_kr_eumsoft_securitypro_engine_yara_YaraNative_native
 }
 
 #[no_mangle]
-pub extern "system" fn Java_kr_eumsoft_securitypro_engine_yara_YaraNative_nativeCompile(
+pub extern "system" fn Java_kr_eumsoft_securitypro_engine_NativeCore_nativeCompile(
     mut env: JNIEnv,
     _c: JClass,
     src: JString,
@@ -86,7 +86,7 @@ pub extern "system" fn Java_kr_eumsoft_securitypro_engine_yara_YaraNative_native
 }
 
 #[no_mangle]
-pub extern "system" fn Java_kr_eumsoft_securitypro_engine_yara_YaraNative_nativeScan(
+pub extern "system" fn Java_kr_eumsoft_securitypro_engine_NativeCore_nativeScan(
     mut env: JNIEnv,
     _c: JClass,
     handle: jlong,
@@ -123,7 +123,7 @@ pub extern "system" fn Java_kr_eumsoft_securitypro_engine_yara_YaraNative_native
 }
 
 #[no_mangle]
-pub extern "system" fn Java_kr_eumsoft_securitypro_engine_yara_YaraNative_nativeFree(
+pub extern "system" fn Java_kr_eumsoft_securitypro_engine_NativeCore_nativeFree(
     _env: JNIEnv,
     _c: JClass,
     handle: jlong,
@@ -132,6 +132,7 @@ pub extern "system" fn Java_kr_eumsoft_securitypro_engine_yara_YaraNative_native
         unsafe { drop(Box::from_raw(handle as *mut yara_x::Rules)) };
     }
 }
+
 
 #[cfg(test)]
 mod tests {
@@ -162,6 +163,20 @@ rule EUM_Test_Marker : test {
     fn no_match() {
         let r = compile(RULE).unwrap();
         assert_eq!(scan(&r, b"normal file content", 5).unwrap(), "[]");
+    }
+
+    /// 앱에 실제로 들어가는 규칙(db_src/yara)이 컴파일되고, 무해한 테스트 픽스처만 탐지하는지 확인
+    #[test]
+    fn shipped_rules_compile_and_match_fixture() {
+        let src = [include_str!("../../../db_src/yara/eum_test.yar"), include_str!("../../../db_src/yara/eum_heuristics.yar")].join("\n\n");
+        let r = compile(&src).expect("shipped rules compile");
+        let mut dex = b"dex\n035\0".to_vec();
+        dex.resize(0x70, 0);
+        dex.extend_from_slice(b"EUM-SECURITY-TEST-MALWARE-MARKER-0001");
+        let j = scan(&r, &dex, 5).unwrap();
+        assert!(j.contains("EUM_TEST_Marker"), "{j}");
+        assert!(!j.contains("EUM_HEUR"), "{j}");
+        assert_eq!(scan(&r, b"plain text with dispatchGesture only", 5).unwrap(), "[]");
     }
 
     #[test]

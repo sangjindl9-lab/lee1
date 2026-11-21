@@ -1,0 +1,10 @@
+[
+ {"name":"EUM_TEST_Marker_P","severity":"HIGH","confidence":100,"source":"EUM 테스트 데이터","license":"Apache-2.0","test":true,
+  "body":{"strings":["EUM-SECURITY-TEST-MALWARE-MARKER-0001"],"min":1,"targets":["any"],"description":"무해한 테스트 마커"}},
+ {"name":"EUM_HEUR_Accessibility_Overlay_SMS_Banker_P","severity":"MEDIUM","confidence":45,"source":"EUM 자체 휴리스틱 v1","license":"Apache-2.0","test":false,
+  "body":{"strings":["dispatchGesture","TYPE_APPLICATION_OVERLAY","sendTextMessage","getMessageBody","getRootInActiveWindow"],"min":5,"targets":["dex"]}},
+ {"name":"EUM_HEUR_Root_Exploit_Commands_P","severity":"MEDIUM","confidence":50,"source":"EUM 자체 휴리스틱 v1","license":"Apache-2.0","test":false,
+  "body":{"strings":["mount -o remount,rw /system","/system/xbin/su","chmod 4755"],"min":3,"targets":["dex","so","other"]}},
+ {"name":"EUM_HEUR_Hide_Icon_Device_Admin_Lock_P","severity":"MEDIUM","confidence":40,"source":"EUM 자체 휴리스틱 v1","license":"Apache-2.0","test":false,
+  "body":{"strings":["setComponentEnabledSetting","ACTION_ADD_DEVICE_ADMIN","lockNow"],"min":3,"targets":["dex"]}}
+]
