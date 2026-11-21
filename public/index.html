@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>이음 발주서</title>
+<title>이음 견적발주</title>
 <meta name="theme-color" content="#1f3f8f">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
 <link rel="manifest" href="/manifest.webmanifest">
@@ -139,6 +139,11 @@ label.f textarea{min-height:70px;resize:vertical}
 .auth-tabs{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--line);border-radius:4px;overflow:hidden}
 .auth-tabs button{border:0;background:none;padding:9px;cursor:pointer;color:var(--muted);font-weight:500}
 .auth-tabs button[aria-selected="true"]{background:var(--accent);color:var(--accent-ink)}
+.doctype{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--line);border-radius:4px;overflow:hidden;background:var(--surface)}
+.doctype button{border:0;background:none;padding:10px;cursor:pointer;color:var(--muted);font-weight:600;font-size:15px}
+.doctype button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
+.pill{display:inline-block;font-size:12px;font-weight:600;border-radius:999px;padding:1px 8px;margin-right:6px;border:1px solid var(--line);color:var(--accent)}
+.pill.qt{color:var(--ok)}
 .auth-err{margin:0;min-height:1.2em;font-size:13px;color:var(--danger)}
 .auth a,.panel a{color:var(--accent)}
 [hidden]{display:none!important}
@@ -148,12 +153,12 @@ label.f textarea{min-height:70px;resize:vertical}
 <header class="top">
   <div class="top-in">
     <div class="brand">
-      <h1>이음 발주서</h1>
+      <h1>이음 견적발주</h1>
       <span class="chip" id="status">연결 중</span>
     </div>
     <nav class="tabs" role="tablist" id="tabs">
-      <button role="tab" data-tab="write" aria-selected="true">발주서 작성</button>
-      <button role="tab" data-tab="buyers" aria-selected="false">발주자 등록</button>
+      <button role="tab" data-tab="write" aria-selected="true">문서 작성</button>
+      <button role="tab" data-tab="buyers" aria-selected="false">우리 회사</button>
       <button role="tab" data-tab="vendors" aria-selected="false">거래처 등록</button>
       <button role="tab" data-tab="orders" aria-selected="false">보관함</button>
       <button role="tab" data-tab="account" aria-selected="false">내 계정</button>
@@ -176,7 +181,7 @@ label.f textarea{min-height:70px;resize:vertical}
 
 <div id="auth" class="auth" hidden>
   <form class="auth-card" id="auth-form" novalidate>
-    <div class="auth-brand"><img src="/icon.svg" alt="" width="44" height="44"><div><strong>이음 발주서</strong><span>발주서 작성 · 도장 · PDF</span></div></div>
+    <div class="auth-brand"><img src="/icon.svg" alt="" width="44" height="44"><div><strong>이음 견적발주</strong><span>발주서 · 견적서 · 도장 · PDF</span></div></div>
     <div class="auth-tabs" role="tablist">
       <button type="button" role="tab" data-mode="login" aria-selected="true">로그인</button>
       <button type="button" role="tab" data-mode="signup" aria-selected="false">회원가입</button>
@@ -248,13 +253,19 @@ const store = {
 
 /* ───────── 작성 중인 발주서 ───────── */
 const blankItem = () => ({ name:"", spec:"", unit:"", qty:"", price:"", note:"" });
-function nextNo(date){
-  const key = "PO-" + (date || today()).replace(/-/g, "") + "-";
+const DOC = {
+  po:    { title:"발주서", no:"발주번호", date:"발주일자", prefix:"PO", say:"아래와 같이 발주합니다.", party:"발주자", info:"발주 정보", honor:"귀중", to:"거래처(받는 곳)" },
+  quote: { title:"견적서", no:"견적번호", date:"견적일자", prefix:"QT", say:"아래와 같이 견적합니다.", party:"공급자", info:"견적 정보", honor:"귀하", to:"거래처(견적 받는 곳)" }
+};
+const dt = o => DOC[o && o.docType === "quote" ? "quote" : "po"];
+function nextNo(date, type){
+  const key = DOC[type === "quote" ? "quote" : "po"].prefix + "-" + (date || today()).replace(/-/g, "") + "-";
   const n = S.orders.filter(o => (o.no || "").startsWith(key)).length + 1;
   return key + String(n).padStart(2, "0");
 }
-function newDraft(example){
-  const d = { id: newId(), no: nextNo(today()), date: today(), buyerId: (S.buyers[0] || {}).id || "",
+function newDraft(example, type){
+  type = type === "quote" ? "quote" : "po";
+  const d = { id: newId(), docType: type, no: nextNo(today(), type), date: today(), valid: "", buyerId: (S.buyers[0] || {}).id || "",
     vendor: { name:"", manager:"", tel:"", fax:"", email:"" }, site:"", place:"", due:"", pay:"", vat:"ex",
     items: [blankItem(), blankItem(), blankItem()], memo:"", stamp:true, example:false };
   if (example){
@@ -295,23 +306,24 @@ function sheetHTML(o){
   let last = pages[pages.length - 1];
   if (last.rows.length + FOOT > last.cap){ last = { rows: [], cap: NEXT, first: false, footOnly: true }; pages.push(last); }
   const vatLabel = o.vat === "in" ? "부가세 포함" : o.vat === "none" ? "부가세 없음" : "부가세 포함";
+  const D = dt(o);
 
   const head = `
-    <h1 class="title">발주서</h1><div class="rule"></div>
-    <div class="metaline"><span>발주번호 : ${g(o.no)}</span><span>발주일자 : ${esc(koDate(o.date))}</span></div>
+    <h1 class="title">${D.title}</h1><div class="rule"></div>
+    <div class="metaline"><span>${D.no} : ${g(o.no)}</span><span>${D.date} : ${esc(koDate(o.date))}</span></div>
     <div class="two">
       <div>
-        <div class="to-name">${o.vendor.name ? esc(o.vendor.name) : '<span class="ghost">거래처 상호</span>'}<small>귀중</small></div>
+        <div class="to-name">${o.vendor.name ? esc(o.vendor.name) : '<span class="ghost">거래처 상호</span>'}<small>${D.honor}</small></div>
         <div class="kv"><span>담당자</span><span>${g(o.vendor.manager)}</span></div>
         <div class="kv"><span>전화</span><span>${g(o.vendor.tel)}</span></div>
         <div class="kv"><span>팩스</span><span>${g(o.vendor.fax)}</span></div>
         <div class="kv"><span>이메일</span><span>${g(o.vendor.email)}</span></div>
-        <div class="say">아래와 같이 발주합니다.</div>
+        <div class="say">${D.say}</div>
       </div>
       <div>
         <table>
           <colgroup><col style="width:26px"><col style="width:62px"><col><col style="width:50px"><col></colgroup>
-          <tr><th rowspan="6" class="vert">발주자</th><th>등록번호</th><td colspan="3">${b ? g(b.bizNo) : '<span class="ghost">발주자를 등록하세요</span>'}</td></tr>
+          <tr><th rowspan="6" class="vert">${D.party}</th><th>등록번호</th><td colspan="3">${b ? g(b.bizNo) : '<span class="ghost">우리 회사를 등록하세요</span>'}</td></tr>
           <tr><th>상호</th><td>${b ? g(b.name) : ""}</td><th>대표자</th><td>${b ? g(b.ceo) : ""}<span class="seal-a">(인)${b && b.stamp && o.stamp ? `<img class="seal" src="${b.stamp}" alt="">` : ""}</span></td></tr>
           <tr><th>주소</th><td colspan="3">${b ? g(b.addr) : ""}</td></tr>
           <tr><th>업태</th><td>${b ? g(b.bizType) : ""}</td><th>종목</th><td>${b ? g(b.bizItem) : ""}</td></tr>
@@ -332,6 +344,7 @@ function sheetHTML(o){
       <tr><th>현장명</th><td colspan="3">${g(o.site)}</td></tr>
       <tr><th>납품장소</th><td>${g(o.place)}</td><th>납기일자</th><td>${esc(koDate(o.due))}</td></tr>
       <tr><th>결제조건</th><td colspan="3">${g(o.pay)}</td></tr>
+      ${o.docType === "quote" ? `<tr><th>유효기간</th><td colspan="3">${o.valid ? esc(koDate(o.valid)) + "까지" : "견적일로부터 30일"}</td></tr>` : ""}
       <tr><th>특기사항</th><td colspan="3" class="memo">${g(o.memo)}</td></tr>
     </table>`;
 
@@ -364,26 +377,30 @@ function field(label, attrs, value, cls){
   return `<label class="f ${cls || ""}">${label}<input ${attrs} value="${esc(value)}"></label>`;
 }
 function renderEditor(){
-  const d = draft, v = d.vendor;
+  const d = draft, v = d.vendor, D = dt(d);
   $("#editor").innerHTML = `
+    <div class="doctype" role="group" aria-label="문서 종류">
+      <button type="button" data-act="type-po" aria-pressed="${d.docType !== "quote"}">발주서</button>
+      <button type="button" data-act="type-quote" aria-pressed="${d.docType === "quote"}">견적서</button>
+    </div>
     ${d.example ? `<div class="banner"><span>예시 내용이 들어 있습니다. 지우고 실제 내용을 입력하세요.</span><button class="btn sm" data-act="clear-example">예시 지우기</button></div>` : ""}
     <div class="panel">
-      <h2>발주자 · 거래처</h2>
+      <h2>우리 회사 · 거래처</h2>
       <div class="grid">
-        <label class="f full">발주자 (우리 쪽 업체)
+        <label class="f full">우리 회사 (${D.party} 칸에 들어감)
           <select id="f-buyer" data-f="buyerId">
-            ${S.buyers.length ? "" : '<option value="">등록된 발주자가 없습니다</option>'}
+            ${S.buyers.length ? "" : '<option value="">등록된 우리 회사가 없습니다</option>'}
             ${S.buyers.map(b => `<option value="${esc(b.id)}" ${b.id === d.buyerId ? "selected" : ""}>${esc(b.name)}</option>`).join("")}
           </select></label>
         <div class="full row">
           <label class="check"><input type="checkbox" id="f-stamp" data-f="stamp" ${d.stamp ? "checked" : ""}> 도장 찍기</label>
-          <button class="btn sm" data-act="go-buyers">발주자 등록 · 도장 올리기</button>
+          <button class="btn sm" data-act="go-buyers">우리 회사 등록 · 도장 올리기</button>
         </div>
         <label class="f full">등록된 거래처에서 불러오기
           <select id="f-vendor-pick"><option value="">직접 입력</option>
             ${S.vendors.map(x => `<option value="${esc(x.id)}">${esc(x.name)}</option>`).join("")}
           </select></label>
-        ${field("거래처 상호", 'id="f-vname" data-v="name"', v.name, "full")}
+        ${field(D.to + " 상호", 'id="f-vname" data-v="name"', v.name, "full")}
         ${field("담당자", 'id="f-vmanager" data-v="manager"', v.manager)}
         ${field("전화", 'id="f-vtel" data-v="tel" inputmode="tel"', v.tel)}
         ${field("팩스", 'id="f-vfax" data-v="fax" inputmode="tel"', v.fax)}
@@ -392,14 +409,15 @@ function renderEditor(){
       </div>
     </div>
     <div class="panel">
-      <h2>발주 정보</h2>
+      <h2>${D.info}</h2>
       <div class="grid">
-        ${field("발주번호", 'id="f-no" data-f="no"', d.no)}
-        ${field("발주일자", 'id="f-date" data-f="date" type="date"', d.date)}
+        ${field(D.no, 'id="f-no" data-f="no"', d.no)}
+        ${field(D.date, 'id="f-date" data-f="date" type="date"', d.date)}
         ${field("현장명", 'id="f-site" data-f="site"', d.site, "full")}
         ${field("납품장소", 'id="f-place" data-f="place"', d.place)}
         ${field("납기일자", 'id="f-due" data-f="due" type="date"', d.due)}
         ${field("결제조건", 'id="f-pay" data-f="pay"', d.pay)}
+        ${d.docType === "quote" ? field("견적 유효기간 (비우면 30일)", 'id="f-valid" data-f="valid" type="date"', d.valid || "") : ""}
         <label class="f">부가세
           <select id="f-vat" data-f="vat">
             <option value="ex" ${d.vat === "ex" ? "selected" : ""}>별도 (단가에 10% 추가)</option>
@@ -419,7 +437,7 @@ function renderEditor(){
       <div class="row">
         <button class="btn pri" data-act="pdf" id="btn-pdf">PDF로 저장</button>
         <button class="btn" data-act="save-order">보관함에 저장</button>
-        <button class="btn" data-act="new-order">새 발주서</button>
+        <button class="btn" data-act="new-order">새 ${D.title}</button>
       </div>
       <p class="note" id="pdf-note">PDF는 A4 한 장 기준이며, 품목이 많으면 자동으로 다음 장으로 넘어갑니다.</p>
     </div>`;
@@ -466,9 +484,16 @@ $("#editor").addEventListener("click", async e => {
   const act = btn.dataset.act;
   if (act === "add-item" || act === "add-5"){ for (let i = 0; i < (act === "add-5" ? 5 : 1); i++) draft.items.push(blankItem()); renderItems(); renderPreview(); }
   else if (act === "del-item"){ draft.items.splice(+btn.dataset.i, 1); if (!draft.items.length) draft.items.push(blankItem()); renderItems(); renderPreview(); }
-  else if (act === "clear-example"){ const keep = draft.buyerId; draft = newDraft(false); draft.buyerId = keep; renderEditor(); }
+  else if (act === "clear-example"){ const keep = draft.buyerId; draft = newDraft(false, draft.docType); draft.buyerId = keep; renderEditor(); }
   else if (act === "go-buyers"){ showTab("buyers"); }
-  else if (act === "new-order"){ draft = newDraft(false); renderEditor(); toast("새 발주서를 시작했습니다."); }
+  else if (act === "new-order"){ const ty = draft.docType; draft = newDraft(false, ty); renderEditor(); toast("새 " + dt(draft).title + "를 시작했습니다."); }
+  else if (act === "type-po" || act === "type-quote"){
+    const ty = act === "type-po" ? "po" : "quote";
+    if ((draft.docType === "quote" ? "quote" : "po") === ty) return;
+    draft.docType = ty;
+    if (!draft.no || /^(PO|QT)-\d{8}-\d+$/.test(draft.no)) draft.no = nextNo(draft.date, ty);
+    renderEditor();
+  }
   else if (act === "save-vendor"){
     if (!draft.vendor.name.trim()) return toast("거래처 상호를 먼저 입력하세요.");
     const ex = S.vendors.find(v => v.name === draft.vendor.name.trim());
@@ -514,7 +539,7 @@ async function exportPdf(btn){
   try{
     const blob = await buildPdf();
     const clean = s => String(s || "").replace(/[\\/:*?"<>|]/g, "").trim();
-    const name = ["발주서", clean(draft.no), clean(draft.vendor.name)].filter(Boolean).join("_") + ".pdf";
+    const name = [dt(draft).title, clean(draft.no), clean(draft.vendor.name)].filter(Boolean).join("_") + ".pdf";
     if (window.BaljuApp && BaljuApp.savePdf){
       // 안드로이드 앱: 다운로드 폴더에 저장하고 앱이 열기·공유를 띄운다.
       const b64 = await new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(String(fr.result).split(",")[1]); fr.onerror = rej; fr.readAsDataURL(blob); });
@@ -533,10 +558,10 @@ async function exportPdf(btn){
 
 /* ───────── 발주자 · 거래처 등록 ───────── */
 const SPEC = {
-  buyers: { title: "발주자", hint: "발주서 오른쪽 위 발주자 칸에 들어가는 우리 쪽 업체입니다. 여러 곳을 등록해 두고 발주서마다 골라 씁니다.", fields: [
+  buyers: { title: "우리 회사", hint: "발주서에서는 발주자 칸, 견적서에서는 공급자 칸에 들어가는 우리 쪽 업체입니다. 여러 곳을 등록해 두고 문서마다 골라 씁니다.", fields: [
     ["name","상호","full"],["bizNo","사업자등록번호",""],["ceo","대표자",""],["addr","주소","full"],["bizType","업태",""],["bizItem","종목",""],
     ["tel","전화",""],["fax","팩스",""],["manager","담당자",""],["email","이메일",""] ] },
-  vendors: { title: "거래처", hint: "발주서를 받는 공급업체입니다. 등록해 두면 작성 화면에서 바로 불러옵니다.", fields: [
+  vendors: { title: "거래처", hint: "발주서를 받는 공급업체나 견적서를 받는 고객입니다. 등록해 두면 작성 화면에서 바로 불러옵니다.", fields: [
     ["name","상호","full"],["manager","담당자",""],["tel","전화",""],["fax","팩스",""],["email","이메일",""],["addr","주소","full"] ] }
 };
 const editing = { buyers: null, vendors: null };
@@ -634,21 +659,27 @@ function twice(btn){
 }
 
 /* ───────── 보관함 ───────── */
+let orderFilter = "all";
 function renderOrders(){
-  const list = S.orders.slice().sort((a, b) => (b.updated || 0) - (a.updated || 0));
-  $("#tab-orders").innerHTML = `<div class="panel" style="max-width:760px"><h2>저장한 발주서 ${list.length}건</h2>
+  const all = S.orders.slice().sort((a, b) => (b.updated || 0) - (a.updated || 0));
+  const list = all.filter(o => orderFilter === "all" || (o.docType === "quote" ? "quote" : "po") === orderFilter);
+  const cnt = t => all.filter(o => (o.docType === "quote" ? "quote" : "po") === t).length;
+  const fb = (k, label) => `<button class="btn sm${orderFilter === k ? " pri" : ""}" data-act="o-filter" data-f="${k}">${label}</button>`;
+  $("#tab-orders").innerHTML = `<div class="panel" style="max-width:760px"><h2>저장한 문서 ${all.length}건</h2>
+    <div class="row">${fb("all", "전체 " + all.length)}${fb("po", "발주서 " + cnt("po"))}${fb("quote", "견적서 " + cnt("quote"))}</div>
     <div class="list">${list.length ? list.map(o => `
       <div class="ent">
-        <div class="meta"><strong>${esc(o.no || "번호 없음")} · ${esc((o.vendor || {}).name || "거래처 미입력")}</strong>
+        <div class="meta"><strong><span class="pill${o.docType === "quote" ? " qt" : ""}">${dt(o).title}</span>${esc(o.no || "번호 없음")} · ${esc((o.vendor || {}).name || "거래처 미입력")}</strong>
           <span>${esc(koDate(o.date))} · ${esc(o.site || "현장명 없음")} · 합계 ${won(calc(o).total)}원</span></div>
         <div class="row"><button class="btn sm" data-act="o-open" data-id="${esc(o.id)}">열기</button><button class="btn sm" data-act="o-copy" data-id="${esc(o.id)}">복사해서 새로</button><button class="btn sm dan" data-act="o-del" data-id="${esc(o.id)}">삭제</button></div>
-      </div>`).join("") : '<p class="note">저장한 발주서가 없습니다. 작성 화면에서 “보관함에 저장”을 누르면 여기에 쌓입니다.</p>'}</div></div>`;
+      </div>`).join("") : '<p class="note">저장한 문서가 없습니다. 작성 화면에서 “보관함에 저장”을 누르면 여기에 쌓입니다.</p>'}</div></div>`;
 }
 $("#tab-orders").addEventListener("click", async e => {
   const btn = e.target.closest("[data-act]"); if (!btn) return;
+  if (btn.dataset.act === "o-filter"){ orderFilter = btn.dataset.f; return renderOrders(); }
   const o = S.orders.find(x => x.id === btn.dataset.id); if (!o) return;
   if (btn.dataset.act === "o-open"){ draft = JSON.parse(JSON.stringify(o)); renderEditor(); showTab("write"); }
-  else if (btn.dataset.act === "o-copy"){ draft = JSON.parse(JSON.stringify(o)); draft.id = newId(); draft.date = today(); draft.no = nextNo(draft.date); renderEditor(); showTab("write"); toast("복사한 내용으로 새 발주서를 열었습니다."); }
+  else if (btn.dataset.act === "o-copy"){ draft = JSON.parse(JSON.stringify(o)); draft.id = newId(); draft.date = today(); draft.no = nextNo(draft.date, draft.docType); renderEditor(); showTab("write"); toast("복사한 내용으로 새 " + dt(draft).title + "를 열었습니다."); }
   else if (btn.dataset.act === "o-del"){ if (!twice(btn)) return; if (await guard(() => store.del("orders", o.id), "삭제했습니다.")) renderOrders(); }
 });
 
@@ -708,7 +739,7 @@ async function afterLogin(email){
   $("#auth").hidden = true;
   if (!S.buyers.find(b => b.id === draft.buyerId)) draft.buyerId = (S.buyers[0] || {}).id || "";
   renderEditor();
-  if (!S.buyers.length) toast("먼저 발주자 등록에서 우리 회사 정보와 도장을 등록하세요.");
+  if (!S.buyers.length) toast("먼저 '우리 회사'에서 회사 정보와 도장을 등록하세요.");
 }
 
 /* ───────── 내 계정 ───────── */
@@ -726,7 +757,7 @@ function renderAccount(){
       <div class="row"><button class="btn pri" data-act="pw">비밀번호 바꾸기</button></div>
     </div>
     <div class="panel"><h2>계정 삭제</h2>
-      <p class="note">계정과 등록한 발주자·도장·거래처·발주서가 모두 바로 지워지고 되돌릴 수 없습니다.</p>
+      <p class="note">계정과 등록한 우리 회사·도장·거래처·발주서·견적서가 모두 바로 지워지고 되돌릴 수 없습니다.</p>
       <label class="f">비밀번호 확인<input id="d-pw" type="password" autocomplete="current-password"></label>
       <div class="row"><button class="btn dan" data-act="delete">계정 삭제</button></div>
     </div>

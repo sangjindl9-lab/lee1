@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">이음 발주서</string>
-    <string name="error_title">발주서를 열 수 없어요</string>
+    <string name="app_name">이음 견적발주</string>
+    <string name="error_title">앱을 열 수 없어요</string>
     <string name="error_network">인터넷 연결을 확인하고 다시 시도해 주세요.</string>
     <string name="error_no_app">이 기능을 열 수 있는 앱이 없어요.</string>
     <string name="retry">다시 시도</string>
     <string name="stamp_chooser_title">도장 이미지 선택</string>
-    <string name="pdf_saved_downloads">PDF를 다운로드/이음발주서 폴더에 저장했어요.</string>
+    <string name="pdf_saved_downloads">PDF를 다운로드/이음견적발주 폴더에 저장했어요.</string>
     <string name="pdf_ready">PDF를 만들었어요. 보낼 앱을 고르세요.</string>
-    <string name="pdf_share_title">발주서 PDF 열기·보내기</string>
+    <string name="pdf_share_title">PDF 열기·보내기</string>
     <string name="error_pdf">PDF를 저장하지 못했어요. 다시 시도해 주세요.</string>
 </resources>

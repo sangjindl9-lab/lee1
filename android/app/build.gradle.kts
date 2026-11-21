@@ -39,8 +39,8 @@ android {
         applicationId = "kr.eumsoft.balju"
         minSdk = 24
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.1.0"
 
         // 웹앱 주소를 앱 코드의 BuildConfig.APP_URL 로 넣는다.
         buildConfigField("String", "APP_URL", "\"$resolvedAppUrl\"")

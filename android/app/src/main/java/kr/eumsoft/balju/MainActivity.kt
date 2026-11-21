@@ -36,7 +36,7 @@ import kr.eumsoft.balju.databinding.ActivityMainBinding
 import java.io.File
 
 /**
- * 이음 발주서 웹앱을 감싸는 WebView 앱.
+ * 이음 견적발주 웹앱을 감싸는 WebView 앱.
  * - 앱이 여는 주소: BuildConfig.APP_URL
  * - 도장 이미지 올리기: onShowFileChooser (이미지 한 장)
  * - PDF 저장: 웹이 window.BaljuApp.savePdf(base64, 파일명)을 부르면 다운로드 폴더에 저장하고 열기/공유를 띄운다.
@@ -212,7 +212,7 @@ class MainActivity : AppCompatActivity() {
                 val values = ContentValues().apply {
                     put(MediaStore.Downloads.DISPLAY_NAME, name)
                     put(MediaStore.Downloads.MIME_TYPE, "application/pdf")
-                    put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/이음발주서")
+                    put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/이음견적발주")
                 }
                 contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)?.let { uri ->
                     contentResolver.openOutputStream(uri)?.use { it.write(bytes) }
