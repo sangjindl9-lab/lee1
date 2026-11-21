@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>노트프로 관리자</title>
+<style>
+:root{--ink:#1f2a44;--muted:#6b7385;--line:#e4e0d6;--bg:#f7f5f0;--accent:#e8613c;--ok:#2c6e7f}
+*{box-sizing:border-box}body{margin:0;font:14px/1.5 system-ui,-apple-system,"Noto Sans KR",sans-serif;color:var(--ink);background:var(--bg)}
+header{display:flex;align-items:center;gap:16px;padding:14px 24px;border-bottom:1px solid var(--line);background:#fff}
+header b{font-size:16px}nav{display:flex;gap:4px;flex-wrap:wrap}nav button{border:0;background:none;padding:6px 10px;border-radius:6px;cursor:pointer;color:var(--muted)}
+nav button.on{background:var(--ink);color:#fff}main{padding:24px;max-width:1200px}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-bottom:20px}
+.card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px}.card small{color:var(--muted)}.card div{font-size:24px;font-weight:600}
+table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-bottom:20px}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);font-size:13px;vertical-align:top}th{background:#fbfaf7;color:var(--muted);font-weight:500}
+h2{font-size:15px;margin:18px 0 8px}input,textarea,select{font:inherit;padding:7px 9px;border:1px solid var(--line);border-radius:6px;background:#fff}
+button.p{background:var(--accent);color:#fff;border:0;border-radius:6px;padding:8px 14px;cursor:pointer}
+#login{max-width:340px;margin:12vh auto;background:#fff;border:1px solid var(--line);border-radius:12px;padding:24px;display:grid;gap:10px}
+.note{color:var(--muted);font-size:12px}.err{color:#b42318}
+</style></head><body>
+<div id="login"><b>노트프로 관리자</b><input id="em" placeholder="이메일" autocomplete="username"><input id="pw" type="password" placeholder="비밀번호" autocomplete="current-password">
+<button class="p" onclick="login()">로그인</button><div id="le" class="err"></div>
+<div class="note">관리자는 사용자의 노트 내용을 볼 수 없습니다. 모든 화면은 집계 수치와 계정 정보만 표시합니다.</div></div>
+<div id="app" hidden><header><b>노트프로 관리자</b><nav id="nav"></nav><span style="flex:1"></span><span id="role" class="note"></span></header><main id="main"></main></div>
+<script>
+let T=sessionStorage.getItem('t'),ROLE=sessionStorage.getItem('r');
+const tabs=[['stats','대시보드'],['users','사용자'],['subscriptions','구독'],['payments','결제'],['storage','저장 공간'],['sync','동기화'],['errors','오류·충돌'],['ai','AI 사용량·비용'],['support','문의'],['notices','공지'],['versions','앱 버전'],['health','서비스 상태']];
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmtB=b=>{b=Number(b||0);const u=['B','KB','MB','GB','TB'];let i=0;while(b>=1024&&i<4){b/=1024;i++}return b.toFixed(i?1:0)+' '+u[i]};
+async function api(p,o={}){const r=await fetch('/admin/api/'+p,{...o,headers:{'content-type':'application/json',authorization:'Bearer '+T}});if(r.status===401){logout();throw 0}const j=await r.json();if(!r.ok)throw new Error(j.error);return j}
+async function login(){const r=await fetch('/admin/api/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email:em.value,password:pw.value})});const j=await r.json();
+if(!r.ok){le.textContent='이메일 또는 비밀번호가 맞지 않습니다';return}T=j.token;ROLE=j.role;sessionStorage.setItem('t',T);sessionStorage.setItem('r',ROLE);start()}
+function logout(){sessionStorage.clear();location.reload()}
+function table(rows,cols){if(!rows||!rows.length)return '<p class="note">데이터 없음</p>';cols=cols||Object.keys(rows[0]);
+return '<table><tr>'+cols.map(c=>'<th>'+esc(c)+'</th>').join('')+'</tr>'+rows.map(r=>'<tr>'+cols.map(c=>'<td>'+esc(typeof r[c]==='object'&&r[c]!==null?JSON.stringify(r[c]):r[c])+'</td>').join('')+'</tr>').join('')+'</table>'}
+const card=(l,v)=>`<div class="card"><small>${esc(l)}</small><div>${esc(v)}</div></div>`;
+const views={
+ async stats(){const s=await api('stats');return '<div class="cards">'+card('전체 사용자',s.users.total)+card('신규(1일)',s.users.new1d)+card('신규(7일)',s.users.new7d)+card('DAU',s.active.dau)+card('WAU',s.active.wau)+card('MAU',s.active.mau)+'</div>'
+  +'<h2>일별 가입(30일)</h2>'+table(s.signups)+'<h2>국가별 사용자</h2>'+table(s.countries)+'<h2>플랫폼</h2>'+table(s.platforms)},
+ async users(){const q=prompt('이메일 검색(비우면 최근 100명)')||'';const s=await api('users?q='+encodeURIComponent(q));s.users.forEach(u=>u.storage_used_bytes=fmtB(u.storage_used_bytes));return '<p class="note">노트 수는 개수만 표시합니다(내용 열람 불가).</p>'+table(s.users)},
+ async subscriptions(){const s=await api('subscriptions');return '<h2>요금제</h2>'+table(Object.entries(s.plans).map(([k,v])=>({plan:k,...v,storageBytes:fmtB(v.storageBytes)})))
+  +'<h2>수동 권한 부여</h2><p><input id="ge" placeholder="사용자 이메일"> <select id="gp">'+Object.keys(s.plans).map(p=>'<option>'+p+'</option>').join('')+'</select> <input id="gd" value="30" size="4">일 <button class="p" onclick="grant()">부여</button></p>'
+  +'<h2>상태별</h2>'+table(s.byPlan)+'<h2>최근 구독</h2>'+table(s.recent)},
+ async payments(){return table((await api('payments')).payments)},
+ async storage(){const s=await api('storage');return '<div class="cards">'+card('파일 용량',fmtB(s.files_bytes))+card('파일 수',s.files)+card('필기 획 수',s.strokes)+(s.disk?card('디스크 여유',fmtB(s.disk.freeBytes)+' / '+fmtB(s.disk.totalBytes)):'')+'</div><h2>사용량 상위</h2>'+table(s.top.map(t=>({...t,storage_used_bytes:fmtB(t.storage_used_bytes)})))},
+ async sync(){const s=await api('sync');return '<div class="cards">'+card('24시간 동기화 작업',s.ops24h)+'</div><h2>충돌(양쪽 보존)</h2>'+table(s.conflicts)+'<h2>앱이 보고한 동기화 오류</h2>'+table(s.clientSyncErrors)},
+ async errors(){return table((await api('errors')).errors)},
+ async ai(){const s=await api('ai');return '<h2>기능별(30일)</h2>'+table(s.byFeature)+'<h2>일별·무료/유료</h2>'+table(s.byDay)},
+ async support(){const s=await api('support');return s.tickets.length?s.tickets.map(t=>`<div class="card" style="margin-bottom:10px"><small>${esc(t.created_at)} · ${esc(t.email)} · ${esc(t.platform)} ${esc(t.app_version)} · ${esc(t.state)}</small><p><b>${esc(t.subject)}</b><br>${esc(t.body)}</p>`
+  +(t.answer?'<p class="note">답변: '+esc(t.answer)+'</p>':`<textarea id="a${t.id}" rows="2" style="width:100%"></textarea><button class="p" onclick="answer('${t.id}')">답변 저장</button>`)+'</div>').join(''):'<p class="note">문의 없음</p>'},
+ async notices(){const s=await api('notices');return '<h2>새 공지</h2><p><select id="nl"><option>ko</option><option>en</option></select> <input id="nt" placeholder="제목" size="40"></p><p><textarea id="nb" rows="4" style="width:100%"></textarea></p><label><input type="checkbox" id="np"> 바로 게시</label> <button class="p" onclick="notice()">저장</button><h2>목록</h2>'+table(s.notices,['created_at','locale','title','published'])},
+ async versions(){const s=await api('versions');return '<h2>버전 설정</h2><p><select id="vp"><option>android</option><option>ios</option><option>windows</option><option>web</option></select> 최신 <input id="vl" size="10"> 최소 지원 <input id="vm" size="10"> <input id="vn" placeholder="메모"> <button class="p" onclick="ver()">저장</button></p>'+table(s.versions)},
+ async health(){const s=await api('health');return '<div class="cards">'+card('상태',s.ok?'정상':'이상')+card('DB 응답',s.dbMs+' ms')+card('가동 시간',Math.round(s.uptimeSec/3600)+' 시간')+card('메모리',s.memoryMb+' MB')+card('AI 설정',s.aiConfigured?'됨':'안 됨')+card('메일 설정',s.mailConfigured?'됨':'안 됨')+'</div>'},
+};
+async function grant(){await api('subscriptions/grant',{method:'POST',body:JSON.stringify({email:ge.value,plan:gp.value,days:+gd.value})});show('subscriptions')}
+async function answer(id){await api('support/'+id+'/answer',{method:'POST',body:JSON.stringify({answer:document.getElementById('a'+id).value})});show('support')}
+async function notice(){await api('notices',{method:'POST',body:JSON.stringify({locale:nl.value,title:nt.value,body:nb.value,published:np.checked})});show('notices')}
+async function ver(){await api('versions',{method:'POST',body:JSON.stringify({platform:vp.value,latest:vl.value,minSupported:vm.value,notes:vn.value})});show('versions')}
+async function show(k){[...nav.children].forEach(b=>b.classList.toggle('on',b.dataset.k===k));main.innerHTML='<p class="note">불러오는 중…</p>';
+ try{main.innerHTML=await views[k]()}catch(e){main.innerHTML='<p class="err">'+(e&&e.message==='forbidden'?'이 역할로는 볼 수 없는 화면입니다':'불러오지 못했습니다')+'</p>'}}
+function start(){login_.hidden=true;app.hidden=false;role.textContent='역할: '+ROLE+' · ';const lo=document.createElement('a');lo.href='#';lo.textContent='로그아웃';lo.onclick=logout;role.append(lo);
+ nav.innerHTML=tabs.map(([k,l])=>`<button data-k="${k}" onclick="show('${k}')">${l}</button>`).join('');show('stats')}
+const login_=document.getElementById('login');if(T)start();
+</script></body></html>

@@ -108,6 +108,44 @@ fun LibraryScreen(state: AppState, activity: MainActivity) {
             }
         }
     }
+    var globalSearch by remember { mutableStateOf(false) }
+    val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        if (uris.isEmpty()) return@rememberLauncherForActivityResult
+        state.busy = str(R.string.please_wait)
+        Io.async({ app.pdf.importImages(uris, null, app.pdf.displayName(uris[0])?.substringBeforeLast('.') ?: str(R.string.untitled), COVER_COLORS.random()) }) { r ->
+            state.busy = null
+            r.onSuccess { state.open(it, newPane = false) }.onFailure { state.toast = str(R.string.image_import_failed) }
+        }
+    }
+    val docPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        val name = app.pdf.displayName(uri) ?: "file"
+        val ext = name.substringAfterLast('.', "").lowercase()
+        state.busy = str(R.string.importing_doc)
+        when (ext) {
+            "pdf" -> Io.async({ app.pdf.importPdf(uri, null, COVER_COLORS.random()) }) { r -> state.busy = null; r.onSuccess { state.open(it, false) }.onFailure { state.toast = str(R.string.pdf_import_failed) } }
+            "txt", "md", "csv", "log" -> Io.async({ app.pdf.importText(uri, COVER_COLORS.random()) }) { r -> state.busy = null; r.onSuccess { state.open(it, false) }.onFailure { state.toast = str(R.string.doc_import_failed) } }
+            "jpg", "jpeg", "png", "webp", "heic", "bmp", "gif" -> Io.async({ app.pdf.importImages(listOf(uri), null, name.substringBeforeLast('.'), COVER_COLORS.random()) }) { r -> state.busy = null; r.onSuccess { state.open(it, false) } }
+            "doc", "docx", "ppt", "pptx", "xls", "xlsx", "odt", "odp", "ods", "rtf", "hwp", "hwpx" -> {
+                if (!app.sync.status.value.loggedIn) { state.busy = null; info = str(R.string.office_needs_login) }
+                else background({
+                    val bytes = ctx.contentResolver.openInputStream(uri)!!.use { it.readBytes() }
+                    val pdf = app.sync.api.requestBytes("POST", "/v1/convert?name=" + android.net.Uri.encode(name), raw = bytes)
+                    val f = java.io.File(ctx.cacheDir, "converted.pdf"); f.writeBytes(pdf)
+                    Io.call { app.pdf.importPdf(android.net.Uri.fromFile(f), name.substringBeforeLast('.'), COVER_COLORS.random()) }.also { f.delete() }
+                }) { r ->
+                    state.busy = null
+                    r.onSuccess { state.open(it, false) }
+                    r.onFailure { e -> info = when ((e as? kr.eumsoft.notepro.sync.ApiException)?.code) {
+                        "converter_not_available" -> str(R.string.converter_unavailable)
+                        "unsupported_format" -> str(R.string.unsupported_format_help)
+                        else -> str(R.string.doc_import_failed) + " (" + errorText(ctx, e) + ")"
+                    } }
+                }
+            }
+            else -> { state.busy = null; info = str(R.string.unsupported_format_help) }
+        }
+    }
     val backupCreate = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
         if (uri != null) passwordFor = uri to true
     }
@@ -130,6 +168,9 @@ fun LibraryScreen(state: AppState, activity: MainActivity) {
                     IconButton({ menu = true }) { Icon(Icons.Default.MoreVert, stringResource(R.string.more)) }
                     DropdownMenu(menu, { menu = false }) {
                         DropdownMenuItem({ Text(stringResource(R.string.import_pdf)) }, { menu = false; pdfPicker.launch(arrayOf("application/pdf")) })
+                        DropdownMenuItem({ Text(stringResource(R.string.import_document)) }, { menu = false; docPicker.launch(arrayOf("*/*")) })
+                        DropdownMenuItem({ Text(stringResource(R.string.import_images)) }, { menu = false; imagePicker.launch(arrayOf("image/*")) })
+                        DropdownMenuItem({ Text(stringResource(R.string.search_all_notes)) }, { menu = false; globalSearch = true })
                         DropdownMenuItem({ Text(stringResource(R.string.backup_create)) }, { menu = false; backupCreate.launch("NotePro-" + DateFormat.format("yyyyMMdd-HHmm", System.currentTimeMillis()) + ".npbak") })
                         DropdownMenuItem({ Text(stringResource(R.string.backup_import)) }, { menu = false; backupOpen.launch(arrayOf("*/*")) })
                         DropdownMenuItem({ Text(stringResource(R.string.integrity_check)) }, {
@@ -268,6 +309,7 @@ fun LibraryScreen(state: AppState, activity: MainActivity) {
     confirm?.let { (msg, action) -> ConfirmDialog(msg, onDismiss = { confirm = null }) { confirm = null; action() } }
     versionsOf?.let { nb -> VersionsDialog(state, nb.id, onDismiss = { versionsOf = null }) }
     info?.let { InfoDialog(it) { info = null } }
+    if (globalSearch) SearchDialog(state, null, { globalSearch = false }) { h -> globalSearch = false; state.open(h.notebookId, false); state.pendingJump = h.pageId }
     passwordFor?.let { (uri, isExport) ->
         BackupPasswordDialog(isExport, onDismiss = { passwordFor = null }) { pw, includeTrash ->
             passwordFor = null

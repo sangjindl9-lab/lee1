@@ -81,10 +81,12 @@ class Api(private val tokens: TokenStore) {
             if (auth) setRequestProperty("Authorization", "Bearer ${tokens.accessToken}")
         }
         try {
-            if (body != null || raw != null) {
+            // POST/PUT/DELETE 는 본문이 없어도 JSON "{}" 를 보낸다(기본 Content-Type 이 form 이라 서버가 415 를 돌려주는 문제 방지)
+            val sendBody = body ?: if (raw == null && method != "GET") JSONObject() else null
+            if (sendBody != null || raw != null) {
                 conn.doOutput = true
                 conn.setRequestProperty("Content-Type", if (raw != null) "application/octet-stream" else "application/json; charset=utf-8")
-                val data = raw ?: body.toString().toByteArray()
+                val data = raw ?: sendBody.toString().toByteArray()
                 conn.setFixedLengthStreamingMode(data.size)
                 conn.outputStream.use { it.write(data) }
             }

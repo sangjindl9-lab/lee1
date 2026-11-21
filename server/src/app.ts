@@ -3,6 +3,10 @@ import type { Db } from './db.js';
 import { authRoutes } from './auth.js';
 import { syncRoutes } from './sync.js';
 import { fileRoutes } from './files.js';
+import { aiRoutes } from './ai.js';
+import { billingRoutes } from './billing.js';
+import { convertRoutes } from './convert.js';
+import { adminRoutes } from './admin.js';
 
 export function buildApp(db: Db) {
   const app = Fastify({ logger: process.env.NODE_ENV !== 'test', bodyLimit: 64 * 1024 * 1024, trustProxy: true });
@@ -21,5 +25,9 @@ export function buildApp(db: Db) {
   authRoutes(app, db);
   syncRoutes(app, db);
   fileRoutes(app, db);
+  aiRoutes(app, db);
+  billingRoutes(app, db);
+  convertRoutes(app);
+  adminRoutes(app, db);
   return app;
 }

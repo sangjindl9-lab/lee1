@@ -15,7 +15,7 @@ const root = () => { const d = process.env.STORAGE_DIR ?? './storage'; mkdirSync
 const SHA = /^[0-9a-f]{64}$/;
 
 export function fileRoutes(app: FastifyInstance, db: Db) {
-  app.addContentTypeParser('application/octet-stream', { parseAs: 'buffer', bodyLimit: CHUNK + 1024 }, (_req, body, done) => done(null, body));
+  app.addContentTypeParser('application/octet-stream', { parseAs: 'buffer', bodyLimit: 100 * 1024 * 1024 }, (_req, body, done) => done(null, body));
 
   /** 업로드 상태: 이미 있으면 skip, 아니면 받은 조각 목록 */
   app.get('/v1/files/:sha/status', async (req) => {

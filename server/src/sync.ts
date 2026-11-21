@@ -23,7 +23,7 @@ type Op = { opId: string; entityType: string; entityId: string; opType: string; 
 export type OpResult = { opId: string; status: 'applied' | 'duplicate' | 'conflict' | 'rejected'; rev?: number; copyId?: string; reason?: string };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f-]{27}$/i;
-const ORDER: Record<string, number> = { folder: 0, notebook: 1, attachment: 2, page: 3, stroke: 4 };
+const ORDER: Record<string, number> = { folder: 0, notebook: 1, attachment: 2, page: 3, stroke: 4, element: 5 };
 const MAX_OPS = 500;
 
 async function ownsNotebook(c: pg.PoolClient, userId: string, nbId: string) {
@@ -33,7 +33,7 @@ async function ownsNotebook(c: pg.PoolClient, userId: string, nbId: string) {
 }
 
 async function current(c: pg.PoolClient, type: string, id: string): Promise<any | null> {
-  const t = { folder: 'notebook_folders', notebook: 'notebooks', attachment: 'attachments', page: 'pages', stroke: 'pen_strokes' }[type];
+  const t = { folder: 'notebook_folders', notebook: 'notebooks', attachment: 'attachments', page: 'pages', stroke: 'pen_strokes', element: 'page_elements' }[type];
   if (!t) return null;
   const r = await c.query(`SELECT * FROM ${t} WHERE id=$1 FOR UPDATE`, [id]);
   return r.rows[0] ?? null;
@@ -110,6 +110,16 @@ async function write(c: pg.PoolClient, userId: string, type: string, id: string,
         [rid, d.pageId, d.notebookId, num(d.pen) | 0, num(d.color) | 0, num(d.width, 2), num(d.opacity, 1), num(d.shape) | 0, pts, rev, deleted]);
       return rev;
     }
+    case 'element': {
+      if (await ownsNotebook(c, userId, d.notebookId) !== true) throw httpError(403, 'not_owner');
+      const pg = await c.query('SELECT notebook_id FROM pages WHERE id=$1', [d.pageId]);
+      if (!pg.rows.length || pg.rows[0].notebook_id !== d.notebookId) throw httpError(400, 'unknown_page');
+      const data = { notebookId: d.notebookId, x: num(d.x), y: num(d.y), w: num(d.w, 200), text: str(d.text, 100000) ?? '', color: num(d.color) | 0, size: num(d.size, 14), createdAt: num(d.createdAt) };
+      await c.query(`INSERT INTO page_elements(id,page_id,kind,data,author,rev,deleted_at) VALUES($1,$2,$3,$4,$5,$6, CASE WHEN $7 THEN now() END)
+        ON CONFLICT (id) DO UPDATE SET page_id=EXCLUDED.page_id, kind=EXCLUDED.kind, data=EXCLUDED.data, author=EXCLUDED.author, rev=EXCLUDED.rev, deleted_at=EXCLUDED.deleted_at, updated_at=now()`,
+        [rid, d.pageId, str(d.kind, 20) ?? 'text', JSON.stringify(data), d.author === 'ai' ? 'ai' : 'user', rev, deleted]);
+      return rev;
+    }
   }
   throw httpError(400, 'unknown_entity');
 }
@@ -174,6 +184,7 @@ function toClient(type: string, r: any) {
     case 'notebook': return { id: r.id, folderId: r.folder_id, title: r.title, description: r.description, coverColor: r.cover_color, favorite: r.favorite, locked: r.locked, infinite: r.is_infinite, deleted: del, createdAt: +new Date(r.created_at), tags: r.tags ?? [] };
     case 'attachment': return { id: r.id, notebookId: r.notebook_id, kind: r.kind, fileName: r.file_name, mime: r.mime, size: Number(r.size), sha256: r.sha256, deleted: del };
     case 'page': return { id: r.id, notebookId: r.notebook_id, index: r.page_index, width: r.width, height: r.height, paper: r.paper, template: r.template, bgType: r.bg_type, attachmentId: r.attachment_id, pdfPage: r.pdf_page, deleted: del };
+    case 'element': return { id: r.id, pageId: r.page_id, notebookId: r.data?.notebookId, kind: r.kind, author: r.author, x: r.data?.x, y: r.data?.y, w: r.data?.w, text: r.data?.text, color: r.data?.color, size: r.data?.size, createdAt: r.data?.createdAt, deleted: del };
     case 'stroke': return { id: r.id, pageId: r.page_id, notebookId: r.notebook_id, pen: r.pen, color: r.color, width: r.width, opacity: r.opacity, shape: r.shape, points: Buffer.from(r.points).toString('base64'), deleted: del, createdAt: +new Date(r.created_at) };
   }
   return null;
@@ -185,7 +196,7 @@ export async function pullOps(db: Db, userId: string, deviceId: string, since: n
      ORDER BY seq LIMIT $4`, [userId, since, deviceId, limit]);
   const out: any[] = [];
   const seen = new Set<string>();
-  const table: Record<string, string> = { folder: 'notebook_folders', notebook: 'notebooks', attachment: 'attachments', page: 'pages', stroke: 'pen_strokes' };
+  const table: Record<string, string> = { folder: 'notebook_folders', notebook: 'notebooks', attachment: 'attachments', page: 'pages', stroke: 'pen_strokes', element: 'page_elements' };
   for (const o of ops.rows) {
     const key = o.entity_type + ':' + o.entity_id;
     if (seen.has(key)) continue; // 같은 대상은 현재 상태 한 번만
@@ -196,7 +207,7 @@ export async function pullOps(db: Db, userId: string, deviceId: string, since: n
     const r = (await db.query(q, [o.entity_id])).rows[0];
     if (!r) continue;
     const owner = o.entity_type === 'folder' || o.entity_type === 'notebook' || o.entity_type === 'attachment' ? r.user_id
-      : (await db.query('SELECT user_id FROM notebooks WHERE id=$1', [r.notebook_id])).rows[0]?.user_id;
+      : (await db.query('SELECT user_id FROM notebooks WHERE id=$1', [r.notebook_id ?? r.data?.notebookId])).rows[0]?.user_id;
     if (owner !== userId) continue;
     out.push({ seq: Number(o.seq), entityType: o.entity_type, rev: Number(r.rev ?? 1), data: toClient(o.entity_type, r) });
   }
@@ -229,14 +240,14 @@ export function syncRoutes(app: FastifyInstance, db: Db) {
   app.get('/v1/sync/entity/:type/:id', async (req) => {
     const u = await requireUser(req);
     const { type, id } = req.params as any;
-    const table: Record<string, string> = { folder: 'notebook_folders', notebook: 'notebooks', attachment: 'attachments', page: 'pages', stroke: 'pen_strokes' };
+    const table: Record<string, string> = { folder: 'notebook_folders', notebook: 'notebooks', attachment: 'attachments', page: 'pages', stroke: 'pen_strokes', element: 'page_elements' };
     if (!table[type] || !UUID.test(id)) throw httpError(400, 'bad_request');
     const q = type === 'notebook'
       ? `SELECT n.*, COALESCE((SELECT array_agg(t.name) FROM note_tags nt JOIN tags t ON t.id=nt.tag_id WHERE nt.notebook_id=n.id), '{}') AS tags FROM notebooks n WHERE n.id=$1`
       : `SELECT * FROM ${table[type]} WHERE id=$1`;
     const r = (await db.query(q, [id])).rows[0];
     if (!r) throw httpError(404, 'not_found');
-    const owner = r.user_id ?? (await db.query('SELECT user_id FROM notebooks WHERE id=$1', [r.notebook_id])).rows[0]?.user_id;
+    const owner = r.user_id ?? (await db.query('SELECT user_id FROM notebooks WHERE id=$1', [r.notebook_id ?? r.data?.notebookId])).rows[0]?.user_id;
     if (owner !== u.userId) throw httpError(404, 'not_found');
     return { entityType: type, rev: Number(r.rev ?? 1), data: toClient(type, r) };
   });

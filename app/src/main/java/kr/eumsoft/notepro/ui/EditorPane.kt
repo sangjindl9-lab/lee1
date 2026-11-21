@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Create
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Draw
 import androidx.compose.material.icons.filled.Gesture
 import androidx.compose.material.icons.filled.HighlightAlt
 import androidx.compose.material.icons.filled.Lock
@@ -43,6 +44,7 @@ import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.RotateRight
 import androidx.compose.material.icons.filled.ViewColumn
+import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material.icons.filled.ZoomIn
 import androidx.compose.material.icons.filled.ZoomOut
 import androidx.compose.material3.DropdownMenu
@@ -108,16 +110,45 @@ fun EditorPane(state: AppState, pane: PaneState, activity: MainActivity, modifie
     var deleted by remember { mutableStateOf<List<PageData>?>(null) }
     var confirm by remember { mutableStateOf<Pair<String, () -> Unit>?>(null) }
     var exportProgress by remember { mutableStateOf<String?>(null) }
+    var exportRange by remember { mutableStateOf<IntRange?>(null) }
+    var search by remember { mutableStateOf(false) }
+    var bookmarks by remember { mutableStateOf(false) }
+    var rangeDialog by remember { mutableStateOf(false) }
+    var textEdit by remember { mutableStateOf<Triple<String, Pair<Float, Float>, kr.eumsoft.notepro.core.PageElement?>?>(null) }
+    var aiMenu by remember { mutableStateOf(false) }
+    val mergePdf = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        val s = pane.session ?: return@rememberLauncherForActivityResult
+        if (uri == null) return@rememberLauncherForActivityResult
+        state.busy = ctx.getString(R.string.importing_pdf)
+        Io.async({ app.pdf.appendPdf(uri, s.notebook.id) }) { r ->
+            state.busy = null
+            r.onSuccess { n -> s.reloadPagesFromDb { state.toast = ctx.getString(R.string.pages_added_n, n) } }
+            r.onFailure { state.toast = ctx.getString(R.string.pdf_import_failed) }
+        }
+    }
+    val addImages = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        val s = pane.session ?: return@rememberLauncherForActivityResult
+        if (uris.isEmpty()) return@rememberLauncherForActivityResult
+        state.busy = ctx.getString(R.string.please_wait)
+        Io.async({ app.pdf.importImages(uris, s.notebook.id, "", 0) }) { r ->
+            state.busy = null
+            if (r.isSuccess) s.reloadPagesFromDb { state.toast = ctx.getString(R.string.pages_added_n, uris.size) } else state.toast = ctx.getString(R.string.image_import_failed)
+        }
+    }
 
     val exportPdf = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
         val s = pane.session ?: return@rememberLauncherForActivityResult
         if (uri == null) return@rememberLauncherForActivityResult
-        val pages = s.pages
+        val range = exportRange
+        exportRange = null
+        val pages = if (range != null) s.pages.slice(range) else s.pages
         val strokes = pages.associate { it.id to s.strokesOf(it.id).toList() }
+        val elements = pages.associate { it.id to s.elementsOf(it.id).toList() }
         exportProgress = "0 / ${pages.size}"
-        Io.async({
+        // 내보내기는 별도 스레드(필기 저장을 막지 않도록)
+        background({
             ctx.contentResolver.openOutputStream(uri, "w")!!.use { out ->
-                app.pdf.export(pages, { strokes[it].orEmpty() }, out) { n -> Io.main.post { exportProgress = "$n / ${pages.size}" } }
+                app.pdf.export(pages, { strokes[it].orEmpty() }, out, { elements[it].orEmpty() }) { n -> Io.main.post { exportProgress = "$n / ${pages.size}" } }
             }
         }) { r ->
             exportProgress = null
@@ -185,6 +216,22 @@ fun EditorPane(state: AppState, pane: PaneState, activity: MainActivity, modifie
                     })
                     DropdownMenuItem({ Text(stringResource(R.string.versions)) }, { menu = false; versions = true })
                     HorizontalDivider()
+                    DropdownMenuItem({ Text(stringResource(R.string.search_in_note)) }, { menu = false; search = true })
+                    DropdownMenuItem({ Text(stringResource(if (s?.pages?.getOrNull(cur)?.bookmarked == true) R.string.remove_bookmark else R.string.add_bookmark)) }, {
+                        menu = false; s?.let { ss -> ss.pages.getOrNull(cur)?.let { ss.toggleBookmark(it.id) } } })
+                    DropdownMenuItem({ Text(stringResource(R.string.bookmarks)) }, { menu = false; bookmarks = true })
+                    DropdownMenuItem({ Text(stringResource(R.string.rotate_page)) }, { menu = false; s?.let { ss -> ss.pages.getOrNull(cur)?.let { ss.rotatePage(it.id) } } })
+                    DropdownMenuItem({ Text(stringResource(R.string.merge_pdf)) }, { menu = false; mergePdf.launch(arrayOf("application/pdf")) })
+                    DropdownMenuItem({ Text(stringResource(R.string.add_image_pages)) }, { menu = false; addImages.launch(arrayOf("image/*")) })
+                    DropdownMenuItem({ Text(stringResource(R.string.export_range)) }, { menu = false; rangeDialog = true })
+                    DropdownMenuItem({ Text(stringResource(R.string.insert_signature)) }, {
+                        menu = false
+                        val sig = state.loadSignature()
+                        if (sig.isEmpty()) state.toast = ctx.getString(R.string.no_signature) else pane.view?.paste(sig)
+                    })
+                    HorizontalDivider()
+                    DropdownMenuItem({ Text(stringResource(R.string.ai_tools)) }, { menu = false; aiMenu = true })
+                    HorizontalDivider()
                     DropdownMenuItem({ Text(stringResource(R.string.open_side)) }, { menu = false; state.closeAllToLibraryForPick(pane) })
                     if (state.panes.size > 1) DropdownMenuItem({ Text(stringResource(if (state.splitVertical) R.string.split_side_by_side else R.string.split_top_bottom)) }, {
                         menu = false; state.splitVertical = !state.splitVertical; state.saveWorkspace()
@@ -218,8 +265,12 @@ fun EditorPane(state: AppState, pane: PaneState, activity: MainActivity, modifie
                                     override fun onSelectionChanged(count: Int) { pane.selection = count; if (count > 0) pane.tool = Tool.LASSO }
                                     override fun onRequestUndo() { pane.session?.undo() }
                                     override fun onUserInteraction() { pane.lastTouch = System.currentTimeMillis() }
+                                    override fun onTextTap(pageId: String, x: Float, y: Float, element: kr.eumsoft.notepro.core.PageElement?) {
+                                        textEdit = Triple(pageId, x to y, element)
+                                    }
                                 }
                                 v.bind(session, pane.lastView)
+                                state.pendingJump?.let { pid -> state.pendingJump = null; val idx = session.pages.indexOfFirst { it.id == pid }; if (idx >= 0) v.post { v.scrollToPage(idx) } }
                             }
                         },
                         update = { v ->
@@ -251,6 +302,23 @@ fun EditorPane(state: AppState, pane: PaneState, activity: MainActivity, modifie
         pagePaper = false; session?.let { s -> s.pages.getOrNull(pane.pageIndex)?.let { s.setPaper(it.id, paper, t) } }
     }
     if (versions && session != null) VersionsDialog(state, session.notebook.id) { versions = false }
+    if (search && session != null) SearchDialog(state, session.notebook.id, { search = false }) { h -> search = false; pane.view?.scrollToPage(session.pages.indexOfFirst { it.id == h.pageId }.coerceAtLeast(0)) }
+    if (bookmarks && session != null) BookmarksDialog(session.pages, { bookmarks = false }) { i -> bookmarks = false; pane.view?.scrollToPage(i) }
+    if (rangeDialog && session != null) RangeDialog(session.pages.size, { rangeDialog = false }) { a, b ->
+        rangeDialog = false; exportRange = a..b; exportPdf.launch(session.notebook.title + "-p${a + 1}-${b + 1}.pdf")
+    }
+    if (aiMenu && session != null) AiToolsDialog(state, pane, session) { aiMenu = false }
+    textEdit?.let { (pageId, pos, el) ->
+        TextElementDialog(el, onDismiss = { textEdit = null }, onDelete = { textEdit = null; el?.let { session?.commitElements(emptyList(), listOf(it.id)) } }) { text, size, color ->
+            textEdit = null
+            val s = session ?: return@TextElementDialog
+            val page = s.pages.firstOrNull { it.id == pageId } ?: return@TextElementDialog
+            val e = el?.copy(text = text, size = size, color = color, author = "user")
+                ?: kr.eumsoft.notepro.core.PageElement(java.util.UUID.randomUUID().toString(), pageId, s.notebook.id, "text", pos.first, pos.second,
+                    (page.width - pos.first - 24f).coerceIn(80f, 360f), text, color, size, "user", System.currentTimeMillis())
+            s.commitElements(listOf(e), emptyList())
+        }
+    }
     deleted?.let { list ->
         DeletedPagesDialog(list, { deleted = null }) { p -> deleted = null; session?.let { s -> s.restorePage(p) { pane.view?.scrollToPage((s.pages.size - 1).coerceAtLeast(0)) } } }
     }
@@ -307,6 +375,7 @@ fun ToolBar(state: AppState, pane: PaneState, onPen: () -> Unit, onEraser: () ->
         ToolButton(penIcon(pane.pen.pen), penLabel(pane.pen.pen), pane.tool == Tool.PEN, { if (pane.tool == Tool.PEN) onPen() else pane.tool = Tool.PEN }, tint = Color(pane.pen.color).takeIf { pane.pen.color != 0xFFFFFFFF.toInt() })
         ToolButton(Icons.Default.AutoFixNormal, stringResource(R.string.eraser), pane.tool == Tool.ERASER, { if (pane.tool == Tool.ERASER) onEraser() else pane.tool = Tool.ERASER })
         ToolButton(Icons.Default.HighlightAlt, stringResource(R.string.lasso), pane.tool == Tool.LASSO, { pane.tool = Tool.LASSO })
+        ToolButton(Icons.Default.TextFields, stringResource(R.string.text_tool), pane.tool == Tool.TEXT, { pane.tool = Tool.TEXT })
         Spacer(Modifier.width(6.dp))
         // 펜 프리셋(자주 쓰는 펜 고정)
         presets.value.forEach { pr ->
@@ -406,6 +475,9 @@ fun SelectionBar(state: AppState, pane: PaneState) {
                 ToolButton(Icons.Default.ZoomOut, stringResource(R.string.shrink), false, { pane.view?.transformSelection { b -> Geometry.Affine.scaleAbout(1 / 1.15f, (b.l + b.r) / 2, (b.t + b.b) / 2) } })
                 ToolButton(Icons.Default.RotateRight, stringResource(R.string.rotate), false, { pane.view?.transformSelection { b -> Geometry.Affine.rotateAbout((Math.PI / 12).toFloat(), (b.l + b.r) / 2, (b.t + b.b) / 2) } })
                 ToolButton(Icons.Default.Brush, stringResource(R.string.change_color), recolor, { recolor = !recolor })
+                ToolButton(Icons.Default.Draw, stringResource(R.string.save_signature), false, {
+                    state.saveSignature(pane.view?.copySelection().orEmpty()); state.toast = app.getString(R.string.signature_saved)
+                })
                 ToolButton(Icons.Default.Close, stringResource(R.string.deselect), false, { pane.view?.clearSelection() })
             }
             if (recolor) Box(Modifier.padding(8.dp)) { ColorRow(INK_COLORS, -1) { pane.view?.recolorSelection(it); recolor = false } }

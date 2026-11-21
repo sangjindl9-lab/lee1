@@ -66,8 +66,10 @@ test('동기화: 두 기기, 증분 전송, 중복 전송 무시', async () => {
   assert.deepEqual(p.body.results.map((r: any) => r.status), ['applied', 'applied', 'applied']);
   const again = await call('POST', '/v1/sync/push', A.accessToken, { ops });
   assert.ok(again.body.results.every((r: any) => r.status === 'duplicate'));
+  await call('POST', '/v1/sync/push', A.accessToken, { ops: [op('element', randomUUID(), { pageId: page, notebookId: nb, x: 10, y: 20, w: 200, text: 'AI 요약', author: 'ai' })] });
   const pull = await call('GET', '/v1/sync/pull?since=0', B.accessToken);
-  assert.deepEqual(pull.body.changes.map((c: any) => c.entityType), ['notebook', 'page', 'stroke']);
+  assert.deepEqual(pull.body.changes.map((c: any) => c.entityType), ['notebook', 'page', 'stroke', 'element']);
+  assert.equal(pull.body.changes[3].data.author, 'ai');
   assert.deepEqual(pull.body.changes[0].data.tags, ['업무']);
   const pull2 = await call('GET', `/v1/sync/pull?since=${pull.body.nextSince}`, B.accessToken);
   assert.equal(pull2.body.changes.length, 0);

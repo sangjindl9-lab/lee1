@@ -10,8 +10,8 @@ android {
         applicationId = "kr.eumsoft.notepro"
         minSdk = 26
         targetSdk = 36
-        versionCode = 2
-        versionName = "0.2.0-stage2"
+        versionCode = 5
+        versionName = "0.5.0-stage5"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         val server = (project.findProperty("noteproServer") as String?) ?: System.getenv("NOTEPRO_SERVER_URL") ?: ""
         buildConfigField("String", "SERVER_URL", "\"$server\"")
@@ -34,6 +34,11 @@ dependencies {
     implementation("androidx.biometric:biometric:1.1.0")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation("androidx.core:core-ktx:1.15.0")
+    // PDF 원본 보존 내보내기·글자 추출·병합 (Apache PDFBox 안드로이드판, Apache-2.0)
+    implementation("com.tom-roush:pdfbox-android:2.0.27.0")
+    // 기기 안 인식(손글씨: 모델은 처음 사용 시 내려받음 / 글자 인식: 한국어·라틴 모델 포함)
+    implementation("com.google.mlkit:digital-ink-recognition:18.1.0")
+    implementation("com.google.mlkit:text-recognition-korean:16.0.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
 
     testImplementation("junit:junit:4.13.2")

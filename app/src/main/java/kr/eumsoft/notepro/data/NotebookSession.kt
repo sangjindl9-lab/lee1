@@ -9,6 +9,7 @@ import kr.eumsoft.notepro.core.BackgroundType
 import kr.eumsoft.notepro.core.NotebookData
 import kr.eumsoft.notepro.core.NotebookSnapshot
 import kr.eumsoft.notepro.core.PageData
+import kr.eumsoft.notepro.core.PageElement
 import kr.eumsoft.notepro.core.PageTemplate
 import kr.eumsoft.notepro.core.PaperStyle
 import kr.eumsoft.notepro.core.Stroke
@@ -28,10 +29,12 @@ class NotebookSession(
     var notebook: NotebookData,
     pages: List<PageData>,
     strokes: List<Stroke>,
+    elements: List<PageElement> = emptyList(),
 ) {
     var pages: List<PageData> = pages
         private set
     private val byPage = HashMap<String, ArrayList<Stroke>>()
+    private val elementsByPage = HashMap<String, ArrayList<PageElement>>()
     private val listeners = LinkedHashSet<(Change) -> Unit>()
 
     private class Command(val add: List<Stroke>, val remove: List<Stroke>, val label: String)
@@ -46,13 +49,64 @@ class NotebookSession(
     var dirtySinceVersion = false
     var lastVersionAt = System.currentTimeMillis()
 
-    init { load(pages, strokes) }
+    init { load(pages, strokes, elements) }
 
-    private fun load(pages: List<PageData>, strokes: List<Stroke>) {
+    private fun load(pages: List<PageData>, strokes: List<Stroke>, elements: List<PageElement> = emptyList()) {
         this.pages = pages
-        byPage.clear()
-        for (p in pages) byPage[p.id] = ArrayList()
+        byPage.clear(); elementsByPage.clear()
+        for (p in pages) { byPage[p.id] = ArrayList(); elementsByPage[p.id] = ArrayList() }
         for (s in strokes) byPage[s.pageId]?.add(s)
+        for (e in elements) elementsByPage[e.pageId]?.add(e)
+    }
+
+    fun elementsOf(pageId: String): List<PageElement> = elementsByPage[pageId] ?: emptyList()
+    fun allElements(): List<PageElement> = pages.flatMap { elementsOf(it.id) }
+
+    /** 텍스트 주석 추가·수정·삭제(사용자·AI 공통). */
+    fun commitElements(add: List<PageElement>, remove: List<String>) {
+        for (id in remove) elementsByPage.values.forEach { l -> l.removeAll { it.id == id } }
+        for (e in add) {
+            val l = elementsByPage.getOrPut(e.pageId) { ArrayList() }
+            val i = l.indexOfFirst { it.id == e.id }; if (i >= 0) l[i] = e else l.add(e)
+        }
+        dirtySinceVersion = true
+        val nbId = notebook.id
+        persist("element") { repo.applyElements(nbId, add, remove) }
+        emit(Change((add.map { it.pageId }).toSet(), full = true))
+    }
+
+    fun toggleBookmark(pageId: String) {
+        val i = pages.indexOfFirst { it.id == pageId }; if (i < 0) return
+        val p = pages[i].copy(bookmarked = !pages[i].bookmarked, updatedAt = System.currentTimeMillis())
+        pages = pages.toMutableList().also { it[i] = p }
+        persist("page.bookmark") { repo.upsertPages(notebook.id, listOf(p), "page.bookmark") }
+        emit(Change(setOf(pageId), full = false, pagesChanged = true))
+    }
+
+    /** 페이지 90도 회전(배경·필기 함께). */
+    fun rotatePage(pageId: String) {
+        val i = pages.indexOfFirst { it.id == pageId }; if (i < 0) return
+        val old = pages[i]
+        val p = old.copy(width = old.height, height = old.width, rotation = (old.rotation + 90) % 360, updatedAt = System.currentTimeMillis())
+        pages = pages.toMutableList().also { it[i] = p }
+        // 획도 함께 회전: (x, y) → (H - y, x)
+        val m = kr.eumsoft.notepro.core.Geometry.Affine(0f, -1f, old.height, 1f, 0f, 0f)
+        val oldStrokes = strokesOf(pageId).toList()
+        val rotated = oldStrokes.map { kr.eumsoft.notepro.core.Geometry.transform(it, m) }
+        applyMemory(rotated, oldStrokes)
+        val nbId = notebook.id
+        persist("page.rotate") { repo.upsertPages(nbId, listOf(p), "page.rotate"); repo.applyStrokes(nbId, rotated, emptyList(), "rotate") }
+        undoStack.clear(); redoStack.clear(); updateUndo()
+        emit(Change(setOf(pageId), full = true, pagesChanged = true))
+    }
+
+    /** 다른 PDF·이미지 페이지를 뒤에 덧붙임(PDF 병합 등) — DB에 이미 들어간 페이지를 다시 읽는다. */
+    fun reloadPagesFromDb(onDone: () -> Unit = {}) {
+        val nbId = notebook.id
+        Io.async({ Triple(repo.pages(nbId), repo.strokes(nbId), repo.elements(nbId)) }) { r ->
+            r.getOrNull()?.let { (p, s, e) -> load(p, s, e) }
+            emit(Change(emptySet(), full = true, pagesChanged = true)); onDone()
+        }
     }
 
     fun strokesOf(pageId: String): List<Stroke> = byPage[pageId] ?: emptyList()
@@ -199,10 +253,8 @@ class NotebookSession(
         val at = pages.size
         val nbId = notebook.id
         persist("page.restore") { repo.restorePage(nbId, page.id, at) }
-        Io.async({ repo.pages(nbId) to repo.strokes(nbId) }) { r ->
-            r.getOrNull()?.let { (p, s) -> load(p, s); undoStack.clear(); redoStack.clear(); updateUndo() }
-            emit(Change(emptySet(), full = true, pagesChanged = true)); onDone()
-        }
+        undoStack.clear(); redoStack.clear(); updateUndo()
+        reloadPagesFromDb(onDone)
     }
 
     /** 무한 스크롤 페이지: 아래쪽에 쓰면 페이지를 늘린다. */
@@ -226,12 +278,12 @@ class NotebookSession(
     /** 버전 복원 등으로 DB 내용이 바뀐 뒤 다시 읽기. */
     fun reload(snapshot: NotebookSnapshot) {
         notebook = snapshot.notebook
-        load(snapshot.pages, snapshot.strokes)
+        load(snapshot.pages, snapshot.strokes, snapshot.elements)
         undoStack.clear(); redoStack.clear(); updateUndo()
         emit(Change(emptySet(), full = true, pagesChanged = true))
     }
 
-    fun memorySnapshot(): NotebookSnapshot = NotebookSnapshot(notebook, pages, pages.flatMap { strokesOf(it.id) })
+    fun memorySnapshot(): NotebookSnapshot = NotebookSnapshot(notebook, pages, pages.flatMap { strokesOf(it.id) }, allElements())
 
     // ---------------- 저장(재시도·복구) ----------------
     private fun persist(label: String, work: () -> Unit) {
@@ -286,10 +338,11 @@ class SessionManager(private val repo: NoteRepository, private val versions: Ver
         Io.async({
             repo.touchOpened(nbId)
             val nb = repo.notebook(nbId) ?: return@async null
-            Triple(nb, repo.pages(nbId), repo.strokes(nbId))
+            listOf(nb, repo.pages(nbId), repo.strokes(nbId), repo.elements(nbId))
         }) { r ->
             val data = r.getOrNull()
-            val s = data?.let { NotebookSession(repo, it.first, it.second, it.third) }
+            @Suppress("UNCHECKED_CAST")
+            val s = data?.let { NotebookSession(repo, it[0] as NotebookData, it[1] as List<PageData>, it[2] as List<Stroke>, it[3] as List<PageElement>) }
             val cbs = waiting.remove(nbId) ?: mutableListOf()
             if (s != null) { sessions[nbId] = s; refs[nbId] = cbs.size }
             cbs.forEach { it(s) }

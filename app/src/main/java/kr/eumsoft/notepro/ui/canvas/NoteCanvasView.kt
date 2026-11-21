@@ -41,7 +41,7 @@ import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
 
-enum class Tool { PEN, ERASER, LASSO }
+enum class Tool { PEN, ERASER, LASSO, TEXT }
 enum class EraserMode { STROKE, AREA }
 
 /**
@@ -60,6 +60,8 @@ class NoteCanvasView(context: Context, private val pdf: PdfStore, private val se
         fun onRequestUndo() {}
         fun onUserInteraction() {}
         fun onStylusDetected() {}
+        /** 텍스트 도구로 페이지를 눌렀을 때(기존 주석을 눌렀으면 element) */
+        fun onTextTap(pageId: String, x: Float, y: Float, element: kr.eumsoft.notepro.core.PageElement?) {}
     }
 
     var listener: Listener? = null
@@ -310,11 +312,12 @@ class NoteCanvasView(context: Context, private val pdf: PdfStore, private val se
         val pgs = pages; val tp = tops.copyOf(); val mw = maxW
         val ex = excluded
         // 보이는 페이지(위아래 여유 포함)만 복사
-        val visible = ArrayList<Triple<Int, PageData, List<Stroke>>>()
+        class Vis(val i: Int, val p: PageData, val strokes: List<Stroke>, val elements: List<kr.eumsoft.notepro.core.PageElement>)
+        val visible = ArrayList<Vis>()
         for ((i, p) in pgs.withIndex()) {
             val top = y0 + tp[i] * sc; val bottom = top + p.height * sc
             if (bottom < -h * 0.25f || top > h * 1.25f) continue
-            visible.add(Triple(i, p, ArrayList(s.strokesOf(p.id))))
+            visible.add(Vis(i, p, ArrayList(s.strokesOf(p.id)), ArrayList(s.elementsOf(p.id))))
         }
         val desk = deskColor
         renderHandler.post {
@@ -322,22 +325,24 @@ class NoteCanvasView(context: Context, private val pdf: PdfStore, private val se
             if (bmp != null) {
                 val c = Canvas(bmp)
                 c.drawColor(desk)
-                for ((i, p, strokes) in visible) {
+                for (v in visible) {
+                    val i = v.i; val p = v.p; val strokes = v.strokes
                     val left = x0 + (mw - p.width) / 2f * sc; val top = y0 + tp[i] * sc
                     c.drawRect(left + 2 * density, top + 3 * density, left + p.width * sc + 2 * density, top + p.height * sc + 3 * density, shadowPaint)
                     c.save()
                     c.translate(left, top)
                     c.clipRect(0f, 0f, p.width * sc, p.height * sc)
-                    if (p.bgType == BackgroundType.PDF) {
+                    if (p.bgType == BackgroundType.PDF || p.bgType == BackgroundType.IMAGE) {
                         c.drawColor(Color.WHITE)
                         val pxW = (p.width * sc).toInt()
                         val bg = pdf.background(p, pxW) { post { contentGen++; requestRender() } }
                         if (bg != null && !bg.isRecycled) c.drawBitmap(bg, null, RectF(0f, 0f, p.width * sc, p.height * sc), BITMAP_PAINT)
                     }
                     c.scale(sc, sc)
-                    if (p.bgType != BackgroundType.PDF) PaperPainter.draw(c, p, sc)
+                    if (p.bgType == BackgroundType.PAPER) PaperPainter.draw(c, p, sc)
                     val vb = visibleBounds(p, i, sc, x0, y0, w, h, tp, mw)
                     for (st in strokes) if (st.id !in ex && st.bounds.intersects(vb)) StrokeRenderer.draw(c, st)
+                    for (e in v.elements) kr.eumsoft.notepro.render.ElementRenderer.draw(c, e)
                     c.restore()
                 }
             }
@@ -544,6 +549,7 @@ class NoteCanvasView(context: Context, private val pdf: PdfStore, private val se
                 cursorR = eraserSize * scale
                 eraseAt(x, y)
             }
+            Tool.TEXT -> { drawPage = hitPage(x, y, tmp); holdX = x; holdY = y }
             Tool.LASSO -> {
                 val pi = hitPage(x, y, tmp)
                 val b = Geometry.unionBounds(selection)
@@ -591,6 +597,7 @@ class NoteCanvasView(context: Context, private val pdf: PdfStore, private val se
                 for (h in 0 until ev.historySize) eraseAt(ev.getHistoricalX(idx, h), ev.getHistoricalY(idx, h))
                 eraseAt(x, y)
             }
+            Tool.TEXT -> {}
             Tool.LASSO -> {
                 if (moving) {
                     toPage(selPage, x, y, tmp); moveDx = tmp[0] - moveStartX; moveDy = tmp[1] - moveStartY
@@ -620,6 +627,16 @@ class NoteCanvasView(context: Context, private val pdf: PdfStore, private val se
                 } else resetDraw()
             }
             Tool.ERASER -> { s?.endBatch("erase"); resetDraw(); cursorX = -1f }
+            Tool.TEXT -> {
+                val x = ev.getX(idx); val y = ev.getY(idx)
+                if (s != null && drawPage in pages.indices && hypot(x - holdX, y - holdY) < 12 * density) {
+                    val page = pages[drawPage]
+                    toPage(drawPage, x, y, tmp)
+                    val hit = s.elementsOf(page.id).lastOrNull { e -> tmp[0] in e.x - 6..e.x + e.w + 6 && tmp[1] in e.y - 6..e.y + kr.eumsoft.notepro.render.ElementRenderer.height(e) + 6 }
+                    listener?.onTextTap(page.id, tmp[0], tmp[1], hit)
+                }
+                resetDraw()
+            }
             Tool.LASSO -> {
                 if (moving) {
                     moving = false

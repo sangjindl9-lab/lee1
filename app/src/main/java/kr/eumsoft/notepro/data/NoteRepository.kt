@@ -9,6 +9,7 @@ import kr.eumsoft.notepro.core.FolderData
 import kr.eumsoft.notepro.core.NotebookData
 import kr.eumsoft.notepro.core.NotebookSnapshot
 import kr.eumsoft.notepro.core.PageData
+import kr.eumsoft.notepro.core.PageElement
 import kr.eumsoft.notepro.core.PageTemplate
 import kr.eumsoft.notepro.core.PaperStyle
 import kr.eumsoft.notepro.core.PenType
@@ -81,8 +82,9 @@ class NoteRepository(private val context: Context, private val helper: NoteDb) {
             }
         }
         if (query.isNotBlank()) {
-            where.append(" AND (title LIKE ? OR description LIKE ? OR id IN (SELECT nt.notebook_id FROM note_tags nt JOIN tags t ON t.id=nt.tag_id WHERE t.name LIKE ?))")
-            val q = "%" + query.trim() + "%"; args.add(q); args.add(q); args.add(q)
+            where.append(" AND (title LIKE ? OR description LIKE ? OR id IN (SELECT nt.notebook_id FROM note_tags nt JOIN tags t ON t.id=nt.tag_id WHERE t.name LIKE ?)" +
+                " OR id IN (SELECT notebook_id FROM page_text WHERE text LIKE ?) OR id IN (SELECT notebook_id FROM page_elements WHERE deleted=0 AND text LIKE ?))")
+            val q = "%" + query.trim() + "%"; repeat(5) { args.add(q) }
         }
         val order = if (filter == Filter.RECENT) "opened_at DESC LIMIT 50" else if (filter == Filter.TRASH) "deleted_at DESC" else "updated_at DESC"
         return db.rawQuery("SELECT $nbCols FROM notebooks WHERE $where ORDER BY $order", args.toTypedArray()).use { c -> c.map(::readNb) }
@@ -122,6 +124,8 @@ class NoteRepository(private val context: Context, private val helper: NoteDb) {
         val versions = db.rawQuery("SELECT file_name FROM document_versions WHERE notebook_id=?", arrayOf(id)).use { c -> c.map { it.getString(0) } }
         tx {
             db.execSQL("DELETE FROM pen_strokes WHERE notebook_id=?", arrayOf(id))
+            db.execSQL("DELETE FROM page_elements WHERE notebook_id=?", arrayOf(id))
+            db.execSQL("DELETE FROM page_text WHERE notebook_id=?", arrayOf(id))
             db.execSQL("DELETE FROM pages WHERE notebook_id=?", arrayOf(id))
             db.execSQL("DELETE FROM note_tags WHERE notebook_id=?", arrayOf(id))
             db.execSQL("DELETE FROM document_versions WHERE notebook_id=?", arrayOf(id))
@@ -152,6 +156,7 @@ class NoteRepository(private val context: Context, private val helper: NoteDb) {
             }
             snap.pages.forEach { p -> db.insertOrThrow("pages", null, pageValues(p.copy(id = pageMap.getValue(p.id), notebookId = newId, attachmentId = p.attachmentId?.let { attachMap[it] }, createdAt = now, updatedAt = now))) }
             snap.strokes.forEach { s -> db.insertOrThrow("pen_strokes", null, strokeValues(s.copy(id = Stroke.newId(), pageId = pageMap.getValue(s.pageId)), newId)) }
+            snap.elements.forEach { e -> db.insertOrThrow("page_elements", null, elementValues(e.copy(id = UUID.randomUUID().toString(), pageId = pageMap.getValue(e.pageId), notebookId = newId))) }
             setTagsInTx(newId, snap.notebook.tags)
             recordAll(newId)
         }
@@ -176,10 +181,11 @@ class NoteRepository(private val context: Context, private val helper: NoteDb) {
     }
 
     // ---------------- 페이지 ----------------
-    private val pageCols = "id,notebook_id,page_index,width,height,paper,template,bg_type,attachment_id,pdf_page,created_at,updated_at,deleted"
+    private val pageCols = "id,notebook_id,page_index,width,height,paper,template,bg_type,attachment_id,pdf_page,created_at,updated_at,deleted,rotation,bookmarked"
     private fun readPage(c: Cursor) = PageData(
         c.getString(0), c.getString(1), c.getInt(2), c.getFloat(3), c.getFloat(4), PaperStyle.of(c.getString(5)),
         PageTemplate.of(c.getString(6)), c.getInt(7), c.getStringOrNull(8), c.getInt(9), c.getLong(10), c.getLong(11), c.getInt(12) == 1,
+        c.getInt(13), c.getInt(14) == 1,
     )
 
     fun pages(nbId: String, deleted: Boolean = false): List<PageData> = db.rawQuery(
@@ -240,7 +246,51 @@ class NoteRepository(private val context: Context, private val helper: NoteDb) {
 
     fun snapshot(nbId: String): NotebookSnapshot? {
         val nb = notebook(nbId) ?: return null
-        return NotebookSnapshot(nb, pages(nbId), strokes(nbId))
+        return NotebookSnapshot(nb, pages(nbId), strokes(nbId), elements(nbId))
+    }
+
+    // ---------------- 텍스트 주석(사용자·AI) ----------------
+    fun elements(nbId: String): List<PageElement> = db.rawQuery(
+        "SELECT id,page_id,notebook_id,kind,x,y,w,text,color,size,author,created_at FROM page_elements WHERE notebook_id=? AND deleted=0 ORDER BY created_at", arrayOf(nbId),
+    ).use { c -> c.map { PageElement(it.getString(0), it.getString(1), it.getString(2), it.getString(3), it.getFloat(4), it.getFloat(5), it.getFloat(6), it.getString(7), it.getInt(8), it.getFloat(9), it.getString(10), it.getLong(11)) } }
+
+    fun applyElements(nbId: String, add: List<PageElement>, remove: List<String>) = tx {
+        for (id in remove) { db.execSQL("UPDATE page_elements SET deleted=1, updated_at=? WHERE id=?", arrayOf(now(), id)); opEntity("element", id, nbId, "delete") }
+        for (e in add) { upsert("page_elements", elementValues(e)); opEntity("element", e.id, nbId, "upsert") }
+        touchNb(nbId)
+    }
+
+    fun elementValues(e: PageElement) = ContentValues().apply {
+        put("id", e.id); put("page_id", e.pageId); put("notebook_id", e.notebookId); put("kind", e.kind); put("x", e.x); put("y", e.y); put("w", e.w)
+        put("text", e.text); put("color", e.color); put("size", e.size); put("author", e.author); put("created_at", e.createdAt); put("updated_at", now()); put("deleted", 0)
+    }
+
+    // ---------------- 검색용 페이지 글자 ----------------
+    fun setPageText(pageId: String, nbId: String, source: String, text: String) {
+        db.execSQL("INSERT OR REPLACE INTO page_text(page_id, source, notebook_id, text, updated_at) VALUES(?,?,?,?,?)", arrayOf(pageId, source, nbId, text, now()))
+    }
+
+    fun hasPageText(nbId: String, source: String): Boolean = db.rawQuery("SELECT 1 FROM page_text WHERE notebook_id=? AND source=? LIMIT 1", arrayOf(nbId, source)).use { it.moveToFirst() }
+
+    class SearchHit(val notebookId: String, val title: String, val pageId: String, val pageIndex: Int, val snippet: String, val source: String)
+
+    /** 노트 안(또는 전체) 글자 검색: PDF 글자·손글씨 인식·OCR·텍스트 주석 */
+    fun searchText(query: String, nbId: String?, limit: Int = 200): List<SearchHit> {
+        val q = "%" + query.trim() + "%"
+        val nbFilter = if (nbId != null) " AND t.notebook_id=?" else ""
+        val args = if (nbId != null) arrayOf(q, nbId, q, nbId) else arrayOf(q, q)
+        val sql = """SELECT t.notebook_id, n.title, t.page_id, p.page_index, t.text, t.source FROM page_text t
+              JOIN notebooks n ON n.id=t.notebook_id JOIN pages p ON p.id=t.page_id
+              WHERE t.text LIKE ? $nbFilter AND n.deleted=0 AND p.deleted=0
+            UNION ALL
+            SELECT e.notebook_id, n.title, e.page_id, p.page_index, e.text, 'note' FROM page_elements e
+              JOIN notebooks n ON n.id=e.notebook_id JOIN pages p ON p.id=e.page_id
+              WHERE e.text LIKE ? ${nbFilter.replace("t.", "e.")} AND e.deleted=0 AND n.deleted=0 AND p.deleted=0
+            LIMIT $limit"""
+        return db.rawQuery(sql, args).use { c -> c.map {
+            val text = it.getString(4); val i = text.indexOf(query.trim(), ignoreCase = true).coerceAtLeast(0)
+            SearchHit(it.getString(0), it.getString(1), it.getString(2), it.getInt(3), text.substring((i - 30).coerceAtLeast(0), (i + 60).coerceAtMost(text.length)).replace('\n', ' '), it.getString(5))
+        } }
     }
 
     /** 스냅샷으로 노트 내용 교체(버전 복원). 지금 내용은 지우지 않고 deleted=1 로만 표시. */
@@ -250,6 +300,8 @@ class NoteRepository(private val context: Context, private val helper: NoteDb) {
         db.execSQL("UPDATE pages SET deleted=1, deleted_at=? WHERE notebook_id=? AND deleted=0", arrayOf(now, id))
         s.pages.forEach { upsert("pages", pageValues(it.copy(deleted = false))) }
         s.strokes.forEach { upsert("pen_strokes", strokeValues(it, id)) }
+        db.execSQL("UPDATE page_elements SET deleted=1, updated_at=? WHERE notebook_id=?", arrayOf(now, id))
+        s.elements.forEach { upsert("page_elements", elementValues(it.copy(notebookId = id))) }
         db.update("notebooks", ContentValues().apply { put("title", s.notebook.title); put("updated_at", now) }, "id=?", arrayOf(id))
         recordAll(id)
     }
@@ -276,6 +328,10 @@ class NoteRepository(private val context: Context, private val helper: NoteDb) {
             s.strokes.forEach { st ->
                 val pid = pageMap[st.pageId] ?: return@forEach
                 db.insertOrThrow("pen_strokes", null, strokeValues(if (exists) st.copy(id = Stroke.newId(), pageId = pid) else st, nbId))
+            }
+            s.elements.forEach { e ->
+                val pid = pageMap[e.pageId] ?: return@forEach
+                db.insertOrThrow("page_elements", null, elementValues(e.copy(id = if (exists) UUID.randomUUID().toString() else e.id, pageId = pid, notebookId = nbId)))
             }
             setTagsInTx(nbId, s.notebook.tags)
             recordAll(nbId)
@@ -374,6 +430,7 @@ class NoteRepository(private val context: Context, private val helper: NoteDb) {
         db.rawQuery("SELECT id FROM attachments WHERE notebook_id=?", arrayOf(nbId)).use { c -> while (c.moveToNext()) opEntity("attachment", c.getString(0), nbId, "upsert") }
         recordAllPages(nbId)
         db.rawQuery("SELECT id FROM pen_strokes WHERE notebook_id=?", arrayOf(nbId)).use { c -> while (c.moveToNext()) opEntity("stroke", c.getString(0), nbId, "upsert") }
+        db.rawQuery("SELECT id FROM page_elements WHERE notebook_id=?", arrayOf(nbId)).use { c -> while (c.moveToNext()) opEntity("element", c.getString(0), nbId, "upsert") }
     }
 
     private fun recordAllPages(nbId: String) {
@@ -408,6 +465,7 @@ class NoteRepository(private val context: Context, private val helper: NoteDb) {
         put("id", p.id); put("notebook_id", p.notebookId); put("page_index", p.index); put("width", p.width); put("height", p.height)
         put("paper", p.paper.key); put("template", p.template.key); put("bg_type", p.bgType); put("attachment_id", p.attachmentId)
         put("pdf_page", p.pdfPage); put("created_at", p.createdAt); put("updated_at", p.updatedAt); put("deleted", if (p.deleted) 1 else 0)
+        put("rotation", p.rotation); put("bookmarked", if (p.bookmarked) 1 else 0)
     }
 
     private fun strokeValues(s: Stroke, nbId: String) = ContentValues().apply {

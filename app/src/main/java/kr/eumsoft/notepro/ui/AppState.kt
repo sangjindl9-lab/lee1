@@ -59,6 +59,8 @@ class AppState(val app: NoteProApp) {
     var busy by mutableStateOf<String?>(null)
     /** 펜 프리셋 목록이 바뀌면 증가 → 도구 모음 갱신 */
     var presetsRev by mutableIntStateOf(0)
+    /** 검색 결과로 연 노트에서 이동할 페이지 */
+    var pendingJump: String? = null
 
     fun refreshLibrary() {
         val f = filter; val fo = folderId; val q = query
@@ -126,6 +128,19 @@ class AppState(val app: NoteProApp) {
         }
         return true
     }
+
+    /** 내 서명(필기 획)을 저장해 두고 어느 문서에나 넣는다. */
+    fun saveSignature(strokes: List<kr.eumsoft.notepro.core.Stroke>) {
+        if (strokes.isEmpty()) return
+        val now = System.currentTimeMillis()
+        val nb = kr.eumsoft.notepro.core.NotebookData("signature", null, "signature", "", 0, false, false, false, now, now, 0, false)
+        val bytes = kr.eumsoft.notepro.core.SnapshotCodec.encode(kr.eumsoft.notepro.core.NotebookSnapshot(nb, emptyList(), strokes))
+        app.files.writeAtomic(java.io.File(app.filesDir, "signature.snap"), bytes)
+    }
+
+    fun loadSignature(): List<kr.eumsoft.notepro.core.Stroke> = try {
+        kr.eumsoft.notepro.core.SnapshotCodec.decode(java.io.File(app.filesDir, "signature.snap").readBytes()).strokes
+    } catch (e: Exception) { emptyList() }
 
     companion object { const val MAX_PANES = 2 }
 }

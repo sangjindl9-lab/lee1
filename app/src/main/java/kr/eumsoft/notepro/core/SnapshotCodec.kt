@@ -15,7 +15,7 @@ import java.util.zip.GZIPOutputStream
  */
 object SnapshotCodec {
     private const val MAGIC = 0x4E50534E // 'NPSN'
-    private const val VERSION = 1
+    private const val VERSION = 2
     private const val END = 0x454E4421 // 'END!'
 
     fun encode(s: NotebookSnapshot): ByteArray {
@@ -32,6 +32,7 @@ object SnapshotCodec {
                 o.writeUTF(p.id); o.writeInt(p.index); o.writeFloat(p.width); o.writeFloat(p.height)
                 o.writeUTF(p.paper.key); o.writeUTF(p.template.key); o.writeInt(p.bgType)
                 writeNullable(o, p.attachmentId); o.writeInt(p.pdfPage); o.writeLong(p.createdAt); o.writeLong(p.updatedAt)
+                o.writeInt(p.rotation); o.writeBoolean(p.bookmarked) // v2
             }
             o.writeInt(s.strokes.size)
             for (st in s.strokes) {
@@ -39,6 +40,11 @@ object SnapshotCodec {
                 o.writeFloat(st.width); o.writeFloat(st.opacity); o.writeInt(st.shape); o.writeLong(st.createdAt)
                 val blob = StrokeCodec.encode(st.points)
                 o.writeInt(blob.size); o.write(blob)
+            }
+            o.writeInt(s.elements.size) // v2
+            for (e in s.elements) {
+                o.writeUTF(e.id); o.writeUTF(e.pageId); o.writeUTF(e.kind); o.writeFloat(e.x); o.writeFloat(e.y); o.writeFloat(e.w)
+                writeLong(o, e.text); o.writeInt(e.color); o.writeFloat(e.size); o.writeUTF(e.author); o.writeLong(e.createdAt)
             }
             o.writeInt(END)
         }
@@ -62,7 +68,7 @@ object SnapshotCodec {
                         id = i.readUTF(), notebookId = nb.id, index = i.readInt(), width = i.readFloat(), height = i.readFloat(),
                         paper = PaperStyle.of(i.readUTF()), template = PageTemplate.of(i.readUTF()), bgType = i.readInt(),
                         attachmentId = readNullable(i), pdfPage = i.readInt(), createdAt = i.readLong(), updatedAt = i.readLong(),
-                    )
+                    ).let { p -> if (ver >= 2) p.copy(rotation = i.readInt(), bookmarked = i.readBoolean()) else p }
                 }
                 val strokes = List(i.readInt()) {
                     val id = i.readUTF(); val pageId = i.readUTF(); val pen = PenType.fromCode(i.readInt()); val color = i.readInt()
@@ -72,8 +78,11 @@ object SnapshotCodec {
                     val blob = ByteArray(len); i.readFully(blob)
                     Stroke(id, pageId, pen, color, w, op, StrokeCodec.decode(blob), created, shape)
                 }
+                val elements = if (ver >= 2) List(i.readInt()) {
+                    PageElement(i.readUTF(), i.readUTF(), nb.id, i.readUTF(), i.readFloat(), i.readFloat(), i.readFloat(), readLong(i), i.readInt(), i.readFloat(), i.readUTF(), i.readLong())
+                } else emptyList()
                 if (i.readInt() != END) throw CorruptDataException("snapshot truncated")
-                return NotebookSnapshot(nb, pages, strokes)
+                return NotebookSnapshot(nb, pages, strokes, elements)
             }
         } catch (e: EOFException) {
             throw CorruptDataException("snapshot truncated")
@@ -81,6 +90,10 @@ object SnapshotCodec {
             throw CorruptDataException("snapshot gzip damaged")
         }
     }
+
+    /** 64KB 넘는 문자열(writeUTF 한도) 대응 */
+    private fun writeLong(o: DataOutputStream, s: String) { val b = s.toByteArray(Charsets.UTF_8); o.writeInt(b.size); o.write(b) }
+    private fun readLong(i: DataInputStream): String { val n = i.readInt(); if (n < 0 || n > 16 * 1024 * 1024) throw CorruptDataException("bad text"); val b = ByteArray(n); i.readFully(b); return String(b, Charsets.UTF_8) }
 
     private fun writeNullable(o: DataOutputStream, s: String?) { o.writeBoolean(s != null); if (s != null) o.writeUTF(s) }
     private fun readNullable(i: DataInputStream): String? = if (i.readBoolean()) i.readUTF() else null

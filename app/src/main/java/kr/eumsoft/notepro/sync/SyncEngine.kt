@@ -150,7 +150,7 @@ class SyncEngine(
     }
 
     private fun table(type: String) = when (type) {
-        "folder" -> "notebook_folders"; "notebook" -> "notebooks"; "attachment" -> "attachments"; "page" -> "pages"; "stroke" -> "pen_strokes"; else -> null
+        "folder" -> "notebook_folders"; "notebook" -> "notebooks"; "attachment" -> "attachments"; "page" -> "pages"; "stroke" -> "pen_strokes"; "element" -> "page_elements"; else -> null
     }
 
     /** 대상의 현재 상태(JSON). 행이 없으면(영구 삭제) 삭제로 보낸다. "_rev" = 마지막으로 받은 서버 rev */
@@ -176,6 +176,10 @@ class SyncEngine(
                 d.put("pageId", c.getString(0)).put("notebookId", c.getString(1)).put("pen", c.getInt(2)).put("color", c.getInt(3)).put("width", c.getDouble(4))
                     .put("opacity", c.getDouble(5)).put("shape", c.getInt(6)).put("points", Base64.encodeToString(c.getBlob(7), Base64.NO_WRAP))
                     .put("deleted", c.getInt(8) == 1).put("_rev", c.getInt(9)) }
+            "element" -> q("SELECT page_id,notebook_id,kind,x,y,w,text,color,size,author,created_at,deleted,server_rev FROM page_elements WHERE id=?") { c ->
+                d.put("pageId", c.getString(0)).put("notebookId", c.getString(1)).put("kind", c.getString(2)).put("x", c.getDouble(3)).put("y", c.getDouble(4))
+                    .put("w", c.getDouble(5)).put("text", c.getString(6)).put("color", c.getInt(7)).put("size", c.getDouble(8)).put("author", c.getString(9))
+                    .put("createdAt", c.getLong(10)).put("deleted", c.getInt(11) == 1).put("_rev", c.getInt(12)) }
             else -> false
         }
         if (!found) d.put("deleted", true).put("notebookId", p.nbId)
@@ -218,7 +222,7 @@ class SyncEngine(
             since = r.getLong("nextSince")
             if (!r.optBoolean("hasMore")) break
         }
-        val order = mapOf("folder" to 0, "notebook" to 1, "attachment" to 2, "page" to 3, "stroke" to 4)
+        val order = mapOf("folder" to 0, "notebook" to 1, "attachment" to 2, "page" to 3, "stroke" to 4, "element" to 5)
         all.sortWith(compareBy({ order[it.getString("entityType")] ?: 9 }, { it.optLong("seq") }))
         // 첨부 파일 먼저 내려받기
         for (c in all) if (c.getString("entityType") == "attachment") downloadAttachment(c.getJSONObject("data"))
@@ -301,6 +305,15 @@ class SyncEngine(
                     put("color", d.optInt("color")); put("width", d.optDouble("width", 2.0)); put("opacity", d.optDouble("opacity", 1.0)); put("shape", d.optInt("shape"))
                     put("points", blob); put("deleted", del); put("updated_at", now); put("server_rev", rev)
                     if (!exists("pen_strokes", id)) put("created_at", d.optLong("createdAt", now))
+                }); d.getString("notebookId")
+            }
+            "element" -> {
+                repo.upsert("page_elements", ContentValues().apply {
+                    put("id", id); put("page_id", d.getString("pageId")); put("notebook_id", d.getString("notebookId")); put("kind", d.optString("kind", "text"))
+                    put("x", d.optDouble("x")); put("y", d.optDouble("y")); put("w", d.optDouble("w", 200.0)); put("text", d.optString("text"))
+                    put("color", d.optInt("color")); put("size", d.optDouble("size", 14.0)); put("author", if (d.optString("author") == "ai") "ai" else "user")
+                    put("deleted", del); put("updated_at", now); put("server_rev", rev)
+                    if (!exists("page_elements", id)) put("created_at", d.optLong("createdAt", now))
                 }); d.getString("notebookId")
             }
             else -> null

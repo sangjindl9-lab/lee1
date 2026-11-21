@@ -44,7 +44,7 @@ class NoteDb(private val context: Context) : SQLiteOpenHelper(context, NAME, nul
 
     companion object {
         const val NAME = "notepro.db"
-        const val VERSION = 2
+        const val VERSION = 3
 
         /** 버전별 마이그레이션 SQL. 이미 출시된 버전의 SQL은 절대 수정하지 않는다. */
         val MIGRATIONS: Map<Int, List<String>> = mapOf(
@@ -126,6 +126,22 @@ class NoteDb(private val context: Context) : SQLiteOpenHelper(context, NAME, nul
                 """INSERT INTO sync_operations(op_id, notebook_id, entity_id, entity_type, op_type, device_id, created_at, status)
                    SELECT lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-a' || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))), notebook_id, id, 'stroke', CASE deleted WHEN 1 THEN 'delete' ELSE 'upsert' END, 'migrated', created_at, 'pending' FROM pen_strokes""",
                 """CREATE TABLE sync_state(key TEXT PRIMARY KEY, value TEXT NOT NULL)""",
+            ),
+            // v3: 문서 기능 — 페이지 회전·북마크, 텍스트 주석(사용자/AI), 검색용 페이지 글자(PDF·OCR·손글씨 인식)
+            3 to listOf(
+                "ALTER TABLE pages ADD COLUMN rotation INTEGER NOT NULL DEFAULT 0",
+                "ALTER TABLE pages ADD COLUMN bookmarked INTEGER NOT NULL DEFAULT 0",
+                """CREATE TABLE page_elements(
+                    id TEXT PRIMARY KEY, page_id TEXT NOT NULL REFERENCES pages(id), notebook_id TEXT NOT NULL,
+                    kind TEXT NOT NULL, x REAL NOT NULL, y REAL NOT NULL, w REAL NOT NULL, text TEXT NOT NULL,
+                    color INTEGER NOT NULL, size REAL NOT NULL, author TEXT NOT NULL DEFAULT 'user',
+                    created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, deleted INTEGER NOT NULL DEFAULT 0,
+                    server_rev INTEGER NOT NULL DEFAULT 0)""",
+                "CREATE INDEX idx_elements_page ON page_elements(page_id, deleted)",
+                """CREATE TABLE page_text(
+                    page_id TEXT NOT NULL, source TEXT NOT NULL, notebook_id TEXT NOT NULL, text TEXT NOT NULL,
+                    updated_at INTEGER NOT NULL, PRIMARY KEY(page_id, source))""",
+                "CREATE INDEX idx_page_text_nb ON page_text(notebook_id)",
             ),
         )
 

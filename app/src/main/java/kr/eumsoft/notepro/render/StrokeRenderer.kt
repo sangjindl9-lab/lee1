@@ -147,3 +147,38 @@ object PaperPainter {
         if (!forExport) Unit
     }
 }
+
+/** 텍스트 주석 그리기. AI가 만든 내용은 연보라 배경 + "AI" 표시로 사용자 기록과 항상 구분한다. */
+object ElementRenderer {
+    @Volatile var aiLabel = "AI"
+    private val tlText = ThreadLocal.withInitial { android.text.TextPaint(Paint.ANTI_ALIAS_FLAG) }
+    private val tlBg = ThreadLocal.withInitial { Paint(Paint.ANTI_ALIAS_FLAG) }
+    private val tlLabel = ThreadLocal.withInitial { android.text.TextPaint(Paint.ANTI_ALIAS_FLAG).apply { isFakeBoldText = true; color = 0xFF7048E8.toInt() } }
+
+    private fun layout(e: kr.eumsoft.notepro.core.PageElement): android.text.StaticLayout {
+        val tp = tlText.get()!!
+        tp.textSize = e.size; tp.color = e.color
+        val w = e.w.toInt().coerceAtLeast(40)
+        return android.text.StaticLayout.Builder.obtain(e.text, 0, e.text.length, tp, w).setLineSpacing(0f, 1.15f).build()
+    }
+
+    /** 페이지 좌표에서의 높이(터치 판정용) */
+    fun height(e: kr.eumsoft.notepro.core.PageElement): Float = layout(e).height.toFloat() + if (e.author == "ai") e.size * 1.4f else 0f
+
+    fun draw(c: Canvas, e: kr.eumsoft.notepro.core.PageElement) {
+        val l = layout(e)
+        val ai = e.author == "ai"
+        val top = e.y + if (ai) e.size * 1.4f else 0f
+        if (ai) {
+            val bg = tlBg.get()!!
+            bg.style = Paint.Style.FILL; bg.color = 0x1F7048E8
+            c.drawRoundRect(e.x - 6f, e.y - 4f, e.x + e.w + 6f, top + l.height + 6f, 6f, 6f, bg)
+            bg.style = Paint.Style.STROKE; bg.color = 0x887048E8.toInt(); bg.strokeWidth = 0.8f
+            c.drawRoundRect(e.x - 6f, e.y - 4f, e.x + e.w + 6f, top + l.height + 6f, 6f, 6f, bg)
+            val tp = tlLabel.get()!!
+            tp.textSize = e.size * 0.75f
+            c.drawText(aiLabel, e.x, e.y + e.size * 0.9f, tp)
+        }
+        c.save(); c.translate(e.x, top); l.draw(c); c.restore()
+    }
+}

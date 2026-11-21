@@ -124,7 +124,8 @@ class CoreTest {
         val nb = NotebookData("nb1", null, "회의록 테스트", "설명", 0x112233, true, false, false, 1, 2, 3, false, listOf("업무", "회의"))
         val pg = PageData("page1", "nb1", 0, 595f, 842f, PaperStyle.LINED, PageTemplate.MEETING, createdAt = 1, updatedAt = 2)
         val strokes = (0 until 500).map { stroke(line(0f, it.toFloat(), 300f, it + 5f, 30, 1f, it), "s$it") }
-        return NotebookSnapshot(nb, listOf(pg), strokes)
+        val el = kr.eumsoft.notepro.core.PageElement("e1", "page1", "nb1", "text", 10f, 20f, 200f, "AI 요약: " + "가".repeat(40000), author = "ai", createdAt = 5)
+        return NotebookSnapshot(nb, listOf(pg.copy(rotation = 90, bookmarked = true)), strokes, listOf(el))
     }
 
     @Test fun snapshotRoundTrip() {
@@ -134,6 +135,7 @@ class CoreTest {
         assertEquals(s.pages, back.pages)
         assertEquals(500, back.strokes.size)
         assertArrayEquals(s.strokes[123].points, back.strokes[123].points, 0f)
+        assertEquals(s.elements, back.elements)
     }
 
     @Test fun snapshotTruncationDetected() {

@@ -91,7 +91,22 @@ enum class PaperSize(val key: String, val w: Float, val h: Float) {
 object BackgroundType {
     const val PAPER = 0
     const val PDF = 1
+    const val IMAGE = 2
 }
+
+/** 페이지 위 획 이외 요소: 텍스트 주석(사용자/AI). author="ai" 는 AI가 만든 내용으로 항상 구분 표시. */
+data class PageElement(
+    val id: String,
+    val pageId: String,
+    val notebookId: String,
+    val kind: String = "text",
+    val x: Float, val y: Float, val w: Float,
+    val text: String,
+    val color: Int = 0xFF1F2A44.toInt(),
+    val size: Float = 14f,
+    val author: String = "user",
+    val createdAt: Long,
+)
 
 data class PageData(
     val id: String,
@@ -107,6 +122,9 @@ data class PageData(
     val createdAt: Long,
     val updatedAt: Long,
     val deleted: Boolean = false,
+    /** 0/90/180/270 — PDF·이미지 배경 회전 */
+    val rotation: Int = 0,
+    val bookmarked: Boolean = false,
 )
 
 data class NotebookData(
@@ -132,6 +150,7 @@ class NotebookSnapshot(
     val notebook: NotebookData,
     val pages: List<PageData>,
     val strokes: List<Stroke>,
+    val elements: List<PageElement> = emptyList(),
 )
 
 class CorruptDataException(msg: String) : Exception(msg)

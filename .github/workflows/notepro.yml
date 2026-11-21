@@ -123,7 +123,7 @@ jobs:
         run: |
           ls emu || exit 0
           cp /tmp/server.log emu/ 2>/dev/null || true
-          cd emu && rm -f ui.xml && zip -q ../emu-results.zip * && cd ..
+          cd emu && zip -q ../emu-results.zip * && cd ..
           gh release delete notepro-test --yes --cleanup-tag || true
           gh release create notepro-test emu/report.txt emu-results.zip --target "$GITHUB_SHA" --prerelease \
             --title "노트프로 에뮬레이터 검수 결과" --notes "에뮬레이터(실기기 아님) 자동 검수 결과"

@@ -7,7 +7,7 @@ RUN=$PKG.test/androidx.test.runner.AndroidJUnitRunner
 log() { echo "$*" | tee -a $R; }
 shot() { adb exec-out screencap -p > emu/$1.png; }
 tap_text() {
-  adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1; adb pull /sdcard/ui.xml emu/ui.xml >/dev/null 2>&1
+  adb shell uiautomator dump /sdcard/ui.xml >> emu/uidump.log 2>&1; adb pull /sdcard/ui.xml emu/ui.xml >/dev/null 2>&1; cp emu/ui.xml "emu/ui_$(echo $1 | tr -c 'a-zA-Z' _).xml" 2>/dev/null
   python3 - "$1" <<'PY'
 import re,sys,subprocess
 t=sys.argv[1]; x=open('emu/ui.xml',encoding='utf-8').read()
@@ -17,7 +17,7 @@ for m in re.finditer(r'<node[^>]*>', x):
         b=re.search(r'bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"',n)
         if b:
             a=list(map(int,b.groups())); subprocess.run(['adb','shell','input','tap',str((a[0]+a[2])//2),str((a[1]+a[3])//2)]); print('tapped',t); sys.exit(0)
-print('not found',t)
+print('not found',t); sys.exit(1)
 PY
 }
 result() { if grep -q "OK (" "$1"; then log "PASS $2"; else log "FAIL $2"; grep -E "FAILURES|Error|expected|at kr\." "$1" | head -20 | tee -a $R; fi; }
@@ -48,14 +48,15 @@ result emu/sync_e2e.txt "SyncE2ETest (가입→업로드→다른 기기 수신�
 adb shell run-as $PKG cat files/sync_result.txt | tee -a $R; echo | tee -a $R
 
 log "== 3. UI 자동 조작: 새 노트 → 필기 → 강제 종료 → 재시작"
+W0=$(adb shell wm size | grep -oE '[0-9]+x[0-9]+' | tail -1 | cut -dx -f1); H0=$(adb shell wm size | grep -oE '[0-9]+x[0-9]+' | tail -1 | cut -dx -f2)
 # 에뮬레이터 런처 ANR 창이 뜨면 먼저 닫는다(앱 문제 아님)
 adb shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS >/dev/null 2>&1
 adb shell am start -W -n $PKG/.ui.MainActivity >/dev/null; sleep 6
 for k in 1 2 3; do tap_text "Wait"; sleep 1; done
 shot 01_launch
 tap_text "OK"; sleep 1; tap_text "Wait"
-tap_text "New note"; sleep 2; tap_text "Wait"; shot 02_new_note_dialog
-tap_text "Create"; sleep 4; tap_text "Wait"; shot 03_editor
+tap_text "New note" || adb shell input tap $((W0*80/100)) $((H0*925/1000)); sleep 2; tap_text "Wait"; shot 02_new_note_dialog
+tap_text "Create" || { adb shell input keyevent 61; adb shell input keyevent 66; }; sleep 4; tap_text "Wait"; shot 03_editor
 W=$(adb shell wm size | grep -oE '[0-9]+x[0-9]+' | tail -1 | cut -dx -f1); H=$(adb shell wm size | grep -oE '[0-9]+x[0-9]+' | tail -1 | cut -dx -f2)
 for i in 0 1 2 3 4 5; do
   y=$((H/3 + i*90)); adb shell input swipe $((W/5)) $y $((W*4/5)) $((y+40)) 500
