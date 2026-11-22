@@ -1,0 +1,21 @@
+{
+  "name": "fm2-connect",
+  "version": "1.0.0",
+  "description": "파일관리자2 PC CONNECT — 계정·기기 연결·중계 서버와 공식 다운로드 사이트",
+  "type": "module",
+  "main": "src/index.js",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node --test test/"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "express": "^4.21.1",
+    "jsonwebtoken": "^9.0.2",
+    "nodemailer": "^6.9.16",
+    "pg": "^8.13.1",
+    "qrcode": "^1.5.4",
+    "ws": "^8.18.0"
+  }
+}

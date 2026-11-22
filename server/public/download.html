@@ -1,0 +1,43 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Windows 다운로드 — 파일 관리자 2 PC CONNECT</title><meta name="description" content="휴대폰과 PC, 클라우드의 모든 파일을 하나로 연결하세요.">
+<link rel="icon" href="/icon.png"><link rel="stylesheet" href="/site.css"></head><body>
+<main class="wrap">
+<section class="hero" style="padding-bottom:10px"><h1>Windows용 다운로드</h1>
+<p class="lead">PC에 설치하고 휴대폰 앱과 같은 계정으로 로그인하세요.</p></section>
+<section id="androidFirst" class="hide"><div class="okbox">휴대폰으로 접속하셨습니다. 휴대폰에는 <a id="aLink" href="#">파일 관리자 2 앱(Google Play)</a>을 설치하세요. Windows 프로그램은 PC에서 이 페이지(<b id="pageUrl"></b>)를 열어 받으면 됩니다.</div></section>
+<section>
+  <div class="card dl">
+    <div>
+      <h2 style="margin-bottom:8px">파일 관리자 2 PC CONNECT <span id="ver"></span></h2>
+      <div id="noRel" class="notice hide">아직 배포된 설치 파일이 없습니다. 준비되는 대로 이 페이지에 표시됩니다.</div>
+      <table class="meta hide" id="meta">
+        <tr><td>최신 버전</td><td id="mVer"></td></tr>
+        <tr><td>배포 날짜</td><td id="mDate"></td></tr>
+        <tr><td>파일</td><td id="mName"></td></tr>
+        <tr><td>파일 크기</td><td id="mSize"></td></tr>
+        <tr><td>지원 OS</td><td id="mOs"></td></tr>
+        <tr><td>SHA-256</td><td><span class="mono" id="mSha"></span></td></tr>
+      </table>
+      <div class="btns" style="margin-top:18px"><a class="btn pri hide" id="dlBtn" href="/download/windows">⬇ 설치 파일 받기 (.exe)</a></div>
+      <p style="color:var(--sub);font-size:14px;margin-top:14px">받은 파일이 손상·변조되지 않았는지 확인하려면 PowerShell에서 <code>Get-FileHash 파일이름.exe</code> 를 실행해 위 SHA-256 값과 같은지 비교하세요.<br>아직 코드 서명 인증서가 없어 처음 실행할 때 Windows SmartScreen 경고가 나올 수 있습니다. <b>추가 정보 → 실행</b>을 누르세요.</p>
+    </div>
+    <div style="text-align:center"><img class="qr" src="/api/qr" alt="다운로드 페이지 QR"><div style="font-size:13px;color:var(--sub)">휴대폰으로 스캔</div></div>
+  </div>
+</section>
+<section><h2>설치 방법</h2><ol class="steps">
+<li>위 버튼으로 설치 파일(.exe)을 받아 실행합니다.</li>
+<li>설치가 끝나면 시작 메뉴·바탕화면의 <b>파일 관리자 2 PC</b>를 실행합니다.</li>
+<li>휴대폰 앱과 같은 계정으로 로그인합니다.</li>
+<li>휴대폰 앱의 <b>PC 연결</b>에서 연결을 승인하고 허용할 폴더를 고르면 끝!</li></ol>
+<p><a href="/guide">자세한 설치·연결 안내 보기 →</a></p></section>
+</main>
+<script src="/site.js"></script><script>
+document.getElementById("pageUrl").textContent=location.host+"/download";
+fetch("/api/config").then(r=>r.json()).then(c=>{document.getElementById("aLink").href=c.androidTestUrl;if(isAndroid)document.getElementById("androidFirst").classList.remove("hide");});
+fetch("/api/releases/latest").then(r=>r.ok?r.json():null).then(r=>{
+ if(!r){document.getElementById("noRel").classList.remove("hide");return;}
+ document.getElementById("meta").classList.remove("hide");document.getElementById("dlBtn").classList.remove("hide");
+ document.getElementById("ver").textContent="v"+r.version;mVer.textContent=r.version;mDate.textContent=fmt.date(r.publishedAt);
+ mName.textContent=r.name;mSize.textContent=fmt.size(r.size);mOs.textContent=r.os;mSha.textContent=r.sha256||"(확인 중)";
+}).catch(()=>document.getElementById("noRel").classList.remove("hide"));
+</script></body></html>

@@ -1,0 +1,22 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>관리자 — 파일 관리자 2 PC CONNECT</title><meta name="description" content="휴대폰과 PC, 클라우드의 모든 파일을 하나로 연결하세요.">
+<link rel="icon" href="/icon.png"><link rel="stylesheet" href="/site.css"></head><body>
+<main class="wrap"><section class="hero" style="padding-bottom:10px"><h1>관리자</h1></section>
+<div class="card" id="loginBox"><p>관리자 토큰을 입력하세요 (브라우저에만 임시 보관).</p><input id="tok" type="password" placeholder="ADMIN_TOKEN"><div class="btns" style="margin-top:10px"><button class="btn pri" id="go">확인</button></div><p id="err" style="color:#ef4444"></p></div>
+<div id="dash" class="hide"></div>
+<div id="noticeBox" class="card hide" style="margin-top:16px"><h3>공지 등록</h3><input id="nt" placeholder="제목"><textarea id="nb" rows="3" placeholder="내용" style="margin-top:8px"></textarea><div class="btns" style="margin-top:8px"><button class="btn pri" id="np">등록</button></div></div>
+</main>
+<script src="/site.js"></script><script>
+let T=sessionStorage.getItem("fm2adm")||"";
+async function load(){const r=await fetch("/api/admin/stats",{headers:{Authorization:"Bearer "+T}});if(!r.ok){err.textContent="토큰이 올바르지 않습니다";return;}
+sessionStorage.setItem("fm2adm",T);loginBox.classList.add("hide");dash.classList.remove("hide");noticeBox.classList.remove("hide");const s=await r.json();
+const esc=x=>String(x).replace(/[<>&]/g,"");
+dash.innerHTML=`<div class=grid><div class=card><h3>${s.users}</h3><p>가입자</p></div>${s.devices.map(d=>`<div class=card><h3>${d.n}</h3><p>${d.kind==="pc"?"PC":"모바일"} 기기</p></div>`).join("")}<div class=card><h3>${s.onlineNow}</h3><p>현재 접속 기기</p></div><div class=card><h3>${s.approvedConnections}</h3><p>승인된 연결</p></div><div class=card><h3>${s.transfers30d.n}</h3><p>30일 전송 (${fmt.size(+s.transfers30d.bytes)})</p></div></div>
+<section><h2>설치 파일 · 다운로드</h2>${s.releases.map(r=>`<div class=rel><b>${esc(r.platform)} v${esc(r.version)}</b> · 다운로드 ${r.downloads}회 · ${fmt.date(r.published_at)}</div>`).join("")||"<p>없음</p>"}</section>
+<section><h2>의심 로그인 (24시간, 실패 횟수)</h2>${s.suspiciousLogins.map(x=>`<div class=rel>${esc(x.ip)} — ${x.n}회</div>`).join("")||"<p>없음</p>"}</section>
+<section><h2>최근 서버 오류</h2>${s.errors.map(e=>`<div class=rel><b>${esc(e.at)}</b> ${esc(e.path)}<pre>${esc(e.message)}</pre></div>`).join("")||"<p>없음</p>"}</section>
+<p style="color:var(--sub)">개인 파일 내용은 서버에 없으므로 관리자도 열람할 수 없습니다.</p>`;}
+go.onclick=()=>{T=tok.value.trim();load();};
+np.onclick=async()=>{await fetch("/api/admin/notices",{method:"POST",headers:{Authorization:"Bearer "+T,"Content-Type":"application/json"},body:JSON.stringify({title:nt.value,body:nb.value})});nt.value=nb.value="";alert("등록했습니다");};
+if(T)load();
+</script></body></html>
