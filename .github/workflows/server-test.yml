@@ -1,0 +1,22 @@
+name: FM2 server e2e (production)
+on:
+  push:
+    branches: [filemanager2]
+    paths: ['server/**', '.github/workflows/server-test.yml']
+  workflow_dispatch: {}
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - run: cd server && npm install --omit=dev --no-audit --no-fund
+      - name: Wait for deploy
+        run: sleep 90
+      - run: cd server && BASE=https://fm2-connect-production.up.railway.app node test/e2e.mjs
+      - name: Pages
+        run: |
+          for p in / /download /guide /updates /support /privacy /terms /api/config /health; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' https://fm2-connect-production.up.railway.app$p); echo "$p $code"; [ "$code" = 200 ] || exit 1
+          done
