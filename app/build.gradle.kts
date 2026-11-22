@@ -11,8 +11,8 @@ android {
         applicationId = "kr.eumsoft.filemanager2"
         minSdk = 24
         targetSdk = 36
-        versionCode = 5
-        versionName = "1.4"
+        versionCode = 6
+        versionName = "1.5"
     }
     buildTypes {
         release { isMinifyEnabled = false }
@@ -40,4 +40,6 @@ dependencies {
     implementation("io.coil-kt:coil-video:2.7.0")
     implementation("com.google.android.play:app-update-ktx:2.1.0")
     implementation("androidx.fragment:fragment-ktx:1.8.5")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("com.google.zxing:core:3.5.3")
 }

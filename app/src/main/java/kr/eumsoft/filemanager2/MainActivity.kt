@@ -23,6 +23,7 @@ import kr.eumsoft.filemanager2.ui.Root
 
 class MainActivity : ComponentActivity() {
     private val resumeTick = mutableIntStateOf(0)
+    private val openConnect = mutableStateOf(false)
 
     // ---- 인앱 업데이트 (Google Play) ----
     private var updateManager: AppUpdateManager? = null
@@ -35,11 +36,17 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         updateManager = runCatching { AppUpdateManagerFactory.create(this) }.getOrNull()
+        openConnect.value = intent?.getBooleanExtra("openConnect", false) == true
+        kr.eumsoft.filemanager2.connect.ConnectState.load(this)
+        if (kr.eumsoft.filemanager2.connect.ConnectState.enabled) runCatching { kr.eumsoft.filemanager2.connect.ConnectService.start(this) }
         checkForUpdate()
         setContent {
             val vm: AppVM = viewModel()
             FM2Theme(vm.prefs.theme) {
                 Root(vm, resumeTick.intValue)
+                androidx.compose.runtime.LaunchedEffect(openConnect.value) {
+                    if (openConnect.value) { openConnect.value = false; if (vm.top != Dest.Connect) vm.push(Dest.Connect) }
+                }
                 pendingUpdate.value?.let { info ->
                     AlertDialog(
                         onDismissRequest = { pendingUpdate.value = null },
@@ -76,6 +83,11 @@ class MainActivity : ComponentActivity() {
                 info, updateLauncher, AppUpdateOptions.newBuilder(AppUpdateType.IMMEDIATE).build()
             )
         }
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        if (intent.getBooleanExtra("openConnect", false)) openConnect.value = true
     }
 
     override fun onResume() {

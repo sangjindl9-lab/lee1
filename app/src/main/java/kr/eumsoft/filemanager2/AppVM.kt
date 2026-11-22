@@ -37,6 +37,7 @@ sealed interface Dest {
     data class TextEdit(val path: String) : Dest
     data class ImageView(val path: String) : Dest
     data object Settings : Dest
+    data object Connect : Dest
 }
 
 data class Clip(val paths: List<String>, val cut: Boolean)

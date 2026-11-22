@@ -25,6 +25,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Android
 import androidx.compose.material.icons.rounded.Archive
 import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.Computer
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Download
@@ -129,6 +130,9 @@ fun HomeScreen(vm: AppVM) {
         val main = vols.firstOrNull()
         if (main != null) item { StorageHero(main, onOpen = { vm.push(Dest.Browse(main.path)) }, onAnalyze = { vm.push(Dest.Analysis) }) }
         items(vols.drop(1)) { v -> VolumeRow(v) { vm.push(Dest.Browse(v.path)) } }
+
+        // PC 연결
+        item { PcConnectBanner { vm.push(Dest.Connect) } }
 
         // 카테고리
         item { SectionTitle("카테고리") }
@@ -302,5 +306,39 @@ private fun QuickRow(icon: ImageVector, color: Color, title: String, sub: String
             Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
             Text(sub, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+    }
+}
+
+@Composable
+private fun PcConnectBanner(onClick: () -> Unit) {
+    val on = kr.eumsoft.filemanager2.connect.ConnectState.enabled
+    val pending = kr.eumsoft.filemanager2.connect.ConnectState.pendingRequests.size
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 18.dp, vertical = 6.dp)
+            .clip(RoundedCornerShape(20.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainer)
+            .clickable(onClick = onClick)
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IconBadge(androidx.compose.material.icons.Icons.Rounded.Computer, Color(0xFF6366F1), 46.dp)
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text("PC 연결", fontWeight = FontWeight.Bold, fontSize = 17.sp)
+            Text(
+                when {
+                    pending > 0 -> "승인 대기 중인 요청 ${pending}건"
+                    on -> "켜짐 · PC에서 휴대폰 파일에 접속할 수 있습니다"
+                    else -> "PC에서 휴대폰 파일을 보고 주고받기"
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = if (pending > 0) Coral else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        if (on) Box(Modifier.size(10.dp).clip(CircleShape).background(Color(0xFF10B981)))
+        Spacer(Modifier.width(6.dp))
+        Icon(Icons.Rounded.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

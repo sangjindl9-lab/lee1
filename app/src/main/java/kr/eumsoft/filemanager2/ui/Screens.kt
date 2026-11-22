@@ -185,6 +185,7 @@ fun Root(vm: AppVM, resumeTick: Int) {
                 is Dest.TextEdit -> TextEditorScreen(vm, d.path)
                 is Dest.ImageView -> ImageViewerScreen(vm, d.path)
                 Dest.Settings -> SettingsScreen(vm)
+                Dest.Connect -> ConnectScreen(vm)
             }
         }
         SnackbarHost(snack, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 64.dp))
