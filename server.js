@@ -32,13 +32,13 @@ const CSS_V = crypto.createHash('sha1').update(CSS).digest('hex').slice(0, 8);
 // 머리줄·꼬리줄은 모든 페이지가 같이 쓴다 (하위 페이지에서도 메뉴가 첫 페이지 칸으로 가도록 / 를 붙인다)
 const HEADER = read('_header.html').replace(/href="#top"/, 'href="/"').replace(/href="#/g, 'href="/#');
 const FOOTER = read('_footer.html');
-const ORG = { '@type': 'Organization', '@id': `${SITE}/#org`, name: '주식회사 이음소프트', url: SITE, email: 'lee@ieumerp.kr', telephone: '+82-70-7938-5027', logo: `${SITE}/og.png` };
+const ORG = { '@type': 'Organization', '@id': `${SITE}/#org`, name: '주식회사 이음소프트', alternateName: ['이음소프트', 'EUMSOFT'], url: SITE, email: 'lee@ieumerp.kr', telephone: '+82-70-7938-5027', logo: `${SITE}/og.png` };
 const faqLd = (faq) => faq && faq.length ? { '@type': 'FAQPage', mainEntity: faq.map(([q, a]) => ({ '@type': 'Question', name: q, acceptedAnswer: { '@type': 'Answer', text: a } })) } : null;
 
 const faqHtml = (faq) => `<div class="faq">${faq.map(([q, a]) => `<details><summary>${q}</summary><p>${a}</p></details>`).join('')}</div>`;
 function render({ path: p, title, desc, ogTitle, body, ld = [], faq }) {
   if (faq) body = body.replace('<!--FAQ-->', faqHtml(faq));
-  const graph = [ORG, ...ld, faqLd(faq)].filter(Boolean);
+  const graph = [ORG, ...ld.map((o) => (o['@type'] === 'SoftwareApplication' && !o.publisher ? { ...o, publisher: { '@id': `${SITE}/#org` } } : o)), faqLd(faq)].filter(Boolean);
   const head = [
     '<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">',
     `<title>${title}</title>`,
@@ -62,11 +62,11 @@ function render({ path: p, title, desc, ogTitle, body, ld = [], faq }) {
 // 첫 페이지 + 제품별 페이지 (pages.js) — 시작할 때 한 번 만들어 둔다
 const HOME = {
   path: '/',
-  title: '이음ERP | 전기·정보통신 공사업체 ERP · 검측서류 · 공정표', // 네이버 권장 40자 이내
-  ogTitle: '공사 회사가 직접 만든 이음ERP',
-  desc: '전기·정보통신 공사 회사가 직접 만든 공사업체 ERP. 현장관리·발주 결재·기성·세금계산서·회계부터 검측서류·예정공정표·사진대지까지.', // 80자 이내
+  title: '이음ERP | 건설회사 그룹웨어 · 공사업체 ERP · 이음소프트', // 네이버 권장 40자 이내
+  ogTitle: '이음ERP | 건설회사 그룹웨어 · 이음소프트',
+  desc: '이음소프트의 건설회사 그룹웨어·공사업체 ERP. 전자결재·현장 작업일보·기성·세금계산서·검측서류·공정표까지.', // 80자 이내
   body: read('page.html').replace('<!--HEADER-->\n', '').replace('<!--FOOTER-->\n', ''),
-  ld: [{ '@type': 'SoftwareApplication', name: '이음ERP', applicationCategory: 'BusinessApplication', operatingSystem: 'Web, Android', url: SITE, description: '전기·정보통신 공사업체용 ERP', offers: { '@type': 'Offer', price: '79000', priceCurrency: 'KRW' }, publisher: { '@id': `${SITE}/#org` } }],
+  ld: [{ '@type': 'SoftwareApplication', name: '이음ERP', applicationCategory: 'BusinessApplication', operatingSystem: 'Web, Android', url: SITE, description: '이음ERP는 건설회사 그룹웨어·공사업체 ERP입니다. 전자결재·현장 작업일보·기성·세금계산서·검측서류·공정표·자금 브리핑까지 한 프로그램에서 처리합니다.', keywords: '건설회사 그룹웨어, 건설ERP, 공사업체 ERP, 이음ERP, 이음소프트, 전기공사 ERP, 정보통신공사 ERP, 공사 현장관리, 전자결재', inLanguage: 'ko', offers: { '@type': 'Offer', price: '79000', priceCurrency: 'KRW' }, publisher: { '@id': `${SITE}/#org` } }],
   faq: HOME_FAQ,
 };
 const PAGE_LIST = [HOME, ...PAGES.map((pg) => ({ ...pg, body: read(`pages/${pg.file}`) }))];
