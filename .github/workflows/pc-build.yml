@@ -1,0 +1,51 @@
+name: FM2 PC (Windows) build & release
+on:
+  push:
+    branches: [filemanager2]
+    paths: ['pc/**', '.github/workflows/pc-build.yml']
+  workflow_dispatch: {}
+permissions:
+  contents: write
+jobs:
+  windows:
+    runs-on: windows-latest
+    defaults: { run: { shell: bash, working-directory: pc } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: 'pc/src-tauri -> target' }
+      - run: npm install --no-audit --no-fund
+      - name: Build installer
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.FM2_TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
+        run: |
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then npx tauri build
+          else echo "::warning::업데이트 서명 키가 없어 자동 업데이트용 서명 없이 빌드합니다 (서버는 서명 없는 업데이트를 내려주지 않음)"
+            npx tauri build --config '{"bundle":{"createUpdaterArtifacts":false}}'; fi
+      - name: Collect
+        id: c
+        run: |
+          VER=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          mkdir -p out
+          EXE=$(ls src-tauri/target/release/bundle/nsis/*-setup.exe | head -1)
+          NAME="FileManager2PC_${VER}_x64-setup.exe"
+          cp "$EXE" "out/$NAME"
+          [ -f "$EXE.sig" ] && cp "$EXE.sig" "out/$NAME.sig" || true
+          (cd out && sha256sum "$NAME" > "$NAME.sha256")
+          cat out/*.sha256; ls -la out
+          echo "ver=$VER" >> $GITHUB_OUTPUT
+      - uses: actions/upload-artifact@v4
+        with: { name: fm2-pc, path: pc/out/* }
+      - name: Release (새 버전일 때만 생성, 같은 버전은 파일만 교체)
+        env: { GH_TOKEN: '${{ github.token }}' }
+        run: |
+          TAG="fm2-pc-v${{ steps.c.outputs.ver }}"
+          if gh release view "$TAG" >/dev/null 2>&1; then gh release upload "$TAG" out/* --clobber
+          else
+            gh release create "$TAG" out/* --target "${{ github.sha }}" --title "파일 관리자 2 PC ${{ steps.c.outputs.ver }}" \
+              --notes "Windows 10/11 64비트용 파일 관리자 2 PC 연결 프로그램. 휴대폰 앱과 같은 계정으로 로그인해 승인된 폴더의 파일을 보고 주고받을 수 있습니다."
+          fi

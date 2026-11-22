@@ -8,7 +8,7 @@ import QRCode from 'qrcode';
 import { WebSocketServer } from 'ws';
 import { q, one, migrate, log, pool } from './db.js';
 import { sendMail, mailConfigured } from './mail.js';
-import { latestWindowsRelease, releaseHistory } from './releases.js';
+import { latestWindowsRelease, releaseHistory, tauriUpdateManifest } from './releases.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 8080);
@@ -333,6 +333,11 @@ app.get('/api/releases/latest', wrap(async (req, res) => {
   const r = await latestWindowsRelease();
   if (!r) return res.status(404).json({ error: 'no_release', message: '아직 배포된 Windows 설치 파일이 없습니다' });
   res.json(r);
+}));
+app.get('/api/pc/update.json', wrap(async (req, res) => {
+  const m = await tauriUpdateManifest();
+  if (!m) return res.status(204).end();
+  res.json(m);
 }));
 app.get('/api/releases', wrap(async (req, res) => res.json(await releaseHistory())));
 

@@ -27,7 +27,13 @@ async function fetchReleases() {
         sha256 = (t.match(/[a-f0-9]{64}/i) || [null])[0];
       } catch {}
     }
+    let signature = null;
+    const sigAsset = rel.assets.find((a) => a.name === main.name + '.sig');
+    if (sigAsset) {
+      try { signature = (await (await fetch(sigAsset.browser_download_url, { headers: { 'User-Agent': 'fm2-connect' } })).text()).trim(); } catch {}
+    }
     const item = {
+      signature,
       version: String(rel.tag_name).slice(PREFIX.length),
       name: main.name, url: main.browser_download_url, size: main.size,
       msiUrl: msi && msi !== main ? msi.browser_download_url : null,
@@ -48,5 +54,13 @@ export async function latestWindowsRelease() {
   return l[0] || null;
 }
 export async function releaseHistory() {
-  return (await fetchReleases()).map(({ version, publishedAt, notes, size, sha256, url }) => ({ version, publishedAt, notes, size, sha256, url }));
+  return (await fetchReleases()).map(({ version, publishedAt, notes, size, sha256, url, name }) => ({ version, publishedAt, notes, size, sha256, url, name }));
+}
+
+// Tauri 업데이터용 JSON (서명이 있는 배포만 제공 — 서명 없는 업데이트는 내려주지 않음)
+export async function tauriUpdateManifest() {
+  const r = (await fetchReleases()).find((x) => x.signature);
+  if (!r) return null;
+  return { version: r.version, notes: r.notes, pub_date: r.publishedAt,
+    platforms: { 'windows-x86_64': { signature: r.signature, url: r.url } } };
 }
