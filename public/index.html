@@ -94,6 +94,7 @@ label.f textarea{min-height:70px;resize:vertical}
 .stampbox{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
 .stampbox .thumb{width:84px;height:84px}.stampbox .thumb img{max-width:78px;max-height:78px}
 
+.work>*,.pv-col{min-width:0}
 .pv{background:var(--line);border-radius:6px;padding:10px;overflow:hidden}
 .pv-in{display:grid;gap:10px;justify-items:start}
 .pv-in .sheet{box-shadow:0 1px 4px rgba(0,0,0,.25)}
@@ -369,7 +370,7 @@ function renderPreview(now){
 }
 function fitPreview(){
   const w = $("#pv").clientWidth - 20;
-  $("#preview").style.zoom = w > 0 ? Math.min(1, w / 794) : 1;
+  if (w > 0) $("#preview").style.zoom = Math.min(1, w / 794);
 }
 
 /* ───────── 발주서 작성 화면 ───────── */
