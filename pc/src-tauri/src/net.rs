@@ -91,7 +91,7 @@ pub async fn http_download(id: String, url: String, headers: Vec<(String, String
     f.flush().await.map_err(|e| e.to_string())?;
     drop(f);
     let _ = on_progress.send(done);
-    crate::finish_download(dest)
+    crate::finish_to(dest)
 }
 
 /// 로컬 파일 → URL (PUT/POST, 스트리밍). 응답 본문을 문자열로 돌려줍니다.

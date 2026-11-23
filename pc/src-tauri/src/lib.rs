@@ -108,7 +108,11 @@ fn part_size(path: String) -> u64 {
 
 /// 같은 이름이 있으면 "이름 (1).확장자" 로 저장. 최종 경로를 돌려줍니다.
 #[tauri::command]
-pub fn finish_download(path: String) -> Result<String, String> {
+fn finish_download(path: String) -> Result<String, String> {
+    finish_to(path)
+}
+
+pub fn finish_to(path: String) -> Result<String, String> {
     let part = format!("{}.fm2part", path);
     let mut dest = PathBuf::from(&path);
     if dest.exists() {
