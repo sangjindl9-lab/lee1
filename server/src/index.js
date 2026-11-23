@@ -9,6 +9,8 @@ import { WebSocketServer } from 'ws';
 import { q, one, migrate, log, pool } from './db.js';
 import { sendMail, mailConfigured } from './mail.js';
 import { latestWindowsRelease, releaseHistory, tauriUpdateManifest } from './releases.js';
+import { registerCloud, providerList } from './cloud.js';
+import { registerShare } from './share.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 8080);
@@ -326,7 +328,7 @@ app.get('/api/transfers', auth, wrap(async (req, res) => {
 
 // ---------------- 배포·다운로드 정보 ----------------
 app.get('/api/config', (req, res) => {
-  res.json({ publicUrl: PUBLIC_URL, downloadUrl: PUBLIC_URL + '/download', androidTestUrl: ANDROID_TEST_URL, androidStoreUrl: ANDROID_STORE_URL, mail: mailConfigured() });
+  res.json({ publicUrl: PUBLIC_URL, downloadUrl: PUBLIC_URL + '/download', androidTestUrl: ANDROID_TEST_URL, androidStoreUrl: ANDROID_STORE_URL, mail: mailConfigured(), clouds: providerList().map(({ id, label, ready }) => ({ id, label, ready })) });
 });
 
 app.get('/api/releases/latest', wrap(async (req, res) => {
@@ -381,6 +383,10 @@ app.get('/api/notices', wrap(async (req, res) => res.json(await q('SELECT id, ti
 app.get('/health', (req, res) => res.json({ ok: true, db: !!pool, online: sockets.size }));
 
 // ---------------- 웹사이트 (정적 페이지) ----------------
+// 2단계: 클라우드 연동 · 외부 공유
+registerCloud(app, { auth, wrap, limit, log, ipOf });
+registerShare(app, { auth, wrap, limit, log, ipOf, serverRequest, isOnline: (id) => sockets.has(id) });
+
 const pub = path.join(__dirname, '..', 'public');
 const pages = { '/': 'index.html', '/download': 'download.html', '/guide': 'guide.html', '/updates': 'updates.html',
   '/support': 'support.html', '/privacy': 'privacy.html', '/terms': 'terms.html', '/admin': 'admin.html' };
@@ -455,6 +461,7 @@ wss.on('connection', async (ws, req) => {
     if (s && s.ws === ws) {
       sockets.delete(ctx.device_id);
       presence(ctx, false).catch(() => {});
+      for (const [id, sp] of srvPending) if (sp.androidId === ctx.device_id) { clearTimeout(sp.timer); srvPending.delete(id); sp.reject(new Error('휴대폰 연결이 끊어졌습니다')); }
       for (const [id, p] of pending) {
         if (p.androidId === ctx.device_id) {
           send(p.pcId, { t: 'res', id, ok: false, error: 'device_offline', message: '모바일 연결이 끊어졌습니다' });
@@ -484,7 +491,25 @@ async function relayRequest(ctx, ws, m) {
   if (['delete', 'rename', 'mkdir'].includes(m.op)) log(ctx.user_id, ctx.device_id, 'remote_' + m.op, String(args.path || ''), null);
 }
 
+/** 서버가 직접 휴대폰에 보내는 요청 (공유 링크 중계용) */
+const srvPending = new Map();
+function serverRequest(androidId, op, args, perm, timeoutMs = 60e3) {
+  return new Promise((resolve, reject) => {
+    const id = 'srv-' + crypto.randomUUID();
+    const timer = setTimeout(() => { srvPending.delete(id); reject(new Error('휴대폰 응답 시간이 초과되었습니다')); }, timeoutMs);
+    srvPending.set(id, { androidId, resolve, reject, timer });
+    if (!send(androidId, { t: 'req', id, from: 'server', fromName: '공유 링크', op, args, perm })) {
+      clearTimeout(timer); srvPending.delete(id); reject(new Error('휴대폰이 오프라인입니다'));
+    }
+  });
+}
+
 async function relayResponse(ctx, m) {
+  const sp = srvPending.get(m.id);
+  if (sp && sp.androidId === ctx.device_id) {
+    srvPending.delete(m.id); clearTimeout(sp.timer);
+    return m.ok ? sp.resolve(m.data) : sp.reject(new Error(m.message || '휴대폰에서 파일을 읽지 못했습니다'));
+  }
   const p = pending.get(m.id);
   if (!p || p.androidId !== ctx.device_id) return;
   if (!m.more) pending.delete(m.id);

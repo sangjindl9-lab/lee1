@@ -52,3 +52,9 @@ tr { cursor:default; } tbody tr:hover { background:var(--panel); } tr.sel { back
 .logs { font-size:13px; line-height:1.8; max-height:55vh; overflow:auto; }
 .toast { position:fixed; bottom:24px; left:50%; transform:translateX(-50%); background:#111827; color:#fff; padding:10px 18px; border-radius:12px; z-index:20; }
 .update { background:#fff7ed; color:#9a3412; padding:8px 16px; display:flex; gap:10px; align-items:center; font-size:13px; }
+.ellip { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.provider { padding:10px 0; border-top:1px solid var(--line); }
+select { font:inherit; color:var(--text); background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:9px 11px; }
+.share-row { padding:8px 0; border-top:1px solid var(--line); }
+.nas-del { position:fixed; bottom:24px; right:24px; z-index:11; }
+.side-title.row { display:flex; }

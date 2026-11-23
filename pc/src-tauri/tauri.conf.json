@@ -2,7 +2,7 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "FileManager2 PC",
   "mainBinaryName": "FileManager2PC",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "identifier": "kr.eumsoft.filemanager2.pc",
   "build": {
     "frontendDist": "../dist",

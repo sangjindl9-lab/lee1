@@ -2,7 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 
 export const SERVER = 'https://fm2-connect-production.up.railway.app';
 export const WS_URL = SERVER.replace('https://', 'wss://') + '/ws';
-export const APP_VERSION = '0.1.0';
+export const APP_VERSION = '0.2.0';
 
 export class ApiError extends Error { constructor(public code: string, msg: string, public status = 0) { super(msg); } }
 

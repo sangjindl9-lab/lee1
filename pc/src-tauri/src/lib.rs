@@ -1,4 +1,5 @@
 // 파일 관리자 2 PC — 로컬 파일 입출력만 담당. 서버 통신과 화면은 웹뷰(React)에서 처리합니다.
+mod net;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use serde::Serialize;
 use std::fs::{self, File, OpenOptions};
@@ -107,7 +108,7 @@ fn part_size(path: String) -> u64 {
 
 /// 같은 이름이 있으면 "이름 (1).확장자" 로 저장. 최종 경로를 돌려줍니다.
 #[tauri::command]
-fn finish_download(path: String) -> Result<String, String> {
+pub fn finish_download(path: String) -> Result<String, String> {
     let part = format!("{}.fm2part", path);
     let mut dest = PathBuf::from(&path);
     if dest.exists() {
@@ -137,7 +138,8 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
-        .invoke_handler(tauri::generate_handler![sys_info, local_stat, local_walk, read_chunk, append_chunk, part_size, finish_download, cancel_download])
+        .invoke_handler(tauri::generate_handler![sys_info, local_stat, local_walk, read_chunk, append_chunk, part_size, finish_download, cancel_download,
+            net::http_download, net::http_upload, net::cancel_transfer, net::nas_save_password, net::nas_forget, net::webdav_list, net::webdav_op])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

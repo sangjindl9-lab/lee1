@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core';
+import { invoke, Channel } from '@tauri-apps/api/core';
 import { relay, RelayError } from './relay';
 
 const CHUNK = 512 * 1024;
@@ -7,7 +7,11 @@ export type Transfer = {
   remotePath: string; localPath: string; size: number; done: number;
   status: 'queued' | 'running' | 'done' | 'error' | 'canceled';
   error?: string; speed: number; startedAt?: number; savedAs?: string;
+  /** 클라우드·NAS: Rust에서 스트리밍 전송 */
+  http?: { url: string; method?: string; headers: [string, string][]; nas?: NasAuth };
+  source?: string;
 };
+export type NasAuth = { id: string; user: string; insecure: boolean };
 
 type L = () => void;
 class Queue {
@@ -27,7 +31,8 @@ class Queue {
   }
   cancelOne(id: string) {
     const t = this.items.find((x) => x.id === id); if (!t) return;
-    if (t.status === 'queued') { t.status = 'canceled'; this.emit(); } else if (t.status === 'running') this.cancel.add(id);
+    if (t.status === 'queued') { t.status = 'canceled'; this.emit(); }
+    else if (t.status === 'running') { this.cancel.add(id); if (t.http) invoke('cancel_transfer', { id }); }
   }
   retry(id: string) {
     const t = this.items.find((x) => x.id === id);
@@ -41,7 +46,7 @@ class Queue {
       if (!t) return;
       this.running++;
       t.status = 'running'; t.startedAt = Date.now(); this.emit();
-      (t.kind === 'down' ? this.download(t) : this.upload(t))
+      (t.http ? this.httpTransfer(t) : t.kind === 'down' ? this.download(t) : this.upload(t))
         .then(() => { t.status = 'done'; this.onDone(t); })
         .catch((e) => {
           if (e?.message === '__canceled') { t.status = 'canceled'; if (t.kind === 'down') invoke('cancel_download', { path: t.localPath }); }
@@ -78,6 +83,18 @@ class Queue {
       if (r.eof) break;
     }
     t.savedAs = await invoke<string>('finish_download', { path: t.localPath });
+  }
+
+  private async httpTransfer(t: Transfer) {
+    const ch = new Channel<number>();
+    t.done = 0; const base = 0;
+    ch.onmessage = (n) => { t.done = n; this.tick(t, base); };
+    const h = t.http!;
+    try {
+      if (t.kind === 'down') t.savedAs = await invoke<string>('http_download', { id: t.id, url: h.url, headers: h.headers, nas: h.nas ?? null, dest: t.localPath, onProgress: ch });
+      else { await invoke<string>('http_upload', { id: t.id, url: h.url, method: h.method || 'PUT', headers: h.headers, nas: h.nas ?? null, src: t.localPath, onProgress: ch }); t.savedAs = t.remotePath; }
+    } catch (e: any) { throw new Error(String(e?.message || e)); }
+    t.done = t.size || t.done;
   }
 
   private async upload(t: Transfer) {

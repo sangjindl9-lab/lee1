@@ -163,6 +163,24 @@ export async function migrate() {
   CREATE INDEX IF NOT EXISTS idx_devices_user ON devices(user_id);
   CREATE INDEX IF NOT EXISTS idx_logs_user ON access_logs(user_id, at DESC);
   CREATE INDEX IF NOT EXISTS idx_perm_pc ON device_permissions(pc_id);
+
+  -- 2단계: 클라우드 연동 · 외부 공유
+  CREATE TABLE IF NOT EXISTS oauth_states (
+    state TEXT PRIMARY KEY,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    device_id UUID REFERENCES devices(id) ON DELETE CASCADE,
+    provider TEXT NOT NULL, verifier TEXT NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL
+  );
+  ALTER TABLE cloud_connections ADD COLUMN IF NOT EXISTS account_id TEXT NOT NULL DEFAULT '';
+  ALTER TABLE cloud_connections ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
+  CREATE UNIQUE INDEX IF NOT EXISTS uq_cloud_account ON cloud_connections(user_id, provider, account_id);
+  ALTER TABLE shared_links ADD COLUMN IF NOT EXISTS slug TEXT;
+  ALTER TABLE shared_links ADD COLUMN IF NOT EXISTS name TEXT NOT NULL DEFAULT '';
+  ALTER TABLE shared_links ADD COLUMN IF NOT EXISTS size BIGINT NOT NULL DEFAULT 0;
+  ALTER TABLE shared_links ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES devices(id) ON DELETE SET NULL;
+  ALTER TABLE shared_links ADD COLUMN IF NOT EXISTS last_access TIMESTAMPTZ;
+  CREATE UNIQUE INDEX IF NOT EXISTS uq_share_slug ON shared_links(slug);
   `);
 }
 

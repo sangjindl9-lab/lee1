@@ -8,6 +8,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { api, ApiError, APP_VERSION, Device, fmtSize, fmtTime, login, logout, Perm, RItem, SERVER, session, setUnauthorizedHandler, sysInfo } from './api';
 import { relay } from './relay';
 import { queue, Transfer } from './transfers';
+import { CloudAddDialog, CloudExplorer, NasDialog, NasExplorer, NasProfile, nasStore, PROVIDER_ICON, ShareDialog, SharesDialog, ShareTarget, useClouds } from './sources';
 
 const useForce = () => { const [, s] = useState(0); return useCallback(() => s((x) => x + 1), []); };
 
@@ -84,7 +85,15 @@ function Main({ onLogout }: { onLogout: () => void }) {
   const force = useForce();
   const [devices, setDevices] = useState<Device[]>([]);
   const [perms, setPerms] = useState<Perm[]>([]);
-  const [phoneId, setPhoneId] = useState<string | null>(null);
+  const [view, setView] = useState<{ t: 'phone' | 'cloud' | 'nas'; id: string } | null>(null);
+  const phoneId = view?.t === 'phone' ? view.id : null;
+  const setPhoneId = (id: string) => setView({ t: 'phone', id });
+  const clouds = useClouds();
+  const [nasList, setNasList] = useState<NasProfile[]>(nasStore.list());
+  const [cloudAdd, setCloudAdd] = useState(false);
+  const [nasEdit, setNasEdit] = useState<NasProfile | 'new' | null>(null);
+  const [shareT, setShareT] = useState<ShareTarget | null>(null);
+  const [sharesOpen, setSharesOpen] = useState(false);
   const [toast, setToast] = useState('');
   const [codeOpen, setCodeOpen] = useState(false);
   const [saveDir, setSaveDir] = useState(localStorage.getItem('fm2.saveDir') || '');
@@ -119,8 +128,10 @@ function Main({ onLogout }: { onLogout: () => void }) {
   const permOf = (id: string) => perms.find((p) => p.androidId === id);
   const current = phoneId ? permOf(phoneId) : undefined;
   useEffect(() => {
-    if (!phoneId) { const a = perms.find((p) => p.status === 'approved'); if (a) setPhoneId(a.androidId); }
-  }, [perms, phoneId]);
+    if (!view) { const a = perms.find((p) => p.status === 'approved'); if (a) setPhoneId(a.androidId); }
+  }, [perms, view]); // eslint-disable-line
+  const cloudSel = view?.t === 'cloud' ? clouds.conns.find((c) => c.id === view.id) : undefined;
+  const nasSel = view?.t === 'nas' ? nasList.find((n) => n.id === view.id) : undefined;
 
   return (
     <div className="app">
@@ -142,24 +153,52 @@ function Main({ onLogout }: { onLogout: () => void }) {
           );
         })}
         <button className="btn ghost wide" onClick={() => setCodeOpen(true)}>연결 코드 입력</button>
+        <div className="side-title row between">클라우드<a className="small" onClick={() => setCloudAdd(true)}>+ 연결</a></div>
+        {clouds.conns.map((c) => (
+          <div key={c.id} className={'phone ' + (view?.t === 'cloud' && view.id === c.id ? 'sel' : '')} onClick={() => setView({ t: 'cloud', id: c.id })}>
+            <span>{PROVIDER_ICON[c.provider] || '☁️'}</span>
+            <div className="grow" style={{ minWidth: 0 }}><div className="b">{c.label}</div><div className="small muted ellip">{c.account}</div></div>
+            <a className="small" title="연결 해제" onClick={async (e) => { e.stopPropagation(); if (confirm(`${c.label} (${c.account}) 연결을 해제할까요? 이 클라우드 파일로 만든 공유 링크도 해제됩니다.`)) { await api('DELETE', `/api/cloud/${c.id}`).catch((er) => say(er.message)); if (view?.id === c.id) setView(null); clouds.reload(); } }}>✕</a>
+          </div>))}
+        {!clouds.conns.length && <p className="muted small pad">Google Drive·Dropbox·OneDrive를 연결할 수 있습니다.</p>}
+        <div className="side-title row between">NAS<a className="small" onClick={() => setNasEdit('new')}>+ 추가</a></div>
+        {nasList.map((n) => (
+          <div key={n.id} className={'phone ' + (view?.t === 'nas' && view.id === n.id ? 'sel' : '')} onClick={() => setView({ t: 'nas', id: n.id })}>
+            <span>🗄️</span>
+            <div className="grow" style={{ minWidth: 0 }}><div className="b">{n.name}</div><div className="small muted ellip">{n.url.replace(/^https?:\/\//, '')}</div></div>
+            <a className="small" title="설정" onClick={(e) => { e.stopPropagation(); setNasEdit(n); }}>⚙</a>
+          </div>))}
         <div className="side-title">설정</div>
         <div className="small pad">받은 파일 저장 위치<div className="path">{saveDir}</div>
           <a onClick={async () => { const d = await openDialog({ directory: true, defaultPath: saveDir }); if (typeof d === 'string') { setSaveDir(d); localStorage.setItem('fm2.saveDir', d); } }}>바꾸기</a> · <a onClick={() => revealItemInDir(saveDir).catch(() => say('폴더가 아직 없습니다'))}>열기</a>
         </div>
+        <a className="small pad" onClick={() => setSharesOpen(true)}>내 공유 링크</a>
         <a className="small pad" onClick={() => setShowLogs(true)}>연결 기록</a>
         <div className="grow" />
         <div className="small pad muted">{session.email}<br />버전 {APP_VERSION}</div>
         <button className="btn ghost wide" onClick={async () => { relay.stop(); await logout(); onLogout(); }}>로그아웃</button>
       </aside>
       <main>
-        {!phoneId || !phones.find((d) => d.id === phoneId) ? <Empty text="왼쪽에서 휴대폰을 고르세요." />
+        {cloudSel ? <CloudExplorer conn={cloudSel} saveDir={saveDir} say={say} onShare={setShareT} />
+          : nasSel ? <NasExplorer nas={nasSel} saveDir={saveDir} say={say} />
+          : !phoneId || !phones.find((d) => d.id === phoneId) ? <Empty text="왼쪽에서 휴대폰·클라우드·NAS를 고르세요." />
           : !current || ['rejected', 'revoked'].includes(current.status) ? <RequestPanel phone={phones.find((d) => d.id === phoneId)!} onDone={reload} say={say} />
           : current.status === 'pending' ? <Empty text="휴대폰에서 승인을 기다리는 중입니다. 휴대폰의 알림 또는 파일 관리자 2 → PC 연결에서 '승인하고 폴더 선택'을 누르세요." />
-          : <Explorer key={phoneId} perm={current} online={!!phones.find((d) => d.id === phoneId)?.online && relay.online} saveDir={saveDir} say={say} />}
+          : <Explorer key={phoneId} perm={current} online={!!phones.find((d) => d.id === phoneId)?.online && relay.online} saveDir={saveDir} say={say} onShare={setShareT} />}
         <TransferPanel />
       </main>
       {codeOpen && <CodeDialog onClose={() => setCodeOpen(false)} onDone={(p) => { setCodeOpen(false); setPhoneId(p.androidId); reload(); say('연결되었습니다'); }} />}
       {showLogs && <LogsDialog onClose={() => setShowLogs(false)} />}
+      {cloudAdd && <CloudAddDialog providers={clouds.providers} conns={clouds.conns} say={say} onClose={() => setCloudAdd(false)} onAdded={() => { setCloudAdd(false); clouds.reload(); }} />}
+      {nasEdit && <NasDialog edit={nasEdit === 'new' ? undefined : nasEdit} onClose={() => setNasEdit(null)} onSaved={(p) => {
+        const l = [...nasList.filter((x) => x.id !== p.id), p]; nasStore.save(l); setNasList(l); setNasEdit(null); setView({ t: 'nas', id: p.id }); say('NAS를 저장했습니다');
+      }} />}
+      {nasEdit && nasEdit !== 'new' && <div className="nas-del"><button className="btn ghost sm danger" onClick={async () => {
+        if (!confirm('이 NAS 설정과 저장된 비밀번호를 지울까요?')) return;
+        await invoke('nas_forget', { id: nasEdit.id }); const l = nasList.filter((x) => x.id !== nasEdit.id); nasStore.save(l); setNasList(l); setNasEdit(null); setView(null);
+      }}>이 NAS 삭제</button></div>}
+      {shareT && <ShareDialog target={shareT} say={say} onClose={() => setShareT(null)} />}
+      {sharesOpen && <SharesDialog say={say} onClose={() => setSharesOpen(false)} />}
       {toast && <div className="toast">{toast}</div>}
     </div>
   );
@@ -211,7 +250,7 @@ function LogsDialog({ onClose }: { onClose: () => void }) {
 }
 
 // ---------------- 탐색기 ----------------
-function Explorer({ perm, online, saveDir, say }: { perm: Perm; online: boolean; saveDir: string; say: (m: string) => void }) {
+function Explorer({ perm, online, saveDir, say, onShare }: { perm: Perm; online: boolean; saveDir: string; say: (m: string) => void; onShare: (t: ShareTarget) => void }) {
   const [roots, setRoots] = useState<{ name: string; path: string; exists: boolean }[]>([]);
   const [path, setPath] = useState<string | null>(null);
   const [items, setItems] = useState<RItem[]>([]);
@@ -303,6 +342,7 @@ function Explorer({ perm, online, saveDir, say }: { perm: Perm; online: boolean;
         <div className="grow" />
         {path && <>
           <button className="btn sm" disabled={!selected.length} onClick={() => download(selected)}>받기 ({selected.length})</button>
+          <button className="btn ghost sm" disabled={selected.length !== 1 || selected[0].dir} onClick={() => onShare({ kind: 'phone', androidId: phone, path: selected[0].path, name: selected[0].name })}>공유 링크</button>
           {!ro && <>
             <button className="btn ghost sm" onClick={() => pickUpload(false)}>파일 올리기</button>
             <button className="btn ghost sm" onClick={() => pickUpload(true)}>폴더 올리기</button>
@@ -383,7 +423,7 @@ function TRow({ t }: { t: Transfer }) {
     <div className={'trow ' + t.status}>
       <span className="kind">{t.kind === 'down' ? '⬇' : '⬆'}</span>
       <div className="grow">
-        <div className="row between"><span className="tname">{t.name}</span>
+        <div className="row between"><span className="tname">{t.name}{t.source && <span className="muted small"> · {t.source}</span>}</span>
           <span className="small muted">
             {t.status === 'running' && `${fmtSize(t.done)} / ${fmtSize(t.size)} · ${fmtSize(t.speed)}/s · 남은 시간 ${fmtTime((t.size - t.done) / (t.speed || 1))}`}
             {t.status === 'queued' && '대기 중'}{t.status === 'done' && '완료 · ' + fmtSize(t.size)}
