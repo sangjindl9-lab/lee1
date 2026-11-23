@@ -54,12 +54,12 @@ adb shell input tap $SW; sleep 6
 # 알림(포그라운드 서비스) 보여주기
 adb shell cmd statusbar expand-notifications; sleep 5; adb shell cmd statusbar collapse; sleep 2
 # PC에서 연결 요청 → 휴대폰에서 승인
-(cd server && node ../.github/fgs-pc.mjs "$EMAIL" "$PW" request)
+(cp .github/fgs-pc.mjs server/fgs-pc.mjs; cd server && node fgs-pc.mjs "$EMAIL" "$PW" request)
 sleep 6
 tapt "승인하고 폴더 선택" || { adb shell input swipe 540 900 540 1500 300; sleep 3; tapt "승인하고 폴더 선택"; }; sleep 3
 tapt "승인" last; sleep 4
 # 앱을 나간 뒤에도 PC 요청 처리 (사용자와 직접 상호작용 없음)
-(cd server && node ../.github/fgs-pc.mjs "$EMAIL" "$PW" transfer > /tmp/pc.log 2>&1 &)
+(cp .github/fgs-pc.mjs server/fgs-pc.mjs; cd server && node fgs-pc.mjs "$EMAIL" "$PW" transfer > /tmp/pc.log 2>&1 &)
 sleep 4
 adb shell input keyevent 3; sleep 12
 adb shell cmd statusbar expand-notifications; sleep 10; adb shell cmd statusbar collapse; sleep 15
