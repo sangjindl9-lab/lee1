@@ -22,7 +22,7 @@ for n in nodes:
   t=re.search(r' text="([^"]*)"',n).group(1); d=re.search(r'content-desc="([^"]*)"',n).group(1)
   if want in (t,d) or (want.startswith('~') and want[1:] in t):
     b=list(map(int,re.findall(r'\d+',re.search(r'bounds="([^"]*)"',n).group(1)))); hits.append(((b[0]+b[2])//2,(b[1]+b[3])//2))
-if hits: h=hits[-1] if which=='last' else hits[0]; print(h[0],h[1])
+if hits: h=max(hits,key=lambda p:p[1]) if which=='last' else hits[0]; print(h[0],h[1])
 PY
 )
     if [ -n "$XY" ]; then adb shell input tap $XY; return 0; fi
@@ -40,8 +40,9 @@ tapt "PC 연결" || { adb shell input swipe 540 1700 540 700 400; sleep 2; tapt 
 sleep 3
 tapt "이메일"; typein "$EMAIL"; sleep 1
 tapt "비밀번호"; typein "$PW"; sleep 1
-adb shell input keyevent 111; sleep 1
-tapt "로그인" last; sleep 6
+adb shell input keyevent 4; sleep 2
+tapt "로그인" last; sleep 8
+adb shell uiautomator dump /sdcard/u.xml >/dev/null; adb pull /sdcard/u.xml /tmp/after_login.xml >/dev/null; grep -o 'text="[^"]*"' /tmp/after_login.xml | head -30
 # 연결 켜기 (스위치)
 adb shell uiautomator dump /sdcard/u.xml >/dev/null; adb pull /sdcard/u.xml /tmp/u.xml >/dev/null
 SW=$(python3 -c "
@@ -55,7 +56,7 @@ adb shell cmd statusbar expand-notifications; sleep 5; adb shell cmd statusbar c
 # PC에서 연결 요청 → 휴대폰에서 승인
 (cd server && node ../.github/fgs-pc.mjs "$EMAIL" "$PW" request)
 sleep 6
-tapt "승인하고 폴더 선택"; sleep 3
+tapt "승인하고 폴더 선택" || { adb shell input swipe 540 900 540 1500 300; sleep 3; tapt "승인하고 폴더 선택"; }; sleep 3
 tapt "승인" last; sleep 4
 # 앱을 나간 뒤에도 PC 요청 처리 (사용자와 직접 상호작용 없음)
 (cd server && node ../.github/fgs-pc.mjs "$EMAIL" "$PW" transfer > /tmp/pc.log 2>&1 &)
