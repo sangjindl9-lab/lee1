@@ -186,6 +186,7 @@ fun Root(vm: AppVM, resumeTick: Int) {
                 is Dest.ImageView -> ImageViewerScreen(vm, d.path)
                 Dest.Settings -> SettingsScreen(vm)
                 Dest.Connect -> ConnectScreen(vm)
+                Dest.Cloud -> CloudScreen(vm)
             }
         }
         SnackbarHost(snack, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 64.dp))

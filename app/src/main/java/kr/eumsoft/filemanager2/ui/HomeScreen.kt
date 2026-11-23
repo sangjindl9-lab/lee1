@@ -26,6 +26,7 @@ import androidx.compose.material.icons.rounded.Android
 import androidx.compose.material.icons.rounded.Archive
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Computer
+import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Download
@@ -133,6 +134,7 @@ fun HomeScreen(vm: AppVM) {
 
         // PC 연결
         item { PcConnectBanner { vm.push(Dest.Connect) } }
+        item { CloudBanner { vm.push(Dest.Cloud) } }
 
         // 카테고리
         item { SectionTitle("카테고리") }
@@ -339,6 +341,28 @@ private fun PcConnectBanner(onClick: () -> Unit) {
         }
         if (on) Box(Modifier.size(10.dp).clip(CircleShape).background(Color(0xFF10B981)))
         Spacer(Modifier.width(6.dp))
+        Icon(Icons.Rounded.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun CloudBanner(onClick: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 18.dp, vertical = 6.dp)
+            .clip(RoundedCornerShape(20.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainer)
+            .clickable(onClick = onClick)
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IconBadge(androidx.compose.material.icons.Icons.Rounded.Cloud, Color(0xFF0EA5E9), 46.dp)
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text("클라우드", fontWeight = FontWeight.Bold, fontSize = 17.sp)
+            Text("Google Drive·Dropbox 파일 보기·받기·올리기·공유", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
         Icon(Icons.Rounded.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

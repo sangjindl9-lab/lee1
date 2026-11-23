@@ -83,7 +83,7 @@ object ConnectApi {
         .build()
     private val JSON_T = "application/json; charset=utf-8".toMediaType()
 
-    private suspend fun call(ctx: Context, method: String, path: String, body: JSONObject? = null, auth: Boolean = true): Any? =
+    internal suspend fun call(ctx: Context, method: String, path: String, body: JSONObject? = null, auth: Boolean = true): Any? =
         withContext(Dispatchers.IO) {
             val b = Request.Builder().url(ConnectConfig.SERVER_URL + path)
             if (auth) ConnectState.token(ctx)?.let { b.header("Authorization", "Bearer $it") }

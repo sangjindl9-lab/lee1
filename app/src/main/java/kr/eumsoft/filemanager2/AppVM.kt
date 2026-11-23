@@ -38,6 +38,7 @@ sealed interface Dest {
     data class ImageView(val path: String) : Dest
     data object Settings : Dest
     data object Connect : Dest
+    data object Cloud : Dest
 }
 
 data class Clip(val paths: List<String>, val cut: Boolean)
