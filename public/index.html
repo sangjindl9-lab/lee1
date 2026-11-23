@@ -9,7 +9,7 @@
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600&family=Noto+Sans+KR:wght@400;500;700&family=Noto+Serif+KR:wght@700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600&family=Noto+Sans+KR:wght@400;500;700&family=Noto+Serif+KR:wght@700;900&family=Gugi&family=Song+Myung&family=Nanum+Myeongjo:wght@800&family=Hahmlet:wght@700&family=Stylish&display=swap" rel="stylesheet">
 <style>
 /* 배치: 좁은 화면은 입력 → 미리보기 순서로 한 줄, 넓은 화면은 왼쪽 입력 · 오른쪽 A4 미리보기 고정 */
 :root{
@@ -147,6 +147,30 @@ label.f textarea{min-height:70px;resize:vertical}
 .pill.qt{color:var(--ok)}
 .auth-err{margin:0;min-height:1.2em;font-size:13px;color:var(--danger)}
 .auth a,.panel a{color:var(--accent)}
+/* 도장·서명 만들기 */
+@font-face{font-family:'HJSealA';src:url('/fonts/HJSealA.woff2') format('woff2');font-display:swap}
+@font-face{font-family:'HJSealB';src:url('/fonts/HJSealB.woff2') format('woff2');font-display:swap}
+@font-face{font-family:'SealTT1';src:url('/fonts/SealTT1.woff2') format('woff2');font-display:swap}
+@font-face{font-family:'SealTT2';src:url('/fonts/SealTT2.woff2') format('woff2');font-display:swap}
+@font-face{font-family:'SealTT9';src:url('/fonts/SealTT9.woff2') format('woff2');font-display:swap}
+@font-face{font-family:'SealTT44';src:url('/fonts/SealTT44.woff2') format('woff2');font-display:swap}
+@font-face{font-family:'SealTT1001';src:url('/fonts/SealTT1001.woff2') format('woff2');font-display:swap}
+.sm-wrap{position:fixed;inset:0;z-index:40;background:rgba(10,14,24,.55);display:grid;place-items:start center;overflow:auto;padding:16px}
+.sm{width:100%;max-width:640px;background:var(--surface);border-radius:8px;padding:16px;display:grid;gap:14px}
+.sm-head{display:flex;justify-content:space-between;align-items:center}
+.sm-head strong{font-size:17px;flex:1}
+.sm .btn{flex:none;width:auto}
+.sm-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px}
+.sm-pick{background:#fff;border:2px solid var(--line);border-radius:6px;padding:6px;cursor:pointer}
+.sm-pick[aria-pressed="true"]{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent)}
+.sm-pick canvas{width:100%;height:auto;display:block}
+.sm-pen{width:32px;height:32px;border-radius:50%;border:3px solid var(--surface);box-shadow:0 0 0 1px var(--line);cursor:pointer}
+.sm-pen[aria-pressed="true"]{box-shadow:0 0 0 2px var(--accent)}
+.sm-pad{position:relative;background:#fff;border:1px dashed var(--line);border-radius:6px}
+.sm-pad canvas{width:100%;height:auto;display:block;touch-action:none;cursor:crosshair}
+.sm-hint{position:absolute;inset:0;display:grid;place-items:center;color:#9aa3b3;pointer-events:none;font-size:15px}
+.sm-foot{position:sticky;bottom:0;background:var(--surface);padding-top:6px}
+.sheet .seal.sign{max-width:96px;max-height:40px}
 [hidden]{display:none!important}
 </style>
 </head>
@@ -202,6 +226,7 @@ label.f textarea{min-height:70px;resize:vertical}
 
 <script src="/vendor/html2canvas.min.js" defer></script>
 <script src="/vendor/jspdf.umd.min.js" defer></script>
+<script src="/stamp.js" defer></script>
 <script>
 "use strict";
 const $ = s => document.querySelector(s);
@@ -325,7 +350,7 @@ function sheetHTML(o){
         <table>
           <colgroup><col style="width:26px"><col style="width:62px"><col><col style="width:50px"><col></colgroup>
           <tr><th rowspan="6" class="vert">${D.party}</th><th>등록번호</th><td colspan="3">${b ? g(b.bizNo) : '<span class="ghost">우리 회사를 등록하세요</span>'}</td></tr>
-          <tr><th>상호</th><td>${b ? g(b.name) : ""}</td><th>대표자</th><td>${b ? g(b.ceo) : ""}<span class="seal-a">(인)${b && b.stamp && o.stamp ? `<img class="seal" src="${b.stamp}" alt="">` : ""}</span></td></tr>
+          <tr><th>상호</th><td>${b ? g(b.name) : ""}</td><th>대표자</th><td>${b ? g(b.ceo) : ""}<span class="seal-a">(인)${b && b.stamp && o.stamp ? `<img class="seal${b.stampKind === "sign" ? " sign" : ""}" src="${b.stamp}" alt="">` : ""}</span></td></tr>
           <tr><th>주소</th><td colspan="3">${b ? g(b.addr) : ""}</td></tr>
           <tr><th>업태</th><td>${b ? g(b.bizType) : ""}</td><th>종목</th><td>${b ? g(b.bizItem) : ""}</td></tr>
           <tr><th>전화</th><td>${b ? g(b.tel) : ""}</td><th>팩스</th><td>${b ? g(b.fax) : ""}</td></tr>
@@ -578,8 +603,8 @@ function renderEntities(kind){
         <div class="full stampbox">
           <div class="thumb">${ed.data.stamp ? `<img src="${ed.data.stamp}" alt="도장 미리보기">` : "도장 없음"}</div>
           <div style="display:grid;gap:6px">
-            <label class="f">도장 이미지 (PNG · JPG)<input type="file" id="e-stamp-file" accept="image/*"></label>
-            <div class="row">${ed.data.stamp ? '<button class="btn sm dan" data-act="stamp-clear">도장 지우기</button>' : ""}</div>
+            <div class="row"><button class="btn sm pri" data-act="stamp-make">도장·서명 만들기</button>${ed.data.stamp ? '<button class="btn sm dan" data-act="stamp-clear">도장 지우기</button>' : ""}</div>
+            <label class="f">또는 도장 사진 올리기 (PNG · JPG)<input type="file" id="e-stamp-file" accept="image/*"></label>
             <p class="note">흰 종이에 찍은 도장 사진을 올리면 흰 배경은 자동으로 투명하게 바뀝니다.</p>
           </div>
         </div>` : ""}
@@ -624,7 +649,7 @@ for (const kind of ["buyers","vendors"]){
   box.addEventListener("input", e => { if (e.target.dataset.e && editing[kind]) editing[kind].data[e.target.dataset.e] = e.target.value; });
   box.addEventListener("change", async e => {
     if (e.target.id !== "e-stamp-file" || !e.target.files[0]) return;
-    try{ editing.buyers.data.stamp = await stampFromFile(e.target.files[0]); renderEntities("buyers"); toast("도장을 올렸습니다. 저장을 눌러야 반영됩니다."); }
+    try{ editing.buyers.data.stamp = await stampFromFile(e.target.files[0]); editing.buyers.data.stampKind = "stamp"; renderEntities("buyers"); toast("도장을 올렸습니다. 저장을 눌러야 반영됩니다."); }
     catch(err){ toast("이미지를 읽지 못했습니다. PNG나 JPG 파일로 다시 올려 주세요."); }
   });
   box.addEventListener("click", async e => {
@@ -634,6 +659,11 @@ for (const kind of ["buyers","vendors"]){
     else if (act === "ent-edit"){ const x = S[kind].find(v => v.id === btn.dataset.id); editing[kind] = { isNew: false, data: JSON.parse(JSON.stringify(x)) }; renderEntities(kind); box.scrollIntoView({ block: "start" }); }
     else if (act === "ent-cancel"){ editing[kind] = null; renderEntities(kind); }
     else if (act === "stamp-clear"){ editing.buyers.data.stamp = ""; renderEntities("buyers"); }
+    else if (act === "stamp-make"){
+      if (!window.StampMaker) return toast("도장 만들기를 불러오는 중입니다. 잠시 뒤 다시 눌러 주세요.");
+      const r = await StampMaker.open({ name: editing.buyers.data.name, ceo: editing.buyers.data.ceo });
+      if (r && r.dataUrl && editing.buyers){ editing.buyers.data.stamp = r.dataUrl; editing.buyers.data.stampKind = r.kind; renderEntities("buyers"); toast((r.kind === "sign" ? "서명" : "도장") + "을 만들었습니다. 저장을 눌러야 반영됩니다."); }
+    }
     else if (act === "ent-save"){
       const d = editing[kind].data; d.name = (d.name || "").trim();
       if (!d.name) return toast("상호를 입력하세요.");
