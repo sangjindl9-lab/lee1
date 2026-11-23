@@ -68,6 +68,9 @@ if (notReady) ok((await api(`/api/cloud/${notReady.id}/start`, {}, P)).j?.error 
 ok(Array.isArray((await api('/api/cloud', null, P)).j), '내 클라우드 연결 목록');
 ok((await api('/api/cloud/gdrive/callback?state=bad&code=x')).status === 400, '위조 콜백 거부');
 ok((await api('/api/cloud/00000000-0000-0000-0000-000000000000/list', null, P)).status === 404, '남의/없는 연결 접근 거부');
-await api('/api/account', { password: 'password123' }, P, 'DELETE');
+ok((await fetch(BASE + '/delete-account')).status === 200, '계정 삭제 안내 페이지');
+ok((await api('/api/account/delete', { email, password: 'wrong' })).status === 401, '웹 계정 삭제: 틀린 비밀번호 거부');
+ok((await api('/api/account/delete', { email, password: 'password123' })).status === 200, '웹에서 계정 삭제');
+ok((await api('/api/me', null, P)).status === 401, '삭제 후 토큰 무효');
 console.log(`\n결과: ${pass} 통과 / ${fail} 실패`);
 process.exit(fail ? 1 : 0);

@@ -18,6 +18,6 @@ jobs:
       - run: cd server && BASE=https://fm2-connect-production.up.railway.app node test/e2e2.mjs
       - name: Pages
         run: |
-          for p in /api/cloud/providers / /download /guide /updates /support /privacy /terms /api/config /health; do
+          for p in /api/cloud/providers / /download /guide /updates /support /privacy /terms /delete-account /api/config /health; do
             code=$(curl -s -o /dev/null -w '%{http_code}' https://fm2-connect-production.up.railway.app$p); echo "$p $code"; [ "$code" = 200 ] || exit 1
           done

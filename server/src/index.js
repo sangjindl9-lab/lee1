@@ -9,7 +9,7 @@ import { WebSocketServer } from 'ws';
 import { q, one, migrate, log, pool } from './db.js';
 import { sendMail, mailConfigured } from './mail.js';
 import { latestWindowsRelease, releaseHistory, tauriUpdateManifest } from './releases.js';
-import { registerCloud, providerList } from './cloud.js';
+import { registerCloud, providerList, decrypt, PROVIDERS } from './cloud.js';
 import { registerShare } from './share.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -197,10 +197,36 @@ app.delete('/api/account', auth, wrap(async (req, res) => {
   const u = await one('SELECT pw_hash FROM users WHERE id=$1', [req.ctx.user_id]);
   if (!u || !(await bcrypt.compare(String(req.body?.password || ''), u.pw_hash)))
     return res.status(401).json({ error: 'bad_password', message: '비밀번호가 올바르지 않습니다' });
-  for (const d of await q('SELECT id FROM devices WHERE user_id=$1', [req.ctx.user_id])) kick(d.id);
-  await q('DELETE FROM users WHERE id=$1', [req.ctx.user_id]);
+  await deleteUser(req.ctx.user_id);
   res.json({ ok: true });
 }));
+
+// 웹에서 계정 삭제 (Google Play 계정 삭제 링크용)
+app.post('/api/account/delete', limit(10, 3600e3), wrap(async (req, res) => {
+  const e = String(req.body?.email || '').trim().toLowerCase();
+  const u = await one('SELECT id, pw_hash FROM users WHERE email=$1 AND deleted_at IS NULL', [e]);
+  if (!u || !(await bcrypt.compare(String(req.body?.password || ''), u.pw_hash)))
+    return res.status(401).json({ error: 'bad_credentials', message: '이메일 또는 비밀번호가 올바르지 않습니다' });
+  await deleteUser(u.id);
+  res.json({ ok: true });
+}));
+
+async function deleteUser(userId) {
+  for (const d of await q('SELECT id FROM devices WHERE user_id=$1', [userId])) kick(d.id);
+  // 연결된 클라우드 토큰은 공급자에도 폐기 요청
+  for (const c of await q('SELECT provider, token_enc FROM cloud_connections WHERE user_id=$1', [userId])) {
+    try { const t = decrypt(c.token_enc); if (t) await PROVIDERS[c.provider]?.revoke(t); } catch {}
+  }
+  await q('DELETE FROM users WHERE id=$1', [userId]);
+  await q(`INSERT INTO access_logs(user_id, action, detail) VALUES ($1,'account_deleted','')`, [userId]).catch(() => {});
+}
+
+// 보관 기간이 지난 기록 정리 (접근 기록 1년, 만료된 인증 상태)
+setInterval(() => {
+  q(`DELETE FROM access_logs WHERE at < now() - interval '1 year'`).catch(() => {});
+  q(`DELETE FROM file_transfers WHERE started_at < now() - interval '1 year'`).catch(() => {});
+  q(`DELETE FROM oauth_states WHERE expires_at < now()`).catch(() => {});
+}, 6 * 3600e3).unref();
 
 // ---------------- 기기 ----------------
 app.get('/api/devices', auth, wrap(async (req, res) => {
@@ -389,7 +415,7 @@ registerShare(app, { auth, wrap, limit, log, ipOf, serverRequest, isOnline: (id)
 
 const pub = path.join(__dirname, '..', 'public');
 const pages = { '/': 'index.html', '/download': 'download.html', '/guide': 'guide.html', '/updates': 'updates.html',
-  '/support': 'support.html', '/privacy': 'privacy.html', '/terms': 'terms.html', '/admin': 'admin.html' };
+  '/support': 'support.html', '/delete-account': 'delete-account.html', '/privacy': 'privacy.html', '/terms': 'terms.html', '/admin': 'admin.html' };
 for (const [route, file] of Object.entries(pages)) app.get(route, (req, res) => res.sendFile(path.join(pub, file)));
 app.use(express.static(pub, { maxAge: '1h', extensions: ['html'] }));
 
