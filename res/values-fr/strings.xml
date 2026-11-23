@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">EumZIP</string>
+    <string name="open_label">Extraire avec EumZIP</string>
+    <string name="send_label">Compresser/extraire avec EumZIP</string>
+</resources>

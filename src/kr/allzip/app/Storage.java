@@ -1,5 +1,6 @@
 package kr.allzip.app;
 
+import kr.allzip.core.L;
 import android.content.ContentResolver;
 import android.content.Context;
 import android.database.Cursor;
@@ -63,7 +64,7 @@ final class Storage {
                 int s = p.lastIndexOf('/');
                 m.name = s >= 0 ? p.substring(s + 1) : p;
             }
-            if (m.name == null || m.name.length() == 0) m.name = "파일";
+            if (m.name == null || m.name.length() == 0) m.name = L.t("파일");
         }
         return m;
     }
@@ -110,9 +111,9 @@ final class Storage {
             try {
                 is = cr.openInputStream(uri);
             } catch (SecurityException se) {
-                throw new IOException("파일을 열 권한이 없습니다. 파일을 다시 선택해 주세요");
+                throw new IOException(L.t("파일을 열 권한이 없습니다. 파일을 다시 선택해 주세요"));
             }
-            if (is == null) throw new IOException("파일을 열 수 없습니다");
+            if (is == null) throw new IOException(L.t("파일을 열 수 없습니다"));
             return is;
         }
 
@@ -159,7 +160,7 @@ final class Storage {
             boolean ok = false;
             try {
                 is = cr.openInputStream(uri);
-                if (is == null) throw new IOException("파일을 열 수 없습니다");
+                if (is == null) throw new IOException(L.t("파일을 열 수 없습니다"));
                 os = new FileOutputStream(f);
                 byte[] b = new byte[1 << 16];
                 int r;
@@ -171,7 +172,7 @@ final class Storage {
                 os.flush();
                 ok = true;
             } catch (SecurityException se) {
-                throw new IOException("파일을 열 권한이 없습니다. 파일을 다시 선택해 주세요");
+                throw new IOException(L.t("파일을 열 권한이 없습니다. 파일을 다시 선택해 주세요"));
             } finally {
                 if (is != null) try { is.close(); } catch (Exception ignored) { }
                 if (os != null) try { os.close(); } catch (Exception ignored) { }
@@ -239,9 +240,9 @@ final class Storage {
             try {
                 u = DocumentsContract.createDocument(cr, parent, mime, name);
             } catch (Exception e) {
-                throw new IOException("만들 수 없습니다: " + name + " (" + String.valueOf(e.getMessage()) + ")");
+                throw new IOException(L.t("만들 수 없습니다: ") + name + " (" + String.valueOf(e.getMessage()) + ")");
             }
-            if (u == null) throw new IOException("만들 수 없습니다: " + name);
+            if (u == null) throw new IOException(L.t("만들 수 없습니다: ") + name);
             return u;
         }
 
@@ -285,9 +286,9 @@ final class Storage {
             try {
                 os = cr.openOutputStream(doc);
             } catch (Exception e) {
-                throw new IOException("쓸 수 없습니다: " + name);
+                throw new IOException(L.t("쓸 수 없습니다: ") + name);
             }
-            if (os == null) throw new IOException("쓸 수 없습니다: " + name);
+            if (os == null) throw new IOException(L.t("쓸 수 없습니다: ") + name);
             return os;
         }
 
@@ -298,7 +299,7 @@ final class Storage {
 
     // ------------------------------------------------------------ 다운로드/이음ZIP 폴더 (선택 화면 없이 저장)
 
-    static final String APP_DIR = "이음ZIP";
+    static final String APP_DIR = L.ko() ? "이음ZIP" : "EumZIP";
     private static final Uri DOWNLOADS_URI = Uri.parse("content://media/external/downloads");
 
     /** 안드로이드 10 이상에서는 권한 없이 다운로드 폴더에 저장할 수 있다. */
@@ -344,9 +345,9 @@ final class Storage {
         try {
             u = cr.insert(DOWNLOADS_URI, v);
         } catch (Exception e) {
-            throw new IOException("다운로드 폴더에 저장할 수 없습니다: " + name + " (" + String.valueOf(e.getMessage()) + ")");
+            throw new IOException(L.t("다운로드 폴더에 저장할 수 없습니다: ") + name + " (" + String.valueOf(e.getMessage()) + ")");
         }
-        if (u == null) throw new IOException("다운로드 폴더에 저장할 수 없습니다: " + name);
+        if (u == null) throw new IOException(L.t("다운로드 폴더에 저장할 수 없습니다: ") + name);
         return u;
     }
 
@@ -391,7 +392,7 @@ final class Storage {
             if (useFiles) {
                 try {
                     File dir = dirPart.length() == 0 ? baseDir : new File(baseDir, dirPart);
-                    if (!dir.isDirectory() && !dir.mkdirs() && !dir.isDirectory()) throw new IOException("폴더를 만들 수 없습니다");
+                    if (!dir.isDirectory() && !dir.mkdirs() && !dir.isDirectory()) throw new IOException(L.t("폴더를 만들 수 없습니다"));
                     File f = new File(dir, uniqueName(dir, name));
                     OutputStream fos = new FileOutputStream(f);
                     lastFile = f;
@@ -412,9 +413,9 @@ final class Storage {
             try {
                 os = cr.openOutputStream(u);
             } catch (Exception e) {
-                throw new IOException("쓸 수 없습니다: " + name);
+                throw new IOException(L.t("쓸 수 없습니다: ") + name);
             }
-            if (os == null) throw new IOException("쓸 수 없습니다: " + name);
+            if (os == null) throw new IOException(L.t("쓸 수 없습니다: ") + name);
             return os;
         }
 
@@ -538,7 +539,7 @@ final class Storage {
             if (Build.VERSION.SDK_INT >= 30) {
                 try {
                     File dir = appDir();
-                    if (!dir.isDirectory() && !dir.mkdirs() && !dir.isDirectory()) throw new IOException("폴더를 만들 수 없습니다");
+                    if (!dir.isDirectory() && !dir.mkdirs() && !dir.isDirectory()) throw new IOException(L.t("폴더를 만들 수 없습니다"));
                     String n = uniqueName(dir, name);
                     File f = new File(dir, n);
                     OutputStream os = new FileOutputStream(f);
@@ -556,9 +557,9 @@ final class Storage {
             try {
                 os = cr.openOutputStream(uri);
             } catch (Exception e) {
-                throw new IOException("저장할 파일을 열 수 없습니다");
+                throw new IOException(L.t("저장할 파일을 열 수 없습니다"));
             }
-            if (os == null) throw new IOException("저장할 파일을 열 수 없습니다");
+            if (os == null) throw new IOException(L.t("저장할 파일을 열 수 없습니다"));
             return os;
         }
 
@@ -610,9 +611,9 @@ final class Storage {
             try {
                 is = cr.openInputStream(uri);
             } catch (SecurityException se) {
-                throw new IOException("읽을 권한이 없습니다: " + path);
+                throw new IOException(L.t("읽을 권한이 없습니다: ") + path);
             }
-            if (is == null) throw new IOException("읽을 수 없습니다: " + path);
+            if (is == null) throw new IOException(L.t("읽을 수 없습니다: ") + path);
             return is;
         }
     }
@@ -628,7 +629,7 @@ final class Storage {
             if (m.name != null && m.name.length() > 0) return m.name;
         } catch (Exception ignored) {
         }
-        return "폴더";
+        return L.t("폴더");
     }
 
     /** 폴더(트리)를 끝까지 내려가며 항목을 모은다. */
@@ -661,7 +662,7 @@ final class Storage {
                         c.isNull(4) ? "0" : String.valueOf(c.getLong(4))});
             }
         } catch (SecurityException se) {
-            throw new IOException("폴더를 읽을 권한이 없습니다");
+            throw new IOException(L.t("폴더를 읽을 권한이 없습니다"));
         } finally {
             if (c != null) try { c.close(); } catch (Exception ignored) { }
         }

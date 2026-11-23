@@ -1,5 +1,6 @@
 package kr.allzip.app;
 
+import kr.allzip.core.L;
 import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
@@ -266,7 +267,7 @@ final class Ads {
         holder.addView(img, ip);
 
         TextView adMark = new TextView(act);
-        adMark.setText("광고");
+        adMark.setText(L.t("광고"));
         adMark.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9);
         adMark.setTextColor(Color.WHITE);
         adMark.setPadding((int) (5 * d), (int) (1 * d), (int) (5 * d), (int) (1 * d));

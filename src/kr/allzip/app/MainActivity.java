@@ -1,5 +1,6 @@
 package kr.allzip.app;
 
+import kr.allzip.core.L;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.ClipData;
@@ -90,7 +91,7 @@ public class MainActivity extends Activity {
     private char[] password;
     private TextView exSummary, exList;
     private volatile int listGen;
-    private static final String[] CS_LABELS = {"자동 (권장)", "UTF-8", "한국어 (CP949)", "일본어 (Shift_JIS)", "중국어 간체 (GBK)", "중국어 번체 (Big5)", "서유럽 (CP437)"};
+    private static final String[] CS_LABELS = {L.t("자동 (권장)"), "UTF-8", L.t("한국어 (CP949)"), L.t("일본어 (Shift_JIS)"), L.t("중국어 간체 (GBK)"), L.t("중국어 번체 (Big5)"), L.t("서유럽 (CP437)")};
     private static final String[] CS_VALUES = {null, "UTF-8", "CP949", "Shift_JIS", "GBK", "Big5", "CP437"};
 
     // ---- 압축 상태
@@ -114,22 +115,22 @@ public class MainActivity extends Activity {
     private static final String[] FMT_IDS = {"zip", "7z", "tar", "tar.gz", "tar.bz2", "tar.xz", "tar.lz4", "tar.lzma", "cpio",
             "gz", "bz2", "xz", "lzma", "lz4", "sz", "zz"};
     private static final String[] FMT_LABELS = {
-            "ZIP (.zip) · 가장 널리 쓰임, 암호 가능",
-            "7Z (.7z) · 압축률 높음",
-            "TAR (.tar) · 묶기만(압축 없음)",
+            L.t("ZIP (.zip) · 가장 널리 쓰임, 암호 가능"),
+            L.t("7Z (.7z) · 압축률 높음"),
+            L.t("TAR (.tar) · 묶기만(압축 없음)"),
             "TAR.GZ (.tar.gz)",
             "TAR.BZ2 (.tar.bz2)",
-            "TAR.XZ (.tar.xz) · 압축률 높음",
-            "TAR.LZ4 (.tar.lz4) · 매우 빠름",
+            L.t("TAR.XZ (.tar.xz) · 압축률 높음"),
+            L.t("TAR.LZ4 (.tar.lz4) · 매우 빠름"),
             "TAR.LZMA (.tar.lzma)",
             "CPIO (.cpio)",
-            "GZIP (.gz) · 파일 1개 전용",
-            "BZIP2 (.bz2) · 파일 1개 전용",
-            "XZ (.xz) · 파일 1개 전용",
-            "LZMA (.lzma) · 파일 1개 전용",
-            "LZ4 (.lz4) · 파일 1개 전용",
-            "Snappy (.sz) · 파일 1개 전용",
-            "Deflate (.zz) · 파일 1개 전용"};
+            L.t("GZIP (.gz) · 파일 1개 전용"),
+            L.t("BZIP2 (.bz2) · 파일 1개 전용"),
+            L.t("XZ (.xz) · 파일 1개 전용"),
+            L.t("LZMA (.lzma) · 파일 1개 전용"),
+            L.t("LZ4 (.lz4) · 파일 1개 전용"),
+            L.t("Snappy (.sz) · 파일 1개 전용"),
+            L.t("Deflate (.zz) · 파일 1개 전용")};
 
     private Job job;
 
@@ -206,7 +207,7 @@ public class MainActivity extends Activity {
             String act = it.getAction();
             boolean incoming = Intent.ACTION_VIEW.equals(act) || Intent.ACTION_SEND.equals(act) || Intent.ACTION_SEND_MULTIPLE.equals(act);
             if (incoming && job != null) {
-                toast("진행 중인 작업이 끝난 뒤 다시 시도해 주세요");
+                toast(L.t("진행 중인 작업이 끝난 뒤 다시 시도해 주세요"));
                 return;
             }
             if (Intent.ACTION_VIEW.equals(act) && it.getData() != null) {
@@ -224,7 +225,7 @@ public class MainActivity extends Activity {
                         showCompress();
                     }
                 } else {
-                    toast("파일을 공유해야 압축하거나 풀 수 있습니다");
+                    toast(L.t("파일을 공유해야 압축하거나 풀 수 있습니다"));
                 }
             } else if (Intent.ACTION_SEND_MULTIPLE.equals(act)) {
                 ArrayList<Parcelable> ps = it.getParcelableArrayListExtra(Intent.EXTRA_STREAM);
@@ -235,7 +236,7 @@ public class MainActivity extends Activity {
                 }
             }
         } catch (Exception e) {
-            toast("파일을 열 수 없습니다");
+            toast(L.t("파일을 열 수 없습니다"));
         }
     }
 
@@ -320,7 +321,7 @@ public class MainActivity extends Activity {
         LinearLayout nameRow = new LinearLayout(this);
         nameRow.setOrientation(LinearLayout.HORIZONTAL);
         nameRow.setGravity(Gravity.BOTTOM);
-        TextView n1 = text("이음", 30, Color.WHITE, true);
+        TextView n1 = text(L.ko() ? "이음" : "Eum", 30, Color.WHITE, true);
         n1.setShadowLayer(dp(2), 0, dp(2), 0x80000000);
         TextView n2 = text("ZIP", 30, C_YELLOW, true);
         n2.setTypeface(Typeface.create(Typeface.DEFAULT_BOLD, Typeface.BOLD_ITALIC));
@@ -330,7 +331,7 @@ public class MainActivity extends Activity {
         nameRow.addView(n1);
         nameRow.addView(n2);
         tx.addView(nameRow);
-        TextView sub = text("압축 풀기와 압축하기를 한 번에", 14, Color.WHITE, false);
+        TextView sub = text(L.t("압축 풀기와 압축하기를 한 번에"), 14, Color.WHITE, false);
         sub.setShadowLayer(dp(1), 0, dp(1), 0x66000000);
         tx.addView(sub, lp(4));
         h.addView(tx, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
@@ -423,13 +424,13 @@ public class MainActivity extends Activity {
     private void alert(String title, String msg) {
         if (isFinishing() || isDestroyed()) return;
         try {
-            new AlertDialog.Builder(this).setTitle(title).setMessage(msg).setPositiveButton("확인", null).show();
+            new AlertDialog.Builder(this).setTitle(title).setMessage(msg).setPositiveButton(L.t("확인"), null).show();
         } catch (Exception ignored) {
         }
     }
 
     static String fmtSize(long n) {
-        if (n < 0) return "크기 모름";
+        if (n < 0) return L.t("크기 모름");
         if (n < 1024) return n + " B";
         double v = n;
         String[] u = {"KB", "MB", "GB", "TB"};
@@ -439,16 +440,16 @@ public class MainActivity extends Activity {
     }
 
     static String errText(Throwable t) {
-        if (t instanceof OutOfMemoryError) return "메모리가 부족합니다";
+        if (t instanceof OutOfMemoryError) return L.t("메모리가 부족합니다");
         String m = t.getMessage();
         if (t instanceof Engine.PasswordException || t instanceof Engine.UnsupportedException) return m;
         String s = m == null ? "" : m;
         if (t instanceof java.io.EOFException || s.contains("Truncated") || s.contains("Unexpected end") || s.contains("unexpected end")
                 || s.contains("Premature end") || s.contains("truncated"))
-            return "압축 파일이 손상되었거나 끝까지 받아지지 않았습니다";
-        if (s.contains("ENOSPC") || s.contains("No space left")) return "저장 공간이 부족합니다";
-        if (s.contains("CRC") || s.contains("Checksum") || s.contains("checksum")) return "파일이 손상되었습니다 (검사합 오류)";
-        if (s.length() == 0) return "알 수 없는 오류 (" + t.getClass().getSimpleName() + ")";
+            return L.t("압축 파일이 손상되었거나 끝까지 받아지지 않았습니다");
+        if (s.contains("ENOSPC") || s.contains("No space left")) return L.t("저장 공간이 부족합니다");
+        if (s.contains("CRC") || s.contains("Checksum") || s.contains("checksum")) return L.t("파일이 손상되었습니다 (검사합 오류)");
+        if (s.length() == 0) return L.f("알 수 없는 오류 (%s)", t.getClass().getSimpleName());
         return s;
     }
 
@@ -456,7 +457,7 @@ public class MainActivity extends Activity {
         try {
             startActivityForResult(it, req);
         } catch (Exception e) {
-            alert("오류", "이 기기에서 파일 선택 화면을 열 수 없습니다.");
+            alert(L.t("오류"), L.t("이 기기에서 파일 선택 화면을 열 수 없습니다."));
         }
     }
 
@@ -464,21 +465,21 @@ public class MainActivity extends Activity {
 
     private void showHome() {
         screen = 0;
-        LinearLayout[] f = frame("이음ZIP", false);
+        LinearLayout[] f = frame(L.t("이음ZIP"), false);
         LinearLayout body = f[0];
         f[1].setVisibility(View.GONE);
 
-        body.addView(bigButton("📂  압축 풀기", "ZIP · 7Z · RAR · TAR · GZ 등 압축 파일 선택", true, new View.OnClickListener() {
+        body.addView(bigButton(L.t("📂  압축 풀기"), L.t("ZIP · 7Z · RAR · TAR · GZ 등 압축 파일 선택"), true, new View.OnClickListener() {
             @Override public void onClick(View v) { pickArchive(); }
         }));
-        body.addView(bigButton("🗜  파일 압축하기", "여러 파일을 골라 하나로 압축", false, new View.OnClickListener() {
+        body.addView(bigButton(L.t("🗜  파일 압축하기"), L.t("여러 파일을 골라 하나로 압축"), false, new View.OnClickListener() {
             @Override public void onClick(View v) {
                 sources.clear();
                 showCompress();
                 pickFiles();
             }
         }), lp(12));
-        body.addView(bigButton("📁  폴더 압축하기", "폴더를 통째로 압축", false, new View.OnClickListener() {
+        body.addView(bigButton(L.t("📁  폴더 압축하기"), L.t("폴더를 통째로 압축"), false, new View.OnClickListener() {
             @Override public void onClick(View v) {
                 sources.clear();
                 showCompress();
@@ -487,21 +488,21 @@ public class MainActivity extends Activity {
         }), lp(12));
 
         LinearLayout c = card();
-        c.addView(text("풀 수 있는 형식", 15, C_TEXT, true));
+        c.addView(text(L.t("풀 수 있는 형식"), 15, C_TEXT, true));
         TextView t1 = text("ZIP, 7Z, RAR(RAR4·RAR5), TAR, GZ, TGZ, BZ2, TBZ2, XZ, TXZ, LZMA, Z, LZ4, Snappy(SZ), Brotli(BR), "
                 + "Deflate(ZZ), CPIO, AR, DEB, ARJ, DUMP\n"
-                + "ZIP 계열: JAR, APK, XAPK, AAR, WAR, EPUB, CBZ, DOCX·XLSX·PPTX·HWPX 등\n"
-                + "암호 걸린 ZIP(AES·ZipCrypto) · 7Z · RAR, 한글 파일 이름 깨짐 자동 보정", 14, C_SUB, false);
+                + L.t("ZIP 계열: JAR, APK, XAPK, AAR, WAR, EPUB, CBZ, DOCX·XLSX·PPTX·HWPX 등") + "\n"
+                + L.t("암호 걸린 ZIP(AES·ZipCrypto) · 7Z · RAR, 한글 파일 이름 깨짐 자동 보정"), 14, C_SUB, false);
         t1.setLineSpacing(dp(3), 1f);
         c.addView(t1, lp(6));
-        c.addView(text("만들 수 있는 형식", 15, C_TEXT, true), lp(14));
-        TextView t2 = text("ZIP(암호 가능), 7Z, TAR, TAR.GZ, TAR.BZ2, TAR.XZ, TAR.LZ4, TAR.LZMA, CPIO\n"
-                + "파일 1개 전용: GZ, BZ2, XZ, LZMA, LZ4, SZ, ZZ", 14, C_SUB, false);
+        c.addView(text(L.t("만들 수 있는 형식"), 15, C_TEXT, true), lp(14));
+        TextView t2 = text(L.t("ZIP(암호 가능), 7Z, TAR, TAR.GZ, TAR.BZ2, TAR.XZ, TAR.LZ4, TAR.LZMA, CPIO") + "\n"
+                + L.t("파일 1개 전용: GZ, BZ2, XZ, LZMA, LZ4, SZ, ZZ"), 14, C_SUB, false);
         t2.setLineSpacing(dp(3), 1f);
         c.addView(t2, lp(6));
         body.addView(c, lp(20));
 
-        TextView note = text("분할 압축(여러 권)과 Zstandard(.zst)는 아직 지원하지 않습니다.", 12, C_SUB, false);
+        TextView note = text(L.t("분할 압축(여러 권)과 Zstandard(.zst)는 아직 지원하지 않습니다."), 12, C_SUB, false);
         body.addView(note, lp(12));
 
         // 자체 배너광고 자리 (서버에 배너가 없으면 표시되지 않음)
@@ -557,7 +558,7 @@ public class MainActivity extends Activity {
             if (req == REQ_CREATE && data.getData() != null) {
                 try { DocumentsContract.deleteDocument(getContentResolver(), data.getData()); } catch (Exception ignored) { }
             }
-            toast("앱이 다시 시작되어 작업을 이어갈 수 없습니다. 처음부터 다시 해 주세요");
+            toast(L.t("앱이 다시 시작되어 작업을 이어갈 수 없습니다. 처음부터 다시 해 주세요"));
             return;
         }
         try {
@@ -590,7 +591,7 @@ public class MainActivity extends Activity {
                 if (data.getData() != null && pendingCo != null) startCompress(data.getData());
             }
         } catch (Exception e) {
-            alert("오류", errText(e));
+            alert(L.t("오류"), errText(e));
         }
     }
 
@@ -608,7 +609,7 @@ public class MainActivity extends Activity {
 
     private void showExtract() {
         screen = 1;
-        LinearLayout[] f = frame("압축 풀기", true);
+        LinearLayout[] f = frame(L.t("압축 풀기"), true);
         LinearLayout body = f[0];
 
         LinearLayout info = card();
@@ -620,7 +621,7 @@ public class MainActivity extends Activity {
 
         LinearLayout opt = card();
         CheckBox cb = new CheckBox(this);
-        cb.setText("압축 파일 이름으로 새 폴더를 만들어 풀기");
+        cb.setText(L.t("압축 파일 이름으로 새 폴더를 만들어 풀기"));
         cb.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
         cb.setTextColor(C_TEXT);
         cb.setChecked(makeFolder);
@@ -628,7 +629,7 @@ public class MainActivity extends Activity {
             @Override public void onCheckedChanged(CompoundButton b, boolean on) { makeFolder = on; }
         });
         opt.addView(cb);
-        opt.addView(text("파일 이름 글자 인코딩 (이름이 깨져 보일 때만 바꾸세요)", 13, C_SUB, false), lp(10));
+        opt.addView(text(L.t("파일 이름 글자 인코딩 (이름이 깨져 보일 때만 바꾸세요)"), 13, C_SUB, false), lp(10));
         opt.addView(spinner(CS_LABELS, charsetIdx, new IntCallback() {
             @Override public void on(int v) {
                 if (v == charsetIdx) return;
@@ -639,13 +640,13 @@ public class MainActivity extends Activity {
         body.addView(opt, lp(12));
 
         LinearLayout lc = card();
-        lc.addView(text("들어 있는 파일", 15, C_TEXT, true));
-        exList = text("목록을 읽는 중…", 13, C_SUB, false);
+        lc.addView(text(L.t("들어 있는 파일"), 15, C_TEXT, true));
+        exList = text(L.t("목록을 읽는 중…"), 13, C_SUB, false);
         exList.setLineSpacing(dp(3), 1f);
         lc.addView(exList, lp(8));
         body.addView(lc, lp(12));
 
-        TextView other = text("다른 압축 파일 선택 ›", 14, C_LINK, true);
+        TextView other = text(L.t("다른 압축 파일 선택 ›"), 14, C_LINK, true);
         other.setPadding(0, dp(10), dp(10), dp(2));
         other.setClickable(true);
         other.setOnClickListener(new View.OnClickListener() {
@@ -656,24 +657,24 @@ public class MainActivity extends Activity {
         View.OnClickListener choose = new View.OnClickListener() {
             @Override public void onClick(View v) {
                 if (job != null) return;
-                toast("압축을 풀 폴더를 고른 뒤 ‘이 폴더 사용’을 누르세요");
+                toast(L.t("압축을 풀 폴더를 고른 뒤 ‘이 폴더 사용’을 누르세요"));
                 pick(new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), REQ_DEST);
             }
         };
         if (Storage.canUseDownloads()) {
-            TextView go = button("압축 풀기", true);
+            TextView go = button(L.t("압축 풀기"), true);
             go.setOnClickListener(new View.OnClickListener() {
                 @Override public void onClick(View v) { startExtract(null, null); }
             });
             f[1].addView(go);
-            TextView where = text("‘다운로드 › " + Storage.APP_DIR + "’ 폴더에 풀립니다", 12, C_SUB, false);
+            TextView where = text(L.f("‘다운로드 › %s’ 폴더에 풀립니다", Storage.APP_DIR), 12, C_SUB, false);
             where.setGravity(Gravity.CENTER);
             f[1].addView(where, lp(4));
-            TextView go2 = button("다른 폴더에 풀기…", false);
+            TextView go2 = button(L.t("다른 폴더에 풀기…"), false);
             go2.setOnClickListener(choose);
             f[1].addView(go2, lp(8));
         } else {
-            TextView go = button("풀 위치 선택하고 압축 풀기", true);
+            TextView go = button(L.t("풀 위치 선택하고 압축 풀기"), true);
             go.setOnClickListener(choose);
             f[1].addView(go);
         }
@@ -694,7 +695,7 @@ public class MainActivity extends Activity {
         final Engine.Options o = options();
         final TextView listView = exList, sumView = exSummary;
         if (in == null || listView == null) return;
-        listView.setText("목록을 읽는 중…");
+        listView.setText(L.t("목록을 읽는 중…"));
         new Thread(new Runnable() {
             @Override public void run() {
                 final ArrayList<Engine.Entry> es = new ArrayList<Engine.Entry>();
@@ -717,18 +718,18 @@ public class MainActivity extends Activity {
                         sb.append('\n');
                     }
                     int totalCount = r.files + r.dirs;
-                    if (totalCount > es.size()) sb.append("… 외 ").append(totalCount - es.size()).append("개");
-                    if (totalCount == 0) sb.append("(비어 있음)");
+                    if (totalCount > es.size()) sb.append(L.f("… 외 %s개", totalCount - es.size()));
+                    if (totalCount == 0) sb.append(L.t("(비어 있음)"));
                     listText = sb.toString().trim();
-                    summary = r.format + " · " + fmtSize(in.size) + " · 파일 " + r.files + "개"
-                            + (r.dirs > 0 ? ", 폴더 " + r.dirs + "개" : "")
-                            + (r.bytes > 0 ? " · 풀면 " + fmtSize(r.bytes) : "") + (enc ? " · 🔒 암호" : "");
+                    summary = r.format + " · " + fmtSize(in.size) + " · " + L.f("파일 %s개", r.files)
+                            + (r.dirs > 0 ? ", " + L.f("폴더 %s개", r.dirs) : "")
+                            + (r.bytes > 0 ? " · " + L.f("풀면 %s", fmtSize(r.bytes)) : "") + (enc ? " · 🔒 " + L.t("암호") : "");
                 } catch (Engine.CancelledException ce) {
                     return;
                 } catch (Engine.PasswordException pe) {
-                    listText = "🔒 암호가 걸려 있어 목록을 볼 수 없습니다.\n압축을 풀 때 비밀번호를 물어봅니다.";
+                    listText = L.t("🔒 암호가 걸려 있어 목록을 볼 수 없습니다.\n압축을 풀 때 비밀번호를 물어봅니다.");
                 } catch (Throwable t) {
-                    listText = "목록을 읽을 수 없습니다: " + errText(t);
+                    listText = L.f("목록을 읽을 수 없습니다: %s", errText(t));
                 }
                 final String fs = summary, fl = listText;
                 ui.post(new Runnable() {
@@ -746,7 +747,7 @@ public class MainActivity extends Activity {
     private void startExtract(final Uri destTree, Storage.Recorder reuse) {
         if (arc == null) return;
         if (job != null) {
-            toast("이전 작업을 정리하는 중입니다. 잠시 뒤 다시 눌러 주세요");
+            toast(L.t("이전 작업을 정리하는 중입니다. 잠시 뒤 다시 눌러 주세요"));
             return;
         }
         listGen++; // 목록 읽기 중단
@@ -756,9 +757,9 @@ public class MainActivity extends Activity {
         final String top = top0 != null && top0.length() > 0 ? top0 : null;
         final Storage.Recorder sink = reuse != null ? reuse : new Storage.Recorder(
                 destTree != null ? (Engine.Sink) new Storage.TreeSink(this, destTree, top) : new Storage.DownloadSink(this, top));
-        final String destName = destTree != null ? Storage.treeName(this, destTree) : "다운로드 › " + Storage.APP_DIR;
+        final String destName = destTree != null ? Storage.treeName(this, destTree) : L.t("다운로드") + " › " + Storage.APP_DIR;
         final long t0 = SystemClock.elapsedRealtime();
-        job = new Job("압축 푸는 중") {
+        job = new Job(L.t("압축 푸는 중")) {
             Engine.Result r;
             HashMap<String, ArrayList<Storage.Out>> tree;
 
@@ -767,7 +768,7 @@ public class MainActivity extends Activity {
                 in.cancel = new Storage.Cancel() {
                     @Override public boolean isCancelled() { return self.cancelled; }
                 };
-                onItem("준비 중…");
+                onItem(L.t("준비 중…"));
                 r = Engine.extract(in, o, sink, this);
                 tree = sink.tree();
             }
@@ -778,21 +779,21 @@ public class MainActivity extends Activity {
                     return;
                 }
                 if (err instanceof Engine.CancelledException) {
-                    toast("취소했습니다. 이미 풀린 파일은 남아 있습니다.");
+                    toast(L.t("취소했습니다. 이미 풀린 파일은 남아 있습니다."));
                     return;
                 }
                 if (err != null) {
-                    alert("압축을 풀지 못했습니다", errText(err));
+                    alert(L.t("압축을 풀지 못했습니다"), errText(err));
                     return;
                 }
                 // 완료되면 풀린 폴더 화면으로 바로 이동
                 String topName = sink.topName();
                 StringBuilder sb = new StringBuilder();
-                sb.append("파일 ").append(r.files).append("개");
-                if (r.dirs > 0) sb.append(", 폴더 ").append(r.dirs).append("개");
+                sb.append(L.f("파일 %s개", r.files));
+                if (r.dirs > 0) sb.append(", ").append(L.f("폴더 %s개", r.dirs));
                 sb.append(" · ").append(fmtSize(r.bytes));
-                sb.append(String.format(Locale.US, " · %.1f초", (SystemClock.elapsedRealtime() - t0) / 1000.0));
-                sb.append("\n저장 위치: ").append(destName);
+                sb.append(" · ").append(L.f("%s초", String.format(Locale.US, "%.1f", (SystemClock.elapsedRealtime() - t0) / 1000.0)));
+                sb.append("\n").append(L.f("저장 위치: %s", destName));
                 if (topName != null) sb.append(" › ").append(topName);
                 brSummary = sb.toString();
                 brDetail = null;
@@ -801,7 +802,7 @@ public class MainActivity extends Activity {
                     for (int i = 0; i < r.skipped.size() && i < 30; i++) sk.append("· ").append(r.skipped.get(i)).append('\n');
                     if (r.skipped.size() > 30) sk.append("…");
                     brDetail = sk.toString().trim();
-                    brSummary += "\n⚠ 풀지 못한 항목 " + r.skipped.size() + "개 (눌러서 보기)";
+                    brSummary += "\n⚠ " + L.f("풀지 못한 항목 %s개 (눌러서 보기)", r.skipped.size());
                 }
                 brTree = tree;
                 brDir = "";
@@ -810,7 +811,7 @@ public class MainActivity extends Activity {
                 ArrayList<Storage.Out> rootList = brTree.get("");
                 if (rootList != null && rootList.size() == 1 && rootList.get(0).dir) brDir = rootList.get(0).path;
                 showBrowser();
-                toast("압축 풀기 완료 · 파일 " + r.files + "개");
+                toast(L.f("압축 풀기 완료 · 파일 %s개", r.files));
             }
         };
         job.start();
@@ -820,21 +821,21 @@ public class MainActivity extends Activity {
         if (isFinishing() || isDestroyed()) return;
         final EditText et = new EditText(this);
         et.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD);
-        et.setHint("비밀번호");
+        et.setHint(L.t("비밀번호"));
         et.setSingleLine(true);
         FrameLayout wrap = new FrameLayout(this);
         wrap.setPadding(dp(20), dp(8), dp(20), 0);
         wrap.addView(et);
         AlertDialog d = new AlertDialog.Builder(this)
-                .setTitle(wrong ? "비밀번호가 틀렸습니다" : "비밀번호가 필요합니다")
-                .setMessage(wrong ? "다시 입력해 주세요." : "이 압축 파일은 암호가 걸려 있습니다.")
+                .setTitle(wrong ? L.t("비밀번호가 틀렸습니다") : L.t("비밀번호가 필요합니다"))
+                .setMessage(wrong ? L.t("다시 입력해 주세요.") : L.t("이 압축 파일은 암호가 걸려 있습니다."))
                 .setView(wrap)
-                .setNegativeButton("취소", null)
-                .setPositiveButton("확인", new DialogInterface.OnClickListener() {
+                .setNegativeButton(L.t("취소"), null)
+                .setPositiveButton(L.t("확인"), new DialogInterface.OnClickListener() {
                     @Override public void onClick(DialogInterface dialog, int which) {
                         String s = et.getText().toString();
                         if (s.length() == 0) {
-                            toast("비밀번호를 입력하지 않았습니다");
+                            toast(L.t("비밀번호를 입력하지 않았습니다"));
                             return;
                         }
                         password = s.toCharArray();
@@ -869,9 +870,9 @@ public class MainActivity extends Activity {
             @Override public void onClick(View v) { onBackPressed(); }
         });
         bar.addView(back);
-        TextView title = text("풀린 파일", 20, Color.WHITE, true);
+        TextView title = text(L.t("풀린 파일"), 20, Color.WHITE, true);
         bar.addView(title, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-        TextView home = text("처음으로", 14, Color.WHITE, true);
+        TextView home = text(L.t("처음으로"), 14, Color.WHITE, true);
         home.setPadding(dp(10), dp(6), dp(4), dp(6));
         home.setClickable(true);
         home.setOnClickListener(new View.OnClickListener() {
@@ -888,7 +889,7 @@ public class MainActivity extends Activity {
         if (brDetail != null) {
             sum.setClickable(true);
             sum.setOnClickListener(new View.OnClickListener() {
-                @Override public void onClick(View v) { alert("풀지 못한 항목", brDetail); }
+                @Override public void onClick(View v) { alert(L.t("풀지 못한 항목"), brDetail); }
             });
         }
         head.addView(sum);
@@ -897,7 +898,7 @@ public class MainActivity extends Activity {
         page.addView(head, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         if (items.isEmpty()) {
-            TextView empty = text("(비어 있는 폴더)", 14, C_SUB, false);
+            TextView empty = text(L.t("(비어 있는 폴더)"), 14, C_SUB, false);
             empty.setGravity(Gravity.CENTER);
             empty.setPadding(dp(16), dp(40), dp(16), dp(40));
             page.addView(empty, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
@@ -934,7 +935,7 @@ public class MainActivity extends Activity {
                     name.setText((o.dir ? "📁 " : "📄 ") + o.name);
                     if (o.dir) {
                         ArrayList<Storage.Out> kids = brTree.get(o.path);
-                        size.setText((kids == null ? 0 : kids.size()) + "개 ›");
+                        size.setText(L.f("%s개", kids == null ? 0 : kids.size()) + " ›");
                     } else {
                         size.setText(fmtSize(o.size));
                     }
@@ -962,10 +963,10 @@ public class MainActivity extends Activity {
         View resultAd = Ads.slot(this, "result");
         resultAd.setPadding(0, 0, 0, dp(6));
         bottom.addView(resultAd);
-        TextView hint = text("파일을 누르면 열립니다", 12, C_SUB, false);
+        TextView hint = text(L.t("파일을 누르면 열립니다"), 12, C_SUB, false);
         hint.setGravity(Gravity.CENTER);
         bottom.addView(hint);
-        TextView more = button("다른 압축 파일 풀기", false);
+        TextView more = button(L.t("다른 압축 파일 풀기"), false);
         more.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) { pickArchive(); }
         });
@@ -983,7 +984,7 @@ public class MainActivity extends Activity {
             return;
         }
         if (o.file == null) {
-            toast("이 파일은 열 수 없습니다");
+            toast(L.t("이 파일은 열 수 없습니다"));
             return;
         }
         // 직접 저장한 파일은 다른 앱에 넘길 주소를 미디어 저장소에서 받아 온다
@@ -995,7 +996,7 @@ public class MainActivity extends Activity {
                                 @Override public void run() {
                                     if (isFinishing() || isDestroyed()) return;
                                     if (uri == null) {
-                                        toast("파일을 열 수 없습니다. 파일 앱의 다운로드 › " + Storage.APP_DIR + " 폴더에서 열어 주세요");
+                                        toast(L.f("파일을 열 수 없습니다. 파일 앱의 다운로드 › %s 폴더에서 열어 주세요", Storage.APP_DIR));
                                         return;
                                     }
                                     o.uri = uri;
@@ -1005,14 +1006,14 @@ public class MainActivity extends Activity {
                         }
                     });
         } catch (Exception e) {
-            toast("파일을 열 수 없습니다");
+            toast(L.t("파일을 열 수 없습니다"));
         }
     }
 
     private void openUri(Uri uri, String name) {
         if (looksLikeArchive(name)) {
             if (job != null) {
-                toast("진행 중인 작업이 끝난 뒤 다시 시도해 주세요");
+                toast(L.t("진행 중인 작업이 끝난 뒤 다시 시도해 주세요"));
                 return;
             }
             openArchive(uri);
@@ -1027,9 +1028,9 @@ public class MainActivity extends Activity {
             ch.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
             startActivity(ch);
         } catch (ActivityNotFoundException e) {
-            toast("이 파일을 열 수 있는 앱이 없습니다");
+            toast(L.t("이 파일을 열 수 있는 앱이 없습니다"));
         } catch (Exception e) {
-            toast("파일을 열 수 없습니다");
+            toast(L.t("파일을 열 수 없습니다"));
         }
     }
 
@@ -1052,30 +1053,30 @@ public class MainActivity extends Activity {
             String n = s.folder ? s.name : Engine.stripExt(s.name);
             if (n != null && n.length() > 0) return n;
         }
-        return "압축파일";
+        return L.t("압축파일");
     }
 
     private void showCompress() {
         screen = 2;
-        LinearLayout[] f = frame("압축하기", true);
+        LinearLayout[] f = frame(L.t("압축하기"), true);
         LinearLayout body = f[0];
 
         LinearLayout sc = card();
-        sc.addView(text("압축할 대상", 15, C_TEXT, true));
+        sc.addView(text(L.t("압축할 대상"), 15, C_TEXT, true));
         coList = text("", 13, C_SUB, false);
         coList.setLineSpacing(dp(3), 1f);
         sc.addView(coList, lp(8));
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
-        TextView addF = button("＋ 파일", false);
+        TextView addF = button(L.t("＋ 파일"), false);
         addF.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) { pickFiles(); }
         });
-        TextView addD = button("＋ 폴더", false);
+        TextView addD = button(L.t("＋ 폴더"), false);
         addD.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) { pickFolder(); }
         });
-        TextView clr = button("비우기", false);
+        TextView clr = button(L.t("비우기"), false);
         clr.setTextColor(C_DANGER);
         clr.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) {
@@ -1095,18 +1096,18 @@ public class MainActivity extends Activity {
         body.addView(sc);
 
         LinearLayout oc = card();
-        oc.addView(text("압축 형식", 13, C_SUB, false));
+        oc.addView(text(L.t("압축 형식"), 13, C_SUB, false));
         oc.addView(spinner(FMT_LABELS, fmtIdx, new IntCallback() {
             @Override public void on(int v) {
                 fmtIdx = v;
                 updatePwBox();
             }
         }), lp(6));
-        oc.addView(text("압축 수준", 13, C_SUB, false), lp(12));
-        oc.addView(spinner(new String[]{"빠르게", "보통 (권장)", "최대 압축 (느림)"}, levelIdx, new IntCallback() {
+        oc.addView(text(L.t("압축 수준"), 13, C_SUB, false), lp(12));
+        oc.addView(spinner(new String[]{L.t("빠르게"), L.t("보통 (권장)"), L.t("최대 압축 (느림)")}, levelIdx, new IntCallback() {
             @Override public void on(int v) { levelIdx = v; }
         }), lp(6));
-        oc.addView(text("압축 파일 이름 (확장자는 자동으로 붙습니다)", 13, C_SUB, false), lp(12));
+        oc.addView(text(L.t("압축 파일 이름 (확장자는 자동으로 붙습니다)"), 13, C_SUB, false), lp(12));
         coName = new EditText(this);
         coName.setSingleLine(true);
         coName.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
@@ -1114,38 +1115,38 @@ public class MainActivity extends Activity {
         oc.addView(coName, lp(2));
 
         LinearLayout pw = column();
-        pw.addView(text("비밀번호 (선택 · ZIP 전용, 비워 두면 암호 없음)", 13, C_SUB, false), lp(12));
+        pw.addView(text(L.t("비밀번호 (선택 · ZIP 전용, 비워 두면 암호 없음)"), 13, C_SUB, false), lp(12));
         coPw = new EditText(this);
         coPw.setSingleLine(true);
         coPw.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
         coPw.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD);
         pw.addView(coPw, lp(2));
         coCompat = new CheckBox(this);
-        coCompat.setText("윈도우 탐색기에서도 열리는 옛 암호 방식 사용 (보안 약함)");
+        coCompat.setText(L.t("윈도우 탐색기에서도 열리는 옛 암호 방식 사용 (보안 약함)"));
         coCompat.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
         coCompat.setTextColor(C_SUB);
         pw.addView(coCompat, lp(2));
-        pw.addView(text("기본은 AES-256 암호화입니다. 반디집·알집·7-Zip 등으로 풀 수 있습니다.", 12, C_SUB, false), lp(2));
+        pw.addView(text(L.t("기본은 AES-256 암호화입니다. 반디집·알집·7-Zip 등으로 풀 수 있습니다."), 12, C_SUB, false), lp(2));
         coPwBox = pw;
         oc.addView(pw);
         body.addView(oc, lp(12));
 
         if (Storage.canUseDownloads()) {
-            TextView go = button("압축하기", true);
+            TextView go = button(L.t("압축하기"), true);
             go.setOnClickListener(new View.OnClickListener() {
                 @Override public void onClick(View v) { onCompressClick(false); }
             });
             f[1].addView(go);
-            TextView where = text("‘다운로드 › " + Storage.APP_DIR + "’ 폴더에 저장됩니다", 12, C_SUB, false);
+            TextView where = text(L.f("‘다운로드 › %s’ 폴더에 저장됩니다", Storage.APP_DIR), 12, C_SUB, false);
             where.setGravity(Gravity.CENTER);
             f[1].addView(where, lp(4));
-            TextView go2 = button("저장 위치 직접 선택…", false);
+            TextView go2 = button(L.t("저장 위치 직접 선택…"), false);
             go2.setOnClickListener(new View.OnClickListener() {
                 @Override public void onClick(View v) { onCompressClick(true); }
             });
             f[1].addView(go2, lp(8));
         } else {
-            TextView go = button("저장 위치 선택하고 압축하기", true);
+            TextView go = button(L.t("저장 위치 선택하고 압축하기"), true);
             go.setOnClickListener(new View.OnClickListener() {
                 @Override public void onClick(View v) { onCompressClick(true); }
             });
@@ -1165,7 +1166,7 @@ public class MainActivity extends Activity {
     private void refreshSources() {
         if (coList == null) return;
         if (sources.isEmpty()) {
-            coList.setText("아직 고른 것이 없습니다. 아래 버튼으로 파일이나 폴더를 추가하세요.");
+            coList.setText(L.t("아직 고른 것이 없습니다. 아래 버튼으로 파일이나 폴더를 추가하세요."));
         } else {
             StringBuilder sb = new StringBuilder();
             long total = 0;
@@ -1179,31 +1180,31 @@ public class MainActivity extends Activity {
                     shown++;
                 }
             }
-            if (sources.size() > shown) sb.append("… 외 ").append(sources.size() - shown).append("개\n");
-            sb.append("\n모두 ").append(sources.size()).append("개");
-            if (total > 0) sb.append(" · 파일 합계 ").append(fmtSize(total));
+            if (sources.size() > shown) sb.append(L.f("… 외 %s개", sources.size() - shown)).append("\n");
+            sb.append("\n").append(L.f("모두 %s개", sources.size()));
+            if (total > 0) sb.append(" · ").append(L.f("파일 합계 %s", fmtSize(total)));
             coList.setText(sb.toString());
         }
         if (coName != null) {
             String cur = coName.getText().toString();
-            if (cur.length() == 0 || cur.equals("압축파일")) coName.setText(defaultOutName());
+            if (cur.length() == 0 || cur.equals(L.t("압축파일"))) coName.setText(defaultOutName());
         }
     }
 
     private void onCompressClick(boolean choose) {
         if (job != null) {
-            toast("이전 작업을 정리하는 중입니다. 잠시 뒤 다시 눌러 주세요");
+            toast(L.t("이전 작업을 정리하는 중입니다. 잠시 뒤 다시 눌러 주세요"));
             return;
         }
         if (sources.isEmpty()) {
-            toast("압축할 파일이나 폴더를 먼저 추가하세요");
+            toast(L.t("압축할 파일이나 폴더를 먼저 추가하세요"));
             return;
         }
         String fmt = FMT_IDS[fmtIdx];
         if (Engine.isSingleFormat(fmt)) {
             if (sources.size() != 1 || sources.get(0).folder) {
-                alert("형식을 바꿔 주세요", "‘" + fmt.toUpperCase(Locale.ROOT) + "’ 형식은 파일 1개만 압축할 수 있습니다.\n"
-                        + "여러 파일이나 폴더는 ZIP, 7Z, TAR.GZ 같은 형식을 고르세요.");
+                alert(L.t("형식을 바꿔 주세요"), L.f("‘%s’ 형식은 파일 1개만 압축할 수 있습니다.", fmt.toUpperCase(Locale.ROOT)) + "\n"
+                        + L.t("여러 파일이나 폴더는 ZIP, 7Z, TAR.GZ 같은 형식을 고르세요."));
                 return;
             }
         }
@@ -1248,17 +1249,17 @@ public class MainActivity extends Activity {
         final Storage.DownloadOut dlOut = outUri == null ? new Storage.DownloadOut(this, pendingOutName) : null;
         final ArrayList<Src> srcs = new ArrayList<Src>(sources);
         final long t0 = SystemClock.elapsedRealtime();
-        job = new Job("압축하는 중") {
+        job = new Job(L.t("압축하는 중")) {
             Engine.Result r;
 
             @Override void work() throws Exception {
-                onItem("파일 목록을 읽는 중…");
+                onItem(L.t("파일 목록을 읽는 중…"));
                 final Job self = this;
                 List<Engine.Item> items = new ArrayList<Engine.Item>();
                 HashSet<String> used = new HashSet<String>();
                 for (Src s : srcs) {
                     String nm = Engine.safePath(s.name.replace('/', '_'));
-                    if (nm.length() == 0) nm = "이름없음";
+                    if (nm.length() == 0) nm = L.t("이름없음");
                     String base = nm;
                     int k = 2;
                     while (!used.add(nm.toLowerCase(Locale.ROOT))) {
@@ -1276,11 +1277,11 @@ public class MainActivity extends Activity {
                 }
                 boolean anyFile = false;
                 for (Engine.Item it : items) if (!it.isDir()) { anyFile = true; break; }
-                if (!anyFile && Engine.isSingleFormat(co.format)) throw new java.io.IOException("압축할 파일이 없습니다");
+                if (!anyFile && Engine.isSingleFormat(co.format)) throw new java.io.IOException(L.t("압축할 파일이 없습니다"));
                 OutputStream os;
                 if (outUri != null) {
                     os = getContentResolver().openOutputStream(outUri, "wt");
-                    if (os == null) throw new java.io.IOException("저장할 파일을 열 수 없습니다");
+                    if (os == null) throw new java.io.IOException(L.t("저장할 파일을 열 수 없습니다"));
                 } else {
                     os = dlOut.open();
                 }
@@ -1294,8 +1295,8 @@ public class MainActivity extends Activity {
                     } else {
                         dlOut.delete();
                     }
-                    if (err instanceof Engine.CancelledException) toast("취소했습니다");
-                    else alert("압축하지 못했습니다", errText(err));
+                    if (err instanceof Engine.CancelledException) toast(L.t("취소했습니다"));
+                    else alert(L.t("압축하지 못했습니다"), errText(err));
                     return;
                 }
                 Storage.Meta m;
@@ -1308,17 +1309,17 @@ public class MainActivity extends Activity {
                 }
                 StringBuilder sb = new StringBuilder();
                 sb.append(m.name).append("\n");
-                if (outUri == null) sb.append("위치: 다운로드 › ").append(Storage.APP_DIR).append("\n");
+                if (outUri == null) sb.append(L.f("위치: 다운로드 › %s", Storage.APP_DIR)).append("\n");
                 sb.append("\n");
-                sb.append("파일 ").append(r.files).append("개");
-                if (r.dirs > 0) sb.append(", 폴더 ").append(r.dirs).append("개");
-                sb.append("\n원본 ").append(fmtSize(r.bytes));
+                sb.append(L.f("파일 %s개", r.files));
+                if (r.dirs > 0) sb.append(", ").append(L.f("폴더 %s개", r.dirs));
+                sb.append("\n").append(L.f("원본 %s", fmtSize(r.bytes)));
                 if (m.size > 0) {
-                    sb.append(" → 압축 ").append(fmtSize(m.size));
+                    sb.append(" → ").append(L.f("압축 %s", fmtSize(m.size)));
                     if (r.bytes > 0) sb.append(String.format(Locale.US, " (%.0f%%)", 100.0 * m.size / r.bytes));
                 }
-                sb.append("\n걸린 시간: ").append(String.format(Locale.US, "%.1f초", (SystemClock.elapsedRealtime() - t0) / 1000.0));
-                alert("압축 완료", sb.toString());
+                sb.append("\n").append(L.f("걸린 시간: %s초", String.format(Locale.US, "%.1f", (SystemClock.elapsedRealtime() - t0) / 1000.0)));
+                alert(L.t("압축 완료"), sb.toString());
             }
         };
         job.start();
@@ -1348,7 +1349,7 @@ public class MainActivity extends Activity {
         void start() {
             LinearLayout v = column();
             v.setPadding(dp(22), dp(10), dp(22), dp(4));
-            tItem = text("준비 중…", 14, C_TEXT, false);
+            tItem = text(L.t("준비 중…"), 14, C_TEXT, false);
             tItem.setSingleLine(true);
             tItem.setEllipsize(TextUtils.TruncateAt.MIDDLE);
             v.addView(tItem);
@@ -1359,7 +1360,7 @@ public class MainActivity extends Activity {
             tPct = text("", 13, C_SUB, false);
             v.addView(tPct, lp(6));
             dlg = new AlertDialog.Builder(MainActivity.this).setTitle(title).setView(v).setCancelable(false)
-                    .setNegativeButton("취소", new DialogInterface.OnClickListener() {
+                    .setNegativeButton(L.t("취소"), new DialogInterface.OnClickListener() {
                         @Override public void onClick(DialogInterface d, int w) { cancelled = true; }
                     }).create();
             try {
@@ -1387,7 +1388,7 @@ public class MainActivity extends Activity {
                     try {
                         finished(fe);
                     } catch (Exception e) {
-                        alert("오류", errText(e));
+                        alert(L.t("오류"), errText(e));
                     }
                 }
             });

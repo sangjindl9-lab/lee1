@@ -145,13 +145,13 @@ public final class Engine {
     public static class PasswordException extends IOException {
         public final boolean wrong;
         public PasswordException(boolean wrong) {
-            super(wrong ? "비밀번호가 틀렸습니다" : "비밀번호가 필요합니다");
+            super(wrong ? L.t("비밀번호가 틀렸습니다") : L.t("비밀번호가 필요합니다"));
             this.wrong = wrong;
         }
     }
 
     public static class CancelledException extends IOException {
-        public CancelledException() { super("취소되었습니다"); }
+        public CancelledException() { super(L.t("취소되었습니다")); }
     }
 
     public static class UnsupportedException extends IOException {
@@ -161,7 +161,7 @@ public final class Engine {
     public enum Format {
         ZIP("ZIP"), SEVENZ("7Z"), RAR("RAR"), TAR("TAR"), AR("AR"), CPIO("CPIO"), ARJ("ARJ"), DUMP("DUMP"),
         GZ("GZIP"), BZ2("BZIP2"), XZ("XZ"), LZMA("LZMA"), Z("Z(compress)"), LZ4("LZ4"), SNAPPY("Snappy"),
-        BROTLI("Brotli"), ZLIB("Deflate(zlib)"), ZSTD("Zstandard"), UNKNOWN("알 수 없음");
+        BROTLI("Brotli"), ZLIB("Deflate(zlib)"), ZSTD("Zstandard"), UNKNOWN(L.t("알 수 없음"));
         public final String label;
         Format(String l) { label = l; }
         public boolean isCompressor() {
@@ -458,14 +458,14 @@ public final class Engine {
                     break;
                 }
                 case ZSTD:
-                    throw new UnsupportedException("Zstandard(.zst) 형식은 아직 지원하지 않습니다");
+                    throw new UnsupportedException(L.t("Zstandard(.zst) 형식은 아직 지원하지 않습니다"));
                 case UNKNOWN:
-                    throw new UnsupportedException("지원하지 않는 형식이거나 압축 파일이 아닙니다");
+                    throw new UnsupportedException(L.t("지원하지 않는 형식이거나 압축 파일이 아닙니다"));
                 default:
                     walkCompressed(f, in, opt, ctx, v);
             }
         } catch (OutOfMemoryError oom) {
-            throw new IOException("메모리가 부족합니다 (사전 크기가 너무 큰 압축 파일)");
+            throw new IOException(L.t("메모리가 부족합니다 (사전 크기가 너무 큰 압축 파일)"));
         }
     }
 
@@ -482,7 +482,7 @@ public final class Engine {
             case SNAPPY: return new FramedSnappyCompressorInputStream(in);
             case BROTLI: return new BrotliCompressorInputStream(in);
             case ZLIB: return new DeflateCompressorInputStream(in);
-            default: throw new UnsupportedException("지원하지 않는 형식");
+            default: throw new UnsupportedException(L.t("지원하지 않는 형식"));
         }
     }
 
@@ -553,7 +553,7 @@ public final class Engine {
                     throw new IOException(ex.getMessage());
                 }
                 break;
-            default: throw new UnsupportedException("지원하지 않는 형식");
+            default: throw new UnsupportedException(L.t("지원하지 않는 형식"));
         }
         ArchiveEntry ae;
         while ((ae = ais.getNextEntry()) != null) {
@@ -573,11 +573,11 @@ public final class Engine {
                 regular = ce.isDirectory() || ce.isRegularFile();
             }
             if (!regular) {
-                if (e.path != null) ctx.res.skipped.add(e.path + " (링크/특수 파일)");
+                if (e.path != null) ctx.res.skipped.add(e.path + L.t(" (링크/특수 파일)"));
                 continue;
             }
             if (!ais.canReadEntryData(ae)) {
-                ctx.res.skipped.add(e.path + " (지원하지 않는 압축 방식)");
+                ctx.res.skipped.add(e.path + L.t(" (지원하지 않는 압축 방식)"));
                 continue;
             }
             v.visit(e, new Opener() {
@@ -638,7 +638,7 @@ public final class Engine {
                 e.size = ze.getSize();
                 e.encrypted = ze.getGeneralPurposeBit().usesEncryption();
                 if (!listOnly && !e.dir && !zff.canReadEntryData(ze)) {
-                    ctx.res.skipped.add(e.path + " (지원하지 않는 압축 방식)");
+                    ctx.res.skipped.add(e.path + L.t(" (지원하지 않는 압축 방식)"));
                     continue;
                 }
                 v.visit(e, new Opener() {
@@ -679,13 +679,13 @@ public final class Engine {
                 e.dir = ze.isDirectory();
                 e.size = ze.getSize();
                 e.encrypted = ze.getGeneralPurposeBit().usesEncryption();
-                if (e.encrypted) throw new UnsupportedException("손상된 암호 ZIP 파일은 풀 수 없습니다");
-                if (!zis.canReadEntryData(ze)) { ctx.res.skipped.add(e.path + " (지원하지 않는 압축 방식)"); continue; }
+                if (e.encrypted) throw new UnsupportedException(L.t("손상된 암호 ZIP 파일은 풀 수 없습니다"));
+                if (!zis.canReadEntryData(ze)) { ctx.res.skipped.add(e.path + L.t(" (지원하지 않는 압축 방식)")); continue; }
                 v.visit(e, new Opener() {
                     @Override public InputStream open() { return new NoClose(zis); }
                 });
             }
-            if (count == 0) throw new UnsupportedException("ZIP 파일이 손상되었거나 압축 파일이 아닙니다");
+            if (count == 0) throw new UnsupportedException(L.t("ZIP 파일이 손상되었거나 압축 파일이 아닙니다"));
         } finally {
             closeQuietly(zis);
         }
@@ -833,7 +833,7 @@ public final class Engine {
                 if (r < 0) break;
                 n += r;
             }
-            if (n < count) throw new java.io.EOFException("파일 끝에 도달했습니다");
+            if (n < count) throw new java.io.EOFException(L.t("파일 끝에 도달했습니다"));
             return n;
         }
         @Override public void close() throws IOException { ch.close(); }
@@ -901,7 +901,7 @@ public final class Engine {
             if (!hasPw && pe.wrong) throw new PasswordException(false);
             throw pe;
         } catch (RuntimeException rte) {
-            throw new IOException("RAR 오류: 파일이 손상되었습니다 (" + rte.getClass().getSimpleName() + ")");
+            throw new IOException(L.t("RAR 오류: 파일이 손상되었습니다 (") + rte.getClass().getSimpleName() + ")");
         } finally {
             closeQuietly(ar);
             closeQuietly(ch);
@@ -911,10 +911,10 @@ public final class Engine {
     private static IOException rarError(RarException re) {
         if (re instanceof WrongPasswordException) return new PasswordException(true);
         if (re instanceof UnsupportedRarEncryptedException) return new PasswordException(false);
-        if (re instanceof MissingNextVolumeException) return new UnsupportedException("분할 압축(RAR 여러 권)은 지원하지 않습니다");
-        if (re instanceof CrcErrorException) return new IOException("CRC 오류: 파일이 손상되었거나 비밀번호가 틀렸습니다");
+        if (re instanceof MissingNextVolumeException) return new UnsupportedException(L.t("분할 압축(RAR 여러 권)은 지원하지 않습니다"));
+        if (re instanceof CrcErrorException) return new IOException(L.t("CRC 오류: 파일이 손상되었거나 비밀번호가 틀렸습니다"));
         String m = re.getMessage();
-        return new IOException("RAR 오류: " + (m == null ? re.getClass().getSimpleName() : m));
+        return new IOException(L.t("RAR 오류: ") + (m == null ? re.getClass().getSimpleName() : m));
     }
 
     private static void extractRarEntry(final Archive ar, final FileHeader h, Entry e, final Ctx ctx, Visitor v) throws IOException {
@@ -979,7 +979,7 @@ public final class Engine {
             dp.setCompressionLevel(level == 0 ? 1 : level == 1 ? 6 : 9);
             return new DeflateCompressorOutputStream(out, dp);
         }
-        throw new UnsupportedException("지원하지 않는 형식: " + kind);
+        throw new UnsupportedException(L.t("지원하지 않는 형식: ") + kind);
     }
 
     /** 크기를 모르는 항목은 임시 파일로 받아 크기를 확정한다. */
@@ -1040,8 +1040,8 @@ public final class Engine {
         try {
             if (isSingleFormat(fmt)) {
                 Item only = null;
-                for (Item it : items) if (!it.isDir()) { if (only != null) throw new IOException("이 형식은 파일 1개만 압축할 수 있습니다"); only = it; }
-                if (only == null) throw new IOException("압축할 파일이 없습니다");
+                for (Item it : items) if (!it.isDir()) { if (only != null) throw new IOException(L.t("이 형식은 파일 1개만 압축할 수 있습니다")); only = it; }
+                if (only == null) throw new IOException(L.t("압축할 파일이 없습니다"));
                 String nm = only.path();
                 int sl = nm.lastIndexOf('/');
                 if (sl >= 0) nm = nm.substring(sl + 1);
@@ -1105,11 +1105,11 @@ public final class Engine {
                 cos.finish();
                 cos.close();
             } else {
-                throw new UnsupportedException("지원하지 않는 형식: " + fmt);
+                throw new UnsupportedException(L.t("지원하지 않는 형식: ") + fmt);
             }
             out.flush();
         } catch (OutOfMemoryError oom) {
-            throw new IOException("메모리가 부족합니다. 압축 수준을 낮춰 주세요");
+            throw new IOException(L.t("메모리가 부족합니다. 압축 수준을 낮춰 주세요"));
         } finally {
             closeQuietly(out);
         }
@@ -1209,7 +1209,7 @@ public final class Engine {
             } finally {
                 closeQuietly(sz);
             }
-            if (ctx.l != null) ctx.l.onItem("저장하는 중…");
+            if (ctx.l != null) ctx.l.onItem(L.t("저장하는 중…"));
             InputStream is = new FileInputStream(tmp);
             try {
                 int r;

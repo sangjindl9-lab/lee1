@@ -1,5 +1,6 @@
 package kr.allzip.app;
 
+import kr.allzip.core.L;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.DialogInterface;
@@ -63,18 +64,16 @@ final class Update {
         if (act.isFinishing() || act.isDestroyed()) return;
         String name = o.optString("name");
         String notes = o.optString("notes");
-        StringBuilder msg = new StringBuilder("이음ZIP 새 버전");
-        if (name.length() > 0) msg.append(' ').append(name);
-        msg.append("이 나왔습니다.\n지금 업데이트하면 바로 새 기능을 쓸 수 있습니다.");
+        StringBuilder msg = new StringBuilder(L.f("새 버전 %s이(가) 나왔습니다.\n지금 업데이트하면 바로 새 기능을 쓸 수 있습니다.", name));
         if (notes.length() > 0) msg.append("\n\n").append(notes);
         AlertDialog.Builder b = new AlertDialog.Builder(act)
-                .setTitle("업데이트가 있습니다")
+                .setTitle(L.t("업데이트가 있습니다"))
                 .setMessage(msg)
-                .setPositiveButton("업데이트", new DialogInterface.OnClickListener() {
+                .setPositiveButton(L.t("업데이트"), new DialogInterface.OnClickListener() {
                     @Override public void onClick(DialogInterface d, int w) { openStore(act); }
                 });
         if (o.optBoolean("force")) b.setCancelable(false);
-        else b.setNegativeButton("나중에", null);
+        else b.setNegativeButton(L.t("나중에"), null);
         b.show();
     }
 
