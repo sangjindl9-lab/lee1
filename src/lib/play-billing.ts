@@ -60,7 +60,7 @@ type SubscriptionV2 = {
 
 async function fetchSubscription(purchaseToken: string): Promise<SubscriptionV2> {
   const res = await authedFetch(`${API}/${PACKAGE}/purchases/subscriptionsv2/tokens/${encodeURIComponent(purchaseToken)}`);
-  if (res.status === 404 || res.status === 410) throw new BillingError("TOKEN_INVALID", "결제 정보를 찾을 수 없습니다.", 404);
+  if (res.status === 400 || res.status === 404 || res.status === 410) throw new BillingError("TOKEN_INVALID", "결제 정보를 찾을 수 없습니다.", 404);
   if (!res.ok) throw new BillingError("PLAY_API_ERROR", `Google Play 확인 실패 (${res.status})`, 502);
   return (await res.json()) as SubscriptionV2;
 }
