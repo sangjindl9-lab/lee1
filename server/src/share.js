@@ -5,7 +5,7 @@ import { Readable } from 'node:stream';
 import { q, one } from './db.js';
 import { accessFor, CloudError } from './cloud.js';
 
-const PUBLIC_URL = () => (process.env.PUBLIC_URL || 'https://fm2-connect-production.up.railway.app').replace(/\/$/, '');
+const PUBLIC_URL = () => (process.env.PUBLIC_URL || 'https://fm2.ieumerp.kr').replace(/\/$/, '');
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const fmt = (n) => { n = Number(n || 0); if (n < 1024) return n + ' B'; const u = ['KB', 'MB', 'GB', 'TB']; let i = -1; do { n /= 1024; i++; } while (n >= 1024 && i < 3); return n.toFixed(1) + ' ' + u[i]; };
 

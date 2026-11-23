@@ -14,7 +14,7 @@ import { registerShare } from './share.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 8080);
-const PUBLIC_URL = (process.env.PUBLIC_URL || 'https://fm2-connect-production.up.railway.app').replace(/\/$/, '');
+const PUBLIC_URL = (process.env.PUBLIC_URL || 'https://fm2.ieumerp.kr').replace(/\/$/, '');
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN || '';
 const ANDROID_TEST_URL = 'https://play.google.com/apps/testing/kr.eumsoft.filemanager2';
 const ANDROID_STORE_URL = 'https://play.google.com/store/apps/details?id=kr.eumsoft.filemanager2';

@@ -2,7 +2,7 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "FileManager2 PC",
   "mainBinaryName": "FileManager2PC",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "identifier": "kr.eumsoft.filemanager2.pc",
   "build": {
     "frontendDist": "../dist",
@@ -12,30 +12,57 @@
   },
   "app": {
     "windows": [
-      { "title": "파일 관리자 2 PC", "width": 1200, "height": 780, "minWidth": 900, "minHeight": 600, "dragDropEnabled": true }
+      {
+        "title": "파일 관리자 2 PC",
+        "width": 1200,
+        "height": 780,
+        "minWidth": 900,
+        "minHeight": 600,
+        "dragDropEnabled": true
+      }
     ],
     "security": {
-      "csp": "default-src 'self'; connect-src 'self' https://fm2-connect-production.up.railway.app wss://fm2-connect-production.up.railway.app ipc: http://ipc.localhost; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'"
+      "csp": "default-src 'self'; connect-src 'self' https://fm2.ieumerp.kr wss://fm2.ieumerp.kr https://fm2-connect-production.up.railway.app wss://fm2-connect-production.up.railway.app ipc: http://ipc.localhost; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'"
     }
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
+    "targets": [
+      "nsis"
+    ],
     "createUpdaterArtifacts": true,
     "publisher": "이음소프트웨어",
     "copyright": "© 2026 이음소프트웨어",
     "shortDescription": "파일 관리자 2 PC 연결 프로그램",
-    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.ico"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico"
+    ],
     "windows": {
-      "nsis": { "languages": ["Korean", "English"], "installMode": "currentUser" },
-      "webviewInstallMode": { "type": "downloadBootstrapper" }
+      "nsis": {
+        "languages": [
+          "Korean",
+          "English"
+        ],
+        "installMode": "currentUser"
+      },
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper"
+      }
     }
   },
   "plugins": {
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDgxQjIzMUU3NkYwNzIzQzMKUldUREl3ZHY1ekd5Z1JNYm1rR25zUCsyaUpRRWl5dmVHbnFKR2Y2VkQybkxVeWZWN1VUekU5dVEK",
-      "endpoints": ["https://fm2-connect-production.up.railway.app/api/pc/update.json"],
-      "windows": { "installMode": "passive" }
+      "endpoints": [
+        "https://fm2.ieumerp.kr/api/pc/update.json",
+        "https://fm2-connect-production.up.railway.app/api/pc/update.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
     }
   }
 }

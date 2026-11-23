@@ -6,7 +6,7 @@ import crypto from 'node:crypto';
 import { Readable } from 'node:stream';
 import { q, one } from './db.js';
 
-const PUBLIC_URL = () => (process.env.PUBLIC_URL || 'https://fm2-connect-production.up.railway.app').replace(/\/$/, '');
+const PUBLIC_URL = () => (process.env.PUBLIC_URL || 'https://fm2.ieumerp.kr').replace(/\/$/, '');
 const redirectUri = (p) => `${PUBLIC_URL()}/api/cloud/${p}/callback`;
 
 // ---------- 토큰 암호화 ----------

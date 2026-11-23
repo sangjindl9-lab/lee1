@@ -20,7 +20,7 @@ import java.util.concurrent.TimeUnit
 
 /** PC CONNECT 서버 주소 (공식 다운로드 사이트와 같은 주소) */
 object ConnectConfig {
-    const val SERVER_URL = "https://fm2-connect-production.up.railway.app"
+    const val SERVER_URL = "https://fm2.ieumerp.kr"
     const val DOWNLOAD_URL = "$SERVER_URL/download"
     val WS_URL: String get() = SERVER_URL.replace("https://", "wss://") + "/ws"
 }
