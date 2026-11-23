@@ -2,7 +2,7 @@ name: FM2 PC (Windows) build & release
 on:
   push:
     branches: [filemanager2]
-    paths: ['pc/**', '.github/workflows/pc-build.yml']
+    paths: ['pc/**', '!pc/signatures/**', '.github/workflows/pc-build.yml']
   workflow_dispatch: {}
 permissions:
   contents: write
@@ -44,7 +44,7 @@ jobs:
         env: { GH_TOKEN: '${{ github.token }}' }
         run: |
           TAG="fm2-pc-v${{ steps.c.outputs.ver }}"
-          if gh release view "$TAG" >/dev/null 2>&1; then gh release upload "$TAG" out/* --clobber
+          if gh release view "$TAG" >/dev/null 2>&1; then echo "::warning::$TAG 이미 있음 — 서명 보호를 위해 덮어쓰지 않습니다. 버전을 올려 주세요"
           else
             gh release create "$TAG" out/* --target "${{ github.sha }}" --title "파일 관리자 2 PC ${{ steps.c.outputs.ver }}" \
               --notes "Windows 10/11 64비트용 파일 관리자 2 PC 연결 프로그램. 휴대폰 앱과 같은 계정으로 로그인해 승인된 폴더의 파일을 보고 주고받을 수 있습니다."
