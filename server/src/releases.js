@@ -32,6 +32,13 @@ async function fetchReleases() {
     if (sigAsset) {
       try { signature = (await (await fetch(sigAsset.browser_download_url, { headers: { 'User-Agent': 'fm2-connect' } })).text()).trim(); } catch {}
     }
+    if (!signature) {
+      // 릴리스에 .sig가 없으면 저장소에 커밋된 서명 사용 (서명은 공개 정보, 검증은 앱이 공개키로 함)
+      try {
+        const r = await fetch(`https://raw.githubusercontent.com/${REPO}/${process.env.SIG_BRANCH || 'filemanager2'}/pc/signatures/${encodeURIComponent(main.name)}.sig`, { headers: { 'User-Agent': 'fm2-connect' } });
+        if (r.ok) signature = (await r.text()).trim();
+      } catch {}
+    }
     const item = {
       signature,
       version: String(rel.tag_name).slice(PREFIX.length),
