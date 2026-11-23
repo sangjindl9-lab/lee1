@@ -36,3 +36,12 @@
 ## 오탐 처리
 - 사용자는 결과 화면 '오탐 신고' → 이메일(pm999@naver.com)
 - 확인 후 해당 SHA-256 을 payload 의 `false_positives` 에 넣거나 규칙을 고쳐 새 DB 를 배포
+
+## 전체판(.full) 배포
+- 다운로드 페이지: https://eum-security-download-production.up.railway.app (Railway eum-apps, `eum-security-download` 브랜치, Caddy 정적 서버)
+- 서명: CI 가 만든 `eum-security-pro.apk`(전체판 release)를 받아 전체판 전용 키로 다시 서명
+  `python3 tools/apk_v2_sign.py in.apk eum-security-pro-full-<버전>.apk eum-security-full.jks <비밀번호>`
+  (APK Signature Scheme v2, minSdk 29 라 v1 불필요). 키는 저장소에 없음.
+- 인증서 SHA-256: 35:98:F0:E5:4D:43:A8:9F:4E:72:37:78:D4:CC:7D:80:8C:6E:2E:68:46:5B:14:F7:FD:60:9B:EA:A0:39:45:50
+- 새 버전: `eum-security-download` 브랜치의 APK·index.html(버전·SHA-256)·Dockerfile 파일명을 바꿔 푸시하면 Railway 가 다시 배포
+- Android 개발자 인증: Play Console > 계정 관리 > Android 개발자 인증에 `kr.eumsoft.securitypro.full` + 위 지문 등록(2026-11-23 검토 중)
