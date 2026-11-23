@@ -38,7 +38,7 @@
 - 확인 후 해당 SHA-256 을 payload 의 `false_positives` 에 넣거나 규칙을 고쳐 새 DB 를 배포
 
 ## 전체판(.full) 배포
-- 다운로드 페이지: https://eum-security-download-production.up.railway.app (Railway eum-apps, `eum-security-download` 브랜치, Caddy 정적 서버)
+- 다운로드 페이지: https://security.ieumerp.kr (예비: https://eum-security-download-production.up.railway.app) (Cloudflare DNS CNAME security → Railway, eum-apps, `eum-security-download` 브랜치, Caddy 정적 서버)
 - 서명: CI 가 만든 `eum-security-pro.apk`(전체판 release)를 받아 전체판 전용 키로 다시 서명
   `python3 tools/apk_v2_sign.py in.apk eum-security-pro-full-<버전>.apk eum-security-full.jks <비밀번호>`
   (APK Signature Scheme v2, minSdk 29 라 v1 불필요). 키는 저장소에 없음.
