@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- macOS 개인정보 보호 안내 문구 (Tauri가 기본 Info.plist에 합쳐 넣음) -->
+  <key>NSDownloadsFolderUsageDescription</key>
+  <string>휴대폰·클라우드·NAS에서 받은 파일을 다운로드 폴더의 FileManager2 폴더에 저장합니다.</string>
+  <key>NSDocumentsFolderUsageDescription</key>
+  <string>문서 폴더의 파일을 휴대폰·클라우드·NAS로 보내거나 받은 파일을 저장할 때 사용합니다.</string>
+  <key>NSDesktopFolderUsageDescription</key>
+  <string>데스크탑의 파일을 휴대폰·클라우드·NAS로 보내거나 받은 파일을 저장할 때 사용합니다.</string>
+  <key>NSRemovableVolumesUsageDescription</key>
+  <string>USB 등 외장 저장장치의 파일을 보내거나 받은 파일을 저장할 때 사용합니다.</string>
+  <key>NSNetworkVolumesUsageDescription</key>
+  <string>네트워크 드라이브의 파일을 보내거나 받은 파일을 저장할 때 사용합니다.</string>
+  <key>NSLocalNetworkUsageDescription</key>
+  <string>같은 네트워크에 있는 NAS(WebDAV)에 연결해 파일을 주고받을 때 사용합니다.</string>
+  <key>LSApplicationCategoryType</key>
+  <string>public.app-category.utilities</string>
+  <key>NSHumanReadableCopyright</key>
+  <string>© 2026 이음소프트웨어</string>
+</dict>
+</plist>

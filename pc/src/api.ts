@@ -2,7 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 
 export const SERVER = 'https://fm2.ieumerp.kr';
 export const WS_URL = SERVER.replace('https://', 'wss://') + '/ws';
-export const APP_VERSION = '0.4.0';
+export const APP_VERSION = '0.4.1';
 
 // 실행 중인 운영체제 (경로 구분자·문구에 사용). Windows는 WebView2, macOS는 WKWebView, 리눅스는 WebKitGTK.
 export const IS_WINDOWS = /Windows/i.test(navigator.userAgent);

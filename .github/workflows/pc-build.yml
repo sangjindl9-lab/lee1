@@ -57,6 +57,21 @@ jobs:
           if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then npx tauri build "${ARGS[@]}"
           else echo "::warning::업데이트 서명 키가 없어 자동 업데이트용 서명 없이 빌드합니다 (서버는 서명 없는 업데이트를 내려주지 않음)"
             npx tauri build "${ARGS[@]}" --config '{"bundle":{"createUpdaterArtifacts":false}}'; fi
+      - name: macOS 실행 확인 (실제로 켜 보고 화면 찍기)
+        if: matrix.plat == 'macos'
+        run: |
+          APP=$(ls -d src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app | head -1)
+          codesign -dv "$APP" 2>&1 | grep -E "Signature|Identifier|Format" || true
+          lipo -archs "$APP/Contents/MacOS/"* || true
+          plutil -p "$APP/Contents/Info.plist" | grep -E "CFBundleShortVersionString|NSLocalNetwork|NSDownloads|LSMinimumSystemVersion" || true
+          open "$APP"; sleep 20
+          if ! pgrep -f "FileManager2PC" >/dev/null; then echo "::error::macOS에서 앱이 실행되지 않았습니다"; exit 1; fi
+          mkdir -p /tmp/shots && screencapture -x /tmp/shots/macos.png || echo "::warning::화면 찍기 실패"
+          pkill -f FileManager2PC || true
+          if [ -f /tmp/shots/macos.png ]; then
+            cd /tmp/shots && git init -q -b filemanager2-pc-shots && git config user.name github-actions && git config user.email actions@github.com
+            git add . && git commit -qm "macOS screenshot ${{ github.sha }}" && git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" filemanager2-pc-shots
+          fi
       - name: Collect
         run: |
           VER=$(node -p "require('./src-tauri/tauri.conf.json').version")
