@@ -134,6 +134,16 @@ private fun CloudHome(vm: AppVM, onOpen: (CloudConn) -> Unit) {
     var waiting by remember { mutableStateOf<String?>(null) }
     var showShares by remember { mutableStateOf(false) }
     var confirmOff by remember { mutableStateOf<CloudConn?>(null) }
+    var googleGuide by remember { mutableStateOf<CloudProvider?>(null) }
+    fun startConnect(p: CloudProvider) {
+        scope.launch {
+            try {
+                val url = CloudApi.startUrl(ctx, p.id)
+                ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                waiting = p.id
+            } catch (e: Exception) { vm.toast(e.message ?: "실패했습니다") }
+        }
+    }
     suspend fun reload() {
         try { conns = CloudApi.connections(ctx); provs = CloudApi.providers(ctx) } catch (e: Exception) { vm.toast(e.message ?: "불러오지 못했습니다") }
         loading = false
@@ -179,18 +189,13 @@ private fun CloudHome(vm: AppVM, onOpen: (CloudConn) -> Unit) {
                     Spacer(Modifier.width(12.dp))
                     Text(p.label, Modifier.weight(1f), fontWeight = FontWeight.Medium)
                     Button(enabled = waiting == null, shape = RoundedCornerShape(12.dp), onClick = {
-                        scope.launch {
-                            try {
-                                val url = CloudApi.startUrl(ctx, p.id)
-                                ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-                                waiting = p.id
-                            } catch (e: Exception) { vm.toast(e.message ?: "실패했습니다") }
-                        }
+                        if (p.id == "gdrive") googleGuide = p else startConnect(p)
                     }) { Text(if (waiting == p.id) "승인 대기…" else "연결") }
                 }
             }
+            item { GoogleWarningGuide() }
             item {
-                Text("브라우저에서 로그인하고 권한을 허용한 뒤 이 화면으로 돌아오면 자동으로 연결됩니다. Google은 '확인되지 않은 앱' 화면이 나오면 '고급 → 파일관리자2(으)로 이동'을 누르세요.",
+                Text("브라우저에서 로그인하고 권한을 허용한 뒤 이 화면으로 돌아오면 자동으로 연결됩니다.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(4.dp))
             }
             item {
@@ -209,6 +214,47 @@ private fun CloudHome(vm: AppVM, onOpen: (CloudConn) -> Unit) {
         })
     }
     if (showShares) SharesSheet(vm) { showShares = false }
+    googleGuide?.let { p ->
+        AlertDialog(onDismissRequest = { googleGuide = null }, title = { Text("Google Drive 연결 안내") },
+            text = { GoogleWarningSteps() },
+            confirmButton = { TextButton(onClick = { googleGuide = null; startConnect(p) }) { Text("확인하고 계속") } },
+            dismissButton = { TextButton(onClick = { googleGuide = null }) { Text("취소") } })
+    }
+}
+
+@Composable
+private fun GoogleWarningSteps() {
+    Column {
+        Text("현재 Google 앱 인증 심사 전이라 'Google에서 확인하지 않은 앱' 경고 화면이 나옵니다. 아래처럼 진행하면 됩니다.",
+            style = MaterialTheme.typography.bodyMedium)
+        Spacer(Modifier.height(10.dp))
+        listOf(
+            "Google 계정을 선택합니다",
+            "'Google에서 확인하지 않은 앱' 화면에서 왼쪽 아래 [고급]을 누릅니다",
+            "아래에 나온 [파일관리자2(으)로 이동(안전하지 않음)]을 누릅니다",
+            "권한 화면에서 [계속]을 누릅니다",
+            "'연결되었습니다'가 나오면 파일관리자2로 돌아옵니다 (자동 연결)",
+        ).forEachIndexed { i, t ->
+            Row(Modifier.padding(vertical = 3.dp)) {
+                Text("${i + 1}.", fontWeight = FontWeight.Bold, modifier = Modifier.width(22.dp))
+                Text(t, style = MaterialTheme.typography.bodyMedium)
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Text("비밀번호는 파일관리자2에 저장되지 않으며, 언제든 이 화면에서 연결을 해제할 수 있습니다.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun GoogleWarningGuide() {
+    var open by remember { mutableStateOf(false) }
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Color(0x33F59E0B)).clickable { open = !open }.padding(14.dp)) {
+        Text("⚠ Google Drive 연결 시 '확인하지 않은 앱' 경고가 나오면", fontWeight = FontWeight.Bold)
+        Text("[고급] → [파일관리자2(으)로 이동(안전하지 않음)] → [계속]" + if (open) "" else "  ·  자세히 보기",
+            style = MaterialTheme.typography.bodySmall)
+        if (open) { Spacer(Modifier.height(8.dp)); GoogleWarningSteps() }
+    }
 }
 
 // ---------------- 탐색 ----------------

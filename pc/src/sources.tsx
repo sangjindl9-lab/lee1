@@ -215,6 +215,16 @@ export function CloudAddDialog({ providers, conns, onClose, onAdded, say }: { pr
         </div>
       ))}
       {providers.some((p) => !p.ready) && <p className="muted small">'연동 준비 필요'는 운영자가 해당 서비스의 앱 키를 등록하기 전이라는 뜻입니다.</p>}
+      <div className="note warn" style={{ borderRadius: 12, marginTop: 10 }}>
+        <b>Google Drive 연결 시 '확인하지 않은 앱' 경고가 나오면</b>
+        <ol style={{ margin: '6px 0 0 18px', padding: 0, lineHeight: 1.7 }}>
+          <li>Google 계정 선택</li>
+          <li>왼쪽 아래 <b>고급</b> 클릭</li>
+          <li><b>파일관리자2(으)로 이동(안전하지 않음)</b> 클릭</li>
+          <li>권한 화면에서 <b>계속</b> → '연결되었습니다'가 나오면 이 프로그램으로 돌아오기</li>
+        </ol>
+        <div className="small" style={{ marginTop: 4 }}>Google 앱 인증 심사 전이라 나오는 화면입니다. 비밀번호는 저장되지 않으며 언제든 연결을 해제할 수 있습니다.</div>
+      </div>
       <div className="row end"><button className="btn ghost" onClick={onClose}>닫기</button></div>
     </div></div>
   );
