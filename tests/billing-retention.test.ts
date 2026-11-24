@@ -1,8 +1,8 @@
 /**
  * 구독 종료 후 30일 보관 정책:
  * - 끝난 날 + 30일(최소 오늘 + 7일)을 보관 기한으로 잡고 안내한다
- * - 기한 전·재구독·3GB 이하로 정리·Google 장애 시에는 아무것도 지우지 않는다
- * - 기한이 지나면 3GB 를 넘는 만큼만, 휴지통 → 최근에 올린 것 순서로 지우고 오래된 사진·앨범·육아기록은 남긴다
+ * - 기한 전·재구독·1GB 이하로 정리·Google 장애 시에는 아무것도 지우지 않는다
+ * - 기한이 지나면 1GB 를 넘는 만큼만, 휴지통 → 최근에 올린 것 순서로 지우고 오래된 사진·앨범·육아기록은 남긴다
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import prisma from "@/lib/db";
@@ -80,7 +80,7 @@ beforeEach(async () => {
 });
 
 describe("보관 기한 정하기·안내", () => {
-  it("구독이 끝나고 3GB 를 넘으면 '끝난 날 + 30일'이 기한이고 화면 안내가 나온다", async () => {
+  it("구독이 끝나고 1GB 를 넘으면 '끝난 날 + 30일'이 기한이고 화면 안내가 나온다", async () => {
     await addMedia(10); // 5GB
     const ended = fromNow(-2 * DAY);
     await subscribeThenExpire("r-1", ended);
@@ -99,7 +99,7 @@ describe("보관 기한 정하기·안내", () => {
     expect(until).toBeGreaterThanOrEqual(Date.now() + 7 * DAY - MIN);
   });
 
-  it("3GB 이하이거나 구독 이력이 없으면 기한이 없다", async () => {
+  it("1GB 이하이거나 구독 이력이 없으면 기한이 없다", async () => {
     await addMedia(2); // 1GB
     await subscribeThenExpire("r-small", fromNow(-DAY));
     expect((await fam()).retentionUntil).toBeNull();
@@ -124,14 +124,14 @@ describe("기한 처리", () => {
     expect(await prisma.mediaAsset.count()).toBe(10);
   });
 
-  it("기한이 지나면 3GB 를 넘는 만큼만, 휴지통 → 최근 것부터 지우고 오래된 사진·앨범·육아기록은 남긴다", async () => {
+  it("기한이 지나면 1GB 를 넘는 만큼만, 휴지통 → 최근 것부터 지우고 오래된 사진·앨범·육아기록은 남긴다", async () => {
     const active = await addMedia(10, { tag: "a" }); // 5GB, active[0] 이 가장 오래됨
     const trashed = await addMedia(2, { tag: "t", trashed: true }); // 1GB 휴지통
     await prisma.careRecord.create({ data: { familyId: ctx.family.id, childId: ctx.first.id, type: "SLEEP", startAt: new Date(), createdById: ctx.dad.id } });
     await subscribeThenExpire("r-due", fromNow(-31 * DAY));
     await prisma.family.update({ where: { id: ctx.family.id }, data: { retentionUntil: fromNow(-MIN) } });
 
-    const oldest = await prisma.mediaAsset.findMany({ where: { id: { in: active.slice(0, 6) } } });
+    const oldest = await prisma.mediaAsset.findMany({ where: { id: { in: active.slice(0, 2) } } });
     const oldestSha = await Promise.all(oldest.map((m) => sha256Of(m.originalPath)));
 
     expect(await prisma.mediaAsset.count({ where: { familyId: ctx.family.id, deletedAt: { not: null } } })).toBe(2);
@@ -143,9 +143,9 @@ describe("기한 처리", () => {
     expect(f.retentionEnforcedAt).not.toBeNull();
 
     const left = await prisma.mediaAsset.findMany({ where: { familyId: ctx.family.id } });
-    // 6GB → 3GB: 휴지통 2개(1GB) + 최근 4개(2GB) 삭제, 오래된 6개(3GB) 유지
-    expect(left.map((m) => m.id).sort()).toEqual(active.slice(0, 6).sort());
-    expect(f.retentionDeletedCount).toBe(6);
+    // 6000MB → 1GB 이하: 휴지통 2개 + 최근 8개 삭제, 가장 오래된 2개(1000MB) 유지
+    expect(left.map((m) => m.id).sort()).toEqual(active.slice(0, 2).sort());
+    expect(f.retentionDeletedCount).toBe(10);
     for (const id of trashed) expect(left.find((m) => m.id === id)).toBeUndefined();
     // 남은 사진 파일은 그대로, 지운 파일은 저장소에서도 사라짐
     expect(await Promise.all(oldest.map((m) => sha256Of(m.originalPath)))).toEqual(oldestSha);
@@ -188,17 +188,17 @@ describe("기한 처리", () => {
     expect(await prisma.mediaAsset.count()).toBe(10);
   });
 
-  it("직접 정리해 3GB 이하가 되었으면 기한이 지나도 지우지 않는다", async () => {
+  it("직접 정리해 1GB 이하가 되었으면 기한이 지나도 지우지 않는다", async () => {
     const ids = await addMedia(10);
     await subscribeThenExpire("r-cleaned", fromNow(-31 * DAY));
     await prisma.family.update({ where: { id: ctx.family.id }, data: { retentionUntil: fromNow(-MIN) } });
-    // 사용자가 4개를 영구 삭제 → 3GB
-    await prisma.mediaAsset.deleteMany({ where: { id: { in: ids.slice(6) } } });
-    await prisma.family.update({ where: { id: ctx.family.id }, data: { usedBytes: BigInt(6 * ITEM) } });
+    // 사용자가 8개를 영구 삭제 → 1000MB
+    await prisma.mediaAsset.deleteMany({ where: { id: { in: ids.slice(2) } } });
+    await prisma.family.update({ where: { id: ctx.family.id }, data: { usedBytes: BigInt(2 * ITEM) } });
     expect(await getRetentionNotice(ctx.family.id)).toBeNull();
     const r = await enforceRetention(ctx.family.id);
     expect(r.deleted).toBe(0);
-    expect(await prisma.mediaAsset.count()).toBe(6);
+    expect(await prisma.mediaAsset.count()).toBe(2);
     expect((await fam()).retentionUntil).toBeNull();
   });
 });

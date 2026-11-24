@@ -1,8 +1,8 @@
 /**
- * 구독 만료 시 사진 보존: 50GB(28GB 사용) → 무료 3GB 전환 전후로
+ * 구독 만료 시 사진 보존: 20GB(15GB 사용) → 무료 1GB 전환 전후로
  * 사진 기록 수·파일 체크섬·사용량·앨범·육아기록이 그대로인지, 원본을 다시 압축하지 않는지,
  * 신규 업로드만 막히고 열람·다운로드는 되는지, 재구독하면 그대로 복원되는지 확인한다.
- * (실제 28GB 파일은 만들지 않는다: 작은 실제 파일 + 기록상 크기 약 102MB 씩 280건 = 28GB)
+ * (실제 15GB 파일은 만들지 않는다: 작은 실제 파일 + 기록상 크기 약 55MB 씩 280건 = 15GB)
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import sharp from "sharp";
@@ -20,8 +20,8 @@ import { DAY, fromNow, GB, MB, MIN, MockPlay } from "./mock-play";
 let play: MockPlay;
 let ctx: Awaited<ReturnType<typeof makeFamily>>;
 const SYNTHETIC = 280;
-/** 280건 × 약 102.4MB = 정확히 28GB */
-const PER_ROW = Math.ceil((28 * GB) / SYNTHETIC);
+/** 280건 × 약 54.9MB = 정확히 15GB */
+const PER_ROW = Math.ceil((15 * GB) / SYNTHETIC);
 
 type Snapshot = {
   mediaCount: number;
@@ -63,7 +63,7 @@ beforeAll(async () => {
   await resetDb();
   ctx = await makeFamily();
 
-  // 1) 50GB 구독
+  // 1) 20GB 구독
   const intent = await createPurchaseIntent({ familyId: ctx.family.id, userId: ctx.dad.id, role: "PARENT", productId: "family_50", basePlanId: "monthly" });
   play.put("keep-tok", { productId: "family_50", expiry: fromNow(30 * MIN), accountId: intent.intentId, profileId: ctx.dad.id });
   await verifyAndApply({ purchaseToken: "keep-tok", familyId: ctx.family.id, userId: ctx.dad.id });
@@ -83,7 +83,7 @@ beforeAll(async () => {
     });
   }
 
-  // 3) 28GB 에 해당하는 기록 (작은 실제 파일, 기록상 100MB)
+  // 3) 15GB 에 해당하는 기록 (작은 실제 파일, 기록상 약 55MB)
   for (let i = 0; i < SYNTHETIC; i += 1) {
     const base = newObjectBase(ctx.family.id);
     const rel = `${base}.jpg`;
@@ -150,11 +150,11 @@ beforeAll(async () => {
 
 afterAll(() => __setPlayApiForTests(null));
 
-describe("50GB(28GB 사용) → 무료 전환", () => {
-  it("전환 전: 50GB 요금제, 28GB 이상 사용", async () => {
+describe("20GB(15GB 사용) → 무료 전환", () => {
+  it("전환 전: 20GB 요금제, 15GB 이상 사용", async () => {
     const u = await getEffectiveUsage(ctx.family.id);
     expect(u.plan.id).toBe("FAMILY_50");
-    expect(u.usedBytes).toBeGreaterThanOrEqual(28 * GB);
+    expect(u.usedBytes).toBeGreaterThanOrEqual(15 * GB);
     expect(before.mediaCount).toBe(5 + SYNTHETIC + 1);
     expect(Object.values(before.files).every(Boolean)).toBe(true);
   });
@@ -186,7 +186,7 @@ describe("50GB(28GB 사용) → 무료 전환", () => {
     expect(await sha256Of(again.originalPath)).toBe(shaAfter);
   });
 
-  it("3GB 를 넘었으니 신규 업로드만 막힌다", async () => {
+  it("1GB 를 넘었으니 신규 업로드만 막힌다", async () => {
     await expect(reserveQuota(ctx.family.id, MB)).rejects.toMatchObject({ code: "QUOTA_EXCEEDED" });
     const buf = await makeImageBuffer("blocked");
     const { session, items } = await createUploadSession({
@@ -217,7 +217,7 @@ describe("50GB(28GB 사용) → 무료 전환", () => {
     expect(await prisma.subscription.count({ where: { familyId: ctx.family.id } })).toBeGreaterThan(0);
   });
 
-  it("재구독하면 기존 데이터 그대로 50GB 권한이 돌아온다", async () => {
+  it("재구독하면 기존 데이터 그대로 20GB 권한이 돌아온다", async () => {
     const pre = await snapshot([pendingId]);
     const intent = await createPurchaseIntent({ familyId: ctx.family.id, userId: ctx.dad.id, role: "PARENT", productId: "family_50", basePlanId: "monthly" });
     expect(intent.action).toBe("PURCHASE");

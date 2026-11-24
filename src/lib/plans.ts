@@ -9,6 +9,7 @@ export type PlanId = "FREE" | "FAMILY_50" | "FAMILY_200" | "FAMILY_1TB";
 
 const GB = 1024 ** 3;
 
+/** 상품 ID(family_50 / family_200)와 내부 ID 는 Play·DB 호환을 위해 그대로 둔다. 실제 용량은 20GB / 100GB. */
 export type PlanDef = {
   id: PlanId;
   name: string;
@@ -29,19 +30,19 @@ export const PLANS: Record<PlanId, PlanDef> = {
   FREE: {
     id: "FREE",
     name: "무료",
-    quotaBytes: 3 * GB,
+    quotaBytes: 1 * GB,
     keepOriginals: false,
     maxVideoSec: 60,
     ads: true,
     zipDownload: false,
     productId: null,
     prices: [],
-    perks: ["가족당 3GB", "사진 고화질 압축 보관", "동영상 1분·720p", "가족 초대·육아기록"],
+    perks: ["가족당 1GB", "사진 고화질 압축 보관", "동영상 1분·720p", "가족 초대·육아기록"],
   },
   FAMILY_50: {
     id: "FAMILY_50",
-    name: "패밀리 50GB",
-    quotaBytes: 50 * GB,
+    name: "패밀리 20GB",
+    quotaBytes: 20 * GB,
     keepOriginals: true,
     maxVideoSec: 300,
     ads: false,
@@ -51,12 +52,12 @@ export const PLANS: Record<PlanId, PlanDef> = {
       { basePlanId: "monthly", priceKRW: 2900, label: "월 2,900원" },
       { basePlanId: "yearly", priceKRW: 29000, label: "연 29,000원 (2달 무료)" },
     ],
-    perks: ["가족당 50GB", "사진·동영상 원본 그대로", "동영상 5분", "광고 없음", "원본 ZIP 내려받기"],
+    perks: ["가족당 20GB", "사진·동영상 원본 그대로", "동영상 5분", "광고 없음", "원본 ZIP 내려받기"],
   },
   FAMILY_200: {
     id: "FAMILY_200",
-    name: "패밀리 200GB",
-    quotaBytes: 200 * GB,
+    name: "패밀리 100GB",
+    quotaBytes: 100 * GB,
     keepOriginals: true,
     maxVideoSec: null,
     ads: false,
@@ -66,7 +67,7 @@ export const PLANS: Record<PlanId, PlanDef> = {
       { basePlanId: "monthly", priceKRW: 6900, label: "월 6,900원" },
       { basePlanId: "yearly", priceKRW: 75000, label: "연 75,000원" },
     ],
-    perks: ["가족당 200GB", "원본 그대로", "동영상 길이 제한 없음", "광고 없음", "원본 ZIP 내려받기"],
+    perks: ["가족당 100GB", "원본 그대로", "동영상 길이 제한 없음", "광고 없음", "원본 ZIP 내려받기"],
   },
   FAMILY_1TB: {
     id: "FAMILY_1TB",

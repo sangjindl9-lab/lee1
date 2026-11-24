@@ -55,7 +55,7 @@ beforeEach(async () => {
 });
 
 describe("구독 수명 주기 (2026-11-23 테스트 구독 재현: 30분 간격 6회 갱신 후 해지)", () => {
-  it("최초 구매 → 승인 → 가족 요금제 50GB", async () => {
+  it("최초 구매 → 승인 → 가족 요금제 20GB(family_50)", async () => {
     const { result } = await buy("tok-life");
     expect(result.sub.state).toBe("SUBSCRIPTION_STATE_ACTIVE");
     expect(result.sub.acknowledged).toBe(true);

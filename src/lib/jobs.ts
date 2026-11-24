@@ -61,7 +61,7 @@ async function runJob(job: Claimed) {
       break;
     }
     case "ENFORCE_RETENTION":
-      // 구독 종료 후 30일 보관 기한이 지난 가족: 3GB 를 넘는 분량만 최근 것부터 정리
+      // 구독 종료 후 30일 보관 기한이 지난 가족: 1GB 를 넘는 분량만 최근 것부터 정리
       await enforceDueRetention();
       await enqueue("ENFORCE_RETENTION", {}, new Date(Date.now() + 6 * 3600 * 1000));
       break;

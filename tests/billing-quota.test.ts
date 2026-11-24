@@ -54,7 +54,7 @@ beforeEach(async () => {
 });
 
 describe("유효 권한 기준 검사", () => {
-  it("요금제 기록은 50GB 지만 만료됐고 Google 도 만료라면 무료 3GB 로 검사", async () => {
+  it("요금제 기록은 20GB 지만 만료됐고 Google 도 만료라면 무료 1GB 로 검사", async () => {
     play.put("q-exp", { productId: "family_50", expiry: fromNow(10 * MIN), accountId: ctx.family.id, acked: true });
     await verifyAndApply({ purchaseToken: "q-exp", familyId: ctx.family.id });
     await setUsed(10 * GB);
@@ -81,7 +81,7 @@ describe("유효 권한 기준 검사", () => {
 });
 
 describe("원자적 예약", () => {
-  it("무료 3GB 에 100MB 씩 50건 동시 예약 → 정확히 30건만 성공, 상한 초과 없음", async () => {
+  it("무료 1GB 에 100MB 씩 50건 동시 예약 → 정확히 10건만 성공, 상한 초과 없음", async () => {
     const results = await Promise.allSettled(Array.from({ length: 50 }, () => reserveQuota(ctx.family.id, 100 * MB)));
     const ok = results.filter((r) => r.status === "fulfilled").length;
     const fail = results.filter((r) => r.status === "rejected");
@@ -115,7 +115,7 @@ describe("직접 업로드 (준비 → 저장소 PUT → 완료)", () => {
       ),
     );
     const ok = results.filter((r) => r.status === "fulfilled" && (r.value as { mode: string }).mode === "direct");
-    expect(ok.length).toBe(Math.floor(FREE / size)); // 15
+    expect(ok.length).toBe(Math.floor(FREE / size)); // 5
     expect(await used()).toBe(ok.length * size);
     const reserved = await prisma.mediaAsset.aggregate({ where: { familyId: ctx.family.id, status: "UPLOADING" }, _sum: { storedBytes: true } });
     expect(reserved._sum.storedBytes).toBe(ok.length * size);
