@@ -91,6 +91,7 @@ private sealed interface Dlg {
     data class Compress(val items: List<FItem>) : Dlg
     data class Props(val items: List<FItem>) : Dlg
     data class Zip(val item: FItem) : Dlg
+    data class SendTo(val kind: SendKind, val items: List<FItem>) : Dlg
 }
 
 /**
@@ -161,6 +162,8 @@ fun FileListScreen(
                                 if (selItems.size == 1) DropdownMenuItem(text = { Text("이름 변경") }, onClick = { selMenu = false; dlg = Dlg.Rename(selItems[0]) })
                                 DropdownMenuItem(text = { Text("압축하기 (ZIP)") }, onClick = { selMenu = false; dlg = Dlg.Compress(selItems) })
                                 DropdownMenuItem(text = { Text("공유") }, onClick = { selMenu = false; vm.share(ctx, selItems) })
+                                DropdownMenuItem(text = { Text("클라우드로 보내기") }, onClick = { selMenu = false; dlg = Dlg.SendTo(SendKind.Cloud, selItems) })
+                                DropdownMenuItem(text = { Text("NAS로 보내기") }, onClick = { selMenu = false; dlg = Dlg.SendTo(SendKind.Nas, selItems) })
                                 if (selItems.size == 1 && !selItems[0].isDir) {
                                     DropdownMenuItem(text = { Text("다른 앱으로 열기") }, onClick = { selMenu = false; vm.openExternal(ctx, selItems[0].file, true) })
                                 }
@@ -322,6 +325,7 @@ fun FileListScreen(
             )
         }
         is Dlg.Props -> PropertiesDialog(d.items) { dlg = null }
+        is Dlg.SendTo -> SendToDialog(vm, d.kind, d.items.map { it.file }) { dlg = null; selected = emptySet() }
         is Dlg.Zip -> ZipDialog(
             name = d.item.name,
             onDismiss = { dlg = null },

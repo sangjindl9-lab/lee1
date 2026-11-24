@@ -118,7 +118,7 @@ fun NasScreen(vm: AppVM) {
     Scaffold(containerColor = MaterialTheme.colorScheme.background, topBar = { SimpleTopBar("NAS", { vm.pop() }) }) { pad ->
         LazyColumn(Modifier.padding(pad).fillMaxSize(), contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 40.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             if (list.isEmpty()) item {
-                Text("등록된 NAS가 없습니다. 아래에서 제조사를 골라 추가하세요. 집·회사 밖에서도 DDNS 주소로 접속할 수 있습니다.",
+                Text("등록된 NAS가 없습니다. 아래에서 제조사를 골라 추가하세요. 집·회사 밖에서는 NAS 제조사 VPN으로 내부망에 들어온 뒤 접속하는 방법을 권장합니다.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(4.dp))
             }
             items(list, key = { it.id }) { p ->
@@ -133,6 +133,7 @@ fun NasScreen(vm: AppVM) {
                     TextButton(onClick = { edit = p }) { Text("설정") }
                 }
             }
+            item { TransferList(vm) }
             item { Text("NAS 추가", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 4.dp, top = 10.dp)) }
             item {
                 Button(onClick = { adding = true }, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth().height(50.dp)) { Text("시놀로지 · QNAP · ASUSTOR · 기타 WebDAV 추가") }
