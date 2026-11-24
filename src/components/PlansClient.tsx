@@ -20,6 +20,7 @@ type Info = {
   plans: PlanRow[];
   usage: { planId: string; used: string; quota: string; percent: number; expiresAt: string | null };
   subscription: { productId: string; basePlanId: string | null; state: string; autoRenewing: boolean; expiresAt: string | null; purchaseToken: string | null; mine: boolean } | null;
+  retention: { until: string; over: string; daysLeft: number } | null;
 };
 type StoreOffer = { productId: string; basePlanId: string; offerId: string | null; price: string; trial: boolean };
 
@@ -167,6 +168,18 @@ export default function PlansClient({ inApp }: { inApp: boolean }) {
     <div className="space-y-4">
       {notice && <p className="rounded-2xl bg-rose-50 px-4 py-2 text-xs font-semibold text-rose-700">{notice}</p>}
 
+      {info.retention && (
+        <section className="rounded-2xl bg-amber-50 p-4 text-xs leading-relaxed text-amber-900 ring-1 ring-amber-200">
+          <p className="text-sm font-black">
+            보관 기한: {new Date(info.retention.until).toLocaleDateString("ko-KR")}까지 ({info.retention.daysLeft}일 남음)
+          </p>
+          <p className="mt-1">
+            구독이 끝나 무료 용량(3GB)을 {info.retention.over} 넘었어요. 기한까지는 모든 사진·동영상을 그대로 보관합니다. 기한 안에 다시 구독하면 아무것도
+            지워지지 않아요. 기한이 지나도 3GB를 넘으면 넘는 만큼만 휴지통에 있는 것 → 최근에 올린 것 순서로 영구 삭제되고, 오래된 사진은 남습니다.
+          </p>
+        </section>
+      )}
+
       <section className="card p-5">
         <p className="text-xs text-slate-500">우리 가족 사용량</p>
         <p className="mt-1 text-lg font-black text-slate-900">
@@ -179,6 +192,11 @@ export default function PlansClient({ inApp }: { inApp: boolean }) {
           <p className="mt-2 text-xs text-slate-600">
             {STATE_LABEL[sub.state] ?? sub.state}
             {sub.expiresAt ? ` · ${new Date(sub.expiresAt).toLocaleDateString("ko-KR")} ${sub.state === "SUBSCRIPTION_STATE_CANCELED" ? "까지" : "다음 결제"}` : ""}
+          </p>
+        )}
+        {sub?.state === "SUBSCRIPTION_STATE_CANCELED" && (
+          <p className="mt-1 text-[11px] text-amber-700">
+            구독이 끝나면 무료 용량(3GB)을 넘는 사진은 30일 동안 보관한 뒤, 넘는 만큼만 최근에 올린 것부터 삭제됩니다.
           </p>
         )}
       </section>
@@ -259,8 +277,8 @@ export default function PlansClient({ inApp }: { inApp: boolean }) {
       )}
 
       <p className="text-center text-[11px] leading-relaxed text-slate-400">
-        구독은 Google Play 계정으로 결제되며 해지하지 않으면 자동 갱신됩니다. 해지해도 남은 기간까지 쓸 수 있고, 요금제를 낮추거나 해지해도
-        이미 올린 사진은 지워지지 않습니다(용량을 넘으면 새로 올리기만 멈춥니다). 환불은 Google Play 환불 정책을 따릅니다.{" "}
+        구독은 Google Play 계정으로 결제되며 해지하지 않으면 자동 갱신됩니다. 해지해도 남은 기간까지 쓸 수 있습니다. 구독이 끝나 무료 용량(3GB)을
+        넘으면 새로 올리기가 멈추고, 넘는 분량은 30일 동안 보관한 뒤 최근에 올린 것부터 삭제됩니다(오래된 사진은 남음). 환불은 Google Play 환불 정책을 따릅니다.{" "}
         <Link href="/terms" className="underline">이용약관</Link>
       </p>
     </div>

@@ -59,6 +59,10 @@ model Family {
   planExpiresAt DateTime?
   // 저장소에 실제로 쌓인 바이트(원본+미리보기+썸네일). 업로드 허가 시 상한과 비교한다.
   usedBytes     BigInt        @default(0)
+  // 구독이 끝나 무료 용량(3GB)을 넘은 가족: 이 날짜까지만 넘는 분량을 보관한다 (retention.ts)
+  retentionUntil        DateTime?
+  retentionEnforcedAt   DateTime?
+  retentionDeletedCount Int       @default(0)
   createdAt  DateTime      @default(now())
 }
 

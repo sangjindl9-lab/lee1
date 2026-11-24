@@ -389,8 +389,30 @@ export async function recomputeFamilyPlan(familyId: string, db: Db = prisma) {
       (RANK[p] === RANK[best.plan] && (s.expiresAt?.getTime() ?? 0) > (best.expiresAt?.getTime() ?? 0));
     if (better) best = { plan: p, expiresAt: s.expiresAt, unverified: g.unverified };
   }
-  await db.family.update({ where: { id: familyId }, data: { plan: best.plan, planExpiresAt: best.expiresAt } });
+  const retentionUntil = await nextRetentionUntil(db, familyId, best.plan, now);
+  await db.family.update({ where: { id: familyId }, data: { plan: best.plan, planExpiresAt: best.expiresAt, retentionUntil } });
   return best;
+}
+
+/** 구독이 끝난 뒤 넘는 분량을 보관하는 기간 */
+export const RETENTION_MS = 30 * 24 * 3600 * 1000;
+/** 끝난 것을 늦게 알아챈 경우에도 최소한 이만큼은 안내한 뒤에 지운다 */
+export const RETENTION_MIN_NOTICE_MS = 7 * 24 * 3600 * 1000;
+
+/**
+ * 보관 기한 계산: 구독 이력이 있는 가족이 무료가 되었고 사용량이 무료 용량을 넘으면
+ * '마지막 구독이 끝난 때 + 30일'(최소 오늘 + 7일)까지 보관한다. 유료로 돌아오거나 용량 안으로 줄면 기한을 없앤다.
+ * 이미 정해진 기한은 바꾸지 않는다 (안내한 날짜가 흔들리지 않게).
+ */
+async function nextRetentionUntil(db: Db, familyId: string, plan: PlanId, now: number): Promise<Date | null> {
+  const fam = await db.family.findUnique({ where: { id: familyId }, select: { usedBytes: true, retentionUntil: true } });
+  if (!fam) return null;
+  if (plan !== "FREE" || Number(fam.usedBytes) <= PLANS.FREE.quotaBytes) return null;
+  if (fam.retentionUntil) return fam.retentionUntil;
+  const last = await db.subscription.aggregate({ where: { familyId }, _max: { expiresAt: true }, _count: { _all: true } });
+  if (!last._count._all) return null; // 처음부터 무료였던 가족은 해당 없음 (업로드가 상한에서 막힘)
+  const ended = last._max.expiresAt?.getTime() ?? now;
+  return new Date(Math.max(ended + RETENTION_MS, now + RETENTION_MIN_NOTICE_MS));
 }
 
 /**

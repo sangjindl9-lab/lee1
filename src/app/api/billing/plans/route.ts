@@ -3,6 +3,7 @@ import { requireSessionUser } from "@/lib/auth";
 import { handleRouteError, ok } from "@/lib/api";
 import { PAID_PLANS, PLANS, formatBytes } from "@/lib/plans";
 import { getEffectiveUsage } from "@/lib/entitlement";
+import { getRetentionNotice } from "@/lib/retention";
 import { playConfigured } from "@/lib/play-billing";
 
 /** 요금제 목록 + 우리 가족 사용량 + 현재 구독 */
@@ -15,7 +16,9 @@ export async function GET() {
       where: { familyId: user.familyId, state: { in: ["SUBSCRIPTION_STATE_ACTIVE", "SUBSCRIPTION_STATE_IN_GRACE_PERIOD", "SUBSCRIPTION_STATE_CANCELED", "SUBSCRIPTION_STATE_ON_HOLD"] } },
       orderBy: { expiresAt: "desc" },
     });
+    const retention = await getRetentionNotice(user.familyId);
     return ok({
+      retention: retention ? { until: retention.until.toISOString(), over: retention.overLabel, daysLeft: retention.daysLeft } : null,
       billingReady: playConfigured(),
       familyId: user.familyId,
       userId: user.id,

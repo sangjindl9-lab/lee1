@@ -6,7 +6,7 @@ export default function TermsPage() {
   return (
     <main className="mx-auto max-w-2xl px-5 py-10 text-sm leading-relaxed text-slate-700">
       <h1 className="text-2xl font-black text-slate-900">가족앨범 이용약관</h1>
-      <p className="mt-1 text-xs text-slate-400">시행일: 2026년 11월 21일</p>
+      <p className="mt-1 text-xs text-slate-400">시행일: 2026년 11월 24일</p>
 
       <h2 className="mt-6 font-bold text-slate-900">1. 서비스</h2>
       <p>가족앨범(이하 &lsquo;서비스&rsquo;)은 이음소프트웨어가 제공하는, 아이 사진·동영상과 육아 기록을 초대한 가족끼리 보관·공유하는 서비스입니다. 만 14세 이상만 가입할 수 있습니다.</p>
@@ -31,8 +31,20 @@ export default function TermsPage() {
       <h2 className="mt-6 font-bold text-slate-900">4. 청약철회 · 환불</h2>
       <p>결제 후 7일 이내에 유료 기능(원본 보관·추가 용량)을 사용하지 않은 경우 전액 환불을 요청할 수 있습니다. 환불은 Google Play 환불 절차 또는 아래 문의처로 요청할 수 있으며, Google Play 정책과 관계 법령(전자상거래법 등)에 따릅니다. 서비스 장애로 이용하지 못한 기간은 그만큼 보상합니다.</p>
 
-      <h2 className="mt-6 font-bold text-slate-900">5. 요금제를 낮추거나 해지한 경우</h2>
-      <p>이미 올린 사진·동영상은 지우지 않습니다. 사용량이 새 요금제 용량을 넘으면 새로 올리기만 멈추며, 보기·내려받기·삭제는 계속 할 수 있습니다.</p>
+      <h2 className="mt-6 font-bold text-slate-900">5. 구독이 끝나거나 요금제를 낮춘 경우 (보관 기간)</h2>
+      <ul className="list-disc pl-5">
+        <li>구독이 끝나도(해지·결제 실패·환불 포함) 올린 사진·동영상·앨범·육아기록은 바로 지우지 않습니다. 원본을 다시 압축하거나 화질을 바꾸지도 않습니다.</li>
+        <li>사용량이 새 요금제(무료 3GB 등) 용량을 넘으면 새로 올리기만 멈추고, 보기·내려받기·가족 공유는 그대로 쓸 수 있습니다.</li>
+        <li>
+          넘는 분량은 <strong>구독이 끝난 날부터 30일 동안</strong> 그대로 보관합니다. 늦게 확인된 경우에도 안내한 날부터 최소 7일은 보관합니다. 남은 날짜는 앱 화면 맨 위와 요금제 화면에
+          계속 표시합니다.
+        </li>
+        <li>그 사이 다시 구독하거나, 직접 정리해 용량 안으로 줄이면 아무것도 지우지 않습니다.</li>
+        <li>
+          30일이 지나도 용량을 넘으면 <strong>넘는 만큼만</strong> 휴지통에 있는 항목 → 가장 최근에 올린 사진·동영상 순서로 영구 삭제합니다. 오래전에 올린 사진은 용량 안에서 남고, 앨범·육아기록은
+          지우지 않습니다. 삭제된 파일은 되살릴 수 없으니 기한 전에 앨범의 &lsquo;ZIP 내려받기&rsquo;로 보관해 주세요.
+        </li>
+      </ul>
 
       <h2 className="mt-6 font-bold text-slate-900">6. 이용자의 의무</h2>
       <p>다른 사람의 권리를 침해하거나 법령에 어긋나는 사진·동영상을 올려서는 안 됩니다. 이를 어기면 이용을 제한할 수 있습니다.</p>

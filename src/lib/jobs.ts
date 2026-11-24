@@ -3,10 +3,11 @@
  * 앱 서버 안에서 돌거나(WORKER_MODE=inline, 기본) 별도 작업 서버(WORKER_MODE=only)로 돈다.
  */
 import prisma from "./db";
+import { enforceDueRetention } from "./retention";
 import { processUploadedMedia, purgeMedia } from "./media";
 import { recheckDueSubscriptions } from "./play-billing";
 
-export type JobType = "PROCESS_MEDIA" | "PURGE_TRASH" | "DELETE_FAMILY" | "RECHECK_SUBSCRIPTIONS";
+export type JobType = "PROCESS_MEDIA" | "PURGE_TRASH" | "DELETE_FAMILY" | "RECHECK_SUBSCRIPTIONS" | "ENFORCE_RETENTION";
 
 export async function enqueue(type: JobType, payload: Record<string, unknown>, runAfter?: Date) {
   return prisma.job.create({ data: { type, payload: JSON.stringify(payload), runAfter: runAfter ?? new Date() } });
@@ -59,6 +60,11 @@ async function runJob(job: Claimed) {
       else await deleteFamilyRecords(payload.familyId);
       break;
     }
+    case "ENFORCE_RETENTION":
+      // 구독 종료 후 30일 보관 기한이 지난 가족: 3GB 를 넘는 분량만 최근 것부터 정리
+      await enforceDueRetention();
+      await enqueue("ENFORCE_RETENTION", {}, new Date(Date.now() + 6 * 3600 * 1000));
+      break;
     case "RECHECK_SUBSCRIPTIONS":
       await recheckDueSubscriptions();
       await enqueue("RECHECK_SUBSCRIPTIONS", {}, new Date(Date.now() + 6 * 3600 * 1000));
@@ -118,7 +124,7 @@ export function startWorker() {
     await prisma.job
       .updateMany({ where: { status: "RUNNING", updatedAt: { lt: new Date(Date.now() - 30 * 60 * 1000) } }, data: { status: "QUEUED" } })
       .catch(() => undefined);
-    for (const type of ["PURGE_TRASH", "RECHECK_SUBSCRIPTIONS"] as const) {
+    for (const type of ["PURGE_TRASH", "RECHECK_SUBSCRIPTIONS", "ENFORCE_RETENTION"] as const) {
       const exists = await prisma.job.findFirst({ where: { type, status: { in: ["QUEUED", "RUNNING"] } } }).catch(() => null);
       if (!exists) await enqueue(type, {}).catch(() => undefined);
     }
