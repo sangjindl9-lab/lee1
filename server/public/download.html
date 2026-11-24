@@ -1,11 +1,21 @@
 <!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Windows 다운로드 — 파일 관리자 2 PC CONNECT</title><meta name="description" content="휴대폰과 PC, 클라우드의 모든 파일을 하나로 연결하세요.">
-<link rel="icon" href="/icon.png"><link rel="stylesheet" href="/site.css"></head><body>
+<title>다운로드 (Windows · macOS · Linux) — 파일 관리자 2 PC CONNECT</title><meta name="description" content="휴대폰과 PC, 클라우드의 모든 파일을 하나로 연결하세요. Windows·macOS·Linux용 PC 프로그램.">
+<link rel="icon" href="/icon.png"><link rel="stylesheet" href="/site.css">
+<style>
+.ostabs{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 18px}
+.ostabs button{padding:10px 18px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--ink);font-weight:700;font-size:15px;cursor:pointer}
+.ostabs button.on{background:var(--pri);border-color:var(--pri);color:#fff}
+.btns{display:flex;gap:10px;flex-wrap:wrap}
+</style></head><body>
 <main class="wrap">
-<section class="hero" style="padding-bottom:10px"><h1>Windows용 다운로드</h1>
-<p class="lead">PC에 설치하고 휴대폰 앱과 같은 계정으로 로그인하세요.</p></section>
-<section id="androidFirst" class="hide"><div class="okbox">휴대폰으로 접속하셨습니다. 휴대폰에는 <a id="aLink" href="#">파일 관리자 2 앱(Google Play)</a>을 설치하세요. Windows 프로그램은 PC에서 이 페이지(<b id="pageUrl"></b>)를 열어 받으면 됩니다.</div></section>
+<section class="hero" style="padding-bottom:10px"><h1>PC 프로그램 다운로드</h1>
+<p class="lead">Windows · macOS · Linux에 설치하고 휴대폰 앱과 같은 계정으로 로그인하세요.</p></section>
+<section id="androidFirst" class="hide"><div class="okbox">휴대폰으로 접속하셨습니다. 휴대폰에는 <a id="aLink" href="#">파일 관리자 2 앱(Google Play)</a>을 설치하세요. PC 프로그램은 PC에서 이 페이지(<b id="pageUrl"></b>)를 열어 받으면 됩니다.</div></section>
+<section id="iosFirst" class="hide"><div class="notice">아이폰·아이패드용 앱은 준비 중입니다. 출시되면 이 페이지와 App Store에서 안내해 드립니다.</div></section>
 <section>
+  <div class="ostabs" id="tabs">
+    <button data-os="windows">Windows</button><button data-os="mac">macOS</button><button data-os="linux">Linux</button>
+  </div>
   <div class="card dl">
     <div>
       <h2 style="margin-bottom:8px">파일 관리자 2 PC CONNECT <span id="ver"></span></h2>
@@ -18,26 +28,51 @@
         <tr><td>지원 OS</td><td id="mOs"></td></tr>
         <tr><td>SHA-256</td><td><span class="mono" id="mSha"></span></td></tr>
       </table>
-      <div class="btns" style="margin-top:18px"><a class="btn pri hide" id="dlBtn" href="/download/windows">⬇ 설치 파일 받기 (.exe)</a></div>
-      <p style="color:var(--sub);font-size:14px;margin-top:14px">받은 파일이 손상·변조되지 않았는지 확인하려면 PowerShell에서 <code>Get-FileHash 파일이름.exe</code> 를 실행해 위 SHA-256 값과 같은지 비교하세요.<br>아직 코드 서명 인증서가 없어 처음 실행할 때 Windows SmartScreen 경고가 나올 수 있습니다. <b>추가 정보 → 실행</b>을 누르세요.</p>
+      <div class="btns" style="margin-top:18px" id="btns"></div>
+      <p style="color:var(--sub);font-size:14px;margin-top:14px" id="hint"></p>
     </div>
     <div style="text-align:center"><img class="qr" src="/api/qr" alt="다운로드 페이지 QR"><div style="font-size:13px;color:var(--sub)">휴대폰으로 스캔</div></div>
   </div>
 </section>
-<section><h2>설치 방법</h2><ol class="steps">
-<li>위 버튼으로 설치 파일(.exe)을 받아 실행합니다.</li>
-<li>설치가 끝나면 시작 메뉴·바탕화면의 <b>파일 관리자 2 PC</b>를 실행합니다.</li>
-<li>휴대폰 앱과 같은 계정으로 로그인합니다.</li>
-<li>휴대폰 앱의 <b>PC 연결</b>에서 연결을 승인하고 허용할 폴더를 고르면 끝!</li></ol>
+<section><h2>설치 방법</h2><ol class="steps" id="steps"></ol>
 <p><a href="/guide">자세한 설치·연결 안내 보기 →</a></p></section>
 </main>
 <script src="/site.js"></script><script>
+const UA=navigator.userAgent, isIOS=/iPhone|iPad|iPod/i.test(UA)||(/Macintosh/.test(UA)&&navigator.maxTouchPoints>1);
+const guess=new URLSearchParams(location.search).get("os")||(/Windows/i.test(UA)?"windows":(/Mac OS X|Macintosh/i.test(UA)&&!isIOS)?"mac":/Linux|X11/i.test(UA)&&!isAndroid?"linux":"windows");
 document.getElementById("pageUrl").textContent=location.host+"/download";
-fetch("/api/config").then(r=>r.json()).then(c=>{document.getElementById("aLink").href=c.androidTestUrl;if(isAndroid)document.getElementById("androidFirst").classList.remove("hide");});
+fetch("/api/config").then(r=>r.json()).then(c=>{document.getElementById("aLink").href=c.androidStoreUrl||c.androidTestUrl;if(isAndroid)document.getElementById("androidFirst").classList.remove("hide");});
+if(isIOS)document.getElementById("iosFirst").classList.remove("hide");
+const COPY={
+ windows:{hint:'받은 파일이 손상·변조되지 않았는지 확인하려면 PowerShell에서 <code>Get-FileHash 파일이름.exe</code> 를 실행해 위 SHA-256 값과 같은지 비교하세요.<br>아직 코드 서명 인증서가 없어 처음 실행할 때 Windows SmartScreen 경고가 나올 수 있습니다. <b>추가 정보 → 실행</b>을 누르세요.',
+  steps:['위 버튼으로 설치 파일(.exe)을 받아 실행합니다.','설치가 끝나면 시작 메뉴·바탕화면의 <b>파일 관리자 2 PC</b>를 실행합니다.']},
+ mac:{hint:'Intel 맥과 Apple Silicon(M1 이후) 맥 모두 같은 파일을 씁니다. 받은 파일 확인: 터미널에서 <code>shasum -a 256 파일이름.dmg</code><br>아직 Apple 공증을 받지 않은 버전이라 처음 열 때 “확인되지 않은 개발자” 안내가 나오면 <b>시스템 설정 → 개인정보 보호 및 보안 → 그래도 열기</b>를 누르세요.',
+  steps:['위 버튼으로 .dmg 파일을 받아 엽니다.','<b>파일 관리자 2 PC</b> 아이콘을 <b>응용 프로그램(Applications)</b> 폴더로 끌어다 놓습니다.','응용 프로그램 폴더에서 실행합니다. (처음 한 번은 위 안내대로 “그래도 열기”)']},
+ linux:{hint:'받은 파일 확인: <code>sha256sum 파일이름</code><br>로그인 정보는 GNOME 키링·KWallet 같은 비밀번호 저장소에 보관됩니다. 저장소가 없는 환경에서는 실행할 때마다 다시 로그인해야 할 수 있습니다.',
+  steps:['Ubuntu·Debian 계열은 <b>.deb</b>, Fedora·openSUSE 계열은 <b>.rpm</b>을 받아 설치합니다. (예: <code>sudo apt install ./파일이름.deb</code>)','설치 없이 쓰려면 <b>.AppImage</b>를 받아 <code>chmod +x 파일이름.AppImage</code> 후 실행합니다. AppImage는 자동 업데이트를 지원합니다.']},
+};
+const COMMON=['휴대폰 앱과 같은 계정으로 로그인합니다.','휴대폰 앱의 <b>PC 연결</b>에서 연결을 승인하고 허용할 폴더를 고르면 끝!'];
+let REL=null;
+function show(os){
+ document.querySelectorAll("#tabs button").forEach(b=>b.classList.toggle("on",b.dataset.os===os));
+ const p=REL&&REL.platforms&&REL.platforms[os];
+ const main=p&&(os==="linux"?(p.deb||p.appimage||p.rpm):p);
+ document.getElementById("hint").innerHTML=COPY[os].hint;
+ document.getElementById("steps").innerHTML=[...COPY[os].steps,...COMMON].map(s=>"<li>"+s+"</li>").join("");
+ const btns=document.getElementById("btns");btns.innerHTML="";
+ if(!main){document.getElementById("noRel").classList.remove("hide");document.getElementById("meta").classList.add("hide");document.getElementById("ver").textContent="";return;}
+ document.getElementById("noRel").classList.add("hide");document.getElementById("meta").classList.remove("hide");
+ document.getElementById("ver").textContent="v"+p.version;mVer.textContent=p.version;mDate.textContent=fmt.date(p.publishedAt);
+ mName.textContent=main.name;mSize.textContent=fmt.size(main.size);mOs.textContent=p.os;mSha.textContent=main.sha256||"(확인 중)";
+ const add=(href,t,pri)=>{const a=document.createElement("a");a.className="btn "+(pri?"pri":"ghost");a.href=href;a.textContent=t;btns.append(a);};
+ if(os==="windows")add("/download/windows","⬇ 설치 파일 받기 (.exe)",1);
+ if(os==="mac")add("/download/mac","⬇ macOS용 받기 (.dmg)",1);
+ if(os==="linux"){if(p.deb)add("/download/linux/deb","⬇ .deb (Ubuntu·Debian)",1);if(p.rpm)add("/download/linux/rpm","⬇ .rpm (Fedora 등)",!p.deb);if(p.appimage)add("/download/linux/appimage","⬇ .AppImage",0);}
+}
+document.querySelectorAll("#tabs button").forEach(b=>b.onclick=()=>show(b.dataset.os));
 fetch("/api/releases/latest").then(r=>r.ok?r.json():null).then(r=>{
- if(!r){document.getElementById("noRel").classList.remove("hide");return;}
- document.getElementById("meta").classList.remove("hide");document.getElementById("dlBtn").classList.remove("hide");
- document.getElementById("ver").textContent="v"+r.version;mVer.textContent=r.version;mDate.textContent=fmt.date(r.publishedAt);
- mName.textContent=r.name;mSize.textContent=fmt.size(r.size);mOs.textContent=r.os;mSha.textContent=r.sha256||"(확인 중)";
-}).catch(()=>document.getElementById("noRel").classList.remove("hide"));
+ REL=r;
+ if(r&&!r.platforms){REL={platforms:{windows:{version:r.version,publishedAt:r.publishedAt,os:r.os,name:r.name,size:r.size,sha256:r.sha256}}};}
+ show(guess);
+}).catch(()=>show(guess));
 </script></body></html>

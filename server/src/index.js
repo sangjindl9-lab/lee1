@@ -8,7 +8,7 @@ import QRCode from 'qrcode';
 import { WebSocketServer } from 'ws';
 import { q, one, migrate, log, pool } from './db.js';
 import { sendMail, mailConfigured } from './mail.js';
-import { latestWindowsRelease, releaseHistory, tauriUpdateManifest } from './releases.js';
+import { latestFor, latestLinux, latestWindowsRelease, releaseHistory, tauriUpdateFor, tauriUpdateManifest } from './releases.js';
 import { registerCloud, providerList, decrypt, PROVIDERS } from './cloud.js';
 import { registerShare } from './share.js';
 
@@ -359,7 +359,7 @@ app.get('/api/config', (req, res) => {
 
 app.get('/api/releases/latest', wrap(async (req, res) => {
   const r = await latestWindowsRelease();
-  if (!r) return res.status(404).json({ error: 'no_release', message: '아직 배포된 Windows 설치 파일이 없습니다' });
+  if (!r) return res.status(404).json({ error: 'no_release', message: '아직 배포된 설치 파일이 없습니다' });
   res.json(r);
 }));
 app.get('/api/pc/update.json', wrap(async (req, res) => {
@@ -369,10 +369,24 @@ app.get('/api/pc/update.json', wrap(async (req, res) => {
 }));
 app.get('/api/releases', wrap(async (req, res) => res.json(await releaseHistory())));
 
-app.get('/download/windows', wrap(async (req, res) => {
-  const r = await latestWindowsRelease();
-  if (!r) return res.status(404).send('아직 배포된 Windows 설치 파일이 없습니다');
-  q('UPDATE app_releases SET downloads = downloads + 1 WHERE platform=$1 AND version=$2', ['windows', r.version]).catch(() => {});
+app.get('/api/pc/update/:target/:arch.json', wrap(async (req, res) => {
+  const m = await tauriUpdateFor(String(req.params.target), String(req.params.arch));
+  if (!m) return res.status(204).end();
+  res.json(m);
+}));
+
+const PLAT_NAME = { windows: 'Windows', mac: 'macOS', linux: 'Linux' };
+app.get('/download/:plat(windows|mac|linux)', wrap(async (req, res) => {
+  const plat = req.params.plat;
+  const r = await latestFor(plat);
+  if (!r) return res.status(404).send(`아직 배포된 ${PLAT_NAME[plat]} 설치 파일이 없습니다`);
+  q('UPDATE app_releases SET downloads = downloads + 1 WHERE platform=$1 AND version=$2', [plat, r.version]).catch(() => {});
+  res.redirect(302, r.url);
+}));
+app.get('/download/linux/:fmt(deb|rpm|appimage)', wrap(async (req, res) => {
+  const r = await latestLinux(req.params.fmt);
+  if (!r) return res.status(404).send('아직 배포된 Linux 설치 파일이 없습니다');
+  q('UPDATE app_releases SET downloads = downloads + 1 WHERE platform=$1 AND version=$2', ['linux', r.version]).catch(() => {});
   res.redirect(302, r.url);
 }));
 

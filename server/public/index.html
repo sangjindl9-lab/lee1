@@ -6,7 +6,7 @@
   <h1>휴대폰과 PC, 클라우드의<br>모든 파일을 하나로 연결하세요.</h1>
   <p class="lead">파일 관리자 2 PC CONNECT로 PC에서 휴대폰 사진·동영상·문서를 바로 보고, 끌어다 놓아 주고받으세요. 같은 계정으로 로그인하고 휴대폰에서 한 번 승인하면 됩니다.</p>
   <div class="btns" id="cta">
-    <a class="btn pri" href="/download">⬇ Windows용 다운로드</a>
+    <a class="btn pri" href="/download">⬇ PC 프로그램 다운로드 (Windows·macOS·Linux)</a>
     <a class="btn ghost" href="/guide">설치·연결 방법</a>
   </div>
   <div id="mobileCta" class="hide" style="margin-top:16px" class="okbox"></div>
@@ -23,7 +23,7 @@
   <h2>이렇게 연결해요</h2>
   <ol class="steps">
     <li>휴대폰에 <b>파일 관리자 2</b> 앱을 설치하고 <b>PC 연결</b> 메뉴에서 로그인합니다.</li>
-    <li>PC에 Windows 프로그램을 설치하고 같은 계정으로 로그인합니다.</li>
+    <li>PC(Windows·macOS·Linux)에 프로그램을 설치하고 같은 계정으로 로그인합니다.</li>
     <li>PC에서 휴대폰을 선택하고, 휴대폰에서 연결을 승인하며 허용할 폴더를 고릅니다.</li>
     <li>PC에서 휴대폰 파일을 탐색하고 주고받습니다.</li>
   </ol>
@@ -36,4 +36,4 @@
   </div>
 </section>
 </main>
-<script src="/site.js"></script><script>fetch("/api/config").then(r=>r.json()).then(c=>{if(isAndroid){const m=document.getElementById("mobileCta");m.className="okbox";m.style.marginTop="16px";m.innerHTML=`휴대폰으로 보고 계시네요. 먼저 <a href="${c.androidTestUrl}">파일 관리자 2 앱</a>을 설치하고, 이 주소를 PC에서 열어 Windows 프로그램을 받으세요.`;}})</script></body></html>
+<script src="/site.js"></script><script>fetch("/api/config").then(r=>r.json()).then(c=>{if(isAndroid){const m=document.getElementById("mobileCta");m.className="okbox";m.style.marginTop="16px";m.innerHTML=`휴대폰으로 보고 계시네요. 먼저 <a href="${c.androidTestUrl}">파일 관리자 2 앱</a>을 설치하고, 이 주소를 PC에서 열어 PC 프로그램을 받으세요.`;}})</script></body></html>

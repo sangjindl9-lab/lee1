@@ -58,6 +58,7 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDgxQjIzMUU3NkYwNzIzQzMKUldUREl3ZHY1ekd5Z1JNYm1rR25zUCsyaUpRRWl5dmVHbnFKR2Y2VkQybkxVeWZWN1VUekU5dVEK",
       "endpoints": [
+        "https://fm2.ieumerp.kr/api/pc/update/{{target}}/{{arch}}.json",
         "https://fm2.ieumerp.kr/api/pc/update.json",
         "https://fm2-connect-production.up.railway.app/api/pc/update.json"
       ],

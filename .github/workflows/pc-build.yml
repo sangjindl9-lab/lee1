@@ -6,6 +6,9 @@ on:
   workflow_dispatch: {}
 permissions:
   contents: write
+concurrency:
+  group: fm2-pc-build
+  cancel-in-progress: true
 jobs:
   build:
     strategy:
