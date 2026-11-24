@@ -33,7 +33,7 @@ function renderRecents() {
     row.appendChild(el('span', 'ricon ' + (pdf ? 'pdf' : 'cad'), pdf ? 'PDF' : 'CAD'));
     const box = el('span', 'rbox');
     box.appendChild(el('span', 'rname', pretty(r.name)));
-    box.appendChild(el('span', 'rtime', new Date(r.t).toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'short' })));
+    box.appendChild(el('span', 'rtime', new Date(r.t).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' })));
     row.appendChild(box);
     row.onclick = () => openUri(r.uri, pretty(r.name));
     row.oncontextmenu = (e) => { e.preventDefault(); forgetMenu(r); };
