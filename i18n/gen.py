@@ -1,6 +1,6 @@
 # i18n/tr.txt + 소스의 L.t/L.f 키 → src/kr/allzip/core/L.java
 import re, glob, sys
-LANGS = ['en','ja','de','fr','es','it','pt','nl','pl']
+LANGS = ['en','ja','de','fr','es','it','pt','nl','pl','hi']
 keys = []
 for fn in sorted(glob.glob('src/kr/allzip/**/*.java', recursive=True)):
     if fn.endswith('/L.java'): continue

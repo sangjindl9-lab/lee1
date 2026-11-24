@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">EumZIP</string>
+    <string name="open_label">EumZIP से एक्सट्रैक्ट करें</string>
+    <string name="send_label">EumZIP से कंप्रेस/एक्सट्रैक्ट करें</string>
+</resources>
