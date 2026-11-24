@@ -126,7 +126,7 @@ describe("기한 처리", () => {
 
   it("기한이 지나면 3GB 를 넘는 만큼만, 휴지통 → 최근 것부터 지우고 오래된 사진·앨범·육아기록은 남긴다", async () => {
     const active = await addMedia(10, { tag: "a" }); // 5GB, active[0] 이 가장 오래됨
-    const trashed = await addMedia(2, { tag: "t" }); // 1GB 휴지통
+    const trashed = await addMedia(2, { tag: "t", trashed: true }); // 1GB 휴지통
     await prisma.careRecord.create({ data: { familyId: ctx.family.id, childId: ctx.first.id, type: "SLEEP", startAt: new Date(), createdById: ctx.dad.id } });
     await subscribeThenExpire("r-due", fromNow(-31 * DAY));
     await prisma.family.update({ where: { id: ctx.family.id }, data: { retentionUntil: fromNow(-MIN) } });
@@ -137,7 +137,6 @@ describe("기한 처리", () => {
     expect(await prisma.mediaAsset.count({ where: { familyId: ctx.family.id, deletedAt: { not: null } } })).toBe(2);
     expect(Number((await fam()).usedBytes)).toBe(12 * ITEM);
     expect(await enforceDueRetention()).toBe(1);
-    console.log("[debug] left", JSON.stringify(await prisma.mediaAsset.findMany({ where: { familyId: ctx.family.id }, select: { id: true, deletedAt: true, createdAt: true } })));
     const f = await fam();
     expect(Number(f.usedBytes)).toBeLessThanOrEqual(FREE);
     expect(f.retentionUntil).toBeNull();
