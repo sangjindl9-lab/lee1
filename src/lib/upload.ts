@@ -2,7 +2,8 @@ import type { UploadItem, UploadSession } from "@prisma/client";
 import prisma from "./db";
 import { MAX_DIRECT_UPLOAD_BYTES, MAX_UPLOAD_BYTES, UPLOAD_STATUS, UPLOAD_STATUS_LABEL } from "./constants";
 import { createMedia, kindFromMime, newObjectBase } from "./media";
-import { addUsage, assertQuota, planOf, type PlanDef } from "./plans";
+import { addUsage, type PlanDef } from "./plans";
+import { assertQuota, getEffectivePlan, reserveQuota } from "./entitlement";
 import { extensionFor, signedPutUrl, storedSize, useS3 } from "./storage";
 import { enqueue } from "./jobs";
 
@@ -46,8 +47,7 @@ export async function createUploadSession(input: {
   const album = await prisma.album.findFirst({ where: { id: input.albumId, childId: child.id } });
   if (!album) throw new UploadError("ALBUM_NOT_FOUND", "앨범을 찾을 수 없습니다.", 404);
 
-  const family = await prisma.family.findUnique({ where: { id: input.familyId } });
-  const plan = planOf(family?.plan);
+  const { plan } = await getEffectivePlan(input.familyId);
   const estimate = input.files.reduce((sum, f) => sum + estimateStoredBytes(plan, f.mimeType, f.sizeBytes), 0);
   await assertQuota(input.familyId, estimate);
 
@@ -186,12 +186,16 @@ export async function uploadItem(input: {
     data: { status: UPLOAD_STATUS.UPLOADING, attempts: { increment: 1 }, error: null },
   });
 
+  let reserved = 0;
   try {
     if (input.buffer.byteLength === 0) throw new Error("빈 파일입니다.");
     if (input.buffer.byteLength > MAX_UPLOAD_BYTES) throw new Error("파일이 너무 큽니다. (최대 60MB)");
     {
-      const fam = await prisma.family.findUnique({ where: { id: session.familyId } });
-      await assertQuota(session.familyId, estimateStoredBytes(planOf(fam?.plan), input.mimeType || item.mimeType, input.buffer.byteLength));
+      // 저장 전에 예상 크기만큼 원자적으로 예약한다 (동시 업로드에도 상한을 넘지 않음). 저장 후 실제 크기로 바꾼다.
+      const { plan } = await getEffectivePlan(session.familyId);
+      const estimate = estimateStoredBytes(plan, input.mimeType || item.mimeType, input.buffer.byteLength);
+      await reserveQuota(session.familyId, estimate);
+      reserved = estimate;
     }
     const capturedAt = input.capturedAt ?? new Date();
     const { media, duplicate } = await createMedia({
@@ -205,6 +209,9 @@ export async function uploadItem(input: {
       capturedAt,
       visibility: session.visibility,
     });
+    // createMedia 가 실제 저장 크기를 더했으므로 예약분은 돌려준다
+    await addUsage(session.familyId, -reserved);
+    reserved = 0;
     const updated = await prisma.uploadItem.update({
       where: { id: item.id },
       data: { status: UPLOAD_STATUS.DONE, mediaId: media.id, duplicate, error: null },
@@ -219,6 +226,7 @@ export async function uploadItem(input: {
       attempts: updated.attempts,
     };
   } catch (error) {
+    if (reserved) await addUsage(session.familyId, -reserved);
     const message = error instanceof Error ? error.message : "업로드에 실패했습니다.";
     const updated = await prisma.uploadItem.update({
       where: { id: item.id },
@@ -322,17 +330,16 @@ export async function prepareDirectUpload(input: {
   const mimeType = input.mimeType || item.mimeType || "application/octet-stream";
   const fileName = input.fileName || item.fileName;
   const kind = kindFromMime(mimeType, fileName);
-  const family = await prisma.family.findUnique({ where: { id: session.familyId } });
-  const plan = planOf(family?.plan);
-  // 처리 전에는 원본 크기 그대로 사용량을 잡아 둔다 (처리 후 실제 크기로 맞춘다)
-  await assertQuota(session.familyId, estimateStoredBytes(plan, mimeType, input.sizeBytes));
-
+  // 처리 전에는 원본 크기 그대로 저장 공간을 원자적으로 예약한다 (처리 후 실제 원본·미리보기·썸네일 크기로 맞춘다)
   let media = existing;
   if (media) {
-    // 중단된 이전 시도 재사용
-    await addUsage(session.familyId, -media.storedBytes);
+    // 중단된 이전 시도 재사용: 이미 예약한 만큼은 빼고 차이만 예약
+    const delta = input.sizeBytes - media.storedBytes;
+    if (delta > 0) await reserveQuota(session.familyId, delta);
+    else if (delta < 0) await addUsage(session.familyId, delta);
     media = await prisma.mediaAsset.update({ where: { id: media.id }, data: { status: "UPLOADING", storedBytes: input.sizeBytes, sizeBytes: input.sizeBytes } });
   } else {
+    await reserveQuota(session.familyId, input.sizeBytes);
     const originalPath = `${newObjectBase(session.familyId)}${extensionFor(fileName, mimeType)}`;
     media = await prisma.mediaAsset.create({
       data: {
@@ -353,9 +360,11 @@ export async function prepareDirectUpload(input: {
         storedBytes: input.sizeBytes,
         previewQuality: "처리 중",
       },
+    }).catch(async (e) => {
+      await addUsage(session.familyId, -input.sizeBytes);
+      throw e;
     });
   }
-  await addUsage(session.familyId, input.sizeBytes);
   await prisma.uploadItem.update({
     where: { id: item.id },
     data: { status: UPLOAD_STATUS.UPLOADING, mediaId: media.id, attempts: { increment: 1 }, error: null },
@@ -375,7 +384,8 @@ export async function completeDirectUpload(input: { userId: string; sessionId: s
 
   if (media.status === "UPLOADING") {
     const size = await storedSize(media.originalPath);
-    if (size === null || size !== media.sizeBytes) {
+    // 예약한 크기와 실제로 올라간 크기가 같아야 한다 (더 큰 파일로 바꿔치기 방지)
+    if (size === null || size !== media.sizeBytes || size > media.storedBytes) {
       const updated = await prisma.uploadItem.update({
         where: { id: item.id },
         data: { status: UPLOAD_STATUS.FAILED, error: "저장소에 파일이 다 올라가지 않았습니다. 다시 올려 주세요." },
@@ -383,8 +393,10 @@ export async function completeDirectUpload(input: { userId: string; sessionId: s
       await recalcSession(session.id);
       return { status: updated.status, statusLabel: UPLOAD_STATUS_LABEL[updated.status], mediaId: null, duplicate: false, error: updated.error, attempts: updated.attempts };
     }
-    await prisma.mediaAsset.update({ where: { id: media.id }, data: { status: "PROCESSING" } });
-    await enqueue("PROCESS_MEDIA", { mediaId: media.id });
+    // 원본 보관 여부는 '올린 시점'의 유효 요금제로 정해 작업에 실어 보낸다 → 나중에 요금제가 바뀌어도 이미 올린 원본을 다시 압축하지 않는다
+    const { plan } = await getEffectivePlan(session.familyId);
+    const moved = await prisma.mediaAsset.updateMany({ where: { id: media.id, status: "UPLOADING" }, data: { status: "PROCESSING" } });
+    if (moved.count) await enqueue("PROCESS_MEDIA", { mediaId: media.id, keepOriginals: plan.keepOriginals ? "1" : "0" });
   }
   const updated = await prisma.uploadItem.update({
     where: { id: item.id },

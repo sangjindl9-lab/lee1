@@ -34,7 +34,9 @@ async function runJob(job: Claimed) {
   const payload = JSON.parse(job.payload) as Record<string, string>;
   switch (job.type) {
     case "PROCESS_MEDIA":
-      await processUploadedMedia(payload.mediaId);
+      await processUploadedMedia(payload.mediaId, {
+        keepOriginals: payload.keepOriginals === undefined ? undefined : payload.keepOriginals === "1",
+      });
       break;
     case "PURGE_TRASH": {
       // 휴지통에 30일 넘게 있던 항목은 영구 삭제 → 저장 비용 회수

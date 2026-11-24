@@ -150,13 +150,6 @@ export class QuotaError extends Error {
   }
 }
 
-/** 올리기 전에 확인: 사용량 + 올릴 크기 ≤ 상한 */
-export async function assertQuota(familyId: string, incomingBytes: number): Promise<Usage> {
-  const usage = await getUsage(familyId);
-  if (usage.usedBytes + incomingBytes > usage.quotaBytes) throw new QuotaError(usage, incomingBytes);
-  return usage;
-}
-
 export async function addUsage(familyId: string, deltaBytes: number): Promise<void> {
   if (!deltaBytes) return;
   await prisma.family.update({ where: { id: familyId }, data: { usedBytes: { increment: BigInt(Math.round(deltaBytes)) } } });

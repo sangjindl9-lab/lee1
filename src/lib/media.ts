@@ -9,7 +9,8 @@ import type { MediaAsset } from "@prisma/client";
 import prisma from "./db";
 import { MEDIA_KIND, MAX_UPLOAD_BYTES } from "./constants";
 import { extensionFor, readStored, removeStored, storedSize, writeStored } from "./storage";
-import { addUsage, planOf, type PlanDef } from "./plans";
+import { addUsage, type PlanDef } from "./plans";
+import { getEffectivePlan } from "./entitlement";
 
 const run = promisify(execFile);
 
@@ -275,8 +276,7 @@ export async function createMedia(input: CreateMediaInput): Promise<CreateMediaR
     return { media: existing, duplicate: true };
   }
 
-  const family = await prisma.family.findUnique({ where: { id: input.familyId } });
-  const plan = planOf(family?.plan);
+  const { plan } = await getEffectivePlan(input.familyId);
   const base = newObjectBase(input.familyId);
   const originalPath = `${base}${extensionFor(input.fileName, input.mimeType)}`;
   await writeStored(originalPath, input.buffer, input.mimeType);
@@ -329,16 +329,19 @@ export async function createMedia(input: CreateMediaInput): Promise<CreateMediaR
  * 직접 업로드 후 작업 서버가 호출: 저장소의 원본을 내려받아 미리보기·압축·변환을 만들고 사용량을 확정한다.
  * 업로드 허가 때 원본 크기만큼 사용량을 먼저 잡아 두었으므로, 여기서는 차이만 반영한다.
  */
-export async function processUploadedMedia(mediaId: string): Promise<void> {
-  const media = await prisma.mediaAsset.findUnique({ where: { id: mediaId }, include: { family: true } });
-  if (!media || media.status === "READY") return;
+export async function processUploadedMedia(mediaId: string, opts: { keepOriginals?: boolean } = {}): Promise<void> {
+  const media = await prisma.mediaAsset.findUnique({ where: { id: mediaId } });
+  // 이미 처리됐거나 실패·삭제된 항목은 다시 처리하지 않는다 (완성된 원본을 재압축하지 않음)
+  if (!media || media.status !== "PROCESSING") return;
   const buffer = await readStored(media.originalPath);
   if (!buffer) throw new MediaError("FILE_MISSING", "올린 파일을 저장소에서 찾지 못했습니다.");
-  const plan = planOf(media.family.plan);
+  // 원본 보관 여부는 올린 시점의 요금제(작업에 실린 값)를 따른다. 예전 작업처럼 값이 없을 때만 지금 요금제를 쓴다.
+  const current = (await getEffectivePlan(media.familyId)).plan;
+  const plan = opts.keepOriginals === undefined ? current : { ...current, keepOriginals: opts.keepOriginals };
   try {
     const files = await processBuffer(buffer, media, plan);
-    await prisma.mediaAsset.update({
-      where: { id: media.id },
+    const done = await prisma.mediaAsset.updateMany({
+      where: { id: media.id, status: "PROCESSING" },
       data: {
         status: "READY",
         mimeType: files.mimeType,
@@ -354,7 +357,8 @@ export async function processUploadedMedia(mediaId: string): Promise<void> {
         compressed: files.compressed,
       },
     });
-    await addUsage(media.familyId, files.storedBytes - media.storedBytes);
+    // 실제로 저장된 원본·미리보기·썸네일 크기로 사용량을 맞춘다 (예약분과의 차이만)
+    if (done.count) await addUsage(media.familyId, files.storedBytes - media.storedBytes);
   } catch (e) {
     if (e instanceof MediaError && e.code === "VIDEO_TOO_LONG") {
       // 길이 초과: 올린 파일을 지우고 잡아 둔 사용량을 돌려준다.

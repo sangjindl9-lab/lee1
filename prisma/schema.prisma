@@ -330,8 +330,51 @@ model Subscription {
   acknowledged  Boolean  @default(false)
   lastCheckedAt DateTime @default(now())
   raw           String?
+  // 결제 때 서버가 발급한 구매 식별자(PurchaseIntent.id). Google 계정 쪽에는 이 값만 obfuscatedAccountId 로 넘긴다.
+  intentId      String?
+  // 마지막으로 반영한 실시간 알림의 발생 시각(ms). 순서가 뒤바뀐 옛 알림을 가려낸다.
+  lastEventTime BigInt?
+  // Google 확인 실패 기록 (장애와 실제 만료를 구분하기 위함)
+  lastCheckError String?
+  revokedAt     DateTime?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @default(now()) @updatedAt
 
   @@index([familyId, state])
+}
+
+/** 결제 시작 기록: 가족 단위 결제 잠금 + Google 계정과 가족을 잇는 서버 발급 식별자 */
+model PurchaseIntent {
+  id            String    @id @default(cuid())
+  familyId      String
+  userId        String
+  productId     String
+  basePlanId    String
+  // PENDING | COMPLETED | CANCELED | EXPIRED
+  status        String    @default("PENDING")
+  oldToken      String?
+  purchaseToken String?
+  expiresAt     DateTime
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @default(now()) @updatedAt
+
+  @@index([familyId, status])
+}
+
+/** 실시간 개발자 알림 처리 기록: 메시지 중복 방지·재시도·영구 실패 분리 */
+model RtdnEvent {
+  id            String   @id @default(cuid())
+  messageId     String   @unique
+  kind          String // SUBSCRIPTION | VOIDED | TEST | OTHER
+  purchaseToken String?
+  notificationType Int?
+  eventTime     BigInt?
+  // PROCESSING | DONE | STALE | IGNORED | RETRY | FAILED_PERMANENT
+  status        String   @default("PROCESSING")
+  attempts      Int      @default(0)
+  error         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @default(now()) @updatedAt
+
+  @@index([purchaseToken])
 }

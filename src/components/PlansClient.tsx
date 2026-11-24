@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { bridge as getBridge, completedTokens, onBilling, verifyToken, type StorePurchase } from "@/lib/billing-client";
 
 type PlanRow = {
   id: string;
@@ -22,20 +23,6 @@ type Info = {
 };
 type StoreOffer = { productId: string; basePlanId: string; offerId: string | null; price: string; trial: boolean };
 
-type Bridge = {
-  queryProducts(ids: string): void;
-  purchase(productId: string, basePlanId: string, accountId: string, profileId: string, oldToken: string | null): void;
-  restore(): void;
-  manage(productId: string | null): void;
-};
-
-declare global {
-  interface Window {
-    FamilyAlbumBilling?: Bridge;
-    __faBilling?: (event: string, data: unknown) => void;
-  }
-}
-
 const STATE_LABEL: Record<string, string> = {
   SUBSCRIPTION_STATE_ACTIVE: "이용 중",
   SUBSCRIPTION_STATE_IN_GRACE_PERIOD: "결제 확인 중 (유예 기간)",
@@ -49,8 +36,12 @@ export default function PlansClient({ inApp }: { inApp: boolean }) {
   const [cycle, setCycle] = useState<"monthly" | "yearly">("yearly");
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
-  const bridge = typeof window !== "undefined" ? window.FamilyAlbumBilling : undefined;
+  const bridge = typeof window !== "undefined" ? getBridge() : undefined;
   const infoRef = useRef<Info | null>(null);
+  /** 연속 클릭·중복 결제 방지: 결제창이 떠 있는 동안 true */
+  const purchasingRef = useRef(false);
+  const restoringRef = useRef(false);
+  const intentRef = useRef<string | null>(null);
 
   const load = useCallback(async () => {
     const res = await fetch("/api/billing/plans", { cache: "no-store" });
@@ -62,29 +53,30 @@ export default function PlansClient({ inApp }: { inApp: boolean }) {
     return data as Info | null;
   }, []);
 
+  const releaseIntent = useCallback(async () => {
+    purchasingRef.current = false;
+    const id = intentRef.current;
+    intentRef.current = null;
+    if (id) await fetch(`/api/billing/play/intent?id=${encodeURIComponent(id)}`, { method: "DELETE" }).catch(() => null);
+  }, []);
+
   const verify = useCallback(
-    async (tokens: string[]) => {
+    async (tokens: string[], source: "app" | "restore") => {
       if (!tokens.length) {
         setBusy(false);
-        setNotice("이 Google 계정에 복원할 구독이 없습니다.");
+        setNotice(source === "restore" ? "이 Google 계정에 복원할 구독이 없습니다." : "적용할 구독이 없습니다.");
         return;
       }
       setBusy(true);
-      let applied = 0;
-      let lastError: string | null = null;
-      for (const purchaseToken of tokens) {
-        const res = await fetch("/api/billing/play/verify", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ purchaseToken }),
-        });
-        const data = await res.json().catch(() => ({}));
-        if (res.ok) applied += 1;
-        else lastError = data?.error?.message ?? "결제를 확인하지 못했습니다.";
-      }
+      const results = await Promise.all(tokens.map((t) => verifyToken(t, source)));
       await load();
       setBusy(false);
-      setNotice(applied ? "요금제가 적용되었어요. 가족 모두에게 바로 반영됩니다." : lastError ?? "적용할 구독이 없습니다.");
+      const applied = results.filter((r) => r.ok).length;
+      const failed = results.find((r) => !r.ok);
+      if (applied) setNotice("요금제가 적용되었어요. 가족 모두에게 바로 반영됩니다.");
+      else if (failed?.code === "FAMILY_MISMATCH" || failed?.code === "OWNERSHIP_UNKNOWN")
+        setNotice("이 Google 계정의 구독은 다른 가족에서 결제한 것이라 이 가족에 연결하지 않았어요.");
+      else setNotice(failed?.message ?? "결제를 확인하지 못했습니다. 잠시 후 '구매 복원'을 눌러 주세요.");
     },
     [load],
   );
@@ -95,26 +87,39 @@ export default function PlansClient({ inApp }: { inApp: boolean }) {
 
   useEffect(() => {
     if (!bridge || !info) return;
-    window.__faBilling = (event, data) => {
+    const off = onBilling((event, data) => {
       if (event === "products") setOffers(data as StoreOffer[]);
       else if (event === "purchases") {
-        const list = data as Array<{ purchaseToken: string; state: number }>;
+        if (!purchasingRef.current && !restoringRef.current) return; // 자동 복원은 BillingAutoRestore 가 처리
+        const source = purchasingRef.current ? "app" : "restore";
+        purchasingRef.current = false;
+        restoringRef.current = false;
+        intentRef.current = null;
+        const list = data as StorePurchase[];
         // state 1 = 결제 완료, 2 = 결제 대기(편의점 결제 등)
         if (list.some((p) => p.state === 2)) setNotice("결제가 대기 중입니다. 결제가 끝나면 자동으로 적용돼요.");
-        void verify(list.filter((p) => p.state === 1).map((p) => p.purchaseToken));
+        void verify(completedTokens(list), source);
       } else if (event === "canceled") {
+        restoringRef.current = false;
         setBusy(false);
+        void releaseIntent();
       } else if (event === "error") {
+        restoringRef.current = false;
         setBusy(false);
+        void releaseIntent();
         const e = data as { code: number; message: string };
-        setNotice(e.code === 7 ? "이미 이용 중인 구독입니다. '구매 복원'을 눌러 주세요." : `결제를 진행하지 못했습니다. (${e.code}) ${e.message ?? ""}`);
+        if (e.code === 7) {
+          // 이미 보유한 상품: 새 결제 대신 복원으로 연결
+          setNotice("이미 이용 중인 구독이에요. 구매 내역을 다시 확인할게요.");
+          restoringRef.current = true;
+          setBusy(true);
+          bridge.restore();
+        } else setNotice(`결제를 진행하지 못했습니다. (${e.code}) ${e.message ?? ""}`);
       }
-    };
+    });
     const ids = info.plans.map((p) => p.productId).filter(Boolean).join(",");
     bridge.queryProducts(ids);
-    return () => {
-      window.__faBilling = undefined;
-    };
+    return off;
   }, [bridge, info?.familyId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!info) return <p className="text-sm text-slate-400">불러오는 중…</p>;
@@ -122,12 +127,40 @@ export default function PlansClient({ inApp }: { inApp: boolean }) {
   const current = info.usage.planId;
   const sub = info.subscription;
 
-  function buy(plan: PlanRow) {
+  async function buy(plan: PlanRow) {
     if (!bridge || !info || !plan.productId) return;
+    if (purchasingRef.current || busy) return; // 연속 클릭 방지
+    purchasingRef.current = true;
     setBusy(true);
     setNotice(null);
-    const oldToken = sub && sub.productId !== plan.productId ? sub.purchaseToken : null;
-    bridge.purchase(plan.productId, cycle, info.familyId, info.userId, oldToken);
+    try {
+      // 서버가 먼저 확인: 가족 단위 결제 잠금·이미 보유한 구독·요금제 변경 여부, 그리고 서버 발급 구매 식별자
+      const res = await fetch("/api/billing/play/intent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ productId: plan.productId, basePlanId: cycle }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        purchasingRef.current = false;
+        setBusy(false);
+        setNotice(data?.error?.message ?? "결제를 시작하지 못했습니다.");
+        return;
+      }
+      if (data.action === "RESTORE") {
+        purchasingRef.current = false;
+        restoringRef.current = true;
+        setNotice(data.message ?? "이미 이용 중인 요금제예요. 구매 내역을 다시 확인할게요.");
+        bridge.restore();
+        return;
+      }
+      intentRef.current = data.intentId;
+      bridge.purchase(plan.productId, cycle, data.intentId, data.profileId, data.action === "CHANGE" ? data.oldToken : null);
+    } catch {
+      purchasingRef.current = false;
+      setBusy(false);
+      setNotice("네트워크 오류로 결제를 시작하지 못했습니다.");
+    }
   }
 
   return (
@@ -205,7 +238,16 @@ export default function PlansClient({ inApp }: { inApp: boolean }) {
 
       {inApp && bridge && (
         <div className="flex flex-wrap justify-center gap-2">
-          <button className="btn-ghost text-xs" disabled={busy} onClick={() => { setBusy(true); bridge.restore(); }}>
+          <button
+            className="btn-ghost text-xs"
+            disabled={busy}
+            onClick={() => {
+              if (restoringRef.current) return;
+              restoringRef.current = true;
+              setBusy(true);
+              bridge.restore();
+            }}
+          >
             구매 복원
           </button>
           {sub && (

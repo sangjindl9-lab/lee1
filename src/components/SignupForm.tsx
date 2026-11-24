@@ -44,6 +44,11 @@ export default function SignupForm({ initialCode }: { initialCode: string }) {
         setError(data?.error?.message ?? "가입하지 못했습니다.");
         return;
       }
+      try {
+        sessionStorage.setItem("fa_just_logged_in", "1");
+      } catch {
+        /* 무시 */
+      }
       router.push(data.user.role === "PARENT" ? "/app" : "/simple");
       router.refresh();
     } catch {

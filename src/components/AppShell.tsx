@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth";
 import LogoutButton from "./LogoutButton";
+import BillingAutoRestore from "./BillingAutoRestore";
 
 const NAV = [
   { href: "/app", label: "홈", icon: "🏠" },
@@ -53,6 +54,7 @@ export default async function AppShell({
           </div>
         </div>
       </header>
+      <BillingAutoRestore />
       <main className="mx-auto w-full max-w-6xl px-4 py-6 pb-24">{children}</main>
     </div>
   );

@@ -3,7 +3,7 @@ import prisma from "@/lib/db";
 import { requireSessionUser } from "@/lib/auth";
 import { fail, handleRouteError } from "@/lib/api";
 import { csvEscape, zipResponse, type ZipEntry } from "@/lib/zip";
-import { planOf } from "@/lib/plans";
+import { getEffectivePlan } from "@/lib/entitlement";
 import { kstDateKey } from "@/lib/date";
 
 /**
@@ -21,12 +21,13 @@ export async function GET(req: NextRequest) {
     const from = p.get("from");
     const to = p.get("to");
 
-    const family = await prisma.family.findUnique({ where: { id: user.familyId } });
-    const plan = planOf(family?.plan);
-    if (!plan.zipDownload && mediaIds.length > 20) {
+    const { plan } = await getEffectivePlan(user.familyId);
+    // 구독이 끝난 가족도 그동안 올린 사진을 통째로 가져갈 수 있어야 한다 → 구독 이력이 있으면 ZIP 을 막지 않는다
+    const everSubscribed = plan.zipDownload || (await prisma.subscription.count({ where: { familyId: user.familyId } })) > 0;
+    if (!everSubscribed && mediaIds.length > 20) {
       return fail("PLAN_REQUIRED", "무료 요금제는 한 번에 20장까지 묶어 받을 수 있어요. 기간 전체 ZIP은 유료 요금제에서 쓸 수 있습니다.", 402);
     }
-    if (!plan.zipDownload && !mediaIds.length) {
+    if (!everSubscribed && !mediaIds.length) {
       return fail("PLAN_REQUIRED", "기간 전체 원본 ZIP은 유료 요금제에서 쓸 수 있습니다.", 402);
     }
     if (!mediaIds.length && !childId) return fail("NO_TARGET", "다운로드할 사진을 선택하거나 아이를 지정해 주세요.");

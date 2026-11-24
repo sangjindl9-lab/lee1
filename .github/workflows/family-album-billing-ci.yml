@@ -1,0 +1,95 @@
+# 가족앨범 결제 개선 — 격리 검증 (개발 브랜치 전용)
+# 운영 DB·Railway·Google Play 에 닿지 않는다: 일회용 PostgreSQL 컨테이너 + Mock Google API 만 사용.
+name: family-album billing CI
+on:
+  push:
+    branches: [family-album-billing-hardening]
+  workflow_dispatch:
+
+jobs:
+  server:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: fa_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/fa_test
+      # build 는 DB 에 연결하지 않지만 Prisma 가 주소 형식을 요구한다 (일회용 로컬 DB)
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/fa_test
+      NEXT_TELEMETRY_DISABLED: "1"
+      WORKER_MODE: "off"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx prisma generate
+      - name: typecheck
+        run: npm run typecheck 2>&1 | tee typecheck.log
+        shell: bash -o pipefail {0}
+      - name: test
+        if: always()
+        run: npx vitest run --reporter=default --reporter=junit --outputFile.junit=vitest-junit.xml 2>&1 | tee test.log
+        shell: bash -o pipefail {0}
+      - name: build
+        if: always()
+        run: npm run build 2>&1 | tee build.log
+        shell: bash -o pipefail {0}
+      - name: summary
+        if: always()
+        run: |
+          {
+            echo "## typecheck"; echo '```'; tail -n 40 typecheck.log || true; echo '```'
+            echo "## test"; echo '```'; grep -E "Test Files|Tests |✓|×|FAIL" test.log | tail -n 150 || true; echo '```'
+            echo "## build"; echo '```'; tail -n 40 build.log || true; echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: server-logs
+          path: |
+            typecheck.log
+            test.log
+            build.log
+            vitest-junit.xml
+
+  android:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: android-actions/setup-android@v3
+      - run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+      - run: chmod +x gradlew
+      - name: unit test + debug build (서명 없음)
+        run: ./gradlew --no-daemon :app:testDebugUnitTest :app:assembleDebug -PappUrl=https://example.invalid 2>&1 | tee ../android.log
+        shell: bash -o pipefail {0}
+      - name: summary
+        if: always()
+        run: |
+          {
+            echo "## android"; echo '```'; grep -E "BUILD|Test|FAIL|error:|tests completed" ../android.log | tail -n 60 || true; echo '```'
+            ls -la app/build/outputs/apk/debug/ 2>/dev/null || true
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-logs
+          path: |
+            android.log
+            android/app/build/test-results/

@@ -25,6 +25,11 @@ export default function LoginForm() {
         setError(data?.error?.message ?? "로그인에 실패했습니다.");
         return;
       }
+      try {
+        sessionStorage.setItem("fa_just_logged_in", "1");
+      } catch {
+        /* 무시 */
+      }
       router.push(data.user.role === "PARENT" ? "/app" : "/simple");
       router.refresh();
     } catch {

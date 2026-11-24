@@ -4,6 +4,7 @@
 import prisma from "./db";
 import { formatKstDateTime, kstDateKey } from "./date";
 import { planOf } from "./plans";
+import { getEffectivePlan } from "./entitlement";
 import { BillingError } from "./play-billing";
 
 export { BillingError };
@@ -16,13 +17,18 @@ export type Entitlement = {
 };
 
 export async function getEntitlement(userId: string): Promise<Entitlement> {
-  const user = await prisma.user.findUnique({ where: { id: userId }, include: { family: true } });
-  const plan = planOf(user?.family?.plan);
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { familyId: true } });
+  if (!user?.familyId) {
+    const free = planOf("FREE");
+    return { adFree: !free.ads, planId: free.id, planName: free.name, expiresAt: null };
+  }
+  // 만료 시각이 지났으면 Google 에 다시 확인한 '지금 유효한' 요금제
+  const eff = await getEffectivePlan(user.familyId);
   return {
-    adFree: !plan.ads,
-    planId: plan.id,
-    planName: plan.name,
-    expiresAt: user?.family?.planExpiresAt ? formatKstDateTime(user.family.planExpiresAt) : null,
+    adFree: !eff.plan.ads,
+    planId: eff.plan.id,
+    planName: eff.plan.name,
+    expiresAt: eff.expiresAt ? formatKstDateTime(eff.expiresAt) : null,
   };
 }
 

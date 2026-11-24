@@ -17,6 +17,7 @@ import com.android.billingclient.api.Purchase
 import com.android.billingclient.api.PurchasesUpdatedListener
 import com.android.billingclient.api.QueryProductDetailsParams
 import com.android.billingclient.api.QueryPurchasesParams
+import java.util.concurrent.atomic.AtomicBoolean
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -33,6 +34,9 @@ class BillingBridge(private val activity: Activity, private val webView: WebView
         .build()
 
     private val details = mutableMapOf<String, ProductDetails>()
+
+    /** 결제창이 떠 있는 동안 true: 연속 클릭으로 결제창이 두 번 뜨는 것을 막는다 */
+    private val purchaseInFlight = AtomicBoolean(false)
 
     private fun connected(block: () -> Unit) {
         if (client.isReady) {
@@ -103,38 +107,48 @@ class BillingBridge(private val activity: Activity, private val webView: WebView
      */
     @JavascriptInterface
     fun purchase(productId: String, basePlanId: String, accountId: String, profileId: String, oldPurchaseToken: String?) {
+        if (!BillingLogic.isValidAccountId(accountId)) {
+            emit("error", JSONObject().put("code", -2).put("message", "구매 식별자가 올바르지 않습니다."))
+            return
+        }
+        if (!purchaseInFlight.compareAndSet(false, true)) {
+            emit("error", JSONObject().put("code", -3).put("message", "결제가 이미 진행 중입니다."))
+            return
+        }
         activity.runOnUiThread {
             connected {
                 val pd = details[productId]
                 if (pd == null) {
+                    purchaseInFlight.set(false)
                     emit("error", JSONObject().put("code", -1).put("message", "상품 정보를 먼저 불러와 주세요."))
                     return@connected
                 }
-                val offers = pd.subscriptionOfferDetails.orEmpty().filter { it.basePlanId == basePlanId }
-                // 무료 체험 등 혜택이 있으면 그 혜택을, 없으면 기본 요금제를 쓴다 (자격이 없으면 Play 가 목록에서 뺀다)
-                val offer = offers.firstOrNull { it.offerId != null } ?: offers.firstOrNull()
-                if (offer == null) {
+                val all = pd.subscriptionOfferDetails.orEmpty()
+                val picked = BillingLogic.pickOffer(all.map { BillingLogic.Offer(it.basePlanId, it.offerId, it.offerToken) }, basePlanId)
+                if (picked == null) {
+                    purchaseInFlight.set(false)
                     emit("error", JSONObject().put("code", -1).put("message", "요금제를 찾을 수 없습니다."))
                     return@connected
                 }
                 val productParams = BillingFlowParams.ProductDetailsParams.newBuilder()
                     .setProductDetails(pd)
-                    .setOfferToken(offer.offerToken)
+                    .setOfferToken(picked.token)
                     .build()
                 val builder = BillingFlowParams.newBuilder()
                     .setProductDetailsParamsList(listOf(productParams))
                     .setObfuscatedAccountId(accountId)
                     .setObfuscatedProfileId(profileId)
-                if (!oldPurchaseToken.isNullOrBlank()) {
+                if (BillingLogic.isChange(oldPurchaseToken)) {
                     builder.setSubscriptionUpdateParams(
                         BillingFlowParams.SubscriptionUpdateParams.newBuilder()
-                            .setOldPurchaseToken(oldPurchaseToken)
+                            .setOldPurchaseToken(oldPurchaseToken!!)
                             .setSubscriptionReplacementMode(BillingFlowParams.SubscriptionUpdateParams.ReplacementMode.WITH_TIME_PRORATION)
                             .build(),
                     )
                 }
                 val result = client.launchBillingFlow(activity, builder.build())
                 if (result.responseCode != BillingClient.BillingResponseCode.OK) {
+                    purchaseInFlight.set(false)
                     emit("error", JSONObject().put("code", result.responseCode).put("message", result.debugMessage))
                 }
             }
@@ -177,6 +191,7 @@ class BillingBridge(private val activity: Activity, private val webView: WebView
     }
 
     override fun onPurchasesUpdated(result: BillingResult, purchases: MutableList<Purchase>?) {
+        purchaseInFlight.set(false)
         when (result.responseCode) {
             BillingClient.BillingResponseCode.OK -> emit("purchases", purchasesJson(purchases.orEmpty()))
             BillingClient.BillingResponseCode.USER_CANCELED -> emit("canceled", JSONObject())

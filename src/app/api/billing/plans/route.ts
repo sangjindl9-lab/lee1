@@ -1,7 +1,8 @@
 import prisma from "@/lib/db";
 import { requireSessionUser } from "@/lib/auth";
 import { handleRouteError, ok } from "@/lib/api";
-import { PAID_PLANS, PLANS, formatBytes, getUsage } from "@/lib/plans";
+import { PAID_PLANS, PLANS, formatBytes } from "@/lib/plans";
+import { getEffectiveUsage } from "@/lib/entitlement";
 import { playConfigured } from "@/lib/play-billing";
 
 /** 요금제 목록 + 우리 가족 사용량 + 현재 구독 */
@@ -9,10 +10,10 @@ export async function GET() {
   try {
     const user = await requireSessionUser();
     if (!user.familyId) return ok({ plans: [], usage: null });
-    const usage = await getUsage(user.familyId);
+    const usage = await getEffectiveUsage(user.familyId);
     const current = await prisma.subscription.findFirst({
       where: { familyId: user.familyId, state: { in: ["SUBSCRIPTION_STATE_ACTIVE", "SUBSCRIPTION_STATE_IN_GRACE_PERIOD", "SUBSCRIPTION_STATE_CANCELED", "SUBSCRIPTION_STATE_ON_HOLD"] } },
-      orderBy: { updatedAt: "desc" },
+      orderBy: { expiresAt: "desc" },
     });
     return ok({
       billingReady: playConfigured(),

@@ -3,6 +3,10 @@ import prisma from "@/lib/db";
 import { hashPassword } from "@/lib/password";
 
 export async function resetDb() {
+  await prisma.rtdnEvent.deleteMany();
+  await prisma.purchaseIntent.deleteMany();
+  await prisma.subscription.deleteMany();
+  await prisma.job.deleteMany();
   await prisma.mediaTag.deleteMany();
   await prisma.like.deleteMany();
   await prisma.comment.deleteMany();
