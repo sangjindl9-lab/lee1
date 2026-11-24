@@ -39,6 +39,7 @@ sealed interface Dest {
     data object Settings : Dest
     data object Connect : Dest
     data object Cloud : Dest
+    data object Nas : Dest
 }
 
 data class Clip(val paths: List<String>, val cut: Boolean)

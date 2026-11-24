@@ -169,5 +169,20 @@ object CloudTransfers {
         catch (e: Exception) { withContext(Dispatchers.Main) { if (t.cancel) t.status = "취소" else { t.status = "실패"; t.error = e.message } } }
         withContext(Dispatchers.Main) { onFinished?.invoke(t) }
     }
+    /** NAS 등 다른 출처의 전송 */
+    fun startDownload(name: String, size: Long, block: (progress: (Long) -> Unit, canceled: () -> Boolean) -> File) {
+        val t = T(++seq, false, name, size); items.add(0, t)
+        scope.launch { run(t) { t.savedPath = block({ t.done = it }, { t.cancel }).absolutePath } }
+    }
+    fun startUpload(ctx: Context, uri: Uri, block: (name: String, size: Long, progress: (Long) -> Unit, canceled: () -> Boolean) -> Unit) {
+        val (name, size) = CloudApi.nameAndSize(ctx, uri)
+        val t = T(++seq, true, name, size); items.add(0, t)
+        scope.launch {
+            run(t) {
+                if (size < 0) throw ApiException("size", "파일 크기를 알 수 없어 올릴 수 없습니다")
+                block(name, size, { t.done = it }, { t.cancel })
+            }
+        }
+    }
     fun clearFinished() { items.removeAll { it.status != "진행" && it.status != "대기" } }
 }

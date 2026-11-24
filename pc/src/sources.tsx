@@ -262,18 +262,56 @@ export function NasExplorer({ nas, saveDir, say }: { nas: NasProfile; saveDir: s
   return <GenericExplorer key={nas.id} a={a} saveDir={saveDir} say={say} />;
 }
 
+export const NAS_PRESETS = [
+  { id: 'synology', label: '시놀로지', https: 5006, http: 5005, hint: '예: mynas.synology.me 또는 192.168.0.10',
+    howTo: ['DSM → 패키지 센터에서 WebDAV Server 설치', 'WebDAV Server에서 HTTPS(5006) 사용 체크', '외부 접속: 제어판 → 외부 액세스 → DDNS(○○.synology.me) + 공유기 5006 포트 포워딩', 'QuickConnect ID는 WebDAV에 쓸 수 없습니다'] },
+  { id: 'qnap', label: 'QNAP', https: 443, http: 80, hint: '예: mynas.myqnapcloud.com 또는 192.168.0.10',
+    howTo: ['제어판 → 네트워크 및 파일 서비스 → WebDAV 활성화', '공유 폴더 권한에서 WebDAV 허용', '외부 접속: myQNAPcloud DDNS + 공유기 443 포트 포워딩'] },
+  { id: 'asustor', label: 'ASUSTOR', https: 9802, http: 9800, hint: '예: mynas.myasustor.com 또는 192.168.0.10',
+    howTo: ['서비스 → WebDAV 활성화, SSL(9802) 사용', '외부 접속: EZ-Connect DDNS + 공유기 9802 포트 포워딩'] },
+  { id: 'custom', label: '기타 WebDAV', https: 443, http: 80, hint: '예: nas.example.com 또는 192.168.0.10',
+    howTo: ['NAS 관리 화면에서 WebDAV를 켜고 포트 확인', '외부 접속에는 DDNS 주소와 포트 포워딩 필요'] },
+];
+
 export function NasDialog({ edit, onClose, onSaved }: { edit?: NasProfile; onClose: () => void; onSaved: (p: NasProfile) => void }) {
   const [p, setP] = useState<NasProfile>(edit || { id: 'nas-' + crypto.randomUUID(), name: '', url: 'https://', user: '', insecure: false });
   const [pw, setPw] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
-  const set = (k: keyof NasProfile, v: any) => setP({ ...p, [k]: v });
+  const set = (k: keyof NasProfile, v: any) => setP((q) => ({ ...q, [k]: v }));
+  const [preset, setPresetS] = useState(NAS_PRESETS[0]);
+  const [host, setHost] = useState('');
+  const [port, setPort] = useState(String(NAS_PRESETS[0].https));
+  const [https, setHttps] = useState(true);
+  const [folder, setFolder] = useState('');
+  const setPreset = (pr: typeof NAS_PRESETS[number]) => { setPresetS(pr); setPort(String(https ? pr.https : pr.http)); if (!p.name || NAS_PRESETS.some((x) => x.label === p.name)) set('name', pr.label); };
+  useEffect(() => {
+    if (edit) return;
+    const h = host.replace(/^https?:\/\//, '').replace(/\/+$/, '');
+    const f = folder.trim().replace(/^\/+|\/+$/g, '').split('/').filter(Boolean).map(encodeURIComponent).join('/');
+    set('url', h ? `${https ? 'https' : 'http'}://${h}${port ? ':' + port : ''}/${f ? f + '/' : ''}` : 'https://');
+  }, [host, port, https, folder]); // eslint-disable-line
   return (
     <div className="modal-bg" onClick={onClose}><div className="modal" onClick={(e) => e.stopPropagation()}>
       <h3>{edit ? 'NAS 설정' : 'NAS 추가 (WebDAV)'}</h3>
-      <p className="muted small">시놀로지·QNAP·ipTIME 등에서 WebDAV를 켜고 주소를 입력하세요. 예: https://192.168.0.10:5006/home</p>
+      {!edit && <div className="presets">
+        {NAS_PRESETS.map((pr) => <button key={pr.id} className={'btn sm ' + (preset.id === pr.id ? '' : 'ghost')} onClick={() => setPreset(pr)}>{pr.label}</button>)}
+      </div>}
+      {!edit && <div className="note" style={{ borderRadius: 10, margin: '8px 0' }}>
+        <b>{preset.label} WebDAV 켜는 방법</b>
+        <ol style={{ margin: '4px 0 0 18px', padding: 0, lineHeight: 1.6 }}>{preset.howTo.map((t) => <li key={t} className="small">{t}</li>)}</ol>
+      </div>}
+      {!edit && <>
+        <label>주소 (DDNS 또는 IP)<input value={host} placeholder={preset.hint} onChange={(e) => setHost(e.target.value.trim())} /></label>
+        <div className="row">
+          <label style={{ flex: 1 }}>포트<input value={port} onChange={(e) => setPort(e.target.value.replace(/\D/g, ''))} /></label>
+          <label className="row" style={{ flexDirection: 'row', marginTop: 28 }}><input type="checkbox" checked={https} onChange={(e) => { setHttps(e.target.checked); setPort(String(e.target.checked ? preset.https : preset.http)); }} /> HTTPS</label>
+        </div>
+        <label>공유 폴더 (선택)<input value={folder} placeholder="예: home" onChange={(e) => setFolder(e.target.value)} /></label>
+      </>}
       <label>이름<input value={p.name} onChange={(e) => set('name', e.target.value)} placeholder="사무실 NAS" /></label>
-      <label>WebDAV 주소<input value={p.url} onChange={(e) => set('url', e.target.value.trim())} /></label>
+      {edit ? <label>WebDAV 주소<input value={p.url} onChange={(e) => set('url', e.target.value.trim())} /></label>
+        : p.url.length > 8 && <div className="small path">접속 주소: {p.url}</div>}
       <label>아이디<input value={p.user} onChange={(e) => set('user', e.target.value)} /></label>
       <label>비밀번호{edit && <span className="small"> (바꿀 때만 입력)</span>}<input type="password" value={pw} onChange={(e) => setPw(e.target.value)} /></label>
       <label className="row" style={{ flexDirection: 'row' }}><input type="checkbox" checked={p.insecure} onChange={(e) => set('insecure', e.target.checked)} /> 인증서 확인 안 함 (내부망 자체 서명 인증서)</label>

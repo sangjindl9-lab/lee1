@@ -363,7 +363,7 @@ private fun SheetItem(label: String, danger: Boolean = false, onClick: () -> Uni
 
 // ---------------- 전송 목록 ----------------
 @Composable
-private fun TransferList(vm: AppVM) {
+internal fun TransferList(vm: AppVM) {
     val ctx = LocalContext.current
     val list = CloudTransfers.items
     if (list.isEmpty()) return

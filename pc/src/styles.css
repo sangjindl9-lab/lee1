@@ -58,3 +58,4 @@ select { font:inherit; color:var(--text); background:var(--panel); border:1px so
 .share-row { padding:8px 0; border-top:1px solid var(--line); }
 .nas-del { position:fixed; bottom:24px; right:24px; z-index:11; }
 .side-title.row { display:flex; }
+.presets { display:flex; gap:6px; flex-wrap:wrap; margin:6px 0; }

@@ -135,6 +135,7 @@ fun HomeScreen(vm: AppVM) {
         // PC 연결
         item { PcConnectBanner { vm.push(Dest.Connect) } }
         item { CloudBanner { vm.push(Dest.Cloud) } }
+        item { NasBanner { vm.push(Dest.Nas) } }
 
         // 카테고리
         item { SectionTitle("카테고리") }
@@ -362,6 +363,28 @@ private fun CloudBanner(onClick: () -> Unit) {
         Column(Modifier.weight(1f)) {
             Text("클라우드", fontWeight = FontWeight.Bold, fontSize = 17.sp)
             Text("Google Drive·Dropbox 파일 보기·받기·올리기·공유", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Icon(Icons.Rounded.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun NasBanner(onClick: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 18.dp, vertical = 6.dp)
+            .clip(RoundedCornerShape(20.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainer)
+            .clickable(onClick = onClick)
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IconBadge(androidx.compose.material.icons.Icons.Rounded.Storage, Color(0xFF8B5CF6), 46.dp)
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text("NAS", fontWeight = FontWeight.Bold, fontSize = 17.sp)
+            Text("시놀로지·QNAP·ASUSTOR 등 집·회사 NAS 접속 (외부 접속 가능)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Icon(Icons.Rounded.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
     }

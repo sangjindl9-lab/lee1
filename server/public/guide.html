@@ -24,6 +24,12 @@
 <li>권한 화면에서 <b>계속</b>을 누릅니다.</li>
 <li>'연결되었습니다'가 나오면 앱(또는 PC 프로그램)으로 돌아옵니다.</li></ol>
 <p class="muted">Google·Dropbox 비밀번호는 저장되지 않습니다. 연결을 해제하면 저장된 접근 권한도 즉시 삭제됩니다.</p></div>
+<h2 id="nas">6. NAS 연결 (시놀로지 · QNAP · ASUSTOR · WebDAV)</h2>
+<p>휴대폰 앱 <b>홈 → NAS</b> 또는 PC 프로그램 왼쪽 <b>NAS + 추가</b>에서 제조사를 고르고 주소(DDNS 또는 IP), 아이디, 비밀번호를 넣으면 포트와 주소가 자동으로 채워집니다.</p>
+<ul><li><b>시놀로지</b>: 패키지 센터 → WebDAV Server 설치 → HTTPS(5006) 사용. 외부 접속은 DDNS(○○.synology.me)와 공유기 5006 포트 포워딩이 필요합니다. QuickConnect ID는 WebDAV에 쓸 수 없습니다.</li>
+<li><b>QNAP</b>: 제어판 → 네트워크 및 파일 서비스 → WebDAV 활성화. 외부 접속은 myQNAPcloud DDNS와 443 포트 포워딩.</li>
+<li><b>ASUSTOR</b>: 서비스 → WebDAV 활성화(SSL 9802). 외부 접속은 EZ-Connect DDNS와 9802 포트 포워딩.</li></ul>
+<p class="muted">NAS 비밀번호는 휴대폰의 보안 저장소(PC는 Windows 자격 증명 관리자)에만 저장되며 서버로 보내지 않습니다. 파일은 기기와 NAS가 직접 주고받습니다.</p>
 <h2>연결이 안 될 때</h2>
 <ul><li>휴대폰 앱의 PC 연결 화면에서 연결이 <b>켜짐</b>인지 확인하세요. 휴대폰이 꺼져 있거나 인터넷이 끊기면 PC에서 "모바일 오프라인"으로 표시됩니다.</li>
 <li>절전 모드·배터리 최적화가 연결을 끊을 수 있습니다. 앱 설정에서 배터리 최적화 예외로 지정하세요.</li>
