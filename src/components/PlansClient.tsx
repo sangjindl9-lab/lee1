@@ -131,6 +131,8 @@ export default function PlansClient({ inApp }: { inApp: boolean }) {
   async function buy(plan: PlanRow) {
     if (!bridge || !info || !plan.productId) return;
     if (purchasingRef.current || busy) return; // 연속 클릭 방지
+    // 그 요금제에 선택한 주기가 없으면(1TB 는 월간만) 있는 주기로 결제한다
+    const basePlanId = plan.prices.some((p) => p.basePlanId === cycle) ? cycle : plan.prices[0]?.basePlanId ?? "monthly";
     purchasingRef.current = true;
     setBusy(true);
     setNotice(null);
@@ -139,7 +141,7 @@ export default function PlansClient({ inApp }: { inApp: boolean }) {
       const res = await fetch("/api/billing/play/intent", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ productId: plan.productId, basePlanId: cycle }),
+        body: JSON.stringify({ productId: plan.productId, basePlanId }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -156,7 +158,7 @@ export default function PlansClient({ inApp }: { inApp: boolean }) {
         return;
       }
       intentRef.current = data.intentId;
-      bridge.purchase(plan.productId, cycle, data.intentId, data.profileId, data.action === "CHANGE" ? data.oldToken : null);
+      bridge.purchase(plan.productId, basePlanId, data.intentId, data.profileId, data.action === "CHANGE" ? data.oldToken : null);
     } catch {
       purchasingRef.current = false;
       setBusy(false);
