@@ -1,0 +1,12 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "targets": ["deb", "rpm", "appimage"],
+    "category": "Utility",
+    "longDescription": "휴대폰(파일 관리자 2 앱)과 PC, 클라우드(Google Drive·Dropbox), NAS의 파일을 한곳에서 보고 주고받는 연결 프로그램입니다.",
+    "linux": {
+      "deb": { "section": "utils" },
+      "rpm": { "release": "1" }
+    }
+  }
+}

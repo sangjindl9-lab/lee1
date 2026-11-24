@@ -1,6 +1,6 @@
 [package]
 name = "fm2-pc"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2021"
 
 [lib]
@@ -24,7 +24,8 @@ tokio = { version = "1", features = ["fs", "io-util"] }
 tokio-util = { version = "0.7", features = ["io"] }
 futures-util = "0.3"
 roxmltree = "0.20"
-keyring = { version = "3", features = ["windows-native", "apple-native", "linux-native"] }
+# 리눅스: 커널 키링(linux-native)은 재부팅하면 지워지므로 GNOME 키링·KWallet(Secret Service)에 저장합니다.
+keyring = { version = "3", features = ["windows-native", "apple-native", "sync-secret-service", "crypto-rust", "vendored"] }
 percent-encoding = "2"
 
 [profile.release]

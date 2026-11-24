@@ -5,7 +5,7 @@ import { check, type Update } from '@tauri-apps/plugin-updater';
 import { relaunch } from '@tauri-apps/plugin-process';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { invoke } from '@tauri-apps/api/core';
-import { api, ApiError, APP_VERSION, Device, fmtSize, fmtTime, login, logout, Perm, RItem, SERVER, session, setUnauthorizedHandler, sysInfo } from './api';
+import { api, ApiError, APP_VERSION, Device, fmtSize, fmtTime, joinLocal, login, logout, Perm, RItem, SERVER, session, setUnauthorizedHandler, sysInfo } from './api';
 import { relay } from './relay';
 import { queue, Transfer } from './transfers';
 import { CloudAddDialog, CloudExplorer, NasDialog, NasExplorer, NasProfile, nasStore, PROVIDER_ICON, ShareDialog, SharesDialog, ShareTarget, useClouds } from './sources';
@@ -108,7 +108,7 @@ function Main({ onLogout }: { onLogout: () => void }) {
   }, [say]);
 
   useEffect(() => {
-    if (!saveDir) sysInfo().then((s) => { const d = s.downloads + '\\FileManager2'; setSaveDir(d); localStorage.setItem('fm2.saveDir', d); });
+    if (!saveDir) sysInfo().then((s) => { const d = joinLocal(s.downloads, 'FileManager2'); setSaveDir(d); localStorage.setItem('fm2.saveDir', d); });
     relay.start(); reload();
     const off = relay.on((m) => {
       if (m.t === '_state') force();
@@ -293,7 +293,7 @@ function Explorer({ perm, online, saveDir, say, onShare }: { perm: Perm; online:
   const crumbs = path && root ? [{ name: root.name, path: root.path }, ...path.slice(root.path.length).split('/').filter(Boolean).map((n, i, arr) => ({ name: n, path: root.path + '/' + arr.slice(0, i + 1).join('/') }))] : [];
   const up = () => { if (!path || !root || path === root.path) load(null); else load(path.slice(0, path.lastIndexOf('/'))); };
   const selected = sorted.filter((i) => sel.has(i.path));
-  const join = (...a: string[]) => a.join('\\').replace(/\\+/g, '\\');
+  const join = joinLocal;
 
   async function download(list: RItem[]) {
     let n = 0;

@@ -192,7 +192,7 @@ pub async fn http_upload(id: String, url: String, method: String, headers: Vec<(
 pub fn nas_save_password(id: String, password: String, root: String) -> Result<(), String> {
     let r = norm_root(&root)?;
     let v = serde_json::json!({ "v": 2, "root": r.to_string(), "pw": password }).to_string();
-    keyring::Entry::new(KEYRING_SERVICE, &id).and_then(|e| e.set_password(&v)).map_err(|e| format!("Windows 자격 증명 저장 실패: {}", e))
+    keyring::Entry::new(KEYRING_SERVICE, &id).and_then(|e| e.set_password(&v)).map_err(|e| format!("{} 저장 실패: {}", crate::secret_store_name(), e))
 }
 #[tauri::command]
 pub fn nas_forget(id: String) { if let Ok(e) = keyring::Entry::new(KEYRING_SERVICE, &id) { let _ = e.delete_credential(); } }
@@ -276,7 +276,7 @@ fn httpdate(s: &str) -> Option<i64> {
     Some(((days * 86400) + t[0] * 3600 + t[1] * 60 + t[2]) * 1000)
 }
 
-// ---------------- 로그인 토큰 (Windows 자격 증명 관리자) ----------------
+// ---------------- 로그인 토큰 (운영체제 보안 저장소: Windows 자격 증명 관리자 / macOS 키체인 / 리눅스 비밀 서비스) ----------------
 const TOKEN_SERVICE: &str = "FileManager2PC-Session";
 #[tauri::command]
 pub fn secret_get(key: String) -> Option<String> {

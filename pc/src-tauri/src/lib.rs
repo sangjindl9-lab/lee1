@@ -19,14 +19,47 @@ struct SysInfo {
     name: String,
     os: String,
     downloads: String,
+    /// 서버에 보낼 기기 종류 이름 ("Windows PC" / "Mac" / "Linux PC")
+    model: String,
+    /// 경로 구분자 (Windows "\\", 그 외 "/")
+    sep: String,
+}
+
+fn computer_name() -> String {
+    #[cfg(target_os = "macos")]
+    {
+        if let Ok(o) = std::process::Command::new("scutil").args(["--get", "ComputerName"]).output() {
+            let n = String::from_utf8_lossy(&o.stdout).trim().to_string();
+            if !n.is_empty() { return n; }
+        }
+    }
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(n) = fs::read_to_string("/etc/hostname") {
+            let n = n.trim().to_string();
+            if !n.is_empty() { return n; }
+        }
+    }
+    std::env::var("COMPUTERNAME").or_else(|_| std::env::var("HOSTNAME")).unwrap_or_else(|_| default_model().into())
+}
+
+fn default_model() -> &'static str {
+    if cfg!(target_os = "windows") { "Windows PC" } else if cfg!(target_os = "macos") { "Mac" } else { "Linux PC" }
 }
 
 #[tauri::command]
-fn sys_info() -> SysInfo {
-    let name = std::env::var("COMPUTERNAME").or_else(|_| std::env::var("HOSTNAME")).unwrap_or_else(|_| "Windows PC".into());
+fn sys_info(app: tauri::AppHandle) -> SysInfo {
+    use tauri::Manager;
     let home = std::env::var("USERPROFILE").or_else(|_| std::env::var("HOME")).unwrap_or_default();
-    let downloads = Path::new(&home).join("Downloads").to_string_lossy().to_string();
-    SysInfo { name, os: format!("{} {}", std::env::consts::OS, std::env::consts::ARCH), downloads }
+    // 리눅스는 언어 설정에 따라 "다운로드" 폴더 이름이 달라서 XDG 설정을 따르는 Tauri 경로를 먼저 씁니다.
+    let downloads = app.path().download_dir().unwrap_or_else(|_| Path::new(&home).join("Downloads")).to_string_lossy().to_string();
+    SysInfo {
+        name: computer_name(),
+        os: format!("{} {}", std::env::consts::OS, std::env::consts::ARCH),
+        downloads,
+        model: default_model().into(),
+        sep: std::path::MAIN_SEPARATOR.to_string(),
+    }
 }
 
 #[tauri::command]
@@ -135,6 +168,13 @@ fn cancel_download(path: String) {
     let _ = fs::remove_file(format!("{}.fm2part", path));
 }
 
+pub fn secret_store_name() -> &'static str {
+    if cfg!(target_os = "windows") { "Windows 자격 증명 관리자" } else if cfg!(target_os = "macos") { "macOS 키체인" } else { "리눅스 비밀번호 저장소(Secret Service)" }
+}
+
+#[tauri::command]
+fn secret_store() -> &'static str { secret_store_name() }
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -142,7 +182,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
-        .invoke_handler(tauri::generate_handler![sys_info, local_stat, local_walk, read_chunk, append_chunk, part_size, finish_download, cancel_download,
+        .invoke_handler(tauri::generate_handler![sys_info, secret_store, local_stat, local_walk, read_chunk, append_chunk, part_size, finish_download, cancel_download,
             net::http_download, net::http_upload, net::cancel_transfer, net::nas_save_password, net::nas_forget, net::webdav_list, net::webdav_op,
             net::secret_get, net::secret_set, net::secret_del])
         .run(tauri::generate_context!())

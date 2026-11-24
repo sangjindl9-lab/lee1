@@ -2,11 +2,22 @@ import { invoke } from '@tauri-apps/api/core';
 
 export const SERVER = 'https://fm2.ieumerp.kr';
 export const WS_URL = SERVER.replace('https://', 'wss://') + '/ws';
-export const APP_VERSION = '0.3.0';
+export const APP_VERSION = '0.4.0';
+
+// 실행 중인 운영체제 (경로 구분자·문구에 사용). Windows는 WebView2, macOS는 WKWebView, 리눅스는 WebKitGTK.
+export const IS_WINDOWS = /Windows/i.test(navigator.userAgent);
+export const IS_MAC = !IS_WINDOWS && /Mac OS X|Macintosh/i.test(navigator.userAgent);
+export const SEP = IS_WINDOWS ? '\\' : '/';
+export const SECRET_STORE = IS_WINDOWS ? 'Windows 자격 증명 관리자' : IS_MAC ? 'macOS 키체인' : '리눅스 비밀번호 저장소';
+/** 로컬 경로 잇기 (구분자 중복 제거) */
+export const joinLocal = (...a: string[]) => {
+  const s = a.join(SEP);
+  return IS_WINDOWS ? s.replace(/\\+/g, '\\') : s.replace(/\/+/g, '/');
+};
 
 export class ApiError extends Error { constructor(public code: string, msg: string, public status = 0) { super(msg); } }
 
-// 로그인 토큰은 Windows 자격 증명 관리자에 보관하고, 실행 중에는 메모리에만 둡니다.
+// 로그인 토큰은 운영체제 보안 저장소(Windows 자격 증명 관리자 / macOS 키체인 / 리눅스 비밀번호 저장소)에 보관하고, 실행 중에는 메모리에만 둡니다.
 let memToken: string | null = null;
 export async function initSession() {
   try { memToken = (await invoke<string | null>('secret_get', { key: 'session' })) ?? null; } catch { memToken = null; }
@@ -56,13 +67,13 @@ export async function api<T = any>(method: string, path: string, body?: unknown)
   return j as T;
 }
 
-export type SysInfo = { name: string; os: string; downloads: string };
+export type SysInfo = { name: string; os: string; downloads: string; model?: string; sep?: string };
 export const sysInfo = () => invoke<SysInfo>('sys_info');
 
 export async function login(email: string, password: string) {
   const si = await sysInfo();
   const j = await api<{ token: string; user: { email: string } }>('POST', '/api/auth/login', {
-    email, password, device: { kind: 'pc', name: si.name, model: 'Windows PC', platform: si.os, appVersion: APP_VERSION, installId: LS.installId },
+    email, password, device: { kind: 'pc', name: si.name, model: si.model || 'PC', platform: si.os, appVersion: APP_VERSION, installId: LS.installId },
   });
   LS.token = j.token; LS.email = j.user.email;
   return j;

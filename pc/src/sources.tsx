@@ -4,7 +4,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
-import { api, fmtSize, SERVER, session } from './api';
+import { api, fmtSize, joinLocal, SECRET_STORE, SERVER, session } from './api';
 import { queue, NasAuth } from './transfers';
 
 export type CloudConn = { id: string; provider: string; label: string; account: string; ready: boolean };
@@ -31,7 +31,7 @@ interface Adapter {
   share?: (it: GItem) => void;
   note?: string;
 }
-const join = (...a: string[]) => a.join('\\').replace(/\\+/g, '\\');
+const join = joinLocal;
 const auth = (): [string, string][] => [['Authorization', 'Bearer ' + session.token]];
 
 // ---------------- 공용 탐색기 ----------------
@@ -338,7 +338,7 @@ export function NasDialog({ edit, onClose, onSaved }: { edit?: NasProfile; onClo
       {transport ? <div className="err">{transport}</div> : p.url.startsWith('http://') && <div className="note warn">http는 내부망에서만 쓸 수 있으며 비밀번호가 암호화되지 않습니다.</div>}
       {urlChanged && !pw && <div className="note warn">주소를 바꾸면 보안을 위해 비밀번호를 다시 입력해야 합니다.</div>}
       <p className="muted small">외부에서 접속할 때는 공유기 포트 개방보다 NAS 제조사 VPN(시놀로지 VPN Server, QNAP QVPN 등)으로 내부망에 들어온 뒤 내부 주소로 연결하는 방법을 권장합니다.</p>
-      <p className="muted small">비밀번호는 Windows 자격 증명 관리자에만 저장됩니다.</p>
+      <p className="muted small">비밀번호는 {SECRET_STORE}에만 저장됩니다.</p>
       {err && <div className="err">{err}</div>}
       <div className="row end">
         <button className="btn ghost" onClick={onClose}>취소</button>
