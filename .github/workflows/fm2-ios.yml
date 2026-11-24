@@ -1,0 +1,80 @@
+name: FM2 iOS build
+on:
+  push:
+    branches: [filemanager2]
+    paths: ['ios/**', '.github/workflows/fm2-ios.yml']
+  workflow_dispatch: {}
+permissions:
+  contents: write
+concurrency:
+  group: fm2-ios
+  cancel-in-progress: true
+jobs:
+  ios:
+    runs-on: macos-15
+    defaults: { run: { working-directory: ios } }
+    env:
+      # Apple 개발자 계정 등록 후 저장소 Secrets에 넣으면 TestFlight 업로드까지 자동으로 진행
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Xcode 프로젝트 생성
+        run: |
+          brew install xcodegen
+          xcodegen generate
+          xcodebuild -version
+      - name: 시뮬레이터용 빌드
+        run: |
+          mkdir -p build
+          xcodebuild -project FileManager2.xcodeproj -scheme FileManager2 -configuration Debug \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath build/sim \
+            CODE_SIGNING_ALLOWED=NO build > build/sim.log 2>&1 || true
+          grep -E "error:" build/sim.log | sort -u | head -40 | sed 's/^/::error::/' || true
+          tail -3 build/sim.log
+          test -d build/sim/Build/Products/Debug-iphonesimulator/FileManager2.app
+      - name: 아이폰용(서명 없음) 빌드
+        run: |
+          xcodebuild -project FileManager2.xcodeproj -scheme FileManager2 -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build/dev \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build > build/dev.log 2>&1 || true
+          grep -E "error:" build/dev.log | sort -u | head -40 | sed 's/^/::error::/' || true
+          APP=build/dev/Build/Products/Release-iphoneos/FileManager2.app
+          test -d "$APP"
+          mkdir -p out/Payload && cp -R "$APP" out/Payload/ && (cd out && zip -qr FileManager2-unsigned.ipa Payload && rm -rf Payload)
+      - name: 시뮬레이터에서 실행해 화면 찍기
+        run: |
+          DEV=$(xcrun simctl list devices available -j | python3 -c "import json,sys;d=json.load(sys.stdin)['devices'];print(next(x['udid'] for k,v in d.items() if 'iOS' in k for x in v if x['name'].startswith('iPhone 16') or x['name'].startswith('iPhone 15')))")
+          xcrun simctl boot "$DEV"; xcrun simctl bootstatus "$DEV" -b
+          xcrun simctl install "$DEV" build/sim/Build/Products/Debug-iphonesimulator/FileManager2.app
+          mkdir -p shots
+          for t in 0 1 2 3; do
+            xcrun simctl launch "$DEV" kr.eumsoft.filemanager2 -startTab $t; sleep 6
+            xcrun simctl io "$DEV" screenshot "shots/tab$t.png"
+            xcrun simctl terminate "$DEV" kr.eumsoft.filemanager2 || true
+          done
+          ls -la shots
+      - name: 화면 사진 올리기 (filemanager2-ios-shots 브랜치)
+        run: |
+          mkdir /tmp/pub && cp shots/*.png /tmp/pub/ && cd /tmp/pub
+          git init -q -b filemanager2-ios-shots
+          git config user.name "github-actions"; git config user.email "actions@github.com"
+          git add . && git commit -qm "iOS screenshots ${{ github.sha }}"
+          git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" filemanager2-ios-shots
+      - uses: actions/upload-artifact@v4
+        with: { name: fm2-ios, path: 'ios/out/*' }
+      - name: TestFlight 업로드 (Apple 계정 Secrets가 있을 때만)
+        if: env.ASC_KEY_ID != '' && env.APPLE_TEAM_ID != ''
+        run: |
+          mkdir -p ~/private_keys && echo "$ASC_KEY_P8" > ~/private_keys/AuthKey_$ASC_KEY_ID.p8
+          AUTH=(-allowProvisioningUpdates -authenticationKeyPath ~/private_keys/AuthKey_$ASC_KEY_ID.p8 -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID")
+          xcodebuild -project FileManager2.xcodeproj -scheme FileManager2 -configuration Release -destination 'generic/platform=iOS' \
+            -archivePath build/FileManager2.xcarchive DEVELOPMENT_TEAM="$APPLE_TEAM_ID" CURRENT_PROJECT_VERSION=${{ github.run_number }} "${AUTH[@]}" archive
+          cat > build/export.plist <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict><key>method</key><string>app-store-connect</string><key>destination</key><string>upload</string>
+          <key>teamID</key><string>$APPLE_TEAM_ID</string><key>signingStyle</key><string>automatic</string></dict></plist>
+          PLIST
+          xcodebuild -exportArchive -archivePath build/FileManager2.xcarchive -exportOptionsPlist build/export.plist -exportPath build/export "${AUTH[@]}"

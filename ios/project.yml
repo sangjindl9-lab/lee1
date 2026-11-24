@@ -1,0 +1,55 @@
+name: FileManager2
+options:
+  bundleIdPrefix: kr.eumsoft
+  deploymentTarget:
+    iOS: "16.0"
+  developmentLanguage: ko
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    CODE_SIGN_STYLE: Automatic
+targets:
+  FileManager2:
+    type: application
+    scheme: {}
+    platform: iOS
+    sources:
+      - path: FileManager2
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: kr.eumsoft.filemanager2
+        PRODUCT_NAME: FileManager2
+        TARGETED_DEVICE_FAMILY: "1,2"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: FileManager2/Info.plist
+    info:
+      path: FileManager2/Info.plist
+      properties:
+        CFBundleDisplayName: 파일 관리자 2
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        CFBundleDevelopmentRegion: ko
+        LSRequiresIPhoneOS: true
+        # 앱 보관함을 아이폰 "파일" 앱에서도 보이게 함
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
+        UISupportsDocumentBrowser: false
+        ITSAppUsesNonExemptEncryption: false
+        NSPhotoLibraryAddUsageDescription: 보관함의 사진·동영상을 사진 앱에 저장할 때 사용합니다.
+        NSLocalNetworkUsageDescription: 같은 네트워크의 NAS·PC와 파일을 주고받을 때 사용합니다.
+        UILaunchScreen:
+          UIColorName: LaunchBg
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight

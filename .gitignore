@@ -3,3 +3,5 @@ build/
 local.properties
 *.iml
 .idea/
+ios/FileManager2.xcodeproj/
+ios/build/
