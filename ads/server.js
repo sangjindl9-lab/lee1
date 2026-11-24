@@ -19,6 +19,14 @@ const ok = (c) => { if (!c) return false; const [v, s] = c.split('.'); return si
 
 const app = express();
 app.use(express.json());
+// 앱(WebView: https://localhost 등)이 다른 출처에서 /api 를 부르므로 CORS 허용
+app.use('/api', (req, res, next) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type');
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
 app.use(cookieParser());
 app.use('/img', express.static(join(DATA, 'img'), { maxAge: '1d' }));
 app.use(express.static('public'));
