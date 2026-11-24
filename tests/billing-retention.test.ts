@@ -134,7 +134,10 @@ describe("기한 처리", () => {
     const oldest = await prisma.mediaAsset.findMany({ where: { id: { in: active.slice(0, 6) } } });
     const oldestSha = await Promise.all(oldest.map((m) => sha256Of(m.originalPath)));
 
+    expect(await prisma.mediaAsset.count({ where: { familyId: ctx.family.id, deletedAt: { not: null } } })).toBe(2);
+    expect(Number((await fam()).usedBytes)).toBe(12 * ITEM);
     expect(await enforceDueRetention()).toBe(1);
+    console.log("[debug] left", JSON.stringify(await prisma.mediaAsset.findMany({ where: { familyId: ctx.family.id }, select: { id: true, deletedAt: true, createdAt: true } })));
     const f = await fam();
     expect(Number(f.usedBytes)).toBeLessThanOrEqual(FREE);
     expect(f.retentionUntil).toBeNull();
