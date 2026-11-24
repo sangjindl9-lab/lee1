@@ -2,7 +2,7 @@
  * 구독 만료 시 사진 보존: 50GB(28GB 사용) → 무료 3GB 전환 전후로
  * 사진 기록 수·파일 체크섬·사용량·앨범·육아기록이 그대로인지, 원본을 다시 압축하지 않는지,
  * 신규 업로드만 막히고 열람·다운로드는 되는지, 재구독하면 그대로 복원되는지 확인한다.
- * (실제 28GB 파일은 만들지 않는다: 작은 실제 파일 + 기록상 크기 100MB 씩 280건)
+ * (실제 28GB 파일은 만들지 않는다: 작은 실제 파일 + 기록상 크기 약 102MB 씩 280건 = 28GB)
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import sharp from "sharp";
@@ -19,7 +19,9 @@ import { DAY, fromNow, GB, MB, MIN, MockPlay } from "./mock-play";
 
 let play: MockPlay;
 let ctx: Awaited<ReturnType<typeof makeFamily>>;
-const SYNTHETIC = 280; // 280 × 100MB = 28GB
+const SYNTHETIC = 280;
+/** 280건 × 약 102.4MB = 정확히 28GB */
+const PER_ROW = Math.ceil((28 * GB) / SYNTHETIC);
 
 type Snapshot = {
   mediaCount: number;
@@ -95,8 +97,8 @@ beforeAll(async () => {
         kind: "IMAGE",
         fileName: `big-${i}.jpg`,
         mimeType: "image/jpeg",
-        sizeBytes: 100 * MB,
-        storedBytes: 100 * MB,
+        sizeBytes: PER_ROW,
+        storedBytes: PER_ROW,
         originalPath: rel,
         contentHash: `synthetic-${i}`,
         dedupeKey: `${ctx.firstAlbum.id}:synthetic-${i}`,
@@ -105,7 +107,7 @@ beforeAll(async () => {
       },
     });
   }
-  await prisma.family.update({ where: { id: ctx.family.id }, data: { usedBytes: { increment: BigInt(SYNTHETIC * 100 * MB) } } });
+  await prisma.family.update({ where: { id: ctx.family.id }, data: { usedBytes: { increment: BigInt(SYNTHETIC * PER_ROW) } } });
 
   // 4) 육아 기록
   for (let i = 0; i < 3; i += 1) {

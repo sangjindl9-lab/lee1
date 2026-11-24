@@ -73,8 +73,8 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
-      - uses: android-actions/setup-android@v3
-      - run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+      # 러너에 미리 설치된 Android SDK 사용 (ANDROID_HOME)
+      - run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "platforms;android-36" "build-tools;36.0.0" > /dev/null
       - run: chmod +x gradlew
       - name: unit test + debug build (서명 없음)
         run: ./gradlew --no-daemon :app:testDebugUnitTest :app:assembleDebug -PappUrl=https://example.invalid 2>&1 | tee ../android.log

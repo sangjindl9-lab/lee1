@@ -164,8 +164,11 @@ describe("1) 다중 업로드 · 부분 실패 재시도 · 중복 방지 · 세
 
   it("원본과 미리보기 화질 정보가 분리 저장되고 동영상도 구분 표시된다", async () => {
     const video = await prisma.mediaAsset.findFirst({ where: { albumId: ctx.secondAlbum.id, kind: "VIDEO" } });
-    expect(video?.originalQuality).toContain("1080p");
-    expect(video?.previewQuality).toContain("720p");
+    // 0811687(수익화 재설계)에서 동영상 처리가 ffmpeg 기반으로 바뀌어 화질 표시가 실제 값이 되었다.
+    // ffmpeg 가 없는 환경(이 테스트의 가짜 동영상)은 원본만 보관하고 '원본'·'미리보기 없음'으로 표시한다.
+    expect(video?.originalQuality).toContain("원본");
+    expect(video?.previewQuality).toBeTruthy();
+    expect(video?.originalQuality).not.toBe(video?.previewQuality);
     const image = await prisma.mediaAsset.findFirst({ where: { albumId: ctx.secondAlbum.id, kind: "IMAGE" } });
     expect(image?.originalQuality).toContain("원본");
     expect(image?.previewQuality).toContain("미리보기");

@@ -144,8 +144,8 @@ describe("직접 업로드 (준비 → 저장소 PUT → 완료)", () => {
   });
 
   it("상한을 넘는 준비는 거절되고 아무것도 예약하지 않는다", async () => {
-    await setUsed(FREE - MB);
     const { s, items } = await session(1, 2 * MB);
+    await setUsed(FREE - MB); // 세션을 만든 뒤 다른 기기에서 공간이 찬 상황
     await expect(
       prepareDirectUpload({ userId: ctx.dad.id, sessionId: s.id, itemId: items[0].id, contentHash: hash(7), sizeBytes: 2 * MB, mimeType: "image/jpeg", fileName: "x.jpg", capturedAt: null }),
     ).rejects.toMatchObject({ code: "QUOTA_EXCEEDED" });
