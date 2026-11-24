@@ -167,7 +167,11 @@ class ConnectService : Service() {
         withContext(Dispatchers.Main) { ConnectState.activeTransfers++; ConnectState.lastActivity = "${m.optString("fromName")}: ${opLabel(m.optString("op"))}" }
         try {
             val perm = m.getJSONObject("perm")
-            val folders = perm.getJSONArray("folders").let { a -> (0 until a.length()).map { a.getString(it) } }
+            val serverFolders = perm.getJSONArray("folders").let { a -> (0 until a.length()).map { a.getString(it) } }
+            // 서버가 보낸 허용 폴더라도 이 휴대폰에서 사용자가 직접 고른 적 없는 폴더는 거부
+            val mine = ConnectState.allowedByUser(this@ConnectService)
+            val folders = if (mine.isEmpty()) serverFolders else serverFolders.filter { f -> mine.any { u -> f == u || f.startsWith("$u/") } }
+            if (folders.isEmpty()) throw BridgeError("forbidden", "휴대폰에서 허용한 폴더가 아닙니다")
             val data = FileBridge(this, folders, perm.optBoolean("readOnly")).run(m.getString("op"), m.optJSONObject("args") ?: JSONObject())
             res.put("ok", true).put("data", data)
         } catch (e: BridgeError) {
@@ -232,7 +236,7 @@ class ConnectService : Service() {
 
         fun opLabel(op: String) = when (op) {
             "list" -> "폴더 보기"; "read" -> "파일 받는 중"; "write" -> "파일 보내는 중"; "delete" -> "삭제"
-            "rename" -> "이름 변경"; "mkdir" -> "폴더 만들기"; "thumb" -> "미리보기"; "roots" -> "허용 폴더 보기"; else -> op
+            "rename" -> "이름 변경"; "mkdir" -> "폴더 만들기"; "copy" -> "복사"; "move" -> "이동"; "thumb" -> "미리보기"; "roots" -> "허용 폴더 보기"; else -> op
         }
     }
 }
@@ -318,6 +322,18 @@ class FileBridge(private val ctx: Context, folders: List<String>, private val re
             // 실수 방지: 휴대폰 휴지통으로 옮김 (휴대폰에서 복원 가능)
             Trash(ctx).add(f)
             JSONObject().put("trashed", true)
+        }
+        "copy", "move" -> {
+            needWrite()
+            val src = resolve(a.optString("path"))
+            if (roots.any { it.path == src.path }) throw BridgeError("forbidden", "허용 폴더 자체는 ${if (op == "copy") "복사" else "이동"}할 수 없습니다")
+            if (!src.exists()) throw BridgeError("not_found", "파일이 없습니다")
+            val dest = resolve(a.optString("destDir"))
+            if (!dest.isDirectory) throw BridgeError("bad_dest", "대상이 폴더가 아닙니다")
+            if (src.isDirectory && (dest.path == src.path || dest.path.startsWith(src.path + "/"))) throw BridgeError("bad_dest", "폴더를 자기 안으로 옮길 수 없습니다")
+            val out = if (op == "copy") FileOps.copy(src, dest) else FileOps.move(src, dest)
+            resolve(out.absolutePath)
+            item(out)
         }
         "thumb" -> {
             val f = resolve(a.optString("path"))

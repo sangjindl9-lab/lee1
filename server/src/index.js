@@ -451,8 +451,8 @@ async function presence(ctx, online) {
   for (const p of pcs) send(p.pc_id, { t: 'presence', deviceId: ctx.device_id, online });
 }
 
-const ALLOWED_OPS = new Set(['list', 'stat', 'read', 'write', 'mkdir', 'rename', 'delete', 'roots', 'thumb']);
-const WRITE_OPS = new Set(['write', 'mkdir', 'rename', 'delete']);
+const ALLOWED_OPS = new Set(['list', 'stat', 'read', 'write', 'mkdir', 'rename', 'delete', 'roots', 'thumb', 'copy', 'move']);
+const WRITE_OPS = new Set(['write', 'mkdir', 'rename', 'delete', 'copy', 'move']);
 
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 8 * 1024 * 1024 });
@@ -514,7 +514,7 @@ async function relayRequest(ctx, ws, m) {
       [ctx.user_id, m.op === 'read' ? m.to : ctx.device_id, m.op === 'read' ? ctx.device_id : m.to,
         m.op === 'read' ? 'mobile_to_pc' : 'pc_to_mobile', String(args.path || '').slice(0, 500), Number(args.total || 0)]).catch(() => {});
   }
-  if (['delete', 'rename', 'mkdir'].includes(m.op)) log(ctx.user_id, ctx.device_id, 'remote_' + m.op, String(args.path || ''), null);
+  if (['delete', 'rename', 'mkdir', 'copy', 'move'].includes(m.op)) log(ctx.user_id, ctx.device_id, 'remote_' + m.op, String(args.path || ''), null);
 }
 
 /** 서버가 직접 휴대폰에 보내는 요청 (공유 링크 중계용) */

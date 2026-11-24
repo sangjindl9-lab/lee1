@@ -84,15 +84,15 @@ data class NasPreset(
 
 val NAS_PRESETS = listOf(
     NasPreset("synology", "시놀로지", 5006, 5005, "예: mynas.synology.me 또는 192.168.0.10", "예: home 또는 공유폴더 이름",
-        listOf("DSM → 패키지 센터에서 'WebDAV Server' 설치", "WebDAV Server 실행 → 'HTTPS 사용(포트 5006)' 체크", "외부 접속: 제어판 → 외부 액세스 → DDNS에서 '○○.synology.me' 만들기, 공유기에서 5006 포트 포워딩",
+        listOf("DSM → 패키지 센터에서 'WebDAV Server' 설치", "WebDAV Server 실행 → 'HTTPS 사용(포트 5006)' 체크", "외부 접속: 포트 개방 대신 패키지 센터의 VPN Server로 VPN에 먼저 접속한 뒤 내부 주소(192.168.x.x)로 연결 권장",
             "QuickConnect ID는 WebDAV에서 쓸 수 없습니다 (DDNS 주소 사용)")),
     NasPreset("qnap", "QNAP", 443, 80, "예: mynas.myqnapcloud.com 또는 192.168.0.10", "예: Public 또는 공유폴더 이름",
-        listOf("제어판 → 네트워크 및 파일 서비스 → WebDAV → 'WebDAV 활성화'", "공유 폴더 권한에서 WebDAV 접근 허용", "외부 접속: myQNAPcloud에서 DDNS(○○.myqnapcloud.com) 설정, 공유기에서 443 포트 포워딩",
+        listOf("제어판 → 네트워크 및 파일 서비스 → WebDAV → 'WebDAV 활성화'", "공유 폴더 권한에서 WebDAV 접근 허용", "외부 접속: 포트 개방 대신 QVPN Service로 VPN에 먼저 접속한 뒤 내부 주소로 연결 권장",
             "포트를 바꿨다면 아래 '포트'에 직접 입력하세요")),
     NasPreset("asustor", "ASUSTOR", 9802, 9800, "예: mynas.myasustor.com 또는 192.168.0.10", "예: Public 또는 공유폴더 이름",
-        listOf("서비스 → WebDAV → 'WebDAV 활성화' 및 'SSL 사용(9802)' 체크", "외부 접속: EZ-Connect의 DDNS(○○.myasustor.com) 설정, 공유기에서 9802 포트 포워딩")),
+        listOf("서비스 → WebDAV → 'WebDAV 활성화' 및 'SSL 사용(9802)' 체크", "외부 접속: 포트 개방 대신 App Central의 VPN Server로 VPN에 먼저 접속한 뒤 내부 주소로 연결 권장")),
     NasPreset("custom", "기타 WebDAV", 443, 80, "예: nas.example.com 또는 192.168.0.10", "공유 폴더 경로 (없으면 비워 두기)",
-        listOf("NAS 관리 화면에서 WebDAV를 켜고 포트 번호를 확인하세요", "외부에서 접속하려면 DDNS 주소와 공유기 포트 포워딩이 필요합니다")),
+        listOf("NAS 관리 화면에서 WebDAV를 켜고 포트 번호를 확인하세요", "외부 접속은 포트 개방보다 VPN으로 내부망에 들어온 뒤 연결하는 방법을 권장합니다")),
 )
 
 private fun hum(n: Long): String {
@@ -212,12 +212,18 @@ private fun NasEditDialog(vm: AppVM, edit: NasProfile?, onDismiss: () -> Unit, o
                 Checkbox(insecure, { insecure = it })
                 Text("인증서 확인 안 함 (자체 서명 인증서·내부망)", style = MaterialTheme.typography.bodySmall)
             }
-            if (builtUrl.startsWith("http://")) Text("http 주소는 비밀번호가 암호화되지 않고 전송됩니다. 외부 접속에는 HTTPS를 쓰세요.", color = Color(0xFFB45309), style = MaterialTheme.typography.bodySmall)
+            val urlChanged = edit != null && edit.root != (if (builtUrl.endsWith("/")) builtUrl else "$builtUrl/")
+            val transport = if (builtUrl.matches(Regex("^https?://.+"))) Nas.transportProblem(builtUrl, insecure) else null
+            if (transport != null) Text(transport, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            else if (builtUrl.startsWith("http://")) Text("http는 내부망에서만 쓸 수 있으며 비밀번호가 암호화되지 않습니다.", color = Color(0xFFB45309), style = MaterialTheme.typography.bodySmall)
+            if (urlChanged && pw.isEmpty()) Text("주소를 바꾸면 보안을 위해 비밀번호를 다시 입력해야 합니다.", color = Color(0xFFB45309), style = MaterialTheme.typography.bodySmall)
+            Text("외부에서 접속할 때는 공유기 포트 개방보다 NAS 제조사의 VPN(시놀로지 VPN Server, QNAP QVPN 등)으로 내부망에 들어온 뒤 내부 주소로 연결하는 방법을 권장합니다.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             err?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
             if (edit != null) TextButton(onClick = { onDelete(edit) }) { Text("이 NAS 삭제", color = MaterialTheme.colorScheme.error) }
         }
     }, confirmButton = {
-        TextButton(enabled = !busy && name.isNotBlank() && builtUrl.matches(Regex("^https?://.+")) && user.isNotBlank() && (edit != null || pw.isNotEmpty()), onClick = {
+        TextButton(enabled = !busy && name.isNotBlank() && builtUrl.matches(Regex("^https?://.+")) && user.isNotBlank() && (edit != null || pw.isNotEmpty()) &&
+                Nas.transportProblem(builtUrl, insecure) == null && !(edit != null && edit.root != (if (builtUrl.endsWith("/")) builtUrl else "$builtUrl/") && pw.isEmpty()), onClick = {
             busy = true; err = null
             val p = NasProfile(edit?.id ?: Nas.newId(), name.trim(), builtUrl, user.trim(), insecure)
             scope.launch {

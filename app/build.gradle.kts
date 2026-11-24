@@ -5,14 +5,15 @@ plugins {
 }
 
 android {
+    testOptions { unitTests.isReturnDefaultValues = true }
     namespace = "kr.eumsoft.filemanager2"
     compileSdk = 36
     defaultConfig {
         applicationId = "kr.eumsoft.filemanager2"
         minSdk = 24
         targetSdk = 36
-        versionCode = 9
-        versionName = "1.8"
+        versionCode = 10
+        versionName = "1.9"
     }
     buildTypes {
         release { isMinifyEnabled = false }
@@ -26,6 +27,7 @@ android {
 }
 
 dependencies {
+    testImplementation("junit:junit:4.13.2")
     val bom = platform("androidx.compose:compose-bom:2024.09.03")
     implementation(bom)
     implementation("androidx.core:core-ktx:1.13.1")

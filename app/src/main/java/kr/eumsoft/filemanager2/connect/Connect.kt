@@ -54,14 +54,28 @@ object ConnectState {
         deviceId = sp.getString("deviceId", null)
         enabled = sp.getBoolean("enabled", false) && token(ctx) != null
     }
-    fun token(ctx: Context): String? = ctx.getSharedPreferences(P, Context.MODE_PRIVATE).getString("token", null)
+    /** 로그인 토큰: 키 저장소로 암호화해 보관 (예전 평문 저장분은 읽을 때 암호화로 바꿈) */
+    fun token(ctx: Context): String? {
+        val sp = ctx.getSharedPreferences(P, Context.MODE_PRIVATE)
+        SecureStore.decrypt(sp.getString("token_enc", null))?.let { return it }
+        val plain = sp.getString("token", null) ?: return null
+        runCatching { sp.edit().putString("token_enc", SecureStore.encrypt(plain)).remove("token").apply() }
+        return plain
+    }
+    /** 이 휴대폰에서 사용자가 직접 허용한 폴더 기록 — 서버가 보낸 허용 범위가 이를 넘으면 거부 */
+    fun allowedByUser(ctx: Context): Set<String> =
+        ctx.getSharedPreferences(P, Context.MODE_PRIVATE).getStringSet("userFolders", emptySet()) ?: emptySet()
+    fun rememberAllowed(ctx: Context, folders: List<String>) {
+        val sp = ctx.getSharedPreferences(P, Context.MODE_PRIVATE)
+        sp.edit().putStringSet("userFolders", allowedByUser(ctx) + folders).apply()
+    }
     fun installId(ctx: Context): String {
         val sp = ctx.getSharedPreferences(P, Context.MODE_PRIVATE)
         return sp.getString("installId", null) ?: UUID.randomUUID().toString().also { sp.edit().putString("installId", it).apply() }
     }
     fun saveLogin(ctx: Context, token: String, email: String, deviceId: String) {
         ctx.getSharedPreferences(P, Context.MODE_PRIVATE).edit()
-            .putString("token", token).putString("email", email).putString("deviceId", deviceId).apply()
+            .putString("token_enc", SecureStore.encrypt(token)).remove("token").putString("email", email).putString("deviceId", deviceId).apply()
         this.email = email; this.deviceId = deviceId
     }
     fun setEnabled(ctx: Context, v: Boolean) {
@@ -139,11 +153,13 @@ object ConnectApi {
         return (0 until a.length()).map { parsePerm(a.getJSONObject(it)) }
     }
     suspend fun approve(ctx: Context, id: String, folders: List<String>, readOnly: Boolean) {
+        ConnectState.rememberAllowed(ctx, folders)
         call(ctx, "POST", "/api/permissions/$id/approve", JSONObject().put("folders", JSONArray(folders)).put("readOnly", readOnly))
     }
     suspend fun reject(ctx: Context, id: String) { call(ctx, "POST", "/api/permissions/$id/reject") }
     suspend fun revoke(ctx: Context, id: String) { call(ctx, "POST", "/api/permissions/$id/revoke") }
     suspend fun pairCode(ctx: Context, folders: List<String>, readOnly: Boolean): String {
+        ConnectState.rememberAllowed(ctx, folders)
         val r = call(ctx, "POST", "/api/pair/code", JSONObject().put("folders", JSONArray(folders)).put("readOnly", readOnly)) as JSONObject
         return r.getString("code")
     }

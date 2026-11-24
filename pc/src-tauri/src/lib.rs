@@ -143,7 +143,8 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .invoke_handler(tauri::generate_handler![sys_info, local_stat, local_walk, read_chunk, append_chunk, part_size, finish_download, cancel_download,
-            net::http_download, net::http_upload, net::cancel_transfer, net::nas_save_password, net::nas_forget, net::webdav_list, net::webdav_op])
+            net::http_download, net::http_upload, net::cancel_transfer, net::nas_save_password, net::nas_forget, net::webdav_list, net::webdav_op,
+            net::secret_get, net::secret_set, net::secret_del])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

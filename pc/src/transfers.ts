@@ -11,7 +11,7 @@ export type Transfer = {
   http?: { url: string; method?: string; headers: [string, string][]; nas?: NasAuth };
   source?: string;
 };
-export type NasAuth = { id: string; user: string; insecure: boolean };
+export type NasAuth = { id: string; user: string; insecure: boolean; root: string };
 
 type L = () => void;
 class Queue {

@@ -55,18 +55,61 @@ object Nas {
         val l = profiles(ctx).filter { it.id != p.id } + p
         val a = JSONArray().apply { l.forEach { put(JSONObject().put("id", it.id).put("name", it.name).put("url", it.url).put("user", it.user).put("insecure", it.insecure)) } }
         val e = ctx.getSharedPreferences(P, Context.MODE_PRIVATE).edit().putString("list", a.toString())
-        if (password != null) e.putString("pw_" + p.id, encrypt(password))
+        if (password != null) e.putString("pw_" + p.id, SecureStore.encrypt(password)).putString("pwroot_" + p.id, p.root)
         e.apply()
     }
     fun remove(ctx: Context, id: String) {
         val l = profiles(ctx).filter { it.id != id }
         val a = JSONArray().apply { l.forEach { put(JSONObject().put("id", it.id).put("name", it.name).put("url", it.url).put("user", it.user).put("insecure", it.insecure)) } }
-        ctx.getSharedPreferences(P, Context.MODE_PRIVATE).edit().putString("list", a.toString()).remove("pw_$id").apply()
+        ctx.getSharedPreferences(P, Context.MODE_PRIVATE).edit().putString("list", a.toString()).remove("pw_$id").remove("pwroot_$id").apply()
     }
     fun newId() = "nas-" + UUID.randomUUID().toString()
-    private fun password(ctx: Context, id: String): String =
-        ctx.getSharedPreferences(P, Context.MODE_PRIVATE).getString("pw_$id", null)?.let { decrypt(it) }
+    /** 저장된 비밀번호는 저장할 때의 NAS 주소에만 씁니다. 주소가 바뀌면 다시 입력해야 합니다. */
+    private fun password(ctx: Context, p: NasProfile): String {
+        val sp = ctx.getSharedPreferences(P, Context.MODE_PRIVATE)
+        val bound = sp.getString("pwroot_${p.id}", null)
+        if (bound == null) sp.edit().putString("pwroot_${p.id}", p.root).apply()   // 1.8 이전 저장분: 현재 주소에 묶음
+        else if (!sameOrigin(bound, p.root) || !p.root.toHttpUrl().encodedPath.startsWith(bound.toHttpUrl().encodedPath))
+            throw ApiException("password_bound", "NAS 주소가 바뀌어 저장된 비밀번호를 쓰지 않습니다. 비밀번호를 다시 입력해 주세요")
+        return sp.getString("pw_${p.id}", null)?.let { SecureStore.decrypt(it) ?: decrypt(it) }
             ?: throw ApiException("no_password", "저장된 NAS 비밀번호가 없습니다. NAS 설정에서 다시 입력해 주세요")
+    }
+
+    // ---- 주소 범위 검사: 비밀번호는 등록한 NAS(같은 scheme·호스트·포트, 등록 경로 아래)에만 보냅니다 ----
+    private fun sameOrigin(a: String, b: String): Boolean = runCatching {
+        val x = a.toHttpUrl(); val y = b.toHttpUrl(); x.scheme == y.scheme && x.host.equals(y.host, true) && x.port == y.port
+    }.getOrDefault(false)
+    fun inScope(p: NasProfile, url: String): Boolean = runCatching {
+        val r = p.root.toHttpUrl(); val u = url.toHttpUrl()
+        val rp = r.encodedPath.let { if (it.endsWith("/")) it else "$it/" }
+        val up = u.encodedPath
+        u.username.isEmpty() && u.password.isEmpty() && sameOrigin(p.root, url) &&
+            (up == rp.trimEnd('/') || up.startsWith(rp)) && u.pathSegments.none { it == ".." || it == "." } &&
+            !up.contains("%2e%2e", true) && !up.contains("%2f", true) && !up.contains("%5c", true)
+    }.getOrDefault(false)
+    private fun guard(p: NasProfile, url: String) {
+        if (!inScope(p, url)) throw ApiException("forbidden", "등록한 NAS 주소 밖으로는 요청하지 않습니다")
+    }
+    /** http(암호화 없음)와 '인증서 확인 안 함'은 내부망 주소에서만 허용합니다. */
+    fun isPrivateHost(host: String): Boolean {
+        val h = host.lowercase().trim('[', ']')
+        if (h == "localhost" || h.endsWith(".local") || h.endsWith(".lan") || h.endsWith(".home.arpa")) return true
+        val v4 = h.split(".").mapNotNull { it.toIntOrNull() }
+        if (v4.size == 4 && h.count { it == '.' } == 3) {
+            val (a, b) = v4[0] to v4[1]
+            return a == 10 || a == 127 || (a == 172 && b in 16..31) || (a == 192 && b == 168) || (a == 169 && b == 254)
+        }
+        if (h.contains(':')) return h == "::1" || h.startsWith("fe80:") || h.startsWith("fc") || h.startsWith("fd")
+        return false
+    }
+    fun transportProblem(url: String, insecure: Boolean): String? {
+        val u = runCatching { url.toHttpUrl() }.getOrNull() ?: return "주소 형식이 올바르지 않습니다"
+        if (u.username.isNotEmpty()) return "주소에 아이디를 넣지 마세요"
+        if (isPrivateHost(u.host)) return null
+        if (u.scheme == "http") return "외부(인터넷) 주소는 HTTPS만 쓸 수 있습니다. http는 비밀번호가 그대로 노출됩니다"
+        if (insecure) return "'인증서 확인 안 함'은 내부망 주소(192.168.x.x 등)에서만 쓸 수 있습니다"
+        return null
+    }
 
     // ---- 비밀번호 암호화 (Android Keystore AES-GCM) ----
     private fun key(): SecretKey {
@@ -88,7 +131,7 @@ object Nas {
     }.getOrNull()
 
     // ---- HTTP ----
-    private val base = OkHttpClient.Builder().connectTimeout(15, TimeUnit.SECONDS).readTimeout(0, TimeUnit.SECONDS).writeTimeout(0, TimeUnit.SECONDS).build()
+    private val base = OkHttpClient.Builder().followRedirects(false).followSslRedirects(false).connectTimeout(15, TimeUnit.SECONDS).readTimeout(0, TimeUnit.SECONDS).writeTimeout(0, TimeUnit.SECONDS).build()
     private val insecureClient: OkHttpClient by lazy {
         val tm = object : X509TrustManager {
             override fun checkClientTrusted(chain: Array<X509Certificate>, authType: String) {}
@@ -99,13 +142,17 @@ object Nas {
         base.newBuilder().sslSocketFactory(ssl.socketFactory, tm).hostnameVerifier { _, _ -> true }.build()
     }
     private fun client(p: NasProfile) = if (p.insecure) insecureClient else base
-    private fun req(ctx: Context, p: NasProfile, url: String, pw: String? = null) =
-        Request.Builder().url(url).header("Authorization", Credentials.basic(p.user, pw ?: password(ctx, p.id), Charsets.UTF_8))
+    private fun req(ctx: Context, p: NasProfile, url: String, pw: String? = null): Request.Builder {
+        guard(p, url)
+        transportProblem(p.root, p.insecure)?.let { throw ApiException("insecure_transport", it) }
+        return Request.Builder().url(url).header("Authorization", Credentials.basic(p.user, pw ?: password(ctx, p), Charsets.UTF_8))
+    }
 
     private fun fail(code: Int, what: String): Nothing = throw ApiException("http_$code", when (code) {
         401 -> "NAS 로그인에 실패했습니다 (아이디·비밀번호 확인)"
         403 -> "권한이 없습니다 (NAS의 공유 폴더·WebDAV 권한 확인)"
         404 -> "경로를 찾을 수 없습니다 (주소 확인)"
+        in 300..399 -> "NAS가 다른 주소로 이동을 요청했습니다. 보안을 위해 따라가지 않습니다 (주소·포트·https 확인)"
         405 -> "WebDAV가 꺼져 있거나 주소가 다릅니다"
         else -> "$what 실패 ($code)"
     })
@@ -121,7 +168,7 @@ object Nas {
         } catch (e: Exception) { net(e) }
         r.use {
             if (!it.isSuccessful) fail(it.code, "목록")
-            return parse(url, it.body!!.string())
+            return parse(url, it.body!!.string()).filter { item -> inScope(p, item.url) }
         }
     }
     private fun parse(baseUrl: String, xml: String): List<NasItem> {
@@ -162,7 +209,7 @@ object Nas {
 
     private fun simple(ctx: Context, p: NasProfile, method: String, url: String, dest: String? = null, what: String) {
         val b = req(ctx, p, url).method(method, if (method == "MKCOL" || method == "MOVE" || method == "DELETE") null else ByteArray(0).toRequestBody())
-        if (dest != null) b.header("Destination", dest).header("Overwrite", "F")
+        if (dest != null) { guard(p, dest); b.header("Destination", dest).header("Overwrite", "F") }
         val r = try { client(p).newCall(b.build()).execute() } catch (e: Exception) { net(e) }
         r.use { if (!it.isSuccessful) fail(it.code, what) }
     }

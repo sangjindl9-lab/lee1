@@ -260,6 +260,7 @@ function Explorer({ perm, online, saveDir, say, onShare }: { perm: Perm; online:
   const [sort, setSort] = useState<'name' | 'size' | 'mtime'>('name');
   const [preview, setPreview] = useState<{ name: string; src: string } | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [moveMode, setMoveMode] = useState<null | 'copy' | 'move'>(null);
   const pathRef = useRef<string | null>(null); pathRef.current = path;
   const phone = perm.androidId;
   const ro = perm.readOnly;
@@ -348,6 +349,8 @@ function Explorer({ perm, online, saveDir, say, onShare }: { perm: Perm; online:
             <button className="btn ghost sm" onClick={() => pickUpload(true)}>폴더 올리기</button>
             <button className="btn ghost sm" onClick={() => { const n = prompt('새 폴더 이름'); if (n) act(() => relay.request(phone, 'mkdir', { path, name: n }), '폴더를 만들었습니다'); }}>새 폴더</button>
             <button className="btn ghost sm" disabled={selected.length !== 1} onClick={() => { const it = selected[0]; const n = prompt('새 이름', it.name); if (n && n !== it.name) act(() => relay.request(phone, 'rename', { path: it.path, newName: n }), '이름을 바꿨습니다'); }}>이름 변경</button>
+            <button className="btn ghost sm" disabled={!selected.length} onClick={() => setMoveMode('copy')}>복사</button>
+            <button className="btn ghost sm" disabled={!selected.length} onClick={() => setMoveMode('move')}>이동</button>
             <button className="btn ghost sm danger" disabled={!selected.length} onClick={() => { if (confirm(`${selected.length}개 항목을 휴대폰 휴지통으로 옮길까요?`)) act(async () => { for (const it of selected) await relay.request(phone, 'delete', { path: it.path }); }, '휴대폰 휴지통으로 옮겼습니다'); }}>삭제</button>
           </>}
         </>}
@@ -392,6 +395,11 @@ function Explorer({ perm, online, saveDir, say, onShare }: { perm: Perm; online:
         {loading && <div className="loading">불러오는 중…</div>}
       </div>
       {dragOver && <div className="dropzone">여기에 놓으면 휴대폰의 이 폴더로 보냅니다</div>}
+      {moveMode && <FolderPicker phone={phone} roots={roots} title={`${selected.length}개 항목 ${moveMode === 'copy' ? '복사' : '이동'}할 폴더 선택`}
+        onClose={() => setMoveMode(null)} onPick={(dest) => {
+          const mode = moveMode; setMoveMode(null);
+          act(async () => { for (const it of selected) await relay.request(phone, mode, { path: it.path, destDir: dest }); }, mode === 'copy' ? '복사했습니다' : '이동했습니다');
+        }} />}
       {preview && <div className="modal-bg" onClick={() => setPreview(null)}><div className="modal" onClick={(e) => e.stopPropagation()}>
         <h3>{preview.name}</h3><img className="preview" src={preview.src} alt="" />
         <div className="row end"><button className="btn ghost" onClick={() => setPreview(null)}>닫기</button></div></div></div>}
@@ -445,3 +453,30 @@ const ACTIONS: Record<string, string> = {
   pair_rejected: '연결 거절', pair_revoked: '연결 해제', pair_code_used: '코드로 연결', device_revoked: '기기 로그아웃',
   remote_read: '파일 받기', remote_write: '파일 보내기', remote_delete: '삭제', remote_rename: '이름 변경', remote_mkdir: '폴더 만들기',
 };
+
+// 휴대폰 안의 대상 폴더 고르기 (허용 폴더 안에서만)
+function FolderPicker({ phone, roots, title, onClose, onPick }: { phone: string; roots: { name: string; path: string; exists: boolean }[]; title: string; onClose: () => void; onPick: (p: string) => void }) {
+  const [path, setPath] = useState<string | null>(null);
+  const [dirs, setDirs] = useState<RItem[]>([]);
+  const [err, setErr] = useState('');
+  useEffect(() => {
+    if (path === null) { setDirs([]); return; }
+    relay.request<{ items: RItem[] }>(phone, 'list', { path }).then((r) => setDirs(r.items.filter((i) => i.dir))).catch((e) => setErr(e.message));
+  }, [path, phone]);
+  const root = roots.find((r) => path && (path === r.path || path.startsWith(r.path + '/')));
+  return (
+    <div className="modal-bg" onClick={onClose}><div className="modal wide" onClick={(e) => e.stopPropagation()}>
+      <h3>{title}</h3>
+      <div className="small muted path">{path ?? '허용 폴더'}</div>
+      <div className="logs">
+        {path !== null && <div className="phone" onClick={() => setPath(!root || path === root.path ? null : path.slice(0, path.lastIndexOf('/')))}>↑ 위로</div>}
+        {(path === null ? roots.filter((r) => r.exists).map((r) => ({ name: r.name, path: r.path })) : dirs).map((d) =>
+          <div key={d.path} className="phone" onClick={() => setPath(d.path)}>📁 {d.name}</div>)}
+        {path !== null && !dirs.length && <p className="muted small">하위 폴더가 없습니다.</p>}
+      </div>
+      {err && <div className="err">{err}</div>}
+      <div className="row end"><button className="btn ghost" onClick={onClose}>취소</button>
+        <button className="btn" disabled={path === null} onClick={() => path && onPick(path)}>이 폴더로</button></div>
+    </div></div>
+  );
+}

@@ -2,13 +2,26 @@ import { invoke } from '@tauri-apps/api/core';
 
 export const SERVER = 'https://fm2.ieumerp.kr';
 export const WS_URL = SERVER.replace('https://', 'wss://') + '/ws';
-export const APP_VERSION = '0.2.3';
+export const APP_VERSION = '0.3.0';
 
 export class ApiError extends Error { constructor(public code: string, msg: string, public status = 0) { super(msg); } }
 
+// 로그인 토큰은 Windows 자격 증명 관리자에 보관하고, 실행 중에는 메모리에만 둡니다.
+let memToken: string | null = null;
+export async function initSession() {
+  try { memToken = (await invoke<string | null>('secret_get', { key: 'session' })) ?? null; } catch { memToken = null; }
+  const legacy = localStorage.getItem('fm2.token');
+  if (legacy) {
+    if (!memToken) { memToken = legacy; try { await invoke('secret_set', { key: 'session', value: legacy }); } catch { /* */ } }
+    localStorage.removeItem('fm2.token');
+  }
+}
 const LS = {
-  get token() { return localStorage.getItem('fm2.token'); },
-  set token(v: string | null) { v ? localStorage.setItem('fm2.token', v) : localStorage.removeItem('fm2.token'); },
+  get token() { return memToken; },
+  set token(v: string | null) {
+    memToken = v;
+    (v ? invoke('secret_set', { key: 'session', value: v }) : invoke('secret_del', { key: 'session' })).catch(() => {});
+  },
   get email() { return localStorage.getItem('fm2.email'); },
   set email(v: string | null) { v ? localStorage.setItem('fm2.email', v) : localStorage.removeItem('fm2.email'); },
   get installId() {

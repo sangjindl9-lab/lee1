@@ -231,10 +231,27 @@ export function CloudAddDialog({ providers, conns, onClose, onAdded, say }: { pr
 }
 
 // ---------------- NAS (WebDAV) ----------------
+/** http(암호화 없음)·'인증서 확인 안 함'은 내부망 주소에서만 허용 (Rust 쪽에서도 똑같이 막습니다) */
+export function nasPrivateHost(host: string): boolean {
+  const h = host.toLowerCase().replace(/^\[|\]$/g, '');
+  if (h === 'localhost' || /\.(local|lan|home\.arpa)$/.test(h)) return true;
+  const m = h.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+  if (m) { const a = +m[1], b = +m[2]; return a === 10 || a === 127 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 169 && b === 254); }
+  if (h.includes(':')) return h === '::1' || h.startsWith('fe80:') || h.startsWith('fc') || h.startsWith('fd');
+  return false;
+}
+export function nasTransportProblem(url: string, insecure: boolean): string | null {
+  let u: URL; try { u = new URL(url); } catch { return '주소 형식이 올바르지 않습니다'; }
+  if (u.username) return '주소에 아이디를 넣지 마세요';
+  if (nasPrivateHost(u.hostname)) return null;
+  if (u.protocol === 'http:') return '외부(인터넷) 주소는 HTTPS만 쓸 수 있습니다. http는 비밀번호가 그대로 노출됩니다';
+  if (insecure) return "'인증서 확인 안 함'은 내부망 주소(192.168.x.x 등)에서만 쓸 수 있습니다";
+  return null;
+}
 export function NasExplorer({ nas, saveDir, say }: { nas: NasProfile; saveDir: string; say: (m: string) => void }) {
   const a = useMemo<Adapter>(() => {
-    const auth: NasAuth = { id: nas.id, user: nas.user, insecure: nas.insecure };
     const root = nas.url.endsWith('/') ? nas.url : nas.url + '/';
+    const auth: NasAuth = { id: nas.id, user: nas.user, insecure: nas.insecure, root };
     const enc = (n: string) => encodeURIComponent(n);
     const parentOf = (u: string) => u.replace(/\/$/, '').replace(/[^/]+$/, '');
     return {
@@ -264,13 +281,13 @@ export function NasExplorer({ nas, saveDir, say }: { nas: NasProfile; saveDir: s
 
 export const NAS_PRESETS = [
   { id: 'synology', label: '시놀로지', https: 5006, http: 5005, hint: '예: mynas.synology.me 또는 192.168.0.10',
-    howTo: ['DSM → 패키지 센터에서 WebDAV Server 설치', 'WebDAV Server에서 HTTPS(5006) 사용 체크', '외부 접속: 제어판 → 외부 액세스 → DDNS(○○.synology.me) + 공유기 5006 포트 포워딩', 'QuickConnect ID는 WebDAV에 쓸 수 없습니다'] },
+    howTo: ['DSM → 패키지 센터에서 WebDAV Server 설치', 'WebDAV Server에서 HTTPS(5006) 사용 체크', '외부 접속: 포트 개방 대신 패키지 센터의 VPN Server로 VPN에 먼저 접속한 뒤 내부 주소(192.168.x.x)로 연결 권장', 'QuickConnect ID는 WebDAV에 쓸 수 없습니다'] },
   { id: 'qnap', label: 'QNAP', https: 443, http: 80, hint: '예: mynas.myqnapcloud.com 또는 192.168.0.10',
-    howTo: ['제어판 → 네트워크 및 파일 서비스 → WebDAV 활성화', '공유 폴더 권한에서 WebDAV 허용', '외부 접속: myQNAPcloud DDNS + 공유기 443 포트 포워딩'] },
+    howTo: ['제어판 → 네트워크 및 파일 서비스 → WebDAV 활성화', '공유 폴더 권한에서 WebDAV 허용', '외부 접속: 포트 개방 대신 QVPN Service로 VPN에 먼저 접속한 뒤 내부 주소로 연결 권장'] },
   { id: 'asustor', label: 'ASUSTOR', https: 9802, http: 9800, hint: '예: mynas.myasustor.com 또는 192.168.0.10',
-    howTo: ['서비스 → WebDAV 활성화, SSL(9802) 사용', '외부 접속: EZ-Connect DDNS + 공유기 9802 포트 포워딩'] },
+    howTo: ['서비스 → WebDAV 활성화, SSL(9802) 사용', '외부 접속: 포트 개방 대신 App Central의 VPN Server로 VPN에 먼저 접속한 뒤 내부 주소로 연결 권장'] },
   { id: 'custom', label: '기타 WebDAV', https: 443, http: 80, hint: '예: nas.example.com 또는 192.168.0.10',
-    howTo: ['NAS 관리 화면에서 WebDAV를 켜고 포트 확인', '외부 접속에는 DDNS 주소와 포트 포워딩 필요'] },
+    howTo: ['NAS 관리 화면에서 WebDAV를 켜고 포트 확인', '외부 접속은 포트 개방보다 VPN으로 내부망에 들어온 뒤 연결 권장'] },
 ];
 
 export function NasDialog({ edit, onClose, onSaved }: { edit?: NasProfile; onClose: () => void; onSaved: (p: NasProfile) => void }) {
@@ -279,6 +296,9 @@ export function NasDialog({ edit, onClose, onSaved }: { edit?: NasProfile; onClo
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const set = (k: keyof NasProfile, v: any) => setP((q) => ({ ...q, [k]: v }));
+  const norm = (u: string) => (u.endsWith('/') ? u : u + '/');
+  const urlChanged = !!edit && norm(edit.url) !== norm(p.url);
+  const transport = /^https?:\/\/.+/.test(p.url) ? nasTransportProblem(p.url, p.insecure) : null;
   const [preset, setPresetS] = useState(NAS_PRESETS[0]);
   const [host, setHost] = useState('');
   const [port, setPort] = useState(String(NAS_PRESETS[0].https));
@@ -315,16 +335,19 @@ export function NasDialog({ edit, onClose, onSaved }: { edit?: NasProfile; onClo
       <label>아이디<input value={p.user} onChange={(e) => set('user', e.target.value)} /></label>
       <label>비밀번호{edit && <span className="small"> (바꿀 때만 입력)</span>}<input type="password" value={pw} onChange={(e) => setPw(e.target.value)} /></label>
       <label className="row" style={{ flexDirection: 'row' }}><input type="checkbox" checked={p.insecure} onChange={(e) => set('insecure', e.target.checked)} /> 인증서 확인 안 함 (내부망 자체 서명 인증서)</label>
-      {p.url.startsWith('http://') && <div className="note warn">http 주소는 비밀번호가 암호화되지 않고 전송됩니다. 가능하면 https를 쓰세요.</div>}
+      {transport ? <div className="err">{transport}</div> : p.url.startsWith('http://') && <div className="note warn">http는 내부망에서만 쓸 수 있으며 비밀번호가 암호화되지 않습니다.</div>}
+      {urlChanged && !pw && <div className="note warn">주소를 바꾸면 보안을 위해 비밀번호를 다시 입력해야 합니다.</div>}
+      <p className="muted small">외부에서 접속할 때는 공유기 포트 개방보다 NAS 제조사 VPN(시놀로지 VPN Server, QNAP QVPN 등)으로 내부망에 들어온 뒤 내부 주소로 연결하는 방법을 권장합니다.</p>
       <p className="muted small">비밀번호는 Windows 자격 증명 관리자에만 저장됩니다.</p>
       {err && <div className="err">{err}</div>}
       <div className="row end">
         <button className="btn ghost" onClick={onClose}>취소</button>
-        <button className="btn" disabled={busy || !p.name || !/^https?:\/\/.+/.test(p.url) || !p.user || (!edit && !pw)} onClick={async () => {
+        <button className="btn" disabled={busy || !p.name || !/^https?:\/\/.+/.test(p.url) || !p.user || (!edit && !pw) || !!transport || (urlChanged && !pw)} onClick={async () => {
           setBusy(true); setErr('');
           try {
-            if (pw) await invoke('nas_save_password', { id: p.id, password: pw });
-            await invoke('webdav_list', { url: p.url.endsWith('/') ? p.url : p.url + '/', nas: { id: p.id, user: p.user, insecure: p.insecure } });
+            const root = p.url.endsWith('/') ? p.url : p.url + '/';
+            if (pw) await invoke('nas_save_password', { id: p.id, password: pw, root });
+            await invoke('webdav_list', { url: root, nas: { id: p.id, user: p.user, insecure: p.insecure, root } });
             onSaved(p);
           } catch (e: any) { setErr('연결 확인 실패: ' + String(e?.message || e)); }
           setBusy(false);
