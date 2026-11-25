@@ -50,6 +50,23 @@ export function isValidPackageId(value: string): boolean {
   return /^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*){1,}$/.test(value.trim()) && value.length <= 150;
 }
 
+/** Play 스토어 URL 이나 패키지명에서 패키지명만 뽑습니다. */
+export function extractPackageId(input: string): string {
+  const text = input.trim();
+  if (!text) return '';
+  if (/^https?:\/\//.test(text) || text.includes('id=')) {
+    try {
+      const url = new URL(text.startsWith('http') ? text : `https://play.google.com/store/apps/details?${text.replace(/^\?/, '')}`);
+      const id = url.searchParams.get('id');
+      if (id) return id.trim();
+    } catch {
+      const match = /[?&]id=([A-Za-z0-9_.]+)/.exec(text);
+      if (match) return match[1];
+    }
+  }
+  return text;
+}
+
 /** 패키지명으로 Play 스토어 URL 생성 */
 export function storeUrl(packageId: string, hl = 'ko', gl = 'KR'): string {
   return `https://play.google.com/store/apps/details?id=${encodeURIComponent(packageId)}&hl=${hl}&gl=${gl}`;

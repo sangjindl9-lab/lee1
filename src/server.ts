@@ -18,7 +18,7 @@ import {
 import { CHANNELS, channelLabel, type Channel } from './content/templates.ts';
 import { sendTestWebhook, deliverDraft } from './webhook.ts';
 import { computeNextContentRun, computeNextRankRun, runContentJob, runRankJob, startScheduler } from './scheduler.ts';
-import { isValidPackageId, kstDateString, kstDateTimeString } from './util.ts';
+import { extractPackageId, isValidPackageId, kstDateString, kstDateTimeString } from './util.ts';
 
 const VERSION = '1.0.0';
 const COOKIE_NAME = 'eum_promo_session';
@@ -162,7 +162,7 @@ export function createServer(overrides: Partial<AppConfig> = {}): CreatedServer 
   app.post(
     '/api/apps',
     asyncRoute(async (req, res) => {
-      const packageId = String(req.body?.packageId ?? '').trim();
+      const packageId = extractPackageId(String(req.body?.packageId ?? ''));
       if (!isValidPackageId(packageId)) {
         return res.status(400).json({ error: '패키지명 형식이 올바르지 않습니다. 예: kr.eumsoft.viewer' });
       }

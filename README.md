@@ -14,6 +14,7 @@ Google Play 앱의 **실시간 순위 추적 · 경쟁 앱 ASO 분석 · 홍보 
 
 ### 1) 실시간 앱·키워드 순위 추적 (ASO Tracker)
 - Play 스토어 상세 페이지에서 제목, 개발자, 평점, 리뷰 수, 설치 수 구간, 최근 업데이트, 버전, 카테고리, 설명, 아이콘을 파싱해 **일별 스냅샷**으로 SQLite 에 저장
+- 패키지명은 물론 **Play 스토어 URL 붙여넣기로도 앱 등록** (예: `https://play.google.com/store/apps/details?id=kr.eumsoft.viewer`)
 - 키워드별 **한국 스토어(`hl=ko&gl=kr`) 검색 순위**를 최대 30위(설정 시 최대 50)까지 탐색하고, 상위 1~5위 경쟁 앱의 제목·개발자·평점을 함께 저장
 - `지금 순위 점검` 수동 실행 + **매일 지정 시각(KST) 자동 점검** 내장 스케줄러 (외부 크론 불필요)
 - 순위 추이 차트(일별 마지막 값), 전일 대비 ▲▼ 변동, 키워드별 CSV/JSON 내보내기
@@ -107,7 +108,7 @@ docker run -d --name eum-promo -p 3100:3100 \
 | --- | --- | --- |
 | GET | `/api/health` | 상태 확인 |
 | GET | `/api/overview` | 대시보드 집계 |
-| GET/POST | `/api/apps` | 앱 목록 / 앱 등록(`packageId`, `label?`, `keywords?`, `fetchNow?`) |
+| GET/POST | `/api/apps` | 앱 목록 / 앱 등록(`packageId` 또는 스토어 URL, `label?`, `keywords?`, `fetchNow?`) |
 | GET/DELETE | `/api/apps/:id` | 앱 상세(스냅샷·키워드·순위) / 삭제 |
 | POST | `/api/apps/:id/refresh` | Play 스토어에서 정보 새로고침 |
 | POST | `/api/apps/:id/keywords` | 키워드 추가(`terms` 또는 `term`) |
@@ -140,7 +141,7 @@ Slack Incoming Webhook 주소면 `text`/`blocks` 를 함께 보내 채널에 바
 
 ## 5. 검증 결과
 
-### 자동 테스트 (61개, 모두 통과)
+### 자동 테스트 (62개, 모두 통과)
 ```bash
 npm test
 ```

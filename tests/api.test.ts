@@ -84,6 +84,15 @@ describe('API 기본 흐름', () => {
     assert.match(data.error, /패키지명/);
   });
 
+  test('POST /api/apps: Play 스토어 URL 도 받는다', async () => {
+    const created = await json(h, '/api/apps', {
+      method: 'POST',
+      body: { packageId: 'https://play.google.com/store/apps/details?id=kr.eumsoft.zip&hl=ko', fetchNow: false },
+    });
+    assert.equal(created.status, 201);
+    assert.equal(created.data.app.package_id, 'kr.eumsoft.zip');
+  });
+
   test('POST /api/apps: 앱 등록(네트워크 없이) + 키워드', async () => {
     const created = await json(h, '/api/apps', {
       method: 'POST',
@@ -93,8 +102,9 @@ describe('API 기본 흐름', () => {
     assert.equal(created.data.app.package_id, 'kr.eumsoft.viewer');
 
     const list = await json(h, '/api/apps');
-    assert.equal(list.data.apps.length, 1);
-    assert.equal(list.data.apps[0].keywordCount, 2);
+    assert.ok(list.data.apps.length >= 1);
+    const viewer = list.data.apps.find((a: any) => a.package_id === 'kr.eumsoft.viewer');
+    assert.equal(viewer.keywordCount, 2);
 
     const detail = await json(h, `/api/apps/${created.data.app.id}`);
     assert.equal(detail.data.keywords.length, 2);
@@ -103,7 +113,7 @@ describe('API 기본 흐름', () => {
 
   test('POST /api/apps/:id/keywords: 중복은 그대로, 새 키워드 추가', async () => {
     const apps = await json(h, '/api/apps');
-    const appId = apps.data.apps[0].id;
+    const appId = apps.data.apps.find((a: any) => a.package_id === 'kr.eumsoft.viewer').id;
     const added = await json(h, `/api/apps/${appId}/keywords`, { method: 'POST', body: { terms: ['DWG 뷰어', '캐드 뷰어'] } });
     assert.equal(added.status, 201);
     assert.equal(added.data.all.length, 3);
@@ -178,7 +188,8 @@ describe('API 기본 흐름', () => {
     const jsonExport = await fetch(`${h.base}/api/export?format=json`);
     assert.equal(jsonExport.status, 200);
     const payload = JSON.parse(await jsonExport.text());
-    assert.equal(payload.apps.length, 1);
+    assert.ok(payload.apps.length >= 1);
+    assert.ok(payload.apps.some((a: any) => a.package_id === 'kr.eumsoft.viewer'));
     const csv = await fetch(`${h.base}/api/export?format=csv`);
     const csvText = await csv.text();
     assert.match(csvText, /"키워드"/);
