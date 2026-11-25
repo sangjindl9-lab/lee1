@@ -34,6 +34,11 @@ img.th{width:160px;height:40px;object-fit:contain;border-radius:6px;background:#
 <br><button class="p" type="submit">저장</button> <button type="button" id="reset">새로 입력</button>
 </form></div>
 <div class="card"><b>배너 목록</b><table id="list"></table></div>
+<div class="card"><b>신규 설치자 (중복 제외)</b>
+<div class="row" style="margin-top:8px"><div><label>기간</label><select id="idays"><option value="7">최근 7일</option><option value="30" selected>최근 30일</option><option value="90">최근 90일</option></select></div><div style="display:flex;align-items:flex-end"><button type="button" id="ireload">새로고침</button></div></div>
+<div id="isum" class="apps" style="margin-top:10px"></div>
+<table id="ilist" style="margin-top:6px"></table>
+<div class="hint">같은 기기는 처음 한 번만 "신규"로 셉니다. "실행 기기"는 그날 앱을 켠 서로 다른 기기 수입니다. 앱이 설치 ID를 보내면 정확하고, 예전 버전 앱은 IP·단말 정보로 구분해 근사치입니다(통신사 IP가 바뀌면 같은 기기가 다시 셀 수 있음). Play 스토어 설치 통계와는 집계 방식이 다릅니다.</div></div>
 <div class="card"><b>앱 업데이트 알림</b>
 <form id="vf">
 <div class="row"><div><label>앱</label><select name="app"><option value="eum-zip">이음ZIP</option><option value="eum-viewer">이음뷰어</option><option value="eum-docs">이음과 문서</option></select></div><div><label>최신 versionCode (스토어에 올린 숫자)</label><input name="code" type="number" min="0"></div></div>
@@ -50,7 +55,7 @@ img.th{width:160px;height:40px;object-fit:contain;border-radius:6px;background:#
 const APPS={'eum-viewer':'이음뷰어','eum-docs':'이음과 문서','eum-zip':'이음ZIP'};const SLOTS={top:'홈 위',bottom:'홈 아래',home:'홈 아래',result:'풀린 파일',compress:'압축하기'};
 const $=s=>document.querySelector(s);const api=(u,o={})=>fetch(u,{credentials:'same-origin',...o}).then(async r=>{if(r.status===401){show(false);throw new Error('로그인 필요')}return r.json()});
 function show(on){$('#login').hidden=on;$('#app').hidden=!on;$('#logout').hidden=!on}
-$('#loginBtn').onclick=async()=>{const r=await fetch('/admin/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({password:$('#pw').value})});if(!r.ok)return alert('비밀번호가 다릅니다');show(true);load();loadVer()};
+$('#loginBtn').onclick=async()=>{const r=await fetch('/admin/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({password:$('#pw').value})});if(!r.ok)return alert('비밀번호가 다릅니다');show(true);load();loadVer();loadInst()};
 $('#logout').onclick=()=>{document.cookie='eumads=;max-age=0';show(false)};
 $('#reset').onclick=()=>{$('#f').reset();$('#f').id.value=''};
 $('#f').onsubmit=async e=>{e.preventDefault();const fd=new FormData(e.target);fd.set('active',e.target.active.checked);fd.set('apps',[...e.target.querySelectorAll('input[name=app]:checked')].map(x=>x.value).join(','));if(!fd.get('apps'))return alert('대상 앱을 하나 이상 고르세요');await api('/admin/api/banners',{method:'POST',body:fd});e.target.reset();e.target.id.value='';load()};
@@ -58,5 +63,9 @@ async function load(){const list=await api('/admin/api/banners');$('#list').inne
 $('#list').onclick=async e=>{const t=e.target.dataset;if(t.t){await api('/admin/api/banners/'+t.t+'/toggle',{method:'POST'});load()}if(t.d&&confirm('삭제할까요?')){await api('/admin/api/banners/'+t.d,{method:'DELETE'});load()}if(t.e){const b=list.find(x=>x.id===t.e);const f=$('#f');for(const k of ['id','title','link','slot','order','start','end','bg'])f[k].value=b[k]??'';for(const c of f.querySelectorAll('input[name=app]'))c.checked=(b.apps||['eum-viewer']).includes(c.value);f.active.checked=!!b.active;window.scrollTo(0,0)}}}
 async function loadVer(){const v=await api('/admin/api/versions');$('#vlist').innerHTML='<tr><th>앱</th><th>versionCode</th><th>버전 이름</th><th>문구</th><th>강제</th></tr>'+Object.entries(v).map(([a,x])=>`<tr><td>${APPS[a]||a}</td><td>${x.code}</td><td>${x.name||''}</td><td>${x.notes||''}</td><td>${x.force?'예':'-'}</td></tr>`).join('');$('#vf').app.onchange=()=>{const x=v[$('#vf').app.value]||{};const f=$('#vf');f.code.value=x.code??'';f.name.value=x.name||'';f.notes.value=x.notes||'';f.force.checked=!!x.force};$('#vf').app.onchange()}
 $('#vf').onsubmit=async e=>{e.preventDefault();const f=e.target;await api('/admin/api/versions',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({app:f.app.value,code:f.code.value,name:f.name.value,notes:f.notes.value,force:f.force.checked})});loadVer()};
-api('/admin/api/banners').then(()=>{show(true);load();loadVer()}).catch(()=>show(false));
+async function loadInst(){const d=await api('/admin/api/installs?days='+$('#idays').value);const ids=['eum-zip','eum-viewer','eum-docs'];
+$('#isum').innerHTML=ids.map(a=>{const x=d[a];const n=x.days.reduce((s,y)=>s+y.new,0);return `<span class="badge" style="font-size:13px;padding:6px 12px">${APPS[a]} · 누적 ${x.total}명 · 기간 신규 ${n}명</span>`}).join('');
+$('#ilist').innerHTML='<tr><th>날짜</th>'+ids.map(a=>`<th>${APPS[a]}<br><small>신규 / 실행 기기</small></th>`).join('')+'</tr>'+d[ids[0]].days.map((r,i)=>`<tr><td>${r.day}</td>`+ids.map(a=>{const y=d[a].days[i];return `<td><b>${y.new}</b> / ${y.active}</td>`}).join('')+'</tr>').join('')}
+$('#idays').onchange=loadInst;$('#ireload').onclick=loadInst;
+api('/admin/api/banners').then(()=>{show(true);load();loadVer();loadInst()}).catch(()=>show(false));
 </script></body></html>

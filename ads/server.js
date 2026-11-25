@@ -4,7 +4,7 @@ import multer from 'multer';
 import cookieParser from 'cookie-parser';
 import { readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync } from 'node:fs';
 import { join, extname } from 'node:path';
-import { createHmac, randomBytes } from 'node:crypto';
+import { createHmac, createHash, randomBytes } from 'node:crypto';
 
 const PORT = process.env.PORT || 3000;
 const DATA = process.env.DATA_DIR || '/data';
@@ -31,23 +31,48 @@ app.use(cookieParser());
 app.use('/img', express.static(join(DATA, 'img'), { maxAge: '1d' }));
 app.use(express.static('public'));
 
+// ── 신규 설치자 집계(중복 제외) ──
+// 앱이 켜질 때 부르는 /api/banners·/api/version 요청으로 기기를 구분한다.
+// 기기 키: 앱이 보내는 무작위 설치 ID(?id=), 없으면 IP+User-Agent 해시(근사치). 개인정보는 저장하지 않는다.
+const APPS_OK = ['eum-zip', 'eum-viewer', 'eum-docs'];
+const INST = join(DATA, 'installs.json');
+let inst = existsSync(INST) ? JSON.parse(readFileSync(INST, 'utf8')) : {}; // {app:{seen:{key:day}, days:{day:{n,a:{key:1}}}}}
+let instDirty = false;
+setInterval(() => { if (instDirty) { instDirty = false; writeFileSync(INST, JSON.stringify(inst)); } }, 5000);
+const kstDay = () => new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
+function seen(req, appId) {
+  if (!APPS_OK.includes(appId)) return;
+  const raw = String(req.query.id || '');
+  const ip = String(req.headers['x-forwarded-for'] || req.ip || '').split(',')[0].trim();
+  const key = /^[A-Za-z0-9-]{8,64}$/.test(raw) ? 'i:' + raw
+    : 'h:' + createHash('sha256').update(ip + '|' + (req.headers['user-agent'] || '')).digest('hex').slice(0, 16);
+  const a = (inst[appId] ||= { seen: {}, days: {} });
+  const d = kstDay();
+  const day = (a.days[d] ||= { n: 0, a: {} });
+  if (!a.seen[key]) { a.seen[key] = d; day.n++; instDirty = true; }
+  if (!day.a[key]) { day.a[key] = 1; instDirty = true; }
+}
+app.get('/api/hello', (req, res) => { seen(req, String(req.query.app || '')); res.json({ ok: true }); });
+
 // ── 앱이 쓰는 API ──
 const today = () => new Date().toISOString().slice(0, 10);
 app.get('/api/banners', (req, res) => {
   const appId = req.query.app || 'eum-viewer';
+  seen(req, appId);
   const d = today();
   const list = load().banners
     .filter((b) => b.active && (b.apps || ['eum-viewer']).includes(appId) && (!b.start || b.start <= d) && (!b.end || b.end >= d))
     .sort((a, b) => (a.order || 0) - (b.order || 0))
     .map((b) => ({ id: b.id, slot: b.slot, title: b.title, image: '/img/' + b.image, link: b.link, bg: b.bg || '' }));
-  res.set('Cache-Control', 'public, max-age=600');
+  res.set('Cache-Control', 'private, max-age=60'); // 길게 캐시하면 실행 집계가 빠진다
   res.json(list);
 });
 // 앱 최신 버전 안내: 앱이 켜질 때 받아서 자기 versionCode 보다 크면 "업데이트" 안내를 띄운다.
 const VER = join(DATA, 'versions.json');
 const loadVer = () => (existsSync(VER) ? JSON.parse(readFileSync(VER, 'utf8')) : {});
 app.get('/api/version', (req, res) => {
-  res.set('Cache-Control', 'public, max-age=300');
+  seen(req, String(req.query.app || ''));
+  res.set('Cache-Control', 'private, max-age=60');
   res.json(loadVer()[req.query.app] || { code: 0 });
 });
 app.post('/api/banners/:id/:kind(imp|click)', (req, res) => {
@@ -79,6 +104,17 @@ app.post('/admin/api/banners', auth, upload.single('image'), (req, res) => {
 });
 app.post('/admin/api/banners/:id/toggle', auth, (req, res) => { const db = load(); const b = db.banners.find((x) => x.id === req.params.id); if (b) { b.active = !b.active; save(db); } res.json(b || {}); });
 app.delete('/admin/api/banners/:id', auth, (req, res) => { const db = load(); const b = db.banners.find((x) => x.id === req.params.id); if (b && b.image) try { unlinkSync(join(DATA, 'img', b.image)); } catch {} db.banners = db.banners.filter((x) => x.id !== req.params.id); save(db); res.json({ ok: true }); });
+app.get('/admin/api/installs', auth, (req, res) => {
+  const days = Math.min(Number(req.query.days) || 30, 365);
+  const list = [];
+  for (let i = 0; i < days; i++) list.push(new Date(Date.now() + 9 * 3600e3 - i * 864e5).toISOString().slice(0, 10));
+  const out = {};
+  for (const id of APPS_OK) {
+    const a = inst[id] || { seen: {}, days: {} };
+    out[id] = { total: Object.keys(a.seen).length, days: list.map((d) => ({ day: d, new: a.days[d]?.n || 0, active: Object.keys(a.days[d]?.a || {}).length })) };
+  }
+  res.json(out);
+});
 app.get('/admin/api/versions', auth, (req, res) => res.json(loadVer()));
 app.post('/admin/api/versions', auth, (req, res) => {
   const v = loadVer(); const b = req.body;
