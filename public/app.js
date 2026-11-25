@@ -90,6 +90,7 @@ function kstDate(iso) {
 }
 
 function rankBadge(rank, status) {
+  if (status === 'pending') return '<span class="rank-badge rank-none">미점검</span>';
   if (status === 'error') return '<span class="rank-badge rank-error">오류</span>';
   if (!rank) return '<span class="rank-badge rank-none">권 밖</span>';
   const cls = rank <= 10 ? 'rank-top' : rank <= 30 ? 'rank-mid' : 'rank-none';

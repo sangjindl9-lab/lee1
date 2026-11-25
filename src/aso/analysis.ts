@@ -59,7 +59,7 @@ export function tokenize(text: string | null | undefined): string[] {
     const word = raw.trim();
     if (word.length < 2) continue;
     if (STOPWORDS.has(word)) continue;
-    if (/^\d+$/.test(word)) continue;
+    if (/^\d/.test(word)) continue;
     if (looksLikeSentenceWord(word)) continue;
     tokens.push(word);
   }
@@ -163,7 +163,9 @@ export function analyzeCompetitorKeywords(
         entry.weight >= 8,
     );
 
-  result.sort((a, b) => b.weight - a.weight || a.keyword.localeCompare(b.keyword));
+  // 여러 상위 앱이 함께 쓰는 단어일수록 실제 검색 수요가 크므로 가중치와 함께 반영합니다.
+  const score = (entry: KeywordWeight) => entry.weight * (1 + 0.5 * (entry.competitors.length - 1));
+  result.sort((a, b) => score(b) - score(a) || b.weight - a.weight || a.keyword.localeCompare(b.keyword));
   return result;
 }
 
@@ -200,6 +202,10 @@ export function buildAsoSuggestions(
   const usable = missing.filter((item) => !item.keyword.split(' ').some((word) => suspectBrands.has(word)));
 
   const titleText = `${app.title ?? ''} ${app.name ?? ''}`.toLowerCase();
+  const tokenCounts = new Map<string, number>();
+  for (const item of analysis) {
+    if (!item.keyword.includes(' ')) tokenCounts.set(item.keyword, item.competitors.length);
+  }
   const phraseIdeas = usable.filter((item) => {
     if (!item.keyword.includes(' ') || item.keyword.length > 16) return false;
     const words = item.keyword.split(' ');
@@ -207,9 +213,13 @@ export function buildAsoSuggestions(
     const bothInTitle = words.every((word) => titleText.includes(word));
     return !bothInTitle;
   });
+  const strongPhrases = phraseIdeas.filter((item) =>
+    item.keyword.split(' ').every((word) => (tokenCounts.get(word) ?? 0) >= 2 || word.length <= 3),
+  );
+  const phrasePool = strongPhrases.length >= 2 ? strongPhrases : phraseIdeas;
   const wordIdeas = usable.filter((item) => !item.keyword.includes(' ') && item.competitors.length >= 3 && item.keyword.length <= 10);
   const titleIdeas = new Set<string>();
-  const titleKeywords = [...phraseIdeas.slice(0, 5), ...wordIdeas.slice(0, 3)];
+  const titleKeywords = [...phrasePool.slice(0, 4), ...wordIdeas.slice(0, 2)];
   for (const item of titleKeywords) {
     const keyword = capitalizeKeyword(item.keyword);
     titleIdeas.add(`${keyword} - ${shortName}`);
@@ -221,7 +231,7 @@ export function buildAsoSuggestions(
     .filter((text) => text.length > 0)
     .map((text) => ({ text, length: charLength(text), ok: charLength(text) <= 30 }))
     .filter((item, index, all) => all.findIndex((x) => x.text === item.text) === index)
-    .sort((a, b) => Number(b.ok) - Number(a.ok) || a.length - b.length)
+    .sort((a, b) => Number(b.ok) - Number(a.ok))
     .slice(0, 6);
 
   const summaryBase = app.summary ?? '';
