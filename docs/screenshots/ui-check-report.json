@@ -1,0 +1,110 @@
+{
+  "ranAt": "2026-11-25T07:31:14.541Z",
+  "kstDate": "2026-11-25",
+  "base": "http://127.0.0.1:3100",
+  "steps": [
+    {
+      "step": "시드 앱 로드",
+      "ok": true,
+      "detail": "kr.eumsoft.viewer, kr.eumsoft.zip, kr.eumsoft.docs"
+    },
+    {
+      "step": "앱 정보",
+      "ok": true,
+      "detail": "이미 수집된 스냅샷 사용"
+    },
+    {
+      "step": "대시보드 렌더링",
+      "ok": true,
+      "detail": "3개 앱 카드"
+    },
+    {
+      "step": "앱·키워드 화면",
+      "ok": true,
+      "detail": "3개 카드 · 키워드 표 렌더링"
+    },
+    {
+      "step": "키워드 추이 모달",
+      "ok": true,
+      "detail": "‘DWG 뷰어’ 순위 추이"
+    },
+    {
+      "step": "키워드 추가 버튼",
+      "ok": true,
+      "detail": "PDF 편집 추가됨"
+    },
+    {
+      "step": "경쟁 분석 실행",
+      "ok": true,
+      "detail": " 요약DWG 뷰어 · 경쟁 앱 5개 분석 경쟁 상위 앱들이 쓰는데 내 앱에는 없는 단어 70개를 찾았습니다. 상위 3개부터 제목/간단 설명에 넣"
+    },
+    {
+      "step": "홍보 글 생성 버튼",
+      "ok": true,
+      "detail": "[직접 만든 앱] 이음뷰어 — DWG 뷰어 스마트폰에서 바로 처리"
+    },
+    {
+      "step": "블로그 초안 생성",
+      "ok": true,
+      "detail": "PDF 뷰어 필요한 분께 — 이음뷰어 설치 전에 꼭 보세요"
+    },
+    {
+      "step": "보관함 목록",
+      "ok": true,
+      "detail": "8건"
+    },
+    {
+      "step": "초안 상세 모달",
+      "ok": true
+    },
+    {
+      "step": "웹훅 테스트 발송",
+      "ok": true,
+      "detail": "1건 수신"
+    },
+    {
+      "step": "점검 일정 저장",
+      "ok": true,
+      "detail": "다음 순위 점검: 2026-11-26 08:40 · 다음 초안 생성: 꺼짐"
+    },
+    {
+      "step": "모바일 레이아웃",
+      "ok": true
+    },
+    {
+      "step": "브라우저 콘솔 오류",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "step": "페이지 예외",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "step": "실패한 요청",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "step": "웹훅 발송 기록 저장",
+      "ok": true,
+      "detail": "4건"
+    }
+  ],
+  "consoleErrors": [],
+  "pageErrors": [],
+  "failedRequests": [],
+  "screenshots": [
+    "01-dashboard.png",
+    "02-apps.png",
+    "03-keyword-chart.png",
+    "04-aso.png",
+    "05-studio.png",
+    "06-studio-blog.png",
+    "07-library.png",
+    "08-draft-modal.png",
+    "09-settings.png",
+    "10-mobile.png"
+  ]
+}

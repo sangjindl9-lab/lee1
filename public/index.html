@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>이음 앱 홍보·ASO 자동화 센터</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%233b5bdb'/%3E%3Ctext x='16' y='22' font-size='17' text-anchor='middle' fill='white'%3E%EC%9D%8C%3C/text%3E%3C/svg%3E" />
+  </head>
+  <body>
+    <div id="login-screen" class="login-screen hidden">
+      <form id="login-form" class="login-card">
+        <div class="login-badge">이음</div>
+        <h1>앱 홍보·ASO 센터</h1>
+        <p class="muted">관리자 비밀번호를 입력하세요.</p>
+        <input id="login-password" type="password" placeholder="비밀번호" autocomplete="current-password" required />
+        <button type="submit" class="btn primary block">들어가기</button>
+        <p id="login-error" class="error-text"></p>
+      </form>
+    </div>
+
+    <div id="app-shell" class="shell hidden">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">이음</div>
+          <div>
+            <strong>앱 홍보·ASO 센터</strong>
+            <span class="muted small">EUM Promo &amp; ASO Studio</span>
+          </div>
+        </div>
+        <nav class="nav">
+          <a href="#dashboard" class="nav-item" data-view="dashboard">대시보드</a>
+          <a href="#apps" class="nav-item" data-view="apps">앱 · 키워드</a>
+          <a href="#aso" class="nav-item" data-view="aso">경쟁 분석 · ASO</a>
+          <a href="#studio" class="nav-item" data-view="studio">콘텐츠 스튜디오</a>
+          <a href="#library" class="nav-item" data-view="library">보관함</a>
+          <a href="#settings" class="nav-item" data-view="settings">설정</a>
+        </nav>
+        <div class="sidebar-foot">
+          <div class="schedule-box">
+            <div class="label">자동 순위 점검</div>
+            <div id="sidebar-schedule">불러오는 중…</div>
+            <button id="sidebar-run-rank" class="btn ghost small">지금 점검</button>
+          </div>
+          <div class="muted tiny">v1.0.0 · KST 기준</div>
+        </div>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div>
+            <h1 id="view-title">대시보드</h1>
+            <p id="view-subtitle" class="muted small">Google Play 실시간 순위와 홍보 초안을 한 곳에서</p>
+          </div>
+          <div class="topbar-actions">
+            <span id="clock" class="clock"></span>
+            <button id="btn-quick-check" class="btn primary">지금 순위 점검</button>
+          </div>
+        </header>
+
+        <div id="toast" class="toast hidden"></div>
+
+        <section id="view-dashboard" class="view">
+          <div class="stat-grid">
+            <div class="stat-card"><span class="stat-label">등록 앱</span><strong id="stat-apps">–</strong><span class="stat-hint">Play 스토어 공개 앱</span></div>
+            <div class="stat-card"><span class="stat-label">추적 키워드</span><strong id="stat-keywords">–</strong><span class="stat-hint">한국 스토어 검색 기준</span></div>
+            <div class="stat-card"><span class="stat-label">오늘 점검</span><strong id="stat-checks">–</strong><span class="stat-hint" id="stat-checks-hint">–</span></div>
+            <div class="stat-card"><span class="stat-label">홍보 초안</span><strong id="stat-drafts">–</strong><span class="stat-hint">보관함 누적</span></div>
+          </div>
+
+          <div class="grid-2">
+            <div class="panel">
+              <div class="panel-head">
+                <h2>앱 현황</h2>
+                <button class="btn ghost small" data-goto="apps">앱 관리</button>
+              </div>
+              <div id="dashboard-apps" class="app-list">불러오는 중…</div>
+            </div>
+            <div class="panel">
+              <div class="panel-head">
+                <h2>최근 작업</h2>
+                <span class="muted small">스케줄러 · 수동 실행</span>
+              </div>
+              <div id="dashboard-jobs" class="job-list">불러오는 중…</div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-head">
+              <h2>키워드 순위 요약</h2>
+              <span class="muted small">최근 점검 기준 · 전일 대비</span>
+            </div>
+            <div id="dashboard-ranks" class="table-wrap">불러오는 중…</div>
+          </div>
+        </section>
+
+        <section id="view-apps" class="view hidden">
+          <div class="panel">
+            <div class="panel-head">
+              <h2>앱 등록</h2>
+              <span class="muted small">패키지명만 넣으면 스토어에서 정보를 바로 가져옵니다</span>
+            </div>
+            <form id="add-app-form" class="inline-form">
+              <input id="add-package" placeholder="패키지명 (예: kr.eumsoft.viewer)" required />
+              <input id="add-label" placeholder="표시 이름 (선택)" />
+              <input id="add-keywords" placeholder="키워드 (쉼표로 구분, 선택)" />
+              <button class="btn primary" type="submit">앱 추가</button>
+              <button class="btn ghost" type="button" id="btn-import-developer">이음소프트웨어 앱 모두 가져오기</button>
+            </form>
+          </div>
+
+          <div id="apps-container" class="apps-container">불러오는 중…</div>
+        </section>
+
+        <section id="view-aso" class="view hidden">
+          <div class="panel">
+            <div class="panel-head">
+              <h2>경쟁 앱 비교</h2>
+              <span class="muted small">상위 5개 앱의 제목·설명에서 내 앱에 없는 키워드를 찾습니다</span>
+            </div>
+            <div class="inline-form">
+              <select id="aso-app"></select>
+              <select id="aso-keyword"></select>
+              <button id="aso-run" class="btn primary">분석하기</button>
+            </div>
+          </div>
+          <div id="aso-result" class="aso-result">
+            <div class="empty">앱과 키워드를 고르고 ‘분석하기’를 누르세요.</div>
+          </div>
+        </section>
+
+        <section id="view-studio" class="view hidden">
+          <div class="grid-2 studio-grid">
+            <div class="panel">
+              <div class="panel-head"><h2>홍보 글 만들기</h2><span class="muted small">Play 링크 + UTM 자동 결합</span></div>
+              <form id="studio-form" class="stack">
+                <label class="field">
+                  <span>앱</span>
+                  <select id="studio-app"></select>
+                </label>
+                <div class="field">
+                  <span>채널</span>
+                  <div id="studio-channels" class="channel-grid"></div>
+                </div>
+                <div class="field">
+                  <span>강조할 키워드</span>
+                  <div id="studio-keywords" class="chip-select">앱을 먼저 선택하세요</div>
+                </div>
+                <label class="switch-row">
+                  <input type="checkbox" id="studio-ai" />
+                  <span>OpenAI로 문장 고도화 (키가 없으면 템플릿 사용)</span>
+                </label>
+                <label class="switch-row">
+                  <input type="checkbox" id="studio-deliver" />
+                  <span>생성 후 설정된 웹훅으로 바로 발송</span>
+                </label>
+                <button class="btn primary block" type="submit">홍보 글 생성</button>
+              </form>
+            </div>
+            <div class="panel">
+              <div class="panel-head">
+                <h2>미리보기</h2>
+                <div class="head-actions">
+                  <button id="copy-md" class="btn ghost small" disabled>본문 복사</button>
+                  <button id="copy-html" class="btn ghost small" disabled>HTML 복사</button>
+                  <a id="download-html" class="btn ghost small disabled" href="#" download>HTML 저장</a>
+                </div>
+              </div>
+              <div id="studio-preview" class="preview empty">생성한 글이 여기에 표시됩니다.</div>
+            </div>
+          </div>
+        </section>
+
+        <section id="view-library" class="view hidden">
+          <div class="panel">
+            <div class="panel-head">
+              <h2>보관함</h2>
+              <div class="head-actions">
+                <select id="library-app"><option value="">모든 앱</option></select>
+                <button id="library-refresh" class="btn ghost small">새로고침</button>
+              </div>
+            </div>
+            <div id="library-list" class="draft-list">불러오는 중…</div>
+          </div>
+        </section>
+
+        <section id="view-settings" class="view hidden">
+          <div class="grid-2">
+            <div class="panel">
+              <div class="panel-head"><h2>자동 점검 · 생성</h2><span class="muted small">서버 내장 스케줄러</span></div>
+              <form id="schedule-form" class="stack">
+                <label class="switch-row"><input type="checkbox" id="rank-enabled" /><span>매일 순위 자동 점검</span></label>
+                <label class="field"><span>점검 시각 (KST)</span><input id="rank-time" type="time" /></label>
+                <label class="field"><span>순위 탐색 깊이 (5~50위)</span><input id="rank-depth" type="number" min="5" max="50" /></label>
+                <hr />
+                <label class="switch-row"><input type="checkbox" id="content-enabled" /><span>홍보 초안 자동 생성</span></label>
+                <label class="field"><span>생성 시각 (KST)</span><input id="content-time" type="time" /></label>
+                <label class="field"><span>주기</span>
+                  <select id="content-frequency">
+                    <option value="daily">매일</option>
+                    <option value="weekly">매주</option>
+                  </select>
+                </label>
+                <label class="field"><span>요일 (매주일 때)</span>
+                  <select id="content-weekday">
+                    <option value="1">월</option><option value="2">화</option><option value="3">수</option>
+                    <option value="4">목</option><option value="5">금</option><option value="6">토</option><option value="7">일</option>
+                  </select>
+                </label>
+                <label class="field"><span>생성 채널</span>
+                  <div id="content-channels" class="chip-select"></div>
+                </label>
+                <div class="row">
+                  <button class="btn primary" type="submit">저장</button>
+                  <button class="btn ghost" type="button" id="run-content-now">지금 초안 생성</button>
+                </div>
+                <p id="schedule-status" class="muted small"></p>
+              </form>
+            </div>
+
+            <div class="panel">
+              <div class="panel-head"><h2>웹훅 · AI</h2><span class="muted small">Make · Zapier · Slack · 자체 봇</span></div>
+              <form id="integration-form" class="stack">
+                <label class="switch-row"><input type="checkbox" id="webhook-enabled" /><span>초안 생성 시 자동 발송</span></label>
+                <label class="field"><span>웹훅 URL</span><input id="webhook-url" placeholder="https://hooks.slack.com/services/..." /></label>
+                <div class="row">
+                  <button class="btn ghost" type="button" id="webhook-test">테스트 발송</button>
+                  <span id="webhook-result" class="muted small"></span>
+                </div>
+                <hr />
+                <label class="field"><span>OpenAI API 키 (선택)</span><input id="openai-key" placeholder="sk-..." autocomplete="off" /></label>
+                <label class="field"><span>모델</span><input id="openai-model" placeholder="gpt-4o-mini" /></label>
+                <hr />
+                <div class="field-row">
+                  <label class="field"><span>UTM source</span><input id="utm-source" /></label>
+                  <label class="field"><span>UTM campaign</span><input id="utm-campaign" /></label>
+                </div>
+                <button class="btn primary" type="submit">저장</button>
+              </form>
+            </div>
+          </div>
+
+          <div class="grid-2">
+            <div class="panel">
+              <div class="panel-head"><h2>웹훅 발송 기록</h2><span class="muted small">최근 20건</span></div>
+              <div id="webhook-log" class="table-wrap">불러오는 중…</div>
+            </div>
+            <div class="panel">
+              <div class="panel-head"><h2>데이터 · 운영</h2><span class="muted small">백업과 내보내기</span></div>
+              <div class="stack">
+                <div class="row">
+                  <a class="btn ghost" href="/api/export?format=json" download>JSON 백업</a>
+                  <a class="btn ghost" href="/api/export?format=csv" download>CSV 내보내기</a>
+                  <a class="btn ghost" href="/api/health" target="_blank" rel="noopener">상태 확인</a>
+                </div>
+                <p class="muted small" id="env-info"></p>
+                <p class="muted small">데이터는 서버의 SQLite 파일에 일별 스냅샷으로 저장됩니다. Docker/Railway 배포 시 <code>DATA_DIR</code> 볼륨을 연결하면 기록이 유지됩니다.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div id="modal" class="modal hidden">
+      <div class="modal-card">
+        <div class="modal-head">
+          <h3 id="modal-title">초안</h3>
+          <button id="modal-close" class="btn ghost small">닫기</button>
+        </div>
+        <div id="modal-body" class="modal-body"></div>
+      </div>
+    </div>
+
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>
