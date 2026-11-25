@@ -812,6 +812,7 @@ public class MainActivity extends Activity {
                 if (rootList != null && rootList.size() == 1 && rootList.get(0).dir) brDir = rootList.get(0).path;
                 showBrowser();
                 toast(L.f("압축 풀기 완료 · 파일 %s개", r.files));
+                Review.success(MainActivity.this, true);
             }
         };
         job.start();
@@ -1320,6 +1321,7 @@ public class MainActivity extends Activity {
                 }
                 sb.append("\n").append(L.f("걸린 시간: %s초", String.format(Locale.US, "%.1f", (SystemClock.elapsedRealtime() - t0) / 1000.0)));
                 alert(L.t("압축 완료"), sb.toString());
+                Review.success(MainActivity.this, false);
             }
         };
         job.start();
