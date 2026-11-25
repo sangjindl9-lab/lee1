@@ -5,6 +5,8 @@ import { generateWithAi } from '../src/content/openai.ts';
 import {
   CHANNELS,
   buildHashtags,
+  hasFinalConsonant,
+  withJosa,
   buildUtmLink,
   defaultUtm,
   generateTemplateContent,
@@ -43,6 +45,16 @@ test('buildUtmLink: Play 링크에 UTM 을 붙인다', () => {
   assert.equal(url.searchParams.get('utm_medium'), 'blog');
   assert.equal(url.searchParams.get('utm_campaign'), 'launch');
   assert.equal(url.searchParams.get('utm_content'), 'post1');
+});
+
+test('withJosa: 받침에 맞는 조사를 붙인다', () => {
+  assert.equal(withJosa('DWG 뷰어', '이/가'), 'DWG 뷰어가');
+  assert.equal(withJosa('압축', '이/가'), '압축이');
+  assert.equal(withJosa('PDF 편집', '을/를'), 'PDF 편집을');
+  assert.equal(withJosa('문서 관리', '은/는'), '문서 관리는');
+  assert.equal(hasFinalConsonant('뷰어'), false);
+  assert.equal(hasFinalConsonant('문서'), false);
+  assert.equal(hasFinalConsonant('파일'), true);
 });
 
 test('buildHashtags: 앱 이름과 키워드를 태그로', () => {

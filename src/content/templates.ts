@@ -117,6 +117,22 @@ function shortTitle(app: ContentAppInput): string {
   return truncate(title, 30);
 }
 
+/** 받침 유무에 따라 조사를 붙입니다 (예: 'DWG 뷰어가', 'PDF 편집기를'). */
+export function hasFinalConsonant(word: string): boolean {
+  const chars = [...word.trim()];
+  const last = chars[chars.length - 1];
+  if (!last) return false;
+  const code = last.charCodeAt(0);
+  if (code < 0xac00 || code > 0xd7a3) return false;
+  return (code - 0xac00) % 28 !== 0;
+}
+
+export function withJosa(word: string, pair: '이/가' | '은/는' | '을/를' | '으로/로'): string {
+  const [withFinal, withoutFinal] = pair.split('/');
+  const final = /[0-9]$/.test(word.trim()) ? !['0', '1', '3', '6', '7', '8'].includes(word.trim().slice(-1)) : hasFinalConsonant(word);
+  return `${word}${final ? withFinal : withoutFinal}`;
+}
+
 function bulletList(items: string[], limit: number): string[] {
   return items.map((item) => item.replace(/^[•·\-*▪]\s*/, '').trim()).filter(Boolean).slice(0, limit);
 }
@@ -157,7 +173,7 @@ function blogTitles(app: ContentAppInput, keywords: string[], seed: string): str
     `${primary} 앱 추천 — ${name}로 3분 만에 끝내는 방법`,
     `${primary} 어떻게 하지? ${name} 하나면 충분합니다`,
     `스마트폰으로 ${primary} 하는 법 (${name} 사용 후기)`,
-    `${second} 필요한 분께 — ${name} 설치 전에 꼭 보세요`,
+    `${withJosa(second, '이/가')} 필요한 분께 — ${name} 설치 전에 꼭 보세요`,
     `${name} 써봤습니다: ${benefit}`,
     `${primary} 무료 앱 비교해보고 ${name}로 정한 이유`,
   ];
@@ -179,13 +195,13 @@ function blogBody(input: GenerateInput): { title: string; body: string; titles: 
   const closer = pickVariant(CLOSERS, seed, 2);
   const scoreLine =
     app.score && app.installs
-      ? `Play 스토어 평점 ${app.score.toFixed(1)}점, 설치 ${app.installs}을 기록 중입니다.`
-      : 'Play 스토어에서 무료로 설치할 수 있습니다.';
+      ? ` 현재 Play 스토어 평점 ${app.score.toFixed(1)}점, 설치 ${app.installs}를 기록 중입니다.`
+      : '';
 
   const body = [
     `${hook}`,
     '',
-    `업무 중에 ${primary}이(가) 급하게 필요할 때, PC를 켜거나 다른 사람에게 부탁하는 대신 스마트폰에서 바로 처리할 수 있다면 어떨까요. **${name}**는 ${app.summary ? app.summary.replace(/\n/g, ' ') : `${primary}을(를) 위한 안드로이드 앱`} ${secondary.length ? `특히 ${secondary.join(', ')} 상황에서 유용합니다.` : ''}`,
+    `업무 중에 ${withJosa(primary, '이/가')} 급하게 필요할 때, PC를 켜거나 다른 사람에게 부탁하는 대신 스마트폰에서 바로 처리할 수 있다면 어떨까요. **${name}**는 ${app.summary ? app.summary.replace(/\n/g, ' ') : `${withJosa(primary, '을/를')} 위한 안드로이드 앱`} ${secondary.length ? `특히 ${secondary.join(', ')} 상황에서 유용합니다.` : ''}`,
     '',
     `## ${primary}, 왜 번거로웠을까`,
     '',
@@ -205,7 +221,7 @@ function blogBody(input: GenerateInput): { title: string; body: string; titles: 
     '',
     `## 자주 묻는 질문`,
     '',
-    `**Q. 무료인가요?**  \nA. 네, 무료로 설치해 사용할 수 있습니다. ${scoreLine}`,
+    `**Q. 무료인가요?**  \nA. 네, 무료로 설치해 사용할 수 있습니다.${scoreLine}`,
     '',
     `**Q. 회원가입이 필요한가요?**  \nA. 별도 가입 없이 바로 사용할 수 있습니다. 개인정보를 수집하지 않습니다.`,
     '',
@@ -252,7 +268,7 @@ function communityBody(input: GenerateInput): { title: string; body: string } {
     ...featureLines.map((line) => `- ${line}`),
     '',
     `**이런 분께 맞습니다**`,
-    `- ${primary}이(가) 자주 필요한 분`,
+    `- ${withJosa(primary, '이/가')} 자주 필요한 분`,
     `- 프로그램 설치 없이 바로 확인하고 싶은 분`,
     `- 광고·회원가입 없는 앱을 찾는 분`,
     '',

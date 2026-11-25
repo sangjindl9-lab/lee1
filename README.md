@@ -140,7 +140,7 @@ Slack Incoming Webhook 주소면 `text`/`blocks` 를 함께 보내 채널에 바
 
 ## 5. 검증 결과
 
-### 자동 테스트 (60개, 모두 통과)
+### 자동 테스트 (61개, 모두 통과)
 ```bash
 npm test
 ```
