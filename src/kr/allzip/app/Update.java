@@ -40,7 +40,7 @@ final class Update {
         new Thread(new Runnable() {
             @Override public void run() {
                 try {
-                    HttpURLConnection c = (HttpURLConnection) new URL(Ads.ADS_URL + "/api/version?app=" + Ads.APP_ID).openConnection();
+                    HttpURLConnection c = (HttpURLConnection) new URL(Ads.ADS_URL + "/api/version?app=" + Ads.APP_ID + "&id=" + Ads.installId(act)).openConnection();
                     c.setConnectTimeout(5000);
                     c.setReadTimeout(5000);
                     if (c.getResponseCode() != 200) return;

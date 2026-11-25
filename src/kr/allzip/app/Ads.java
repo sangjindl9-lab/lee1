@@ -61,6 +61,17 @@ final class Ads {
 
     private Ads() {}
 
+    /** 이 설치를 구분하는 무작위 ID (처음 한 번 만들어 저장). 신규 설치자 중복 제외 집계용, 개인정보 아님. */
+    static String installId(Context c) {
+        SharedPreferences p = c.getApplicationContext().getSharedPreferences("eum", Context.MODE_PRIVATE);
+        String id = p.getString("install_id", null);
+        if (id == null) {
+            id = java.util.UUID.randomUUID().toString();
+            p.edit().putString("install_id", id).apply();
+        }
+        return id;
+    }
+
     // ------------------------------------------------------------ 목록 받기
 
     private static File listFile(Context c) { return new File(c.getCacheDir(), "ads_list.json"); }
@@ -110,7 +121,7 @@ final class Ads {
             @Override public void run() {
                 List<Banner> fresh = null;
                 try {
-                    HttpURLConnection c = (HttpURLConnection) new URL(ADS_URL + "/api/banners?app=" + APP_ID).openConnection();
+                    HttpURLConnection c = (HttpURLConnection) new URL(ADS_URL + "/api/banners?app=" + APP_ID + "&id=" + installId(app)).openConnection();
                     c.setConnectTimeout(5000);
                     c.setReadTimeout(5000);
                     c.setRequestProperty("User-Agent", "EumZIP-Android");
