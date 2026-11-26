@@ -22,7 +22,7 @@ namespace RebuildCity.Presentation
         static readonly float RidgeY = Eave + 2.5f * Tan;
 
         static readonly Color[] WallPalette = { Gfx.Hex(0xEFE3C8), Gfx.Hex(0xC8DCE6), Gfx.Hex(0xD3E2C2), Gfx.Hex(0xF0CDB8), Gfx.Hex(0xE2DED6), Gfx.Hex(0xF2E6A6) };
-        static readonly Color[] RoofPalette = { Gfx.Hex(0xA4523C), Gfx.Hex(0x52626E), Gfx.Hex(0x3F7058), Gfx.Hex(0x7A4E3C), Gfx.Hex(0x474C54), Gfx.Hex(0xB06644) };
+        static readonly Color[] RoofPalette = { Gfx.Hex(0xB85C44), Gfx.Hex(0x6E8494), Gfx.Hex(0x4F8A6C), Gfx.Hex(0x9A6248), Gfx.Hex(0x7A7F8C), Gfx.Hex(0xC27448) };
         static readonly Color[] AccentPalette = { Gfx.Hex(0x2F6E7A), Gfx.Hex(0x8A3B32), Gfx.Hex(0x3B5C8A), Gfx.Hex(0x4E7A46), Gfx.Hex(0xB5552E), Gfx.Hex(0x5A4A8A) };
         static readonly Color White = Gfx.Hex(0xF4F1EA), Concrete = Gfx.Hex(0x9C9A94), Wood = Gfx.Hex(0x8A6A48), DarkWood = Gfx.Hex(0x5A4230);
         static readonly Color SelectTint = new Color(1.25f, 1.12f, 0.55f);
@@ -509,12 +509,14 @@ namespace RebuildCity.Presentation
             go.SetActive(false);
 
             var bm = new MB();
-            bm.Cyl(new Vector3(-3.6f, 0, -6.1f), 0.04f, 0.04f, 1.5f, 5, Gfx.Hex(0x6E7880));
-            bm.Cyl(new Vector3(-2.4f, 0, -6.1f), 0.04f, 0.04f, 1.5f, 5, Gfx.Hex(0x6E7880));
-            bm.Box(new Vector3(-3.0f, 1.25f, -6.1f), new Vector3(1.5f, 0.8f, 0.05f), Gfx.Hex(0xF2C230));
-            for (int k = 0; k < 4; k++)
-                bm.Box(new Vector3(-3.55f + k * 0.37f, 0.95f, -6.13f), new Vector3(0.16f, 0.16f, 0.02f), Quaternion.Euler(0, 0, 45), Gfx.Hex(0x22262A));
-            bm.Box(new Vector3(-3.0f, 1.4f, -6.13f), new Vector3(1.2f, 0.26f, 0.02f), Gfx.Hex(0x22262A));
+            bm.Cyl(new Vector3(-8.3f, 0, -6.1f), 0.035f, 0.035f, 1.25f, 5, Gfx.Hex(0x6E7880));
+            bm.Cyl(new Vector3(-7.5f, 0, -6.1f), 0.035f, 0.035f, 1.25f, 5, Gfx.Hex(0x6E7880));
+            bm.Box(new Vector3(-7.9f, 1.05f, -6.1f), new Vector3(1.0f, 0.6f, 0.05f), Gfx.Hex(0xF2C230));
+            bm.Box(new Vector3(-7.9f, 1.05f, -6.13f), new Vector3(0.86f, 0.46f, 0.02f), Gfx.Hex(0xF7F4EA));
+            for (int k = 0; k < 5; k++)
+                bm.Box(new Vector3(-8.3f + k * 0.2f, 0.82f, -6.14f), new Vector3(0.1f, 0.06f, 0.02f), k % 2 == 0 ? Gfx.Hex(0x22262A) : Gfx.Hex(0xF2C230));
+            bm.Box(new Vector3(-7.9f, 1.14f, -6.14f), new Vector3(0.6f, 0.08f, 0.02f), Gfx.Hex(0xD23B2E));
+            bm.Box(new Vector3(-7.9f, 1.0f, -6.14f), new Vector3(0.46f, 0.05f, 0.02f), Gfx.Hex(0x22262A));
             board = bm.Make(root, "공사 안내판");
             board.SetActive(false);
             return go;
@@ -638,8 +640,8 @@ namespace RebuildCity.Presentation
             safetyZone.SetActive(working && safety);
 
             // 지붕 타일
-            Color newColor = Color.Lerp(roofColor, Gfx.Hex(0xE9EEF2), 0.22f) * 1.12f;
-            Color brokenColor = Gfx.Mul(roofColor, 0.42f);
+            Color newColor = Color.Lerp(roofColor, Gfx.Hex(0xF2F4F0), 0.30f) * 1.15f;
+            Color brokenColor = Gfx.Mul(roofColor, 0.48f);
             bool roofSelected = selectedPart == roof.Id;
             for (int n = 0; n < 20; n++)
             {
@@ -665,7 +667,7 @@ namespace RebuildCity.Presentation
                 List<Renderer> list;
                 if (!partRenderers.TryGetValue(p.Id, out list)) continue;
                 float bad = 1f - Mathf.Clamp01((float)p.Hp / 100f);
-                Color tint = Color.Lerp(Color.white, new Color(0.62f, 0.56f, 0.52f), Mathf.Clamp01(bad * 1.6f));
+                Color tint = Color.Lerp(Color.white, new Color(0.74f, 0.70f, 0.66f), Mathf.Clamp01(bad * 1.3f));
                 if (selectedPart == p.Id) tint *= SelectTint;
                 for (int k = 0; k < list.Count; k++)
                 {

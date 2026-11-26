@@ -100,11 +100,11 @@ namespace RebuildCity.Presentation
             GUI.Label(r, s, text);
         }
 
-        void Panel(Rect r, float radius = 16f)
+        void Panel(Rect r, float radius = 16f, float alpha = 0.90f)
         {
             pending.Add(r);
             Fill(new Rect(r.x, r.y + 3, r.width, r.height), new Color(0, 0, 0, 0.22f), radius);
-            Fill(r, Ink, radius);
+            Fill(r, new Color(Ink.r, Ink.g, Ink.b, alpha), radius);
             Stroke(r, Line, 1f, radius);
         }
 
@@ -144,6 +144,13 @@ namespace RebuildCity.Presentation
             return false;
         }
 
+        /// <summary>현장 패널에 가려지지 않는 화면 영역의 가운데.</summary>
+        float FreeCenter()
+        {
+            float right = g.Started && g.SelectedBuilding >= 0 ? W - 456 - SafeRight : W;
+            return right * 0.5f;
+        }
+
         static string Won(long v) { return v.ToString("N0") + "원"; }
         static string Num(double v) { return v.ToString("0.#"); }
         float SafeLeft { get { return Screen.safeArea.xMin / Scale; } }
@@ -175,7 +182,9 @@ namespace RebuildCity.Presentation
             if (Time.unscaledTime < toastUntil)
             {
                 float a = Mathf.Clamp01((toastUntil - Time.unscaledTime) * 2f);
-                var r = new Rect(W / 2 - 340, H - 138, 680, 46);
+                float free = FreeCenter();
+                float tw = Mathf.Min(660, (g.Started && g.SelectedBuilding >= 0 ? W - 456 : W) - 48);
+                var r = new Rect(free - tw / 2, H - 250, tw, 46);
                 Fill(r, new Color(0.04f, 0.07f, 0.09f, 0.92f * a), 23);
                 Label(r, toast, 17, new Color(1, 1, 1, a), TextAnchor.MiddleCenter);
             }
@@ -316,7 +325,7 @@ namespace RebuildCity.Presentation
             }
 
             // 자금 변동 표시
-            if (Time.unscaledTime < flyUntil)
+            if (Time.unscaledTime < flyUntil && tab == Tab.None)
             {
                 float t = 1f - (flyUntil - Time.unscaledTime) / 2.6f;
                 Color c = flyAmount >= 0 ? Green : Red;
@@ -329,7 +338,7 @@ namespace RebuildCity.Presentation
 
             // 소식
             float fy = 206;
-            for (int i = 0; i < feed.Count; i++)
+            for (int i = 0; i < feed.Count && tab == Tab.None; i++)
             {
                 float age = Time.unscaledTime - feedTime[i];
                 if (age > 11f) continue;
@@ -438,6 +447,8 @@ namespace RebuildCity.Presentation
                 float a = Mathf.Clamp01(1.6f - sp.z / 90f);
                 if (a <= 0.05f) continue;
                 var r = new Rect(sp.x / Scale - 82, (Screen.height - sp.y) / Scale - 17, 164, 34);
+                if (r.y < 86 || (r.y < 162 && r.x < 700) || r.yMax > H - 84) continue;
+                if (g.SelectedBuilding >= 0 && r.xMax > W - 456 - SafeRight) continue;
                 Fill(r, new Color(0.047f, 0.090f, 0.118f, 0.86f * a), 17);
                 Fill(new Rect(r.x + 11, r.y + 11, 12, 12), new Color(dot.r, dot.g, dot.b, a), 6);
                 Label(new Rect(r.x + 30, r.y, r.width - 36, progress >= 0 ? 27 : 34), label, 14, new Color(1, 1, 1, a), TextAnchor.MiddleLeft, true);
@@ -655,7 +666,7 @@ namespace RebuildCity.Presentation
         Rect Modal(string heading, float height)
         {
             var r = new Rect(16 + SafeLeft, 166, 600, height);
-            Panel(r);
+            Panel(r, 16f, 0.98f);
             Label(new Rect(r.x + 20, r.y + 14, 400, 32), heading, 22, Color.white, TextAnchor.MiddleLeft, true);
             if (Btn(new Rect(r.xMax - 62, r.y + 12, 46, 34), "닫기", true, false, 13)) tab = Tab.None;
             Fill(new Rect(r.x + 20, r.y + 56, r.width - 40, 1), Line, 0);

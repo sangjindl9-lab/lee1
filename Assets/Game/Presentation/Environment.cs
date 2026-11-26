@@ -14,7 +14,7 @@ namespace RebuildCity.Presentation
         readonly Renderer cloudRenderer;
         readonly Renderer sceneryWindows;
 
-        static readonly Color Asphalt = Gfx.Hex(0x3B3F45), Sidewalk = Gfx.Hex(0xB9B6AE), Curb = Gfx.Hex(0x8F8C86), Paint = Gfx.Hex(0xEDE7D3);
+        static readonly Color Asphalt = Gfx.Hex(0x3B3F45), Sidewalk = Gfx.Hex(0xA9A69E), Curb = Gfx.Hex(0x8F8C86), Paint = Gfx.Hex(0xEDE7D3);
         static readonly Color Wood = Gfx.Hex(0x7A5A3C), DarkWood = Gfx.Hex(0x4E3A28), Metal = Gfx.Hex(0x6E7880), White = Gfx.Hex(0xF2EFE8);
         static readonly Color Leaf1 = Gfx.Hex(0x3F8A4A), Leaf2 = Gfx.Hex(0x5BA35A), Leaf3 = Gfx.Hex(0x2F6E48), Trunk = Gfx.Hex(0x6B4A32);
 
@@ -52,7 +52,7 @@ namespace RebuildCity.Presentation
         {
             float n = Mathf.PerlinNoise(x * 0.05f + 12.3f, z * 0.05f + 45.6f);
             float n2 = Gfx.Hash(Mathf.Floor(x / 5f), Mathf.Floor(z / 5f));
-            Color grass = Color.Lerp(Gfx.Hex(0x69A356), Gfx.Hex(0x8CBF68), n);
+            Color grass = Color.Lerp(Gfx.Hex(0x5C9450), Gfx.Hex(0x7CAE60), n);
             grass = Gfx.Mul(grass, 0.95f + n2 * 0.1f);
             Color hill = Color.Lerp(Gfx.Hex(0x4E8552), Gfx.Hex(0x6E8F7A), Mathf.Clamp01(h / 26f));
             return Color.Lerp(grass, hill, Mathf.Clamp01(h / 10f));
@@ -131,6 +131,39 @@ namespace RebuildCity.Presentation
             for (int i = 0; i < 5; i++)
                 mb.Box(Gfx.P(WorldState.DepotX - 5.5 + i * 2.6, WorldState.DepotZ + 1.5, 0.105f), new Vector3(0.12f, 0.01f, 4.2f), Paint);
             mb.Make(Root, "Road", null, false);
+
+            var cars = new MB();
+            Car(cars, new Vector3(-58, 0.06f, 2.9f), 90, Gfx.Hex(0xC4463A));
+            Car(cars, new Vector3(34, 0.06f, -2.9f), -90, Gfx.Hex(0x3F6FA8));
+            Car(cars, new Vector3(70, 0.06f, 2.9f), 90, Gfx.Hex(0xE2E0DA));
+            Car(cars, Gfx.P(WorldState.ShelterX + 7.5, WorldState.ShelterZ + 1.5, 0.1f), 0, Gfx.Hex(0x4E7A46));
+            cars.Make(Root, "ParkedCars");
+        }
+
+        static void Car(MB mb, Vector3 pos, float yaw, Color body)
+        {
+            mb.Push(pos, Quaternion.Euler(0, yaw, 0));
+            Color glass = Gfx.Hex(0x2F4656), dark = Gfx.Hex(0x1E2124);
+            mb.Box(new Vector3(0, 0.62f, 0), new Vector3(1.8f, 0.55f, 4.2f), body, 0.85f);
+            mb.Box(new Vector3(0, 1.12f, -0.2f), new Vector3(1.62f, 0.5f, 2.2f), Gfx.Mul(body, 0.94f));
+            mb.Box(new Vector3(0, 1.12f, 0.92f), new Vector3(1.5f, 0.42f, 0.06f), glass);
+            mb.Box(new Vector3(0, 1.12f, -1.32f), new Vector3(1.5f, 0.42f, 0.06f), glass);
+            mb.Box(new Vector3(0.82f, 1.12f, -0.2f), new Vector3(0.04f, 0.38f, 1.9f), glass);
+            mb.Box(new Vector3(-0.82f, 1.12f, -0.2f), new Vector3(0.04f, 0.38f, 1.9f), glass);
+            mb.Box(new Vector3(0, 0.42f, 2.12f), new Vector3(1.84f, 0.2f, 0.12f), dark);
+            mb.Box(new Vector3(0, 0.42f, -2.12f), new Vector3(1.84f, 0.2f, 0.12f), dark);
+            mb.Box(new Vector3(0.6f, 0.7f, 2.11f), new Vector3(0.36f, 0.16f, 0.04f), Gfx.Hex(0xF2EDD2));
+            mb.Box(new Vector3(-0.6f, 0.7f, 2.11f), new Vector3(0.36f, 0.16f, 0.04f), Gfx.Hex(0xF2EDD2));
+            mb.Box(new Vector3(0.6f, 0.7f, -2.11f), new Vector3(0.36f, 0.14f, 0.04f), Gfx.Hex(0xB02A22));
+            mb.Box(new Vector3(-0.6f, 0.7f, -2.11f), new Vector3(0.36f, 0.14f, 0.04f), Gfx.Hex(0xB02A22));
+            for (int i = 0; i < 4; i++)
+            {
+                var saved = mb.M;
+                mb.Push(new Vector3(i < 2 ? -0.92f : 0.92f, 0.34f, i % 2 == 0 ? 1.3f : -1.3f), Quaternion.Euler(0, 0, 90));
+                mb.Cyl(new Vector3(0, -0.11f, 0), 0.34f, 0.34f, 0.22f, 10, dark);
+                mb.M = saved;
+            }
+            mb.Reset();
         }
 
         // ---------- 건물 ----------
@@ -500,21 +533,21 @@ namespace RebuildCity.Presentation
             Color warm = new Color(1f, 0.66f, 0.42f), noon = new Color(1f, 0.96f, 0.88f), moon = new Color(0.52f, 0.62f, 0.95f);
             Color sunColor = Color.Lerp(warm, noon, Mathf.SmoothStep(0, 1, Mathf.Clamp01(elevation / 0.45f)));
             sun.color = Color.Lerp(moon, sunColor, day);
-            sun.intensity = Mathf.Lerp(0.30f, 1.30f, day) * (1f - storm * 0.55f);
+            sun.intensity = Mathf.Lerp(0.30f, 1.02f, day) * (1f - storm * 0.6f);
 
             Color skyDay = new Color(0.62f, 0.74f, 0.90f), skyNight = new Color(0.10f, 0.13f, 0.24f), stormSky = new Color(0.30f, 0.33f, 0.33f);
             Color sky = Color.Lerp(Color.Lerp(skyNight, skyDay, day), stormSky, storm);
-            RenderSettings.ambientSkyColor = sky * 0.95f;
-            RenderSettings.ambientEquatorColor = Color.Lerp(Color.Lerp(new Color(0.09f, 0.11f, 0.18f), new Color(0.52f, 0.55f, 0.56f), day), new Color(0.26f, 0.28f, 0.28f), storm);
-            RenderSettings.ambientGroundColor = Color.Lerp(new Color(0.05f, 0.06f, 0.08f), new Color(0.30f, 0.30f, 0.26f), day);
+            RenderSettings.ambientSkyColor = sky * 0.62f;
+            RenderSettings.ambientEquatorColor = Color.Lerp(Color.Lerp(new Color(0.09f, 0.11f, 0.18f), new Color(0.36f, 0.38f, 0.39f), day), new Color(0.20f, 0.22f, 0.22f), storm);
+            RenderSettings.ambientGroundColor = Color.Lerp(new Color(0.05f, 0.06f, 0.08f), new Color(0.20f, 0.20f, 0.17f), day);
 
             Color dusk = new Color(0.95f, 0.66f, 0.48f);
             float duskAmount = day * (1f - Mathf.SmoothStep(0, 1, Mathf.Clamp01(elevation / 0.35f)));
             Fog = Color.Lerp(Color.Lerp(new Color(0.06f, 0.08f, 0.14f), new Color(0.74f, 0.84f, 0.92f), day), dusk, duskAmount * 0.7f);
             Fog = Color.Lerp(Fog, new Color(0.36f, 0.39f, 0.37f) * Mathf.Lerp(0.35f, 1f, day), storm);
             RenderSettings.fogColor = Fog;
-            RenderSettings.fogStartDistance = Mathf.Lerp(90f, 25f, storm);
-            RenderSettings.fogEndDistance = Mathf.Lerp(420f, 170f, storm);
+            RenderSettings.fogStartDistance = Mathf.Lerp(90f, 18f, storm);
+            RenderSettings.fogEndDistance = Mathf.Lerp(420f, 140f, storm);
 
             if (skyMaterial != null)
             {

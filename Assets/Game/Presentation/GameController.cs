@@ -250,7 +250,7 @@ namespace RebuildCity.Presentation
 
             // 하늘, 폭풍, 3D 동기화
             float target = w.DisasterActive ? 1f : (w.Alert ? 0.45f : 0f);
-            storm = Mathf.MoveTowards(storm, target, dt * 0.35f);
+            storm = Mathf.MoveTowards(storm, target, dt * 0.9f);
             float hour = (w.Tick % SimTime.TicksPerDay) / 60f + Mathf.Clamp01(acc) / 60f;
             sky.Sync(hour, storm);
             view.Sync(w, SelectedBuilding, SelectedPart, sky.Night, storm, dt);

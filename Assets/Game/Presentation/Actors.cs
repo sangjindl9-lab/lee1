@@ -242,14 +242,14 @@ namespace RebuildCity.Presentation
         {
             Root = new GameObject("Tornado");
             Root.transform.SetParent(parent, false);
-            funnelA = Funnel(new Color(0.34f, 0.35f, 0.36f, 0.82f), 1.0f, 0.9f).transform;
-            funnelB = Funnel(new Color(0.22f, 0.23f, 0.25f, 0.55f), 1.25f, -0.6f).transform;
+            funnelA = Funnel(new Color(0.26f, 0.27f, 0.29f, 0.94f), 1.0f, 0.9f).transform;
+            funnelB = Funnel(new Color(0.17f, 0.18f, 0.20f, 0.62f), 1.3f, -0.6f).transform;
 
             var dm = new MB();
             for (int i = 0; i < 9; i++)
             {
                 float a = i * Mathf.PI * 2 / 9f;
-                dm.Blob(new Vector3(Mathf.Cos(a) * 7f, 1.6f, Mathf.Sin(a) * 7f), new Vector3(4.2f, 2.2f, 4.2f), new Color(0.55f, 0.50f, 0.44f, 0.34f), 1.05f, 0.9f, 0.3f);
+                dm.Blob(new Vector3(Mathf.Cos(a) * 7f, 1.6f, Mathf.Sin(a) * 7f), new Vector3(4.2f, 2.2f, 4.2f), new Color(0.42f, 0.38f, 0.33f, 0.46f), 1.05f, 0.9f, 0.3f);
             }
             dust = dm.Make(Root.transform, "Dust", Gfx.Fade, false).transform;
 
@@ -288,8 +288,8 @@ namespace RebuildCity.Presentation
                     Vector3 a = FunnelPoint(t0, s, seg, height, widen, twist), b = FunnelPoint(t0, s + 1, seg, height, widen, twist);
                     Vector3 c = FunnelPoint(t1, s + 1, seg, height, widen, twist), d = FunnelPoint(t1, s, seg, height, widen, twist);
                     float shade = 0.82f + Gfx.Hash(r, s) * 0.3f;
-                    Color c0 = new Color(col.r * shade, col.g * shade, col.b * shade, col.a * Mathf.Lerp(1f, 0.55f, t0));
-                    Color c1 = new Color(col.r * shade, col.g * shade, col.b * shade, col.a * Mathf.Lerp(1f, 0.55f, t1));
+                    Color c0 = new Color(col.r * shade, col.g * shade, col.b * shade, col.a * Mathf.Lerp(1f, 0.7f, t0));
+                    Color c1 = new Color(col.r * shade, col.g * shade, col.b * shade, col.a * Mathf.Lerp(1f, 0.7f, t1));
                     mb.Quad(a, b, c, d, c0, c0, c1, c1, new Vector3(a.x, 0, a.z));
                 }
             }
@@ -298,7 +298,7 @@ namespace RebuildCity.Presentation
 
         static Vector3 FunnelPoint(float t, int s, int seg, float height, float widen, float twist)
         {
-            float radius = (1.3f + Mathf.Pow(t, 1.9f) * 15f) * widen;
+            float radius = (3.2f + Mathf.Pow(t, 1.7f) * 15f) * widen;
             float a = s * Mathf.PI * 2 / seg + t * twist * 6f;
             float sway = Mathf.Sin(t * 5.2f) * 1.6f * t;
             return new Vector3(Mathf.Cos(a) * radius + sway, t * height, Mathf.Sin(a) * radius + sway * 0.6f);

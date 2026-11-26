@@ -12,7 +12,7 @@ Shader "RebuildCity/Lit"
         LOD 200
 
         CGPROGRAM
-        #pragma surface surf Standard fullforwardshadows
+        #pragma surface surf Standard fullforwardshadows addshadow
         #pragma target 3.0
 
         struct Input
