@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   ios:
-    runs-on: macos-15
+    runs-on: macos-26
     defaults: { run: { working-directory: ios } }
     env:
       # Apple 개발자 계정 등록 후 저장소 Secrets에 넣으면 TestFlight 업로드까지 자동으로 진행
@@ -21,6 +21,9 @@ jobs:
       ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
     steps:
       - uses: actions/checkout@v4
+      # App Store 업로드는 최신 SDK(Xcode 26 이상)로 빌드해야 함
+      - uses: maxim-lobanov/setup-xcode@v1
+        with: { xcode-version: latest-stable }
       - name: Xcode 프로젝트 생성
         run: |
           brew install xcodegen
