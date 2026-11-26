@@ -34,6 +34,8 @@ namespace RebuildCity.Presentation
         public int SelectedBuilding = -1, SelectedPart = -1;
         public readonly GameInput Input = new GameInput();
         public Sfx Audio;
+        public string Flags = "";        // 진단용 실행 옵션(-rcflags)
+        int traceFrames = 6;
         public bool Scripted;            // 자동 촬영 중에는 시간과 저장을 촬영 쪽에서 다룬다
 
         WorldView view;
@@ -77,7 +79,13 @@ namespace RebuildCity.Presentation
 
             string[] args = Environment.GetCommandLineArgs();
             for (int i = 0; i < args.Length - 1; i++)
+            {
                 if (args[i] == "-rcshots") gameObject.AddComponent<ShotDirector>().Begin(this, args[i + 1]);
+                if (args[i] == "-rcflags") Flags = args[i + 1];
+            }
+            if (Flags.Contains("noshadow")) QualitySettings.shadows = ShadowQuality.Disable;
+            if (Flags.Contains("noaa")) QualitySettings.antiAliasing = 0;
+            if (Flags.Contains("nosky")) { RenderSettings.skybox = null; cameraRig.Cam.clearFlags = CameraClearFlags.SolidColor; }
             Debug.Log("[rc] 시작 준비 완료 " + Time.realtimeSinceStartup.ToString("0.0") + "초");
         }
 
@@ -184,8 +192,14 @@ namespace RebuildCity.Presentation
             Sim.SetPlayerPosition(x, z, yaw);
         }
 
+        void Trace(string stage)
+        {
+            if (Scripted && traceFrames > 0) Debug.Log("[rc] f" + Time.frameCount + " " + stage + " " + Time.realtimeSinceStartup.ToString("0.00"));
+        }
+
         void Update()
         {
+            Trace("update");
             hud.UpdateScale();
             Input.UiScale = hud.Scale;
             Input.Update();
@@ -197,6 +211,7 @@ namespace RebuildCity.Presentation
                 view.Sync(menuWorld, -1, -1, sky.Night, 0, dt);
                 cameraRig.Orbit(dt);
                 Audio.Tick(0.05f, false, 0, dt);
+                Trace("update-end");
                 return;
             }
             var w = Sim.World;
@@ -268,6 +283,7 @@ namespace RebuildCity.Presentation
 
         void LateUpdate()
         {
+            Trace("late");
             if (Sim == null) return;
             cameraRig.Tick(Input, Management, player.Position, Time.deltaTime);
         }
@@ -282,6 +298,13 @@ namespace RebuildCity.Presentation
             SelectedPart = pr.PartId;
         }
 
-        void OnGUI() { hud.Draw(); }
+        void OnGUI()
+        {
+            if (Flags.Contains("nogui")) return;
+            bool repaint = Event.current.type == EventType.Repaint;
+            if (repaint) Trace("gui");
+            hud.Draw();
+            if (repaint) { Trace("gui-end"); if (traceFrames > 0) traceFrames--; }
+        }
     }
 }
