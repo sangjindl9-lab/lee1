@@ -9,13 +9,12 @@ using UnityEngine;
 namespace RebuildCity.EditorTools
 {
     /// <summary>
-    /// 에디터 자동화. 빈 씬과 기본 재질을 만들고 Android·Windows 빌드를 수행한다.
+    /// 에디터 자동화. 빈 씬과 공용 재질을 만들고 Android·Windows·Linux 빌드를 수행한다.
     /// GitHub Actions(GameCI)에서 -executeMethod 로 호출한다.
     /// </summary>
     public static class BuildScript
     {
         const string ScenePath = "Assets/Scenes/Main.unity";
-        const string MaterialPath = "Assets/Resources/RC_Lit.mat";
 
         [MenuItem("RebuildCity/프로젝트 준비 (씬·재질 생성)")]
         public static void Prepare()
@@ -24,16 +23,11 @@ namespace RebuildCity.EditorTools
             Directory.CreateDirectory("Assets/Resources");
             AssetDatabase.Refresh();
 
-            // 실행 중 코드로 만드는 재질의 바탕. Resources에 두어야 빌드에 셰이더가 포함된다.
-            if (AssetDatabase.LoadAssetAtPath<Material>(MaterialPath) == null)
-            {
-                var shader = Shader.Find("Standard");
-                if (shader == null) throw new Exception("Standard 셰이더를 찾지 못했습니다.");
-                var material = new Material(shader);
-                material.SetFloat("_Glossiness", 0.08f);
-                material.enableInstancing = true;
-                AssetDatabase.CreateAsset(material, MaterialPath);
-            }
+            // 실행 중 코드로 쓰는 재질. Resources에 두어야 빌드에 셰이더가 포함된다.
+            MakeMaterial("RC_Lit", "RebuildCity/Lit");
+            MakeMaterial("RC_Unlit", "RebuildCity/Unlit");
+            MakeMaterial("RC_Fade", "RebuildCity/Fade");
+            MakeMaterial("RC_Sky", "Skybox/Procedural");
 
             if (!File.Exists(ScenePath))
             {
@@ -44,7 +38,8 @@ namespace RebuildCity.EditorTools
 
             PlayerSettings.companyName = "EumSoft";
             PlayerSettings.productName = "Rebuild City";
-            PlayerSettings.bundleVersion = "0.1.0";
+            PlayerSettings.bundleVersion = "0.2.0";
+            PlayerSettings.colorSpace = ColorSpace.Linear;
             PlayerSettings.defaultInterfaceOrientation = UIOrientation.LandscapeLeft;
             PlayerSettings.SetApplicationIdentifier(NamedBuildTarget.Android, "kr.eumsoft.rebuildcity");
             PlayerSettings.SetScriptingBackend(NamedBuildTarget.Android, ScriptingImplementation.IL2CPP);
@@ -52,8 +47,19 @@ namespace RebuildCity.EditorTools
             AssetDatabase.SaveAssets();
         }
 
+        static void MakeMaterial(string name, string shaderName)
+        {
+            string path = "Assets/Resources/" + name + ".mat";
+            if (AssetDatabase.LoadAssetAtPath<Material>(path) != null) return;
+            var shader = Shader.Find(shaderName);
+            if (shader == null) throw new Exception("셰이더를 찾지 못했습니다: " + shaderName);
+            var material = new Material(shader);
+            AssetDatabase.CreateAsset(material, path);
+        }
+
         public static void BuildAndroid() { Build(BuildTarget.Android, "build/Android/RebuildCity.apk"); }
         public static void BuildWindows() { Build(BuildTarget.StandaloneWindows64, "build/StandaloneWindows64/RebuildCity.exe"); }
+        public static void BuildLinux() { Build(BuildTarget.StandaloneLinux64, "build/StandaloneLinux64/RebuildCity"); }
 
         static void Build(BuildTarget target, string defaultPath)
         {

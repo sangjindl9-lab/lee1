@@ -47,10 +47,84 @@ jobs:
             echo "::warning::UNITY_LICENSE, UNITY_EMAIL, UNITY_PASSWORD 시크릿이 없어 Unity 빌드를 건너뜁니다. README의 '자동 빌드 켜기'를 보세요."
           fi
 
+  # 리눅스 빌드를 만들어 실제로 실행하고 화면을 찍는다(실행 검증).
+  build-linux:
+    name: Unity 빌드 (Linux, 실행 검증용)
+    needs: license
+    if: needs.license.outputs.ready == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: 디스크 공간 확보
+        run: sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /opt/hostedtoolcache/CodeQL
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: Library
+          key: Library-StandaloneLinux64-${{ hashFiles('Assets/**', 'Packages/**', 'ProjectSettings/**') }}
+          restore-keys: Library-StandaloneLinux64-
+      - uses: game-ci/unity-builder@v4
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        with:
+          targetPlatform: StandaloneLinux64
+          buildMethod: RebuildCity.EditorTools.BuildScript.BuildLinux
+          buildName: RebuildCity
+          versioning: None
+          allowDirtyBuild: true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RebuildCity-StandaloneLinux64
+          path: build/StandaloneLinux64
+
+  shots:
+    name: 실행 검증과 스크린샷
+    needs: build-linux
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: RebuildCity-StandaloneLinux64
+          path: linux
+      - name: 가상 화면 준비
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq xvfb libgl1-mesa-dri libglx-mesa0 libegl1 libasound2t64 > /dev/null
+      - name: 게임을 실행해 처음부터 준공까지 자동 진행
+        env:
+          LIBGL_ALWAYS_SOFTWARE: '1'
+        run: |
+          chmod +x linux/RebuildCity
+          mkdir -p out
+          timeout 1200 xvfb-run -a -s "-screen 0 1280x720x24" ./linux/RebuildCity \
+            -screen-fullscreen 0 -screen-width 1280 -screen-height 720 -force-glcore \
+            -logFile "$PWD/out/player.log" -rcshots "$PWD/out" || echo "종료 코드 $?"
+          ls -la out
+          grep -E "\[shots\]|Exception|Error|error" out/player.log | head -60 || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: shots
+          path: out
+      - name: 스크린샷을 브랜치에 올리기
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd out
+          echo "$GITHUB_SHA" > commit.txt
+          git init -q -b rebuild-city-shots
+          git add -A
+          git -c user.name="github-actions" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -qm "shots $GITHUB_SHA"
+          git push -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" rebuild-city-shots
+
   build:
     name: Unity 빌드 (${{ matrix.targetPlatform }})
     needs: [sim-tests, license]
-    if: needs.license.outputs.ready == 'true'
+    if: needs.license.outputs.ready == 'true' && !contains(github.event.head_commit.message, '[shots-only]')
     runs-on: ubuntu-latest
     timeout-minutes: 90
     strategy:

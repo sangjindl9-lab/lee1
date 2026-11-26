@@ -113,7 +113,7 @@ namespace RebuildCity.Presentation
         public const float WalkSpeed = 2.2f, RunSpeed = 4.5f, TurnSpeed = 540f;
         public readonly GameObject Go;
         readonly CharacterController cc;
-        readonly ActorView view;
+        readonly HumanView view;
         float vy;
 
         public PlayerRig(Vector3 pos, float yaw)
@@ -122,16 +122,16 @@ namespace RebuildCity.Presentation
             Go.transform.position = pos;
             Go.transform.rotation = Quaternion.Euler(0, yaw, 0);
             cc = Go.AddComponent<CharacterController>();
-            cc.height = 1.8f; cc.radius = 0.35f; cc.center = new Vector3(0, 0.92f, 0);
+            cc.height = 1.8f; cc.radius = 0.32f; cc.center = new Vector3(0, 0.92f, 0);
             cc.slopeLimit = 40; cc.stepOffset = 0.35f;
-            view = new ActorView(Go.transform, Color.white, new Color(0.75f, 0.2f, 0.18f));
+            view = new HumanView(Go.transform, Gfx.Hex(0xF4F1EA), Gfx.Hex(0x24405E), Gfx.Hex(0x30343A), false);
         }
 
         public Vector3 Position { get { return Go.transform.position; } }
         public float Yaw { get { return Go.transform.eulerAngles.y; } }
 
         /// <summary>이동했으면 true.</summary>
-        public bool Tick(Vector2 move, bool run, float cameraYaw, bool working, float dt)
+        public bool Tick(Vector2 move, bool run, float cameraYaw, bool working, Vector3 workTarget, float dt)
         {
             Vector3 dir = Quaternion.Euler(0, cameraYaw, 0) * new Vector3(move.x, 0, move.y);
             bool moving = dir.sqrMagnitude > 0.01f;
@@ -141,76 +141,104 @@ namespace RebuildCity.Presentation
                 Go.transform.rotation = Quaternion.RotateTowards(Go.transform.rotation, Quaternion.LookRotation(dir.normalized), TurnSpeed * dt);
                 velocity = dir * (run ? RunSpeed : WalkSpeed);
             }
+            else if (working)
+            {
+                Vector3 look = workTarget - Go.transform.position;
+                look.y = 0;
+                if (look.sqrMagnitude > 0.01f) Go.transform.rotation = Quaternion.RotateTowards(Go.transform.rotation, Quaternion.LookRotation(look.normalized), TurnSpeed * dt);
+            }
             vy = cc.isGrounded ? -1f : vy - 20f * dt;
             velocity.y = vy;
             cc.Move(velocity * dt);
-            view.Animate(moving, working && !moving, false, dt * (run ? 1.6f : 1f));
+            view.Animate(moving ? (run ? 2f : 1f) : 0f, working && !moving, false, dt);
             return moving;
-        }
-
-        public void Teleport(Vector3 pos, float yaw)
-        {
-            cc.enabled = false;
-            Go.transform.position = pos;
-            Go.transform.rotation = Quaternion.Euler(0, yaw, 0);
-            cc.enabled = true;
         }
 
         public void Destroy() { Object.Destroy(Go); }
     }
 
-    /// <summary>직접 모드: 캐릭터 뒤 5m·높이 3m 추적, 장애물이 있으면 당겨진다. 경영 모드: 45도 내려다보는 쿼터뷰.</summary>
+    /// <summary>
+    /// 직접 모드: 캐릭터 뒤에서 따라가고 장애물이 있으면 당겨진다. 경영 모드: 45도로 내려다보는 쿼터뷰.
+    /// 시작 화면에서는 마을 주위를 천천히 돈다.
+    /// </summary>
     public sealed class CameraRig
     {
         public readonly Camera Cam;
         public float Yaw;
-        float distance = 5.8f, pitch = 28f;
-        float mgmtDistance = 42f;
+        float distance = 7.2f, pitch = 22f;
+        float mgmtDistance = 46f;
         public Vector3 Pivot;
+        float orbit = 200f;
+        float shake;
 
         public CameraRig()
         {
             var go = new GameObject("Main Camera");
             go.tag = "MainCamera";
             Cam = go.AddComponent<Camera>();
-            Cam.clearFlags = CameraClearFlags.SolidColor;
+            Cam.clearFlags = CameraClearFlags.Skybox;
             Cam.backgroundColor = new Color(0.62f, 0.78f, 0.90f);
-            Cam.farClipPlane = 400;
-            Cam.nearClipPlane = 0.2f;
+            Cam.farClipPlane = 700;
+            Cam.nearClipPlane = 0.3f;
+            Cam.fieldOfView = 55;
             go.AddComponent<AudioListener>();
-            go.transform.position = new Vector3(-60, 30, -45);
-            go.transform.rotation = Quaternion.Euler(30, 45, 0);
         }
+
+        public void Shake(float amount) { shake = Mathf.Max(shake, amount); }
+
+        Vector3 ShakeOffset(float dt)
+        {
+            if (shake <= 0.001f) return Vector3.zero;
+            float t = Time.unscaledTime * 31f;
+            Vector3 o = new Vector3(Mathf.PerlinNoise(t, 0.3f) - 0.5f, Mathf.PerlinNoise(0.7f, t) - 0.5f, 0) * shake;
+            shake = Mathf.MoveTowards(shake, 0, dt * 1.5f);
+            return o;
+        }
+
+        public void Orbit(float dt)
+        {
+            orbit += dt * 4f;
+            Vector3 target = new Vector3(0, 3f, 0);
+            Vector3 pos = target + Quaternion.Euler(24f, orbit, 0) * Vector3.back * 52f;
+            Cam.transform.position = pos;
+            Cam.transform.rotation = Quaternion.LookRotation(target - pos);
+        }
+
+        public void Snap() { snap = true; }
+        bool snap;
 
         public void Tick(GameInput input, bool management, Vector3 playerPos, float dt)
         {
             Yaw += input.Look.x * 0.25f;
             var tr = Cam.transform;
+            float follow = snap ? 1f : Mathf.Clamp01(dt * 10f);
             if (!management)
             {
-                pitch = Mathf.Clamp(pitch - input.Look.y * 0.15f, 8f, 60f);
-                distance = Mathf.Clamp(distance - input.Zoom * 0.6f, 2.5f, 12f);
-                Vector3 target = playerPos + Vector3.up * 1.5f;
+                pitch = Mathf.Clamp(pitch - input.Look.y * 0.15f, 6f, 62f);
+                distance = Mathf.Clamp(distance - input.Zoom * 0.7f, 3f, 16f);
+                Vector3 target = playerPos + Vector3.up * 1.9f;
                 Vector3 dir = Quaternion.Euler(pitch, Yaw, 0) * Vector3.back;
                 float d = distance;
                 RaycastHit hit;
-                if (Physics.SphereCast(target, 0.3f, dir, out hit, distance, ~0, QueryTriggerInteraction.Ignore)) d = Mathf.Max(0.6f, hit.distance);
-                tr.position = Vector3.Lerp(tr.position, target + dir * d, Mathf.Clamp01(dt * 12f));
-                tr.rotation = Quaternion.LookRotation(target - tr.position);
+                if (Physics.SphereCast(target, 0.3f, dir, out hit, distance, ~0, QueryTriggerInteraction.Ignore)) d = Mathf.Max(0.8f, hit.distance);
+                tr.position = Vector3.Lerp(tr.position, target + dir * d, follow);
+                tr.rotation = Quaternion.LookRotation(target + Vector3.up * 0.3f - tr.position);
                 Pivot = playerPos;
             }
             else
             {
-                mgmtDistance = Mathf.Clamp(mgmtDistance - input.Zoom * 3f, 14f, 90f);
+                mgmtDistance = Mathf.Clamp(mgmtDistance - input.Zoom * 3f, 16f, 95f);
                 Vector3 pan = Quaternion.Euler(0, Yaw, 0) * new Vector3(input.Move.x, 0, input.Move.y);
                 Pivot += pan * (mgmtDistance * 0.8f) * dt;
-                Pivot.x = Mathf.Clamp(Pivot.x, -90, 90);
-                Pivot.z = Mathf.Clamp(Pivot.z, -50, 50);
+                Pivot.x = Mathf.Clamp(Pivot.x, -95, 95);
+                Pivot.z = Mathf.Clamp(Pivot.z, -40, 40);
                 Pivot.y = 0;
                 Vector3 pos = Pivot + Quaternion.Euler(45f, Yaw, 0) * Vector3.back * mgmtDistance;
-                tr.position = Vector3.Lerp(tr.position, pos, Mathf.Clamp01(dt * 10f));
+                tr.position = Vector3.Lerp(tr.position, pos, follow);
                 tr.rotation = Quaternion.Euler(45f, Yaw, 0);
             }
+            snap = false;
+            tr.position += tr.rotation * ShakeOffset(dt);
         }
     }
 }
