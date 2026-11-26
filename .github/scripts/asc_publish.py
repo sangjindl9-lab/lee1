@@ -94,7 +94,8 @@ for loc in call("GET", f"/v1/appInfos/{info['id']}/appInfoLocalizations")["data"
 step("연령 등급")
 try:
     ard = call("GET", f"/v1/appInfos/{info['id']}/ageRatingDeclaration")["data"]
-    skip = {"kidsAgeBand", "ageRatingOverride", "ageRatingOverrideV2", "koreaAgeRatingOverride", "developerAgeRatingInfoUrl"}
+    skip = {"kidsAgeBand", "ageRatingOverride", "ageRatingOverrideV2", "koreaAgeRatingOverride", "developerAgeRatingInfoUrl",
+            "gracRatingClassificationNumber", "gracRatingClassificationNumberV2"}
     attrs = {}
     for k, v in ard["attributes"].items():
         if k in skip:
@@ -113,6 +114,9 @@ try:
             for err in json.loads(e.body).get("errors", []):
                 ptr = (err.get("source") or {}).get("pointer", "")
                 k = ptr.rsplit("/", 1)[-1]
+                m = __import__("re").search(r"attribute '(\w+)' cannot be set", err.get("detail", ""))
+                if m and m.group(1) in attrs:
+                    del attrs[m.group(1)]; fixed = True; continue
                 if k in attrs:
                     attrs[k] = False if attrs[k] == "NONE" else ("NONE" if attrs[k] is False else None)
                     if attrs[k] is None:
@@ -155,8 +159,9 @@ try:
             terrs += [t["id"] for t in r["data"]]
             url = r.get("links", {}).get("next")
         avail = [t for t in terrs if t not in meta["excludeTerritories"]]
-        inc = [{"type": "territoryAvailabilities", "id": f"${{t{i}}}", "attributes": {"available": True},
-                "relationships": {"territory": {"data": {"type": "territories", "id": t}}}} for i, t in enumerate(avail)]
+        # 모든 국가를 넣고, 제외 국가는 available=false
+        inc = [{"type": "territoryAvailabilities", "id": f"${{t{i}}}", "attributes": {"available": t not in meta["excludeTerritories"]},
+                "relationships": {"territory": {"data": {"type": "territories", "id": t}}}} for i, t in enumerate(terrs)]
         call("POST", "/v2/appAvailabilities", {"data": {"type": "appAvailabilities", "attributes": {"availableInNewTerritories": True},
             "relationships": {"app": {"data": {"type": "apps", "id": app_id}},
                               "territoryAvailabilities": {"data": [{"type": "territoryAvailabilities", "id": x["id"]} for x in inc]}}},

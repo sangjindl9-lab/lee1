@@ -2,7 +2,7 @@ name: FM2 iOS build
 on:
   push:
     branches: [filemanager2]
-    paths: ['ios/**', '.github/workflows/fm2-ios.yml']
+    paths: ['ios/**', '!ios/appstore/**', '.github/workflows/fm2-ios.yml']
   workflow_dispatch: {}
 permissions:
   contents: write
