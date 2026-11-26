@@ -78,7 +78,9 @@ jobs:
           mkdir -p ~/private_keys && echo "$ASC_KEY_P8" > ~/private_keys/AuthKey_$ASC_KEY_ID.p8
           AUTH=(-allowProvisioningUpdates -authenticationKeyPath ~/private_keys/AuthKey_$ASC_KEY_ID.p8 -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID")
           xcodebuild -project FileManager2.xcodeproj -scheme FileManager2 -configuration Release -destination 'generic/platform=iOS' \
-            -archivePath build/FileManager2.xcarchive DEVELOPMENT_TEAM="$APPLE_TEAM_ID" CURRENT_PROJECT_VERSION=${{ github.run_number }} "${AUTH[@]}" archive
+            -archivePath build/FileManager2.xcarchive DEVELOPMENT_TEAM="$APPLE_TEAM_ID" CURRENT_PROJECT_VERSION=${{ github.run_number }} \
+            CODE_SIGNING_ALLOWED=NO archive
+          # 서명은 내보내기 단계에서 Apple 클라우드 서명(배포 인증서·App Store 프로파일 자동 생성)으로 처리 — 테스트 기기 등록 불필요
           cat > build/export.plist <<PLIST
           <?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0"><dict><key>method</key><string>app-store-connect</string><key>destination</key><string>upload</string>
