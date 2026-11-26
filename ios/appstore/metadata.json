@@ -1,0 +1,25 @@
+{
+  "bundleId": "kr.eumsoft.filemanager2",
+  "version": "1.0.0",
+  "copyright": "2026 이상진",
+  "primaryCategory": "UTILITIES",
+  "secondaryCategory": "PRODUCTIVITY",
+  "excludeTerritories": ["CHN"],
+  "ko": {
+    "subtitle": "PC·클라우드와 파일 주고받기",
+    "privacyPolicyUrl": "https://fm2.ieumerp.kr/privacy",
+    "supportUrl": "https://fm2.ieumerp.kr/support",
+    "marketingUrl": "https://fm2.ieumerp.kr",
+    "promotionalText": "아이폰 보관함의 파일을 PC(Windows·macOS·Linux)와 Google Drive·Dropbox로 간편하게 주고받으세요. 케이블 없이, 같은 계정으로 로그인만 하면 됩니다.",
+    "keywords": "파일관리자,파일,PC연결,파일전송,클라우드,구글드라이브,드롭박스,보관함,문서,사진,공유,NAS",
+    "description": "파일 관리자 2는 아이폰과 PC, 클라우드의 파일을 한곳에서 관리하고 주고받는 앱입니다.\n\n■ 보관함\n• 문서·사진·동영상을 앱 보관함에 모아 폴더별로 정리\n• 아이폰 \"파일\" 앱에서도 같은 보관함을 열 수 있음\n• 사진 앱·파일 앱에서 가져오기, 다른 앱으로 공유하기\n• 이름 바꾸기, 이동·복사, 미리보기\n• 실수로 지운 파일은 30일 동안 휴지통에서 복원\n\n■ PC 연결\n• Windows·macOS·Linux용 \"파일 관리자 2 PC\" 프로그램과 같은 계정으로 로그인\n• 아이폰에서 승인한 폴더만 PC에서 보고 주고받을 수 있음\n• 읽기 전용 연결, 연결 코드 연결, 연결 해제 지원\n• 로그인된 기기와 접속 기록 확인\n\n■ 클라우드\n• Google Drive·Dropbox 연결\n• 클라우드 파일을 보관함으로 받기, 보관함 파일을 클라우드로 올리기\n• 폴더 만들기·이름 바꾸기·삭제, 기한이 있는 공유 링크 만들기\n\n■ 안전하게\n• 로그인 정보는 아이폰 키체인에만 저장\n• 파일 내용은 서버에 저장하지 않고 기기 사이에서 중계만 합니다\n\nPC 프로그램 받기: https://fm2.ieumerp.kr/download\n문의: pm999@naver.com"
+  },
+  "review": {
+    "firstName": "Sangjin",
+    "lastName": "Lee",
+    "phone": "+82 70 7938 5027",
+    "email": "pm999@naver.com",
+    "demoEmail": "appreview@ieumerp.kr",
+    "notes": "[English]\nFile Manager 2 is a file manager that keeps files in the app's own storage (also visible in the Files app) and lets the user exchange them with their own PC (Windows/macOS/Linux companion app) and with Google Drive / Dropbox.\n- The Library tab works without signing in.\n- Sign in with the demo account above to see the PC Connection, Cloud and Settings screens. Turning on \"PC 연결\" connects to our relay server; a PC is only needed to actually transfer files (companion app: https://fm2.ieumerp.kr/download).\n- File contents are relayed between the user's own devices and are not stored on our server.\n- Account deletion: Settings > 계정 삭제.\n\n[한국어]\n보관함 탭은 로그인 없이 사용할 수 있습니다. 위 데모 계정으로 로그인하면 PC 연결·클라우드·설정 화면을 확인할 수 있습니다. 계정 삭제는 설정 > 계정 삭제에 있습니다."
+  }
+}

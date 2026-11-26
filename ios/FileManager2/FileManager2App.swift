@@ -7,7 +7,10 @@ struct FileManager2App: App {
     @StateObject private var transfers = Transfers.shared
     @Environment(\.scenePhase) private var phase
 
-    init() { Library.ensureDefaults() }
+    init() {
+        Library.ensureDefaults()
+        Demo.prepareIfRequested()
+    }
 
     var body: some Scene {
         WindowGroup {
