@@ -35,21 +35,32 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libdbus-1-dev patchelf rpm file
       - run: npm install --no-audit --no-fund
+      - name: macOS 서명·공증 준비 (Developer ID, App Store Connect API 키)
+        if: matrix.plat == 'macos'
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          APPLE_DEVID_PRIVATE_KEY: ${{ secrets.APPLE_DEVID_PRIVATE_KEY }}
+        run: |
+          if [ -z "$ASC_KEY_ID" ] || [ -z "$APPLE_DEVID_PRIVATE_KEY" ]; then echo "::warning::Apple 서명 값이 없어 임시 서명으로 빌드합니다"; exit 0; fi
+          pip3 install --quiet --break-system-packages pyjwt cryptography 2>/dev/null || pip3 install --quiet pyjwt cryptography
+          python3 ../.github/scripts/apple_devid.py
+          # 공증(notarization)은 같은 API 키로
+          mkdir -p ~/private_keys && printf '%s' "$ASC_KEY_P8" > ~/private_keys/AuthKey_$ASC_KEY_ID.p8
+          { echo "APPLE_API_ISSUER=$ASC_ISSUER_ID"; echo "APPLE_API_KEY=$ASC_KEY_ID"; echo "APPLE_API_KEY_PATH=$HOME/private_keys/AuthKey_$ASC_KEY_ID.p8"; } >> $GITHUB_ENV
+          # 임시 서명("-") 대신 Developer ID로 서명
+          python3 - <<'PY'
+          import json; p='src-tauri/tauri.macos.conf.json'; c=json.load(open(p)); c['bundle']['macOS'].pop('signingIdentity', None); json.dump(c, open(p,'w'), ensure_ascii=False, indent=2)
+          PY
       - name: Build installer
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.FM2_TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
-          # macOS 코드 서명·공증 (Apple 개발자 계정 등록 후 저장소 Secrets에 넣으면 자동 적용, 없으면 임시 서명)
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPIMAGE_EXTRACT_AND_RUN: '1'
           NO_STRIP: 'true'
         run: |
-          for v in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+          for v in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_API_ISSUER APPLE_API_KEY APPLE_API_KEY_PATH; do
             if [ -z "${!v}" ]; then unset $v; fi
           done
           ARGS=()
