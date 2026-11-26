@@ -54,6 +54,7 @@ namespace RebuildCity.Presentation
         void Awake()
         {
             Instance = this;
+            Debug.Log("[rc] Awake");
             Application.targetFrameRate = 60;
             Screen.sleepTimeout = SleepTimeout.NeverSleep;
             bool mobile = Application.isMobilePlatform;
@@ -77,6 +78,7 @@ namespace RebuildCity.Presentation
             string[] args = Environment.GetCommandLineArgs();
             for (int i = 0; i < args.Length - 1; i++)
                 if (args[i] == "-rcshots") gameObject.AddComponent<ShotDirector>().Begin(this, args[i + 1]);
+            Debug.Log("[rc] 시작 준비 완료 " + Time.realtimeSinceStartup.ToString("0.0") + "초");
         }
 
         public void NewGame() { NewGame((ulong)DateTime.UtcNow.Ticks); }

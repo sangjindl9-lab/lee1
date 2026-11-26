@@ -23,6 +23,13 @@ namespace RebuildCity.Presentation
             Directory.CreateDirectory(dir);
             g.Scripted = true;
             Time.captureFramerate = 30;
+            // 촬영은 그래픽 카드 없는 서버에서 돌기 때문에 그림자·계단 현상 제거 품질을 낮춘다
+            QualitySettings.vSyncCount = 0;
+            QualitySettings.shadowResolution = ShadowResolution.High;
+            QualitySettings.shadowCascades = 2;
+            QualitySettings.shadowDistance = 85f;
+            QualitySettings.antiAliasing = 2;
+            QualitySettings.pixelLightCount = 3;
             StartCoroutine(Guarded());
         }
 
@@ -39,7 +46,7 @@ namespace RebuildCity.Presentation
             yield return new WaitForEndOfFrame();
             string path = Path.Combine(dir, index.ToString("00") + "_" + name + ".png");
             ScreenCapture.CaptureScreenshot(path);
-            Debug.Log("[shots] " + path);
+            Debug.Log("[shots] " + path + " (" + Time.realtimeSinceStartup.ToString("0") + "초, " + Time.frameCount + "프레임)");
             index++;
             yield return null;
             yield return null;
@@ -66,7 +73,11 @@ namespace RebuildCity.Presentation
 
         IEnumerator Run()
         {
-            for (int i = 0; i < 50; i++) yield return null;
+            for (int i = 0; i < 8; i++)
+            {
+                Debug.Log("[shots] 프레임 " + Time.frameCount + " " + Time.realtimeSinceStartup.ToString("0.0") + "초");
+                yield return null;
+            }
             yield return Shot("menu");
 
             g.NewGame(3);
