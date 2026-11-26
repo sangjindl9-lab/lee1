@@ -1,0 +1,6 @@
+{
+    "name": "RebuildCity.Presentation",
+    "rootNamespace": "RebuildCity.Presentation",
+    "references": ["RebuildCity.Sim"],
+    "autoReferenced": true
+}

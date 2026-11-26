@@ -1,0 +1,7 @@
+{
+    "name": "RebuildCity.Editor",
+    "rootNamespace": "RebuildCity.EditorTools",
+    "references": ["RebuildCity.Sim", "RebuildCity.Presentation"],
+    "includePlatforms": ["Editor"],
+    "autoReferenced": false
+}

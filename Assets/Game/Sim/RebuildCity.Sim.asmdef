@@ -1,0 +1,7 @@
+{
+    "name": "RebuildCity.Sim",
+    "rootNamespace": "RebuildCity.Sim",
+    "references": [],
+    "noEngineReferences": true,
+    "autoReferenced": true
+}

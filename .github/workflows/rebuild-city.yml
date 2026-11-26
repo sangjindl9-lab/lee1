@@ -1,0 +1,87 @@
+name: Rebuild City
+
+on:
+  push:
+    branches: [rebuild-city]
+  workflow_dispatch:
+
+concurrency:
+  group: rebuild-city-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sim-tests:
+    name: 시뮬레이션 테스트 (Unity 불필요)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: 테스트 실행
+        run: |
+          set -o pipefail
+          dotnet run --project DomainTests -c Release | tee sim-test-log.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sim-test-log
+          path: sim-test-log.txt
+
+  license:
+    name: Unity 라이선스 확인
+    runs-on: ubuntu-latest
+    outputs:
+      ready: ${{ steps.check.outputs.ready }}
+    steps:
+      - id: check
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        run: |
+          if [ -n "$UNITY_LICENSE" ] && [ -n "$UNITY_EMAIL" ] && [ -n "$UNITY_PASSWORD" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::UNITY_LICENSE, UNITY_EMAIL, UNITY_PASSWORD 시크릿이 없어 Unity 빌드를 건너뜁니다. README의 '자동 빌드 켜기'를 보세요."
+          fi
+
+  build:
+    name: Unity 빌드 (${{ matrix.targetPlatform }})
+    needs: [sim-tests, license]
+    if: needs.license.outputs.ready == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - targetPlatform: Android
+            buildMethod: RebuildCity.EditorTools.BuildScript.BuildAndroid
+          - targetPlatform: StandaloneWindows64
+            buildMethod: RebuildCity.EditorTools.BuildScript.BuildWindows
+    steps:
+      - name: 디스크 공간 확보
+        run: sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /opt/hostedtoolcache/CodeQL
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: Library
+          key: Library-${{ matrix.targetPlatform }}-${{ hashFiles('Assets/**', 'Packages/**', 'ProjectSettings/**') }}
+          restore-keys: Library-${{ matrix.targetPlatform }}-
+      - uses: game-ci/unity-builder@v4
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        with:
+          targetPlatform: ${{ matrix.targetPlatform }}
+          buildMethod: ${{ matrix.buildMethod }}
+          buildName: RebuildCity
+          versioning: None
+          allowDirtyBuild: true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RebuildCity-${{ matrix.targetPlatform }}
+          path: build/${{ matrix.targetPlatform }}
