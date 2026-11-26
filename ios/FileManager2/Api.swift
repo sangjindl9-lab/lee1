@@ -25,17 +25,20 @@ enum Keychain {
         let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
                                 kSecAttrAccount as String: key, kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne]
         var out: AnyObject?
-        guard SecItemCopyMatching(q as CFDictionary, &out) == errSecSuccess, let d = out as? Data else { return nil }
+        guard SecItemCopyMatching(q as CFDictionary, &out) == errSecSuccess, let d = out as? Data else { return memory[key] }
         return String(data: d, encoding: .utf8)
     }
+    /// 키체인을 쓸 수 없는 환경(서명 없는 시뮬레이터 빌드 등)에서는 실행 중에만 메모리에 보관
+    nonisolated(unsafe) private static var memory: [String: String] = [:]
     static func set(_ value: String?, _ key: String) {
         let base: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: key]
         SecItemDelete(base as CFDictionary)
+        memory[key] = nil
         guard let v = value, let d = v.data(using: .utf8) else { return }
         var add = base
         add[kSecValueData as String] = d
         add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        SecItemAdd(add as CFDictionary, nil)
+        if SecItemAdd(add as CFDictionary, nil) != errSecSuccess { memory[key] = v }
     }
 }
 
