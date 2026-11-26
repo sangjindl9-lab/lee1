@@ -65,8 +65,15 @@ jobs:
           git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" filemanager2-ios-shots
       - uses: actions/upload-artifact@v4
         with: { name: fm2-ios, path: 'ios/out/*' }
-      - name: TestFlight 업로드 (Apple 계정 Secrets가 있을 때만)
+      - name: 앱 ID 등록·앱 레코드 확인
+        id: asc
         if: env.ASC_KEY_ID != '' && env.APPLE_TEAM_ID != ''
+        run: |
+          pip3 install --quiet --break-system-packages pyjwt cryptography 2>/dev/null || pip3 install --quiet pyjwt cryptography
+          python3 ../.github/scripts/asc.py ensure-bundle kr.eumsoft.filemanager2 "FileManager2 iOS"
+          if python3 ../.github/scripts/asc.py app kr.eumsoft.filemanager2; then echo "ready=1" >> $GITHUB_OUTPUT; fi
+      - name: TestFlight 업로드 (Apple 계정 Secrets와 앱 레코드가 있을 때만)
+        if: steps.asc.outputs.ready == '1'
         run: |
           mkdir -p ~/private_keys && echo "$ASC_KEY_P8" > ~/private_keys/AuthKey_$ASC_KEY_ID.p8
           AUTH=(-allowProvisioningUpdates -authenticationKeyPath ~/private_keys/AuthKey_$ASC_KEY_ID.p8 -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID")
