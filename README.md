@@ -8,8 +8,8 @@
 | 구분 | 상태 |
 | --- | --- |
 | 시뮬레이션 코어 (순수 C#, `Assets/Game/Sim`) | 구현, 자동 테스트 17개 통과 |
-| Unity 화면 코드 (`Assets/Game/Presentation`) | 작성 완료, **Unity에서 컴파일·실행은 아직 못 해 봄** |
-| Android APK / Windows 빌드 | **아직 없음** — Unity 라이선스 시크릿 등록 후 Actions가 빌드 |
+| Unity 화면 코드 (`Assets/Game/Presentation`) | Unity 6000.0.23f1에서 컴파일 성공, **실제 실행 화면은 아직 확인 못 함** |
+| Android APK / Windows 빌드 | Actions에서 빌드 성공(디버그 서명). [내려받기](https://github.com/sangjindl9-lab/lee1/releases/tag/rebuild-city-latest) |
 | Blender 모델·애니메이션 | 없음. 모든 3D는 코드로 만든 기본 도형 |
 
 자세한 구현 범위와 남은 일은 [Docs/STATUS.md](Docs/STATUS.md).

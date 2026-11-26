@@ -85,3 +85,30 @@ jobs:
         with:
           name: RebuildCity-${{ matrix.targetPlatform }}
           path: build/${{ matrix.targetPlatform }}
+
+  release:
+    name: APK 내려받기 링크 갱신
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: RebuildCity-Android
+          path: apk
+      - uses: actions/download-artifact@v4
+        with:
+          name: RebuildCity-StandaloneWindows64
+          path: win
+      - name: 릴리스에 올리기
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          APK=$(find apk -name '*.apk' | head -1)
+          cp "$APK" RebuildCity.apk
+          (cd win && zip -qr ../RebuildCity-Windows.zip .)
+          gh release delete rebuild-city-latest -R "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
+          gh release create rebuild-city-latest RebuildCity.apk RebuildCity-Windows.zip -R "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" --prerelease --title "Rebuild City 테스트 빌드" \
+            --notes "수직 슬라이스 테스트 빌드(디버그 서명). 커밋 $GITHUB_SHA"
