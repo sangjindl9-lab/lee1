@@ -100,7 +100,8 @@ jobs:
           chmod +x linux/RebuildCity
           mkdir -p out
           # 첫 화면이 2분 안에 안 찍히면 멈춘 것으로 보고, 기능을 하나씩 끄며 다시 실행해 원인을 찾는다
-          for FLAGS in none nogui nogui,noshadow,noaa nogui,noshadow,noaa,nosky; do
+          printf 'pcm.!default { type null }\nctl.!default { type null }\n' > ~/.asoundrc
+          for FLAGS in none nocapture noaudio nocapture,noaudio; do
             echo "=== 실행 옵션: $FLAGS ==="
             rm -f out/*.png
             xvfb-run -a -s "-screen 0 1280x720x24" ./linux/RebuildCity \

@@ -6,12 +6,16 @@ namespace RebuildCity.Presentation
     public sealed class Sfx
     {
         const int Rate = 22050;
-        readonly AudioSource wind, shots;
-        public readonly AudioClip Hammer, Click, Coin, Siren, Thud;
+        AudioSource wind, shots;
+        public AudioClip Hammer, Click, Coin, Siren, Thud;
         float hammerCooldown;
 
-        public Sfx(GameObject host)
+        readonly bool enabled;
+
+        public Sfx(GameObject host, bool on)
         {
+            enabled = on;
+            if (!on) return;
             wind = host.AddComponent<AudioSource>();
             wind.loop = true; wind.volume = 0; wind.spatialBlend = 0;
             wind.clip = Make("wind", 3f, WindSamples);
@@ -101,10 +105,11 @@ namespace RebuildCity.Presentation
             return clip;
         }
 
-        public void Play(AudioClip clip, float volume = 1f) { shots.PlayOneShot(clip, volume); }
+        public void Play(AudioClip clip, float volume = 1f) { if (enabled) shots.PlayOneShot(clip, volume); }
 
         public void Tick(float windVolume, bool hammerPulse, float hammerDistance, float dt)
         {
+            if (!enabled) return;
             wind.volume = Mathf.MoveTowards(wind.volume, Mathf.Clamp01(windVolume), dt * 0.6f);
             wind.pitch = 0.8f + wind.volume * 0.6f;
             hammerCooldown -= dt;

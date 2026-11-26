@@ -22,7 +22,8 @@ namespace RebuildCity.Presentation
             dir = directory;
             Directory.CreateDirectory(dir);
             g.Scripted = true;
-            Time.captureFramerate = 30;
+            if (!g.Flags.Contains("nocapture")) Time.captureFramerate = 30;
+            StartCoroutine(EndOfFrameTrace());
             // 촬영은 그래픽 카드 없는 서버에서 돌기 때문에 그림자·계단 현상 제거 품질을 낮춘다
             QualitySettings.vSyncCount = 0;
             QualitySettings.shadowResolution = ShadowResolution.High;
@@ -31,6 +32,15 @@ namespace RebuildCity.Presentation
             QualitySettings.antiAliasing = 2;
             QualitySettings.pixelLightCount = 3;
             StartCoroutine(Guarded());
+        }
+
+        IEnumerator EndOfFrameTrace()
+        {
+            for (int i = 0; i < 5; i++)
+            {
+                yield return new WaitForEndOfFrame();
+                Debug.Log("[rc] f" + Time.frameCount + " 프레임 끝 " + Time.realtimeSinceStartup.ToString("0.00"));
+            }
         }
 
         IEnumerator Guarded()

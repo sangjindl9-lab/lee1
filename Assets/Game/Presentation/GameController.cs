@@ -57,6 +57,13 @@ namespace RebuildCity.Presentation
         {
             Instance = this;
             Debug.Log("[rc] Awake");
+            string[] args = Environment.GetCommandLineArgs();
+            string shotsDir = null;
+            for (int i = 0; i < args.Length - 1; i++)
+            {
+                if (args[i] == "-rcshots") shotsDir = args[i + 1];
+                if (args[i] == "-rcflags") Flags = args[i + 1];
+            }
             Application.targetFrameRate = 60;
             Screen.sleepTimeout = SleepTimeout.NeverSleep;
             bool mobile = Application.isMobilePlatform;
@@ -69,7 +76,7 @@ namespace RebuildCity.Presentation
 
             cameraRig = new CameraRig();
             sky = new Sky();
-            Audio = new Sfx(gameObject);
+            Audio = new Sfx(gameObject, !Flags.Contains("noaudio"));
             hud = new Hud(this);
             Input.IsOverUi = hud.IsOver;
 
@@ -77,12 +84,7 @@ namespace RebuildCity.Presentation
             menuWorld = WorldFactory.NewGame(3);
             view = new WorldView(menuWorld);
 
-            string[] args = Environment.GetCommandLineArgs();
-            for (int i = 0; i < args.Length - 1; i++)
-            {
-                if (args[i] == "-rcshots") gameObject.AddComponent<ShotDirector>().Begin(this, args[i + 1]);
-                if (args[i] == "-rcflags") Flags = args[i + 1];
-            }
+            if (shotsDir != null) gameObject.AddComponent<ShotDirector>().Begin(this, shotsDir);
             if (Flags.Contains("noshadow")) QualitySettings.shadows = ShadowQuality.Disable;
             if (Flags.Contains("noaa")) QualitySettings.antiAliasing = 0;
             if (Flags.Contains("nosky")) { RenderSettings.skybox = null; cameraRig.Cam.clearFlags = CameraClearFlags.SolidColor; }
