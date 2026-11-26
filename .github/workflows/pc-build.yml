@@ -46,9 +46,9 @@ jobs:
           if [ -z "$ASC_KEY_ID" ] || [ -z "$APPLE_DEVID_PRIVATE_KEY" ]; then echo "::warning::Apple 서명 값이 없어 임시 서명으로 빌드합니다"; exit 0; fi
           pip3 install --quiet --break-system-packages pyjwt cryptography 2>/dev/null || pip3 install --quiet pyjwt cryptography
           python3 ../.github/scripts/apple_devid.py
-          # 공증(notarization)은 같은 API 키로
+          # 공증(notarization)은 빌드 뒤 별도 단계에서 같은 API 키로 (Apple 처리 시간이 길어도 재시도)
           mkdir -p ~/private_keys && printf '%s' "$ASC_KEY_P8" > ~/private_keys/AuthKey_$ASC_KEY_ID.p8
-          { echo "APPLE_API_ISSUER=$ASC_ISSUER_ID"; echo "APPLE_API_KEY=$ASC_KEY_ID"; echo "APPLE_API_KEY_PATH=$HOME/private_keys/AuthKey_$ASC_KEY_ID.p8"; } >> $GITHUB_ENV
+          echo "NOTARIZE=1" >> $GITHUB_ENV
           # 임시 서명("-") 대신 Developer ID로 서명
           python3 - <<'PY'
           import json; p='src-tauri/tauri.macos.conf.json'; c=json.load(open(p)); c['bundle']['macOS'].pop('signingIdentity', None); json.dump(c, open(p,'w'), ensure_ascii=False, indent=2)
@@ -68,6 +68,32 @@ jobs:
           if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then npx tauri build "${ARGS[@]}"
           else echo "::warning::업데이트 서명 키가 없어 자동 업데이트용 서명 없이 빌드합니다 (서버는 서명 없는 업데이트를 내려주지 않음)"
             npx tauri build "${ARGS[@]}" --config '{"bundle":{"createUpdaterArtifacts":false}}'; fi
+      - name: macOS 공증(notarization)·스테이플
+        if: matrix.plat == 'macos' && env.NOTARIZE == '1'
+        timeout-minutes: 240
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          DMG=$(ls src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg | head -1)
+          KEY=~/private_keys/AuthKey_$ASC_KEY_ID.p8
+          ok=0
+          for try in 1 2 3; do
+            out=$(xcrun notarytool submit "$DMG" --key "$KEY" --key-id "$ASC_KEY_ID" --issuer "$ASC_ISSUER_ID" --wait --timeout 3h --output-format json 2>&1) || true
+            echo "$out" | tail -5
+            if echo "$out" | grep -q '"status" *: *"Accepted"'; then ok=1; break; fi
+            if echo "$out" | grep -q '"status" *: *"Invalid"'; then
+              id=$(echo "$out" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()).get('id',''))" 2>/dev/null || true)
+              [ -n "$id" ] && xcrun notarytool log "$id" --key "$KEY" --key-id "$ASC_KEY_ID" --issuer "$ASC_ISSUER_ID" || true
+              break
+            fi
+            echo "공증 재시도 ($try)…"; sleep 30
+          done
+          if [ "$ok" = 1 ]; then
+            xcrun stapler staple "$DMG" && echo "공증·스테이플 완료"
+          else
+            echo "::warning::macOS 공증이 끝나지 않았습니다 — 서명된 상태로 배포합니다 (다음 빌드에서 다시 시도)"
+          fi
       - name: macOS 실행 확인 (실제로 켜 보고 화면 찍기)
         if: matrix.plat == 'macos'
         run: |
