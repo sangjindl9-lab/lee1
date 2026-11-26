@@ -99,29 +99,20 @@ jobs:
         run: |
           chmod +x linux/RebuildCity
           mkdir -p out
-          # 첫 화면이 2분 안에 안 찍히면 멈춘 것으로 보고, 기능을 하나씩 끄며 다시 실행해 원인을 찾는다
+          # 소리 장치가 없는 서버라서 빈 장치를 지정한다
           printf 'pcm.!default { type null }\nctl.!default { type null }\n' > ~/.asoundrc
-          for FLAGS in none nocapture noaudio nocapture,noaudio; do
-            echo "=== 실행 옵션: $FLAGS ==="
-            rm -f out/*.png
-            xvfb-run -a -s "-screen 0 1280x720x24" ./linux/RebuildCity \
-              -screen-fullscreen 0 -screen-width 1280 -screen-height 720 -force-glcore \
-              -logFile "$PWD/out/player-$FLAGS.log" -rcshots "$PWD/out" -rcflags "$FLAGS" &
-            PID=$!
-            for i in $(seq 1 24); do sleep 5; ls out/*.png > /dev/null 2>&1 && break; kill -0 $PID 2> /dev/null || break; done
-            if ls out/*.png > /dev/null 2>&1; then
-              for i in $(seq 1 200); do kill -0 $PID 2> /dev/null || break; sleep 5; done
-              pkill -f RebuildCity || true
-              echo "$FLAGS" > out/flags.txt
-              break
-            fi
-            pkill -f RebuildCity || true
-            pkill Xvfb || true
-            sleep 2
-            grep -E "\[rc\]|\[shots\]|Exception" "out/player-$FLAGS.log" | tail -30 || true
-          done
+          xvfb-run -a -s "-screen 0 1280x720x24" ./linux/RebuildCity \
+            -screen-fullscreen 0 -screen-width 1280 -screen-height 720 -force-glcore \
+            -logFile "$PWD/out/player.log" -rcshots "$PWD/out" &
+          PID=$!
+          # 첫 화면이 3분 안에 안 찍히면 멈춘 것으로 보고 끝낸다. 찍히면 최대 20분까지 기다린다.
+          for i in $(seq 1 36); do sleep 5; ls out/*.png > /dev/null 2>&1 && break; kill -0 $PID 2> /dev/null || break; done
+          if ls out/*.png > /dev/null 2>&1; then
+            for i in $(seq 1 240); do kill -0 $PID 2> /dev/null || break; sleep 5; done
+          fi
+          pkill -f RebuildCity || true
           ls -la out
-          cat out/player-*.log | grep -E "\[shots\]|Exception" | head -60 || true
+          grep -E "\[shots\]|\[rc\]|Exception" out/player.log | head -80 || true
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -40,6 +40,7 @@ namespace RebuildCity.EditorTools
             PlayerSettings.productName = "Rebuild City";
             PlayerSettings.bundleVersion = "0.2.0";
             PlayerSettings.colorSpace = ColorSpace.Linear;
+            PlayerSettings.runInBackground = true;
             PlayerSettings.defaultInterfaceOrientation = UIOrientation.LandscapeLeft;
             PlayerSettings.SetApplicationIdentifier(NamedBuildTarget.Android, "kr.eumsoft.rebuildcity");
             PlayerSettings.SetScriptingBackend(NamedBuildTarget.Android, ScriptingImplementation.IL2CPP);

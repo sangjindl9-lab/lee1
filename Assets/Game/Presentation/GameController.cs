@@ -34,8 +34,6 @@ namespace RebuildCity.Presentation
         public int SelectedBuilding = -1, SelectedPart = -1;
         public readonly GameInput Input = new GameInput();
         public Sfx Audio;
-        public string Flags = "";        // 진단용 실행 옵션(-rcflags)
-        int traceFrames = 6;
         public bool Scripted;            // 자동 촬영 중에는 시간과 저장을 촬영 쪽에서 다룬다
 
         WorldView view;
@@ -56,14 +54,12 @@ namespace RebuildCity.Presentation
         void Awake()
         {
             Instance = this;
-            Debug.Log("[rc] Awake");
+            // 창이 선택되어 있지 않아도 게임이 멈추지 않게 한다(화면 관리자가 없는 환경에서는 첫 프레임 뒤에 멈춘다)
+            Application.runInBackground = true;
             string[] args = Environment.GetCommandLineArgs();
             string shotsDir = null;
             for (int i = 0; i < args.Length - 1; i++)
-            {
                 if (args[i] == "-rcshots") shotsDir = args[i + 1];
-                if (args[i] == "-rcflags") Flags = args[i + 1];
-            }
             Application.targetFrameRate = 60;
             Screen.sleepTimeout = SleepTimeout.NeverSleep;
             bool mobile = Application.isMobilePlatform;
@@ -76,7 +72,7 @@ namespace RebuildCity.Presentation
 
             cameraRig = new CameraRig();
             sky = new Sky();
-            Audio = new Sfx(gameObject, !Flags.Contains("noaudio"));
+            Audio = new Sfx(gameObject, true);
             hud = new Hud(this);
             Input.IsOverUi = hud.IsOver;
 
@@ -85,9 +81,6 @@ namespace RebuildCity.Presentation
             view = new WorldView(menuWorld);
 
             if (shotsDir != null) gameObject.AddComponent<ShotDirector>().Begin(this, shotsDir);
-            if (Flags.Contains("noshadow")) QualitySettings.shadows = ShadowQuality.Disable;
-            if (Flags.Contains("noaa")) QualitySettings.antiAliasing = 0;
-            if (Flags.Contains("nosky")) { RenderSettings.skybox = null; cameraRig.Cam.clearFlags = CameraClearFlags.SolidColor; }
             Debug.Log("[rc] 시작 준비 완료 " + Time.realtimeSinceStartup.ToString("0.0") + "초");
         }
 
@@ -194,14 +187,8 @@ namespace RebuildCity.Presentation
             Sim.SetPlayerPosition(x, z, yaw);
         }
 
-        void Trace(string stage)
-        {
-            if (Scripted && traceFrames > 0) Debug.Log("[rc] f" + Time.frameCount + " " + stage + " " + Time.realtimeSinceStartup.ToString("0.00"));
-        }
-
         void Update()
         {
-            Trace("update");
             hud.UpdateScale();
             Input.UiScale = hud.Scale;
             Input.Update();
@@ -213,7 +200,6 @@ namespace RebuildCity.Presentation
                 view.Sync(menuWorld, -1, -1, sky.Night, 0, dt);
                 cameraRig.Orbit(dt);
                 Audio.Tick(0.05f, false, 0, dt);
-                Trace("update-end");
                 return;
             }
             var w = Sim.World;
@@ -285,7 +271,6 @@ namespace RebuildCity.Presentation
 
         void LateUpdate()
         {
-            Trace("late");
             if (Sim == null) return;
             cameraRig.Tick(Input, Management, player.Position, Time.deltaTime);
         }
@@ -300,13 +285,6 @@ namespace RebuildCity.Presentation
             SelectedPart = pr.PartId;
         }
 
-        void OnGUI()
-        {
-            if (Flags.Contains("nogui")) return;
-            bool repaint = Event.current.type == EventType.Repaint;
-            if (repaint) Trace("gui");
-            hud.Draw();
-            if (repaint) { Trace("gui-end"); if (traceFrames > 0) traceFrames--; }
-        }
+        void OnGUI() { hud.Draw(); }
     }
 }
