@@ -13,7 +13,7 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from ..config import get_settings
 from ..db import session_scope
-from ..models import ACTIVE, Project
+from ..models import ACTIVE, AuditLog, Project
 from ..providers.base import ProviderError
 from . import stages as S
 from .context import BudgetExceeded, Cancelled, Ctx, PipelineError
@@ -92,6 +92,7 @@ def run_project(project_id: str, queue: str = "pipeline", enqueue=None) -> str:
             release(db, p)
             return p.status
         c = Ctx(db, p, worker)
+        c.stage_count = len(STAGES)
         p.error = None
         try:
             guard = 0
@@ -144,6 +145,19 @@ def run_project(project_id: str, queue: str = "pipeline", enqueue=None) -> str:
         finally:
             release(db, p)
         return p.status
+
+
+def release_dead_locks(db) -> int:
+    """단일 프로세스(inline) 모드 전용: 서버가 새로 뜬 시점의 잠금은 모두 죽은 프로세스의 것이다.
+    만료(lock_ttl_seconds, 기본 15분)를 기다리지 않고 바로 풀어 중단된 작업을 즉시 이어서 진행하게 한다."""
+    rows = db.query(Project).filter(Project.locked_by.isnot(None)).all()
+    for p in rows:
+        p.locked_by, p.lock_expires_at = None, None
+        if p.status in ACTIVE:
+            db.add(AuditLog(user_id=p.user_id, project_id=p.id, action="recover", level="warn",
+                            message="서버가 재시작되어 중단된 작업을 이어서 진행합니다(완료된 단계·생성물은 재사용)."))
+    db.commit()
+    return len(rows)
 
 
 def stale_projects(db) -> list[str]:

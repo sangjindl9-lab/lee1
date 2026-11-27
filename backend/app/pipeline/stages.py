@@ -458,8 +458,9 @@ def narration(c: Ctx):
     pron = (c.user.settings or {}).get("pronunciation") or {}
     stt_m = c.model(plan.get("stt_model"))
     scenes = c.scenes()
-    for s in scenes:
+    for n, s in enumerate(scenes):
         c.heartbeat()
+        c.step(n, len(scenes))
         if s.audio_asset_id and s.words and s.status != "redo_audio":
             continue
         text = speech.apply_pronunciation(s.tts_text or s.narration, pron)
@@ -568,9 +569,11 @@ def images(c: Ctx):
     ref_id = (fixed.provider_ref or {}).get("higgsfield_soul_id") if fixed else None
     blocked: set[str] = set(c.data("images").get("blocked_providers") or [])
     oa_cache: dict = {}
-    for s in c.scenes():
+    all_scenes = c.scenes()
+    for n, s in enumerate(all_scenes):
         c.heartbeat()
         if s.image_asset_id and s.status != "redo":
+            c.step(n + 1, len(all_scenes))
             continue
         tried, last, step = set(), None, 0
         m = c.model(s.image_model)
@@ -625,6 +628,7 @@ def images(c: Ctx):
                 step += 1
         if last:
             raise last
+        c.step(n + 1, len(all_scenes), "이미지 생성")
     c.save_data("images", {"count": len(c.scenes()), "blocked_providers": sorted(blocked)})
 
 
@@ -636,8 +640,9 @@ def videos(c: Ctx):
     client = hf.Higgsfield(**c.cred("higgsfield")) if todo else None
     made = degraded = 0
     no_video = "잔액 부족" if "higgsfield" in (c.data("images").get("blocked_providers") or []) else None
-    for s in todo:
+    for n, s in enumerate(todo):
         c.heartbeat()
+        c.step(n, len(todo), "영상 생성" if n else None)
         if no_video:  # 영상 공급자를 쓸 수 없으면 남은 장면은 이미지 + 자체 애니메이션으로 만든다
             s.kind, s.video_model = "image", None
             c.db.commit()

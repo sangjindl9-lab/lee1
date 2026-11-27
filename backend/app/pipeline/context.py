@@ -41,6 +41,7 @@ class Ctx:
             db.commit()
         self.cfg = cfg
         self.storage = get_storage()
+        self.stage_count = 17  # 오케스트레이터가 실제 단계 수로 덮어쓴다
         self.work = os.path.abspath(os.path.join(self.s.work_dir, project.id))
         os.makedirs(self.work, exist_ok=True)
 
@@ -76,6 +77,17 @@ class Ctx:
         if self.p.locked_by == self.worker_id:
             self.p.lock_expires_at = datetime.now(timezone.utc) + timedelta(seconds=self.s.lock_ttl_seconds)
             self.db.commit()
+
+    def step(self, done: int, total: int, label: str | None = None):
+        """단계 안에서의 진행(장면 3/12 등)을 전체 진행률과 진행 기록에 반영한다.
+        단계가 끝나야만 진행률이 오르면, 장면마다 1분씩 걸리는 생성 단계에서 화면이 멈춘 것처럼 보인다."""
+        st = self.p.stage_state or {}
+        n_done = sum(1 for v in st.values() if (v or {}).get("status") == "done")
+        frac = min(max(done / total, 0.0), 0.99) if total else 0.0
+        self.p.progress = min(99, int((n_done + frac) / max(self.stage_count, 1) * 100))
+        self.db.commit()
+        if label:
+            self.log(f"{label} {done}/{total}", "info", "step", done=done, total=total)
 
     # -- 예산 ----------------------------------------------------------
     def spent_since(self, since: datetime) -> float:

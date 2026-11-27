@@ -80,6 +80,11 @@ def start_inline_ticker():
     _ticker_started = True
 
     def loop():
+        try:  # 재배포·재시작 직후: 죽은 프로세스가 쥐고 있던 잠금을 풀어 바로 복구되게 한다
+            with session_scope() as db:
+                orchestrator.release_dead_locks(db)
+        except Exception:  # noqa: BLE001
+            pass
         time.sleep(3)
         while True:
             try:
