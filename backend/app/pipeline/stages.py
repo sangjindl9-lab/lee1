@@ -11,6 +11,7 @@ from ..models import (AudioTrack, Character, CostRecord, License, ProviderReques
                       Scene, Script, Storyboard, Subtitle, YoutubeMetricSnapshot, YoutubeReference, Project,
                       ChannelAnalytics, YoutubeUpload, gset)
 from ..providers import higgsfield as hf
+from ..providers import topview as tv
 from ..providers import speech
 from ..providers.base import ProviderError, download
 from ..providers.search import ENGINES
@@ -352,7 +353,17 @@ def plan_budget(c: Ctx):
     fixed = c.db.get(Character, c.cfg.character_id) if c.cfg.character_id else None
     has_ref = bool(fixed and (fixed.provider_ref or {}).get("higgsfield_soul_id"))
     img = c.pick("image", tier, c.cfg.image_model, need="character_reference" if has_ref else None)
-    i2v = c.pick("i2v", tier, c.cfg.video_model)
+    # 사용자가 영상 모델을 여러 개 골랐으면 그 안에서만 쓴다: 중요한 장면은 가장 좋은(비싼) 모델, 나머지는 가장 싼 모델.
+    pool = []
+    for k in (c.cfg.extra or {}).get("video_models") or []:
+        pm = c.model(k)
+        if pm and pm.enabled and pm.kind == "i2v" and c.has(pm.provider) and pm not in pool:
+            pool.append(pm)
+    pool.sort(key=lambda x: x.unit_cost_usd if x.unit_cost_usd is not None else 1e9)
+    i2v = pool[0] if pool else c.pick("i2v", tier, c.cfg.video_model)
+    vmodels = {x.model_key: x for x in pool}
+    if i2v:
+        vmodels[i2v.model_key] = i2v
     tts = c.pick("tts", tier, c.cfg.tts_model, need="word_timestamps")
     stt = c.pick("stt") if tts and not (tts.capabilities or {}).get("word_timestamps") else None
     if not img:
@@ -370,7 +381,8 @@ def plan_budget(c: Ctx):
         else:  # quality·auto: 오프닝과 움직임이 중요한 장면만 영상
             s.kind = "video" if (s.idx == 0 or s.motion_need >= 2) else "image"
         if s.kind == "video":
-            s.video_model = i2v.model_key
+            lead = len(pool) > 1 and (s.idx == 0 or s.importance >= 4)
+            s.video_model = (pool[-1] if lead else i2v).model_key
     if mode != "economy" and not i2v:
         c.log("연결된 영상 생성 모델이 없어 모든 장면을 이미지+자체 애니메이션으로 제작합니다.", "warn")
 
@@ -383,9 +395,10 @@ def plan_budget(c: Ctx):
                 unpriced.add(img.display_name)
             sc_cost = cost or 0.0
             if s.kind == "video":
-                v = unit_cost(i2v, video_seconds(i2v, d))
+                vm = vmodels[s.video_model]
+                v = unit_cost(vm, video_seconds(vm, d))
                 if v is None:
-                    unpriced.add(i2v.display_name)
+                    unpriced.add(vm.display_name)
                 sc_cost += v or 0.0
             s.est_cost_usd = round(sc_cost, 4)
             total += sc_cost
@@ -417,6 +430,7 @@ def plan_budget(c: Ctx):
     c.p.estimated_cost_usd = round(c.p.actual_cost_usd + max_est, 4)
     c.db.commit()
     plan = {"mode": mode, "image_model": img.model_key, "video_model": i2v.model_key if i2v else None,
+            "video_models": sorted({s.video_model for s in scenes if s.kind == "video" and s.video_model}),
             "tts_model": tts.model_key, "stt_model": stt.model_key if stt else None,
             "video_scenes": sum(s.kind == "video" for s in scenes), "image_scenes": sum(s.kind == "image" for s in scenes),
             "generation_estimate_usd": round(gen, 4), "max_estimate_usd": max_est, "unpriced_models": unpriced,
@@ -588,6 +602,11 @@ def images(c: Ctx):
                     res = c.paid(provider="higgsfield", model=m, kind="image", scene=s, payload=body,
                                  est_cost=unit_cost(m, 1), attempt=s.attempts * 10 + step,
                                  run=_hf_run(c, hf.Higgsfield(**c.cred("higgsfield")), m, body, "image", "png", s))
+                elif m.provider == "topview":
+                    body = tv.build_body(m, prompt=prompt)
+                    res = c.paid(provider="topview", model=m, kind="image", scene=s, payload=body,
+                                 est_cost=unit_cost(m, 1), attempt=s.attempts * 10 + step,
+                                 run=_tv_run(c, tv.Topview(c.cred("topview")["api_key"]), m, body, "image", s))
                 else:
                     size = (m.default_params or {}).get("size", "1024x1536")
                     endpoint = _openai_image_endpoint(c, m, oa_cache) if m.provider == "openai" else m.endpoint
@@ -633,63 +652,130 @@ def images(c: Ctx):
 
 
 # 14. 영상 생성 ---------------------------------------------------------
+def _tv_run(c: Ctx, client: tv.Topview, m, body: dict, kind: str, s: Scene):
+    mode = (m.capabilities or {}).get("mode")
+
+    def run(key, resume_id, on_submitted):
+        tid = resume_id
+        if tid:
+            c.log(f"장면 {s.idx + 1}: 기존 요청({tid})을 이어서 조회합니다.", "info", "resume")
+        else:
+            tid = client.submit(m.endpoint, mode, body, key)
+            on_submitted(tid)
+        r = client.wait(tid, heartbeat=c.heartbeat)
+        url = r.urls[0]
+        ext = "mp4" if kind == "video" else ("jpg" if url.split("?")[0].lower().endswith((".jpg", ".jpeg")) else "png")
+        a = c.save_asset(kind, ext, data=download(url), scene=s, provider="topview", model_key=m.model_key,
+                         meta={"request_id": tid})
+        return {"asset_id": a.id, "charged_usd": r.raw.get("charged_usd")}
+    return run
+
+
+def _as_jpeg(path: str) -> bytes:
+    """참조 이미지 업로드용 JPEG 변환(알파 채널 PNG를 받지 않는 모델이 있다)."""
+    import cv2
+    img = cv2.imread(path, cv2.IMREAD_COLOR)
+    if img is None:
+        return open(path, "rb").read()
+    return cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 92])[1].tobytes()
+
+
+def _frame_url(c: Ctx, provider: str, client, img) -> str:
+    """영상 모델에 넘길 첫 프레임의 URL. 공급자마다 접근 가능한 주소가 달라 각자 업로드한다."""
+    import time as _t
+    path = c.storage.local_path(img.storage_key)
+    if provider == "higgsfield":
+        if img.provider == "higgsfield" and img.source_url:
+            return img.source_url  # Higgsfield 결과 URL(7일 유효)
+        cached = (img.meta or {}).get("hf_url")
+        if cached:
+            return cached
+        url = client.upload(open(path, "rb").read(), "image/png")
+        img.meta = {**(img.meta or {}), "hf_url": url}
+    else:
+        cached = (img.meta or {}).get("tv_url") or {}
+        if cached.get("url") and _t.time() - cached.get("at", 0) < 2400:  # 서명 URL은 1시간 → 40분만 재사용
+            return cached["url"]
+        url = client.upload(_as_jpeg(path))
+        img.meta = {**(img.meta or {}), "tv_url": {"url": url, "at": _t.time()}}
+    flag_modified(img, "meta")
+    c.db.commit()
+    return url
+
+
 def videos(c: Ctx):
     todo = [s for s in c.scenes() if s.kind == "video" and (not s.video_asset_id or s.status == "redo")]
-    if todo and not c.has("higgsfield"):
-        raise ProviderError("higgsfield", "config", "영상 생성에는 Higgsfield API 키가 필요합니다.")
-    client = hf.Higgsfield(**c.cred("higgsfield")) if todo else None
+    blocked: set[str] = set(c.data("images").get("blocked_providers") or [])
+    pool = [k for k in (c.cfg.extra or {}).get("video_models") or []]
+    clients: dict = {}
     made = degraded = 0
-    no_video = "잔액 부족" if "higgsfield" in (c.data("images").get("blocked_providers") or []) else None
+
+    def client_for(provider: str):
+        if provider not in clients:
+            cred = c.cred(provider)
+            clients[provider] = hf.Higgsfield(**cred) if provider == "higgsfield" else tv.Topview(cred["api_key"])
+        return clients[provider]
+
+    def next_model(tier: str, tried: set[str]):
+        for k in pool:  # 사용자가 고른 모델 안에서 먼저 대체
+            m = c.model(k)
+            if m and m.enabled and m.model_key not in tried and m.provider not in blocked and c.has(m.provider):
+                return m
+        from ..models import ProviderModel
+        skip = tried | {x.model_key for x in c.db.query(ProviderModel).filter(ProviderModel.provider.in_(blocked))}
+        return c.pick("i2v", tier, exclude=skip, prefer_priced=False)
+
     for n, s in enumerate(todo):
         c.heartbeat()
         c.step(n, len(todo), "영상 생성" if n else None)
-        if no_video:  # 영상 공급자를 쓸 수 없으면 남은 장면은 이미지 + 자체 애니메이션으로 만든다
-            s.kind, s.video_model = "image", None
-            c.db.commit()
-            degraded += 1
-            continue
         img = c.asset(s.image_asset_id)
-        tried, m, ok = set(), c.model(s.video_model), False
+        tried: set[str] = set()
+        m, ok = c.model(s.video_model), False
+        tier = m.tier if m else "standard"
+        if not m or m.provider in blocked or not c.has(m.provider):
+            if m:
+                tried.add(m.model_key)
+            m = next_model(tier, tried)
         while m and not ok:
             try:
-                # 입력 이미지는 공개 URL이어야 한다: Higgsfield 결과 URL(7일 유효)이 있으면 그대로, 없으면 업로드.
-                url = img.source_url if img.provider == "higgsfield" and img.source_url else None
-                if not url:
-                    url = client.upload(open(c.storage.local_path(img.storage_key), "rb").read(), "image/png")
-                    img.source_url = url
-                    c.db.commit()
+                client = client_for(m.provider)
+                url = _frame_url(c, m.provider, client, img)
                 prompt = ". ".join(x for x in [s.video_prompt or s.image_prompt, s.subject_motion,
                                                f"Camera: {s.camera_move or s.shot}" if (s.camera_move or s.shot) else None,
                                                "smooth natural motion, consistent subject, no text"] if x)
-                body = hf.build_payload(m, prompt=prompt, aspect="9:16", duration=s.duration, image_url=url,
-                                        seed=c.data("storyboard").get("seed"))
                 secs = video_seconds(m, s.duration)
-                res = c.paid(provider="higgsfield", model=m, kind="video", scene=s, payload=body,
-                             est_cost=unit_cost(m, secs), attempt=s.attempts,
-                             run=_hf_run(c, client, m, body, "video", "mp4", s))
+                if m.provider == "higgsfield":
+                    body = hf.build_payload(m, prompt=prompt, aspect="9:16", duration=s.duration, image_url=url,
+                                            seed=c.data("storyboard").get("seed"))
+                    key_payload, run = body, _hf_run(c, client, m, body, "video", "mp4", s)
+                else:
+                    body = tv.build_body(m, prompt=prompt, duration=s.duration, image_url=url)
+                    # 서명 URL은 매번 달라지므로 멱등 키에는 URL 대신 이미지 자산 ID를 쓴다.
+                    key_payload = {"prompt": prompt, "seconds": secs, "image_asset": img.id, "params": m.default_params}
+                    run = _tv_run(c, client, m, body, "video", s)
+                res = c.paid(provider=m.provider, model=m, kind="video", scene=s, payload=key_payload,
+                             est_cost=unit_cost(m, secs), attempt=s.attempts, run=run)
                 s.video_asset_id, s.video_model = res["asset_id"], m.model_key
                 c.db.commit()
                 ok, made = True, made + 1
             except ProviderError as e:
-                if e.kind == "config":
-                    raise
-                if e.kind in ("auth", "balance"):
-                    no_video = "잔액 부족" if e.kind == "balance" else "인증 오류"
-                    break
-                c.log(f"장면 {s.idx + 1} 영상 생성 실패({e.kind}, {m.display_name}): {e.message}", "warn")
+                if e.kind in ("auth", "balance", "config"):
+                    blocked.add(m.provider)  # 잔액 부족·키 문제: 이 공급자는 건너뛰고 다른 공급자로
+                    why = {"balance": "잔액 부족", "auth": "인증·권한 오류", "config": "설정 오류"}[e.kind]
+                    c.log(f"{m.provider} {why}({e.message}) → 다른 영상 모델로 전환을 시도합니다.", "warn")
+                else:
+                    c.log(f"장면 {s.idx + 1} 영상 생성 실패({e.kind}, {m.display_name}): {e.message}", "warn")
                 tried.add(m.model_key)
-                m = c.pick("i2v", m.tier, exclude=tried)
+                m = next_model(tier, tried)
         if not ok:
-            s.kind, s.video_model = "image", None  # 잔액 부족이거나 대체 모델도 실패하면 이미지+자체 애니메이션으로 내린다
+            s.kind, s.video_model = "image", None  # 쓸 수 있는 영상 모델이 없으면 이미지+자체 애니메이션으로 내린다
             c.db.commit()
             degraded += 1
-            c.log(f"장면 {s.idx + 1}: 영상 생성이 모두 실패해 이미지 애니메이션으로 대체했습니다.", "warn")
-    if no_video:
-        c.log(f"Higgsfield {no_video}(으)로 영상 장면 {degraded}개를 이미지 애니메이션으로 만들었습니다.", "warn")
+            c.log(f"장면 {s.idx + 1}: 사용할 수 있는 영상 모델이 없어 이미지 애니메이션으로 대체했습니다.", "warn")
     for s in c.scenes():
         s.status, s.redo_reason = "ready", None
     c.db.commit()
-    c.save_data("videos", {"generated": made, "degraded_to_image": degraded})
+    c.save_data("videos", {"generated": made, "degraded_to_image": degraded, "blocked_providers": sorted(blocked)})
 
 
 # 16. 배경음악 (음향 감독, 규칙 기반) -----------------------------------

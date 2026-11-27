@@ -14,7 +14,7 @@ export default function Composer({ advancedOpen = false, initialTopic = "" }: { 
   const [adv, setAdv] = useState(advancedOpen);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [f, setF] = useState<any>({ mode: "auto", language: "ko", duration: 0, max_cost_usd: "", resolution: "1080x1920", fps: 30, style: "", voice: "", image_model: "", video_model: "", tts_model: "", llm_model: "", character_id: "", allow_unpriced: false, no_music: false, sub_en: false });
+  const [f, setF] = useState<any>({ mode: "auto", language: "ko", duration: 0, max_cost_usd: "", resolution: "1080x1920", fps: 30, style: "", voice: "", image_model: "", video_model: "", video_models: [], tts_model: "", llm_model: "", character_id: "", allow_unpriced: false, no_music: false, sub_en: false });
   const models = useApi<any[]>(adv ? "/models" : null);
   const chars = useApi<any[]>(adv ? "/characters" : null);
   const voices = useApi<any>(adv ? "/voices" : null);
@@ -29,7 +29,7 @@ export default function Composer({ advancedOpen = false, initialTopic = "" }: { 
         headers: { "Idempotency-Key": crypto.randomUUID() },
         body: {
           topic, mode: f.mode, language: f.language, duration: Number(f.duration), max_cost_usd: f.max_cost_usd ? Number(f.max_cost_usd) : null,
-          options: { resolution: f.resolution, fps: Number(f.fps), style: f.style || null, voice: f.voice || null, image_model: f.image_model || null, video_model: f.video_model || null,
+          options: { resolution: f.resolution, fps: Number(f.fps), style: f.style || null, voice: f.voice || null, image_model: f.image_model || null, video_model: null, video_models: f.video_models,
             tts_model: f.tts_model || null, llm_model: f.llm_model || null, character_id: f.character_id || null, allow_unpriced: f.allow_unpriced, no_music: f.no_music,
             subtitle_languages: f.sub_en && f.language !== "en" ? ["en"] : [] },
         },
@@ -74,8 +74,25 @@ export default function Composer({ advancedOpen = false, initialTopic = "" }: { 
             <Field label="음성"><select value={f.voice} onChange={set("voice")}><option value="">AI 자동</option>{(voices.data?.voices || []).map((v: any) => <option key={v.provider + v.id} value={v.id}>{v.name} · {v.provider}</option>)}</select></Field>
             <Field label="음성 모델"><select value={f.tts_model} onChange={set("tts_model")}><option value="">AI 자동</option>{opts("tts").map((m) => <option key={m.model_key} value={m.model_key}>{m.display_name}</option>)}</select></Field>
             <Field label="이미지 모델"><select value={f.image_model} onChange={set("image_model")}><option value="">AI 자동</option>{opts("image").map((m) => <option key={m.model_key} value={m.model_key}>{m.display_name}</option>)}</select></Field>
-            <Field label="영상 모델"><select value={f.video_model} onChange={set("video_model")}><option value="">AI 자동</option>{opts("i2v").map((m) => <option key={m.model_key} value={m.model_key}>{m.display_name}</option>)}</select></Field>
             <Field label="언어 AI"><select value={f.llm_model} onChange={set("llm_model")}><option value="">AI 자동</option>{opts("llm").map((m) => <option key={m.model_key} value={m.model_key}>{m.display_name}</option>)}</select></Field>
+          </div>
+          <div className="mt-5">
+            <div className="text-sub text-[13px] mb-2">영상 모델 <span className="text-mute">여러 개 선택 가능 · 고르지 않으면 AI 자동</span></div>
+            <div className="flex flex-wrap gap-2">
+              {opts("i2v").map((m) => {
+                const on = f.video_models.includes(m.model_key);
+                return (
+                  <button key={m.model_key} type="button" aria-pressed={on}
+                    onClick={() => setF({ ...f, video_models: on ? f.video_models.filter((k: string) => k !== m.model_key) : [...f.video_models, m.model_key] })}
+                    className={cx("h-9 px-3 rounded-lg border text-[13px] transition-colors duration-150 ease-out", on ? "bg-raised border-[rgba(237,237,237,0.32)] text-ink" : "text-sub hover:bg-raised/50")}>
+                    {m.display_name}
+                    <span className="num text-mute ml-2">{m.unit_cost_usd == null ? "단가 미등록" : `$${Number(m.unit_cost_usd).toFixed(3)}/초`}</span>
+                  </button>
+                );
+              })}
+              {models.data && !opts("i2v").length && <span className="text-mute text-[13px]">연결된 영상 모델이 없습니다</span>}
+            </div>
+            {f.video_models.length > 1 && <p className="text-mute text-[12px] mt-2">첫 장면과 중요한 장면은 선택한 것 중 가장 비싼 모델로, 나머지는 가장 싼 모델로 만듭니다. 한 모델이 실패하면 선택한 다른 모델로 넘어갑니다</p>}
           </div>
           <div className="flex flex-wrap gap-x-6 gap-y-3 mt-5 text-sub">
             <label className="inline-flex items-center gap-2"><input type="checkbox" checked={f.sub_en} onChange={set("sub_en")} />영어 자막 파일 추가</label>

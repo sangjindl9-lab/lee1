@@ -41,8 +41,9 @@ def list_providers(user: User = Depends(current_user), db: Session = Depends(get
             cred = decrypt_json(r.credentials_enc) if r.credentials_enc else {}
             return {"status": r.status, "last_checked_at": r.last_checked_at.isoformat() if r.last_checked_at else None,
                     "last_error": r.last_error, "masked": {k: mask(str(v)) for k, v in cred.items()}, "meta": r.meta}
-        out.append({**c, "mine": view(mine), "shared": {"status": glob.status} if glob else None,
-                    "connected": bool(active and active.credentials_enc),
+        env = bool(registry._env_credentials(c["id"]))
+        out.append({**c, "mine": view(mine), "shared": {"status": glob.status} if glob else None, "env": env,
+                    "connected": bool(active and active.credentials_enc) or env,
                     "verified": bool(active and active.status == "ok")})
     return out
 
@@ -96,6 +97,9 @@ def run_test(provider: str, cred: dict) -> dict:
     """실제 공급자에 인증 확인 요청을 보낸다. 가능한 한 비용이 들지 않는 호출을 쓴다."""
     if provider == "higgsfield":
         return Higgsfield(**cred).test()
+    if provider == "topview":
+        from ..providers.topview import Topview
+        return Topview(cred["api_key"]).test()
     if provider in ("anthropic", "openai", "gemini"):
         models = LLM(provider, cred["api_key"], "").list_models()
         return {"ok": True, "models": models[:200]}

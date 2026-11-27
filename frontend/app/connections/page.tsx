@@ -27,13 +27,13 @@ function ProviderCard({ p, admin, onChange }: any) {
     if (r?.note) act.setError(null);
     setCred({}); onChange();
   };
-  const state = !p.implemented ? "미구현" : p.verified ? "연결 확인됨" : p.connected ? (p.mine?.status === "error" ? "연결 실패" : "키 등록됨 · 미확인") : "미연결";
+  const state = !p.implemented ? "미구현" : p.verified ? "연결 확인됨" : p.connected ? (p.mine?.status === "error" ? "연결 실패" : p.env && !p.mine && !p.shared ? "키 등록됨" : "키 등록됨 · 미확인") : "미연결";
   return (
     <Card className="!p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0"><div className="font-medium flex items-center gap-2">{p.name}{p.verified && <Check size={16} strokeWidth={1.5} className="text-ok" />}</div>
           <div className="text-mute text-[12px] mt-1">{p.kinds.map((k: string) => KIND[k] || k).join(" · ")}</div></div>
-        <span className={cx("text-[13px] whitespace-nowrap", p.verified ? "text-ok" : p.mine?.status === "error" ? "text-bad" : "text-mute")}>{state}{!p.mine && p.shared && p.connected ? " (공용 키)" : ""}</span>
+        <span className={cx("text-[13px] whitespace-nowrap", p.verified ? "text-ok" : p.mine?.status === "error" ? "text-bad" : "text-mute")}>{state}{!p.mine && p.shared && p.connected ? " (공용 키)" : ""}{!p.mine && !p.shared && p.env ? " (서버 환경변수)" : ""}</span>
       </div>
       {p.mine?.masked && <div className="num text-mute text-[12px] mt-3">{Object.values(p.mine.masked).join(" : ")} · 확인 {when(p.mine.last_checked_at)}</div>}
       {p.mine?.last_error && <div className="mt-3"><Note tone="bad">{p.mine.last_error}</Note></div>}

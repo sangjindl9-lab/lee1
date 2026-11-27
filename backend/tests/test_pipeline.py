@@ -311,3 +311,47 @@ def test_higgsfield_out_of_credits_switches_to_openai(client, world):
     assert all(b["model"] == "gpt-image-2" and b["size"] == "1024x1536" for b in world.openai_bodies)  # 계정의 실제 모델 ID로 교체
     assert [s["kind"] for s in d["scenes"]] == ["image"] * 4 and all(s["image_model"] == "openai-gpt-image-1" for s in d["scenes"])
     assert any("전환" in l["message"] for l in d["logs"]) and d["stage_data"]["videos"]["degraded_to_image"] == 1
+
+
+def test_multiple_video_models_via_topview(client, world):
+    """영상 모델을 여러 개 고르면 중요한 장면은 좋은 모델, 나머지는 싼 모델을 쓰고 실제 청구액을 기록한다."""
+    connect_all(client)
+    client.put("/api/providers/topview", json={"credentials": {"api_key": "tv-key"}})
+    assert client.post("/api/providers/topview/test").json()["ok"]
+    pid = make(client, mode="cinematic", max_cost_usd=20,
+               options={"video_models": ["tv-seedance20-mini-i2v", "tv-kling40-i2v", "tv-wan30-i2v"]})
+    assert run(pid) == "COMPLETED"
+    d = client.get(f"/api/projects/{pid}").json()
+    used = [s["video_model"] for s in d["scenes"]]
+    assert used == ["tv-kling40-i2v", "tv-seedance20-mini-i2v", "tv-seedance20-mini-i2v", "tv-kling40-i2v"]  # 중요도 5·3·3·4
+    assert world.calls["hf_video"] == 0 and world.calls["tv_upload"] == 4
+    by = {}
+    for path, body in world.tv_bodies:
+        by.setdefault(path, []).append(body)
+    k = by["kling/kling-4.0/image-to-video"][0]
+    assert set(k) == {"prompt", "image", "duration", "resolution", "aspect_ratio"} and k["aspect_ratio"] == "9:16" and 3 <= k["duration"] <= 30
+    sd = by["bytedance/seedance-2.0-mini/image-to-video"][0]
+    assert set(sd) == {"content", "duration", "resolution", "ratio", "generate_audio"} and sd["ratio"] == "adaptive"
+    assert sd["content"][1] == {"type": "image_url", "role": "first_frame", "image_url": {"url": sd["content"][1]["image_url"]["url"]}}
+    video_cost = sum(c["amount_usd"] for c in d["costs"] if c["kind"] == "video")
+    assert abs(video_cost - 2.0) < 1e-6  # 단가표가 아니라 공급자가 알려 준 청구액(0.5 × 4)
+
+
+def test_topview_out_of_balance_falls_back_to_other_provider(client, world):
+    connect_all(client)
+    client.put("/api/providers/topview", json={"credentials": {"api_key": "tv-key"}})
+    world.tv_no_balance = True
+    pid = make(client, mode="cinematic", max_cost_usd=20, options={"video_models": ["tv-wan30-i2v"]})
+    assert run(pid) == "COMPLETED"
+    d = client.get(f"/api/projects/{pid}").json()
+    assert all(s["kind"] == "video" and s["video_model"].startswith("hf-") for s in d["scenes"])  # Higgsfield 로 전환
+    assert world.calls["hf_video"] == 4
+
+
+def test_topview_key_from_environment(client, world, monkeypatch):
+    monkeypatch.setenv("TOPVIEW_API_PLATFORM_KEY", "tv-key")
+    tvp = next(p for p in client.get("/api/providers").json() if p["id"] == "topview")
+    assert tvp["connected"] and tvp["env"] and tvp["mine"] is None
+    from app.providers import registry
+    with SessionLocal() as db:
+        assert registry.credentials(db, None, "topview") == {"api_key": "tv-key"} and "topview" in registry.available_providers(db, None)

@@ -16,6 +16,9 @@ CATALOG = [
     {"id": "higgsfield", "name": "Higgsfield", "kinds": ["image", "i2v", "t2v"], "implemented": True,
      "fields": ["key_id", "key_secret"], "optional": ["key_secret"], "docs": "https://docs.higgsfield.ai",
      "help": "open.higgsfield.ai 의 API Keys 에서 발급. 웹사이트 구독 크레딧과 API 잔액은 별개이며 API는 선불 잔액에서 차감됩니다."},
+    {"id": "topview", "name": "Topview Platform", "kinds": ["image", "i2v"], "implemented": True, "fields": ["api_key"],
+     "docs": "https://platform.topview.ai/docs/quickstart",
+     "help": "platform.topview.ai 콘솔의 API keys 에서 발급(모델 생성·요청 조회 권한). 서버 환경변수 TOPVIEW_API_PLATFORM_KEY 로 넣어도 됩니다. Seedance·Kling·Wan 등 여러 영상 모델을 한 잔액으로 씁니다."},
     {"id": "anthropic", "name": "Claude (Anthropic)", "kinds": ["llm"], "implemented": True, "fields": ["api_key"],
      "docs": "https://docs.claude.com"},
     {"id": "openai", "name": "OpenAI", "kinds": ["llm", "image", "tts", "stt"], "implemented": True,
@@ -45,6 +48,7 @@ CATALOG = [
 IMPLEMENTED = {c["id"] for c in CATALOG if c["implemented"]}
 
 _HF_PRICE = "https://open.higgsfield.ai/pricing (2026-11-27 확인, 정가 기준. 계정 할인·해상도별 실제 단가는 콘솔에서 확인)"
+_TV_PRICE = "https://platform.topview.ai/pricing (2026-11-27 확인. 실제 청구액은 작업 결과의 charged_usd)"
 _RATIOS_WAN = ["16:9", "4:3", "1:1", "3:4", "9:16", "adaptive"]
 
 SEED = [
@@ -100,6 +104,40 @@ SEED = [
          capabilities={"duration": [4, 15], "end_frame": True,
                        "param_map": {"image": "image_url", "end_image": "end_image_url"}},
          notes="단가는 가격표의 정가 기준. 480p는 $0.099/초로 표시됨 — 콘솔 청구액으로 확인"),
+    # ---- Topview Platform (2026-11-27 문서·가격표 확인. 단가는 참조 영상 없는 경우의 초당 요금) ----
+    dict(provider="topview", model_key="tv-seedance25-i2v", kind="i2v", display_name="Seedance 2.5 (Topview)",
+         endpoint="bytedance/seedance-2.5", tier="premium", unit="per_second", unit_cost_usd=0.1849,
+         price_source=_TV_PRICE, schema_verified=True,
+         default_params={"resolution": "720p", "ratio": "adaptive", "generate_audio": False},
+         capabilities={"template": "seedance", "mode": "image-to-video", "duration": [4, 30], "end_frame": True},
+         notes="720p 기준 단가. 1080p 는 $0.4549/초 — default_params.resolution 과 단가를 함께 바꿀 것"),
+    dict(provider="topview", model_key="tv-seedance20-mini-i2v", kind="i2v", display_name="Seedance 2.0 Mini (Topview)",
+         endpoint="bytedance/seedance-2.0-mini", tier="economy", unit="per_second", unit_cost_usd=0.0643,
+         price_source=_TV_PRICE, schema_verified=True,
+         default_params={"resolution": "720p", "ratio": "adaptive", "generate_audio": False},
+         capabilities={"template": "seedance", "mode": "image-to-video", "duration": [4, 15], "end_frame": True}),
+    dict(provider="topview", model_key="tv-seedance20-i2v", kind="i2v", display_name="Seedance 2.0 (Topview)",
+         endpoint="bytedance/seedance-2.0", tier="standard", unit="per_second", unit_cost_usd=0.1285,
+         price_source=_TV_PRICE, schema_verified=False,
+         default_params={"resolution": "720p", "ratio": "adaptive", "generate_audio": False},
+         capabilities={"template": "seedance", "mode": "image-to-video", "duration": [4, 15], "end_frame": True},
+         notes="입력 스키마를 2.0 Mini·2.5 와 같다고 보고 등록(모델 페이지 미확인)"),
+    dict(provider="topview", model_key="tv-kling40-i2v", kind="i2v", display_name="Kling 4.0 (Topview)",
+         endpoint="kling/kling-4.0", tier="standard", unit="per_second", unit_cost_usd=0.1397,
+         price_source=_TV_PRICE, schema_verified=True, default_params={"resolution": "720P", "aspect_ratio": "9:16"},
+         capabilities={"template": "kling", "mode": "image-to-video", "duration": [3, 30], "end_frame": True},
+         notes="720P 기준 단가. 1080P 는 $0.2096/초"),
+    dict(provider="topview", model_key="tv-wan30-i2v", kind="i2v", display_name="Wan 3.0 (Topview)",
+         endpoint="alibaba/wan-3.0", tier="economy", unit="per_second", unit_cost_usd=0.0971,
+         price_source=_TV_PRICE, schema_verified=True,
+         default_params={"resolution": "1080P", "ratio": "adaptive", "audio": False},
+         capabilities={"template": "wan", "mode": "image-to-video", "duration": [2, 30], "end_frame": True},
+         notes="1080P 기준 단가. 720P 는 $0.0485/초"),
+    dict(provider="topview", model_key="tv-seedream45", kind="image", display_name="Seedream 4.5 (Topview)",
+         endpoint="bytedance/seedream-v4.5", tier="standard", unit="per_image", unit_cost_usd=None, schema_verified=True,
+         default_params={"resolution": "2K", "aspect_ratio": "9:16"},
+         capabilities={"template": "image", "max_prompt": 2000},
+         notes="가격표에서 단가를 찾지 못함. 실제 청구액(charged_usd)은 생성 후 비용 기록에 남음"),
     # ---- 언어 AI ----
     dict(provider="anthropic", model_key="claude-sonnet", kind="llm", display_name="Claude Sonnet",
          endpoint="claude-sonnet-5-5", tier="standard", unit="per_mtok", unit_cost_usd=None,
@@ -141,14 +179,24 @@ def credentials(db: Session, user_id: str | None, provider: str) -> dict | None:
         row = q.filter(ProviderConfig.user_id == user_id).first()
     row = row or q.filter(ProviderConfig.user_id.is_(None)).first()
     if not row or not row.credentials_enc:
-        return None
+        return _env_credentials(provider)
     return decrypt_json(row.credentials_enc)
+
+
+# 서버 환경변수로 넣은 키(화면에서 등록한 키가 없을 때 사용)
+ENV_KEYS = {"topview": {"api_key": "TOPVIEW_API_PLATFORM_KEY"}}
+
+
+def _env_credentials(provider: str) -> dict | None:
+    import os
+    cred = {f: os.environ.get(var, "").strip() for f, var in ENV_KEYS.get(provider, {}).items()}
+    return cred if cred and all(cred.values()) else None
 
 
 def available_providers(db: Session, user_id: str | None) -> set[str]:
     q = db.query(ProviderConfig.provider).filter(ProviderConfig.is_active.is_(True), ProviderConfig.credentials_enc != "")
     q = q.filter((ProviderConfig.user_id == user_id) | (ProviderConfig.user_id.is_(None)))
-    return {p for (p,) in q}
+    return {p for (p,) in q} | {p for p in ENV_KEYS if _env_credentials(p)}
 
 
 TIER_ORDER = {"economy": 0, "standard": 1, "premium": 2}

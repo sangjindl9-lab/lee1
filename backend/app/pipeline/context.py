@@ -201,11 +201,19 @@ class Ctx:
             self.db.commit()
             self.usage(provider, f"{kind}:{mk}", 0, kind, ok=False, ms=row.duration_ms)
             raise
-        row.status, row.response, row.billed, row.cost_usd = "completed", result, True, est_cost
+        # 공급자가 실제 청구액을 알려 주면(예: Topview charged_usd) 단가표 계산값 대신 그 금액을 기록한다.
+        charged = result.get("charged_usd") if isinstance(result, dict) else None
+        try:
+            charged = float(charged) if charged is not None else None
+        except (TypeError, ValueError):
+            charged = None
+        cost = charged if charged is not None else est_cost
+        row.status, row.response, row.billed, row.cost_usd = "completed", result, True, cost
         row.duration_ms = int((time.time() - t0) * 1000)
         self.db.commit()
         self.usage(provider, f"{kind}:{mk}", 1, kind, ms=row.duration_ms)
-        self.spend(provider, mk, kind, est_cost, request_id=row.id, note="단가표 기준 계산")
+        self.spend(provider, mk, kind, cost, request_id=row.id, estimated=charged is None,
+                   note="공급자 청구액" if charged is not None else "단가표 기준 계산")
         return result
 
     # -- 산출물 --------------------------------------------------------

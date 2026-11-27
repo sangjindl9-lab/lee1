@@ -161,3 +161,14 @@ def test_higgsfield_key_pasted_as_one_line_in_either_field(client, world):
         assert client.post("/api/providers/higgsfield/test").json()["ok"]
     r = client.put("/api/providers/higgsfield", json={"credentials": {}})
     assert r.status_code == 400 and "key_id" in r.json()["detail"] and "key_secret" not in r.json()["detail"]
+
+
+def test_topview_bodies_follow_documented_schemas(client):
+    from app.providers import topview as tv
+    with SessionLocal() as db:
+        wan = db.query(ProviderModel).filter_by(model_key="tv-wan30-i2v").one()
+        assert tv.build_body(wan, prompt="p", duration=40, image_url="u") == {
+            "input": {"prompt": "p", "media": [{"type": "first_frame", "url": "u"}]},
+            "parameters": {"duration": 30, "resolution": "1080P", "ratio": "adaptive", "audio": False}}
+        img = db.query(ProviderModel).filter_by(model_key="tv-seedream45").one()
+        assert tv.build_body(img, prompt="x" * 3000) == {"prompt": "x" * 2000, "resolution": "2K", "aspect_ratio": "9:16"}

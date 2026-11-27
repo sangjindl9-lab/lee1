@@ -54,6 +54,7 @@ class World:
         self.hf_requests = {}
         self.hf_bodies = []
         self.openai_bodies = []
+        self.tv_tasks, self.tv_bodies, self.tv_no_balance = {}, [], False
         self.idem_keys = []
         self.balance_empty = False
         self.qa_script = []  # 품질검수 응답을 순서대로 지정(없으면 통과)
@@ -190,6 +191,34 @@ def world(monkeypatch):
         mock.post(url__regex=r"https://api\.elevenlabs\.io/v1/text-to-speech/.+/with-timestamps.*").mock(side_effect=w.tts)
         mock.get("https://api.elevenlabs.io/v1/voices").mock(return_value=httpx.Response(200, json={"voices": [{"voice_id": "v1", "name": "Narrator"}]}))
         mock.get(url__regex=r"https://www\.googleapis\.com/youtube/v3/.*").mock(side_effect=w.yt)
+        TV = "https://platform-backend.topview.ai/api/v1"
+
+        def tv_submit(request):
+            assert request.headers["Authorization"] == "Bearer tv-key" and request.headers.get("Idempotency-Key")
+            path = request.url.path.split("/models/")[1].rsplit("/predictions", 1)[0]
+            if w.tv_no_balance:
+                return httpx.Response(402, json={"error": {"code": "INSUFFICIENT_BALANCE", "message": "Insufficient balance"}})
+            tid = str(uuid.uuid4())
+            w.tv_tasks[tid] = path
+            w.tv_bodies.append((path, json.loads(request.content)))
+            return httpx.Response(200, json={"code": 0, "message": "ok", "data": {"id": tid, "status": "created"}})
+
+        def tv_get(request):
+            tid = request.url.path.rsplit("/", 1)[-1]
+            path = w.tv_tasks.get(tid)
+            if not path:
+                return httpx.Response(404, json={"error": {"code": "NOT_FOUND", "message": "not found"}})
+            ext = "mp4" if "to-video" in path else "png"
+            return httpx.Response(200, json={"code": 0, "data": {"id": tid, "status": "completed", "outputs": [f"https://cdn.test/{tid}.{ext}"],
+                                                                 "charged_usd": "0.500000000000" if ext == "mp4" else "0.030000000000", "billing_state": "CAPTURED"}})
+        mock.post(url__regex=r"https://platform-backend\.topview\.ai/api/v1/models/.+/predictions").mock(side_effect=tv_submit)
+        mock.get(url__regex=r"https://platform-backend\.topview\.ai/api/v1/predictions/.+").mock(side_effect=tv_get)
+
+        def tv_upload(request):
+            w.calls["tv_upload"] = w.calls.get("tv_upload", 0) + 1
+            assert b"\xff\xd8" in request.content  # JPEG 로 변환해 올린다
+            return httpx.Response(200, json={"data": {"id": "a1", "download_url": f"https://cdn.test/up{w.calls['tv_upload']}.png"}})
+        mock.post(f"{TV}/media/files").mock(side_effect=tv_upload)
         mock.get("https://api.openai.com/v1/models").mock(return_value=httpx.Response(200, json={"data": [{"id": "gpt-image-2"}, {"id": "gpt-image-2-mini"}, {"id": "gpt-5"}]}))
 
         def oa_image(request):

@@ -78,6 +78,7 @@ class Options(BaseModel):
     llm_model: str | None = None
     image_model: str | None = None
     video_model: str | None = None
+    video_models: list[str] = []  # 여러 개를 고르면 장면 중요도에 따라 나눠 쓴다
     tts_model: str | None = None
     character_id: str | None = None
     allow_unpriced: bool = False
@@ -118,7 +119,8 @@ def _create(db: Session, user: User, body: ProjectIn, idem: str | None = None, b
         image_model=o.image_model, video_model=o.video_model, tts_model=o.tts_model, character_id=o.character_id,
         allow_unpriced=o.allow_unpriced or bool((user.settings or {}).get("allow_unpriced")),
         subtitle_style=o.subtitle_style or (user.settings or {}).get("subtitle_style") or {}, branding=brand,
-        extra={"subtitle_languages": o.subtitle_languages, "no_music": o.no_music, "speed": o.speed}))
+        extra={"subtitle_languages": o.subtitle_languages, "no_music": o.no_music, "speed": o.speed,
+               "video_models": o.video_models[:6]}))
     db.commit()
     return p
 
