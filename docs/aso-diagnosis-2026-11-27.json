@@ -1,0 +1,252 @@
+{
+  "ranAt": "2026-11-27T06:55:36.438Z",
+  "kstDate": "2026-11-27",
+  "apps": [
+    {
+      "packageId": "kr.eumsoft.viewer",
+      "label": "이음뷰어",
+      "title": "캐드 도면 뷰어 DWG·DXF·PDF - 이음뷰어",
+      "titleLength": 27,
+      "summary": "현장에서 받은 DWG·DXF 도면을 휴대폰으로 열고 치수·면적을 확인하세요. PDF도 오프라인으로 보고 편집할 수 있어요.",
+      "summaryLength": 68,
+      "descriptionLength": 1014,
+      "installs": "1+",
+      "score": null,
+      "ratings": null,
+      "reviews": null,
+      "screenshotCount": 5,
+      "version": "2.0.2",
+      "updatedTs": 1795409955000,
+      "genre": "생산성",
+      "keywords": [
+        {
+          "term": "이음뷰어",
+          "inTitle": true,
+          "titleCount": 1,
+          "inSummary": false,
+          "summaryCount": 0,
+          "inDescHead": true,
+          "descCount": 2
+        },
+        {
+          "term": "DWG 뷰어",
+          "inTitle": false,
+          "titleCount": 0,
+          "inSummary": false,
+          "summaryCount": 0,
+          "inDescHead": false,
+          "descCount": 1
+        },
+        {
+          "term": "PDF 뷰어",
+          "inTitle": false,
+          "titleCount": 0,
+          "inSummary": false,
+          "summaryCount": 0,
+          "inDescHead": false,
+          "descCount": 1
+        },
+        {
+          "term": "캐드 뷰어",
+          "inTitle": false,
+          "titleCount": 0,
+          "inSummary": false,
+          "summaryCount": 0,
+          "inDescHead": false,
+          "descCount": 0
+        },
+        {
+          "term": "도면 뷰어",
+          "inTitle": true,
+          "titleCount": 1,
+          "inSummary": false,
+          "summaryCount": 0,
+          "inDescHead": false,
+          "descCount": 1
+        },
+        {
+          "term": "DXF 뷰어",
+          "inTitle": false,
+          "titleCount": 0,
+          "inSummary": false,
+          "summaryCount": 0,
+          "inDescHead": false,
+          "descCount": 1
+        },
+        {
+          "term": "CAD 뷰어",
+          "inTitle": false,
+          "titleCount": 0,
+          "inSummary": false,
+          "summaryCount": 0,
+          "inDescHead": false,
+          "descCount": 0
+        }
+      ]
+    },
+    {
+      "packageId": "kr.eumsoft.zip",
+      "label": "이음ZIP",
+      "title": "이음ZIP - 압축 풀기·압축 해제·ZIP",
+      "titleLength": 23,
+      "summary": "ZIP·RAR·7Z 압축 풀기와 ZIP 압축을 빠르게. 비밀번호 압축 파일도 여는 압축 해제 앱",
+      "summaryLength": 53,
+      "descriptionLength": 808,
+      "installs": "10+",
+      "score": null,
+      "ratings": null,
+      "reviews": null,
+      "screenshotCount": 2,
+      "version": "1.7.2",
+      "updatedTs": 1795591644000,
+      "genre": "도구",
+      "keywords": [
+        {
+          "term": "이음ZIP",
+          "inTitle": true,
+          "titleCount": 1,
+          "inSummary": false,
+          "summaryCount": 0,
+          "inDescHead": true,
+          "descCount": 2
+        },
+        {
+          "term": "압축 풀기",
+          "inTitle": true,
+          "titleCount": 1,
+          "inSummary": true,
+          "summaryCount": 1,
+          "inDescHead": true,
+          "descCount": 2
+        },
+        {
+          "term": "ZIP 풀기",
+          "inTitle": false,
+          "titleCount": 0,
+          "inSummary": false,
+          "summaryCount": 0,
+          "inDescHead": false,
+          "descCount": 0
+        },
+        {
+          "term": "압축 해제",
+          "inTitle": true,
+          "titleCount": 1,
+          "inSummary": true,
+          "summaryCount": 1,
+          "inDescHead": true,
+          "descCount": 2
+        },
+        {
+          "term": "zip 파일 열기",
+          "inTitle": false,
+          "titleCount": 0,
+          "inSummary": false,
+          "summaryCount": 0,
+          "inDescHead": false,
+          "descCount": 0
+        },
+        {
+          "term": "알집 대체",
+          "inTitle": false,
+          "titleCount": 0,
+          "inSummary": false,
+          "summaryCount": 0,
+          "inDescHead": false,
+          "descCount": 0
+        },
+        {
+          "term": "RAR 풀기",
+          "inTitle": false,
+          "titleCount": 0,
+          "inSummary": false,
+          "summaryCount": 0,
+          "inDescHead": false,
+          "descCount": 0
+        }
+      ]
+    },
+    {
+      "packageId": "kr.eumsoft.docs",
+      "label": "이음과 문서",
+      "title": "이음과 문서 - 한글 hwp·엑셀·워드 편집",
+      "titleLength": 24,
+      "summary": "한글(hwp)·엑셀·워드·PPT 문서를 휴대폰에서 열어 보고 편집하고, 같은 형식이나 PDF로 저장합니다.",
+      "summaryLength": 59,
+      "descriptionLength": 668,
+      "installs": "1+",
+      "score": null,
+      "ratings": null,
+      "reviews": null,
+      "screenshotCount": 6,
+      "version": "1.0.8",
+      "updatedTs": 1795315018000,
+      "genre": "생산성",
+      "keywords": [
+        {
+          "term": "이음과 문서",
+          "inTitle": true,
+          "titleCount": 1,
+          "inSummary": false,
+          "summaryCount": 0,
+          "inDescHead": true,
+          "descCount": 1
+        },
+        {
+          "term": "한글 뷰어",
+          "inTitle": false,
+          "titleCount": 0,
+          "inSummary": false,
+          "summaryCount": 0,
+          "inDescHead": false,
+          "descCount": 0
+        },
+        {
+          "term": "HWP 편집",
+          "inTitle": false,
+          "titleCount": 0,
+          "inSummary": false,
+          "summaryCount": 0,
+          "inDescHead": false,
+          "descCount": 0
+        },
+        {
+          "term": "한글 문서 편집",
+          "inTitle": false,
+          "titleCount": 0,
+          "inSummary": false,
+          "summaryCount": 0,
+          "inDescHead": false,
+          "descCount": 0
+        },
+        {
+          "term": "엑셀 뷰어",
+          "inTitle": false,
+          "titleCount": 0,
+          "inSummary": false,
+          "summaryCount": 0,
+          "inDescHead": false,
+          "descCount": 0
+        },
+        {
+          "term": "문서 작성",
+          "inTitle": false,
+          "titleCount": 0,
+          "inSummary": false,
+          "summaryCount": 0,
+          "inDescHead": false,
+          "descCount": 0
+        },
+        {
+          "term": "hwp 뷰어",
+          "inTitle": false,
+          "titleCount": 0,
+          "inSummary": false,
+          "summaryCount": 0,
+          "inDescHead": false,
+          "descCount": 0
+        }
+      ]
+    }
+  ]
+}

@@ -471,8 +471,35 @@ async function loadAsoView() {
     fillAppSelects();
     const appId = Number($('aso-app').value || state.apps[0].id);
     await loadAsoKeywords(appId);
+    await loadAsoPlans(appId);
   } catch (err) {
     showToastError(err);
+  }
+}
+
+async function loadAsoPlans(appId) {
+  const box = $('aso-saved');
+  if (!box || !appId) return;
+  try {
+    const data = await api(`/api/apps/${appId}/aso-plans`);
+    const plan = (data.plans || [])[0];
+    if (!plan) {
+      box.innerHTML = '';
+      return;
+    }
+    box.innerHTML = `
+      <div class="panel">
+        <div class="panel-head">
+          <h2>저장된 ASO 개편안</h2>
+          <span class="muted small">${esc(String(plan.created_at).slice(0, 10))} 저장 · 제목 ${plan.titleLength}자 · 간단 설명 ${plan.summaryLength}자</span>
+        </div>
+        <div class="candidate" data-copy="${esc(plan.title)}"><span>${esc(plan.title)}</span><span class="len-badge ${plan.titleLength <= 30 ? '' : 'over'}">${plan.titleLength}자</span></div>
+        <div class="candidate" data-copy="${esc(plan.summary)}"><span>${esc(plan.summary)}</span><span class="len-badge ${plan.summaryLength <= 80 ? '' : 'over'}">${plan.summaryLength}자</span></div>
+        <pre class="outline">${esc(plan.description_head)}</pre>
+        ${plan.rationale ? `<p class="muted small">${esc(plan.rationale)}</p>` : ''}
+      </div>`;
+  } catch (err) {
+    box.innerHTML = '';
   }
 }
 
@@ -499,6 +526,7 @@ async function runAso() {
     const query = keywordId ? `?keywordId=${keywordId}` : '';
     const data = await api(`/api/apps/${appId}/aso${query}`);
     state.aso = data;
+    await loadAsoPlans(appId);
     renderAso(data);
   } catch (err) {
     $('aso-result').innerHTML = `<div class="panel empty">${esc(err.message)}</div>`;
@@ -1004,7 +1032,11 @@ function bindEvents() {
   $('sidebar-run-rank').addEventListener('click', () => $('btn-quick-check').click());
 
   $('aso-run').addEventListener('click', runAso);
-  $('aso-app').addEventListener('change', (event) => loadAsoKeywords(Number(event.target.value)));
+  $('aso-app').addEventListener('change', (event) => {
+    const appId = Number(event.target.value);
+    loadAsoKeywords(appId);
+    loadAsoPlans(appId);
+  });
   $('studio-form').addEventListener('submit', generateContent);
   $('studio-app').addEventListener('change', (event) => loadStudioKeywords(Number(event.target.value)));
   $('library-app').addEventListener('change', loadLibrary);

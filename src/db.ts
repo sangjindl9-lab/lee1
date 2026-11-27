@@ -59,6 +59,18 @@ export interface RankSnapshotRow {
   competitors_json: string | null;
 }
 
+export interface AsoPlanRow {
+  id: number;
+  app_id: number;
+  title: string;
+  summary: string;
+  description_head: string;
+  keywords_json: string;
+  rationale: string | null;
+  status: string;
+  created_at: string;
+}
+
 export interface DraftRow {
   id: number;
   app_id: number;
@@ -134,6 +146,17 @@ CREATE TABLE IF NOT EXISTS content_drafts (
   model TEXT,
   warning TEXT,
   status TEXT NOT NULL DEFAULT 'draft',
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS aso_plans (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  app_id INTEGER NOT NULL REFERENCES apps(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  summary TEXT NOT NULL,
+  description_head TEXT NOT NULL,
+  keywords_json TEXT NOT NULL DEFAULT '[]',
+  rationale TEXT,
+  status TEXT NOT NULL DEFAULT 'proposed',
   created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS webhook_deliveries (
@@ -476,8 +499,48 @@ export class Store {
     this.db.prepare('UPDATE content_drafts SET status = ? WHERE id = ?').run(status, id);
   }
 
+  deleteAsoPlan(id: number): void {
+    this.db.prepare('DELETE FROM aso_plans WHERE id = ?').run(id);
+  }
+
   deleteDraft(id: number): void {
     this.db.prepare('DELETE FROM content_drafts WHERE id = ?').run(id);
+  }
+
+  // ---------- ASO 개편안 ----------
+  saveAsoPlan(plan: {
+    appId: number;
+    title: string;
+    summary: string;
+    descriptionHead: string;
+    keywords: string[];
+    rationale?: string | null;
+  }): AsoPlanRow {
+    this.db
+      .prepare(
+        `INSERT INTO aso_plans (app_id, title, summary, description_head, keywords_json, rationale, status, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, 'proposed', ?)`,
+      )
+      .run(
+        plan.appId,
+        plan.title,
+        plan.summary,
+        plan.descriptionHead,
+        JSON.stringify(plan.keywords),
+        plan.rationale ?? null,
+        new Date().toISOString(),
+      );
+    return this.db.prepare('SELECT * FROM aso_plans WHERE id = last_insert_rowid()').get() as unknown as AsoPlanRow;
+  }
+
+  listAsoPlans(appId: number, limit = 20): AsoPlanRow[] {
+    return this.db
+      .prepare('SELECT * FROM aso_plans WHERE app_id = ? ORDER BY created_at DESC LIMIT ?')
+      .all(appId, limit) as unknown as AsoPlanRow[];
+  }
+
+  latestAsoPlan(appId: number): AsoPlanRow | null {
+    return (this.db.prepare('SELECT * FROM aso_plans WHERE app_id = ? ORDER BY created_at DESC LIMIT 1').get(appId) as unknown as AsoPlanRow) ?? null;
   }
 
   // ---------- webhook log ----------

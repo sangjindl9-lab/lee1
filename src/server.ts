@@ -299,6 +299,52 @@ export function createServer(overrides: Partial<AppConfig> = {}): CreatedServer 
     }),
   );
 
+  // ---------- 저장된 ASO 개편안 ----------
+  app.get('/api/apps/:id/aso-plans', (req, res) => {
+    const appRow = store.getApp(Number(req.params.id));
+    if (!appRow) return res.status(404).json({ error: '앱을 찾을 수 없습니다.' });
+    const plans = store.listAsoPlans(appRow.id).map((plan) => ({
+      ...plan,
+      keywords: JSON.parse(plan.keywords_json) as string[],
+      titleLength: Array.from(plan.title).length,
+      summaryLength: Array.from(plan.summary).length,
+    }));
+    res.json({ app: { id: appRow.id, packageId: appRow.package_id }, plans });
+  });
+
+  app.post('/api/apps/:id/aso-plans', (req, res) => {
+    const appRow = store.getApp(Number(req.params.id));
+    if (!appRow) return res.status(404).json({ error: '앱을 찾을 수 없습니다.' });
+    const title = String(req.body?.title ?? '').trim();
+    const summary = String(req.body?.summary ?? '').trim();
+    const descriptionHead = String(req.body?.descriptionHead ?? '').trim();
+    if (!title || !summary || !descriptionHead) {
+      return res.status(400).json({ error: 'title, summary, descriptionHead 는 필수입니다.' });
+    }
+    const keywords: string[] = Array.isArray(req.body?.keywords) ? req.body.keywords.map((k: unknown) => String(k)) : [];
+    const plan = store.saveAsoPlan({
+      appId: appRow.id,
+      title,
+      summary,
+      descriptionHead,
+      keywords,
+      rationale: req.body?.rationale ? String(req.body.rationale) : null,
+    });
+    return res.status(201).json({
+      plan: {
+        ...plan,
+        keywords,
+        titleLength: Array.from(title).length,
+        summaryLength: Array.from(summary).length,
+      },
+    });
+  });
+
+  app.delete('/api/aso-plans/:id', (req, res) => {
+    store.deleteAsoPlan(Number(req.params.id));
+    res.json({ ok: true });
+  });
+
   // ---------- 콘텐츠 ----------
   app.post(
     '/api/apps/:id/content',

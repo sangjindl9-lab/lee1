@@ -116,6 +116,8 @@ docker run -d --name eum-promo -p 3100:3100 \
 | POST | `/api/apps/:id/check-ranks` | 순위 즉시 점검 |
 | GET | `/api/apps/:id/rank-history?keywordId=&days=` | 차트용 이력 |
 | GET | `/api/apps/:id/aso?keywordId=` | 경쟁 분석·문구 제안 |
+| GET/POST | `/api/apps/:id/aso-plans` | 저장된 ASO 개편안 조회 / 저장(`title`, `summary`, `descriptionHead`, `keywords`, `rationale`) |
+| DELETE | `/api/aso-plans/:id` | ASO 개편안 삭제 |
 | POST | `/api/apps/:id/content` | 홍보 글 생성(`channel`, `keywordIds?`, `useAi?`, `deliver?`) |
 | GET | `/api/drafts` · `/api/drafts/:id` | 초안 목록·상세 |
 | GET | `/api/drafts/:id/download?format=html\|md` | 다운로드 |
@@ -155,6 +157,13 @@ npm test
 ### 실제 Google Play 실측
 ```bash
 npm run live-check
+```
+전체 앱 감사·ASO 진단·개편안 저장은 아래 스크립트로 실행합니다.
+```bash
+node scripts/full-audit.ts      # 개발자 페이지 전수 + 앱 정보 + 키워드 순위 + 경쟁사 상세
+node scripts/aso-diagnose.ts    # 제목·요약·설명 키워드 배치/밀도 + 전환 요소
+node scripts/apply-aso-plans.ts # ASO 개편안 저장 + 홍보 초안 생성
+node scripts/capture-screens.ts # 최종 데이터 기준 화면 캡처(읽기 전용)
 ```
 2026-11-25 실행 결과 (`docs/live-check-2026-11-25.json`):
 
@@ -206,7 +215,7 @@ eum-promo/
 │  └─ content/             템플릿 엔진, OpenAI 연동, 마크다운 변환
 ├─ public/                 대시보드 (index.html, styles.css, app.js)
 ├─ tests/                  node:test 단위·API 테스트 + 픽스처
-├─ scripts/                make-fixtures, live-check(실측), ui-check(스크린샷)
+├─ scripts/                make-fixtures, live-check(실측), ui-check(스크린샷), full-audit·aso-diagnose·apply-aso-plans(전체 감사)
 ├─ docs/                   실측 결과 JSON, 스크린샷
 ├─ Dockerfile
 └─ README.md
