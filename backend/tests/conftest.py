@@ -53,6 +53,7 @@ class World:
         self.calls = {"hf_image": 0, "hf_video": 0, "hf_status": 0, "tts": 0, "llm": {}, "tavily": 0, "yt_search": 0}
         self.hf_requests = {}
         self.hf_bodies = []
+        self.openai_bodies = []
         self.idem_keys = []
         self.balance_empty = False
         self.qa_script = []  # 품질검수 응답을 순서대로 지정(없으면 통과)
@@ -189,6 +190,13 @@ def world(monkeypatch):
         mock.post(url__regex=r"https://api\.elevenlabs\.io/v1/text-to-speech/.+/with-timestamps.*").mock(side_effect=w.tts)
         mock.get("https://api.elevenlabs.io/v1/voices").mock(return_value=httpx.Response(200, json={"voices": [{"voice_id": "v1", "name": "Narrator"}]}))
         mock.get(url__regex=r"https://www\.googleapis\.com/youtube/v3/.*").mock(side_effect=w.yt)
+        mock.get("https://api.openai.com/v1/models").mock(return_value=httpx.Response(200, json={"data": [{"id": "gpt-image-2"}, {"id": "gpt-image-2-mini"}, {"id": "gpt-5"}]}))
+
+        def oa_image(request):
+            w.calls["openai_image"] = w.calls.get("openai_image", 0) + 1
+            w.openai_bodies.append(json.loads(request.content))
+            return httpx.Response(200, json={"data": [{"b64_json": base64.b64encode(PNG).decode()}]})
+        mock.post("https://api.openai.com/v1/images/generations").mock(side_effect=oa_image)
         w.mock = mock
         yield w
 

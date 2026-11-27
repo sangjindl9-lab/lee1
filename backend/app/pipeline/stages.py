@@ -535,19 +535,48 @@ def _hf_run(c: Ctx, client: hf.Higgsfield, m, body: dict, kind: str, ext: str, s
     return run
 
 
+def _other_provider_model(c: Ctx, kind: str, tier: str, blocked: set[str]):
+    """잔액 부족·인증 오류가 난 공급자를 빼고, 연결된 다른 공급자의 모델을 고른다."""
+    from ..models import ProviderModel
+    skip = {m.model_key for m in c.db.query(ProviderModel).filter(ProviderModel.provider.in_(blocked))}
+    return c.pick(kind, tier, exclude=skip, prefer_priced=False)
+
+
+def _openai_image_endpoint(c: Ctx, m, cache: dict) -> str:
+    """등록된 모델 ID가 계정에 없으면, 계정의 모델 목록에서 최신 GPT 이미지 모델로 바꿔 쓴다."""
+    if "ids" not in cache:
+        try:
+            from ..providers.llm import LLM
+            cache["ids"] = LLM("openai", c.cred("openai")["api_key"], "").list_models()
+        except ProviderError:
+            cache["ids"] = []
+    ids = cache["ids"]
+    if not ids or m.endpoint in ids:
+        return m.endpoint
+    cands = sorted(i for i in ids if i.startswith("gpt-image") and "mini" not in i) or sorted(i for i in ids if i.startswith("gpt-image"))
+    if not cands:
+        return m.endpoint
+    c.log(f"OpenAI 이미지 모델 ID를 계정에서 쓸 수 있는 {cands[-1]} 로 바꿉니다(기존 {m.endpoint}).", "warn")
+    m.endpoint = cands[-1]
+    c.db.commit()
+    return m.endpoint
+
+
 def images(c: Ctx):
     board, seed = latest_board(c), c.data("storyboard").get("seed")
     fixed = c.db.get(Character, c.cfg.character_id) if c.cfg.character_id else None
     ref_id = (fixed.provider_ref or {}).get("higgsfield_soul_id") if fixed else None
+    blocked: set[str] = set(c.data("images").get("blocked_providers") or [])
+    oa_cache: dict = {}
     for s in c.scenes():
         c.heartbeat()
         if s.image_asset_id and s.status != "redo":
             continue
-        tried, last = set(), None
+        tried, last, step = set(), None, 0
         m = c.model(s.image_model)
-        for step in range(3):  # 원 프롬프트 → 단순화 프롬프트 → 대체 모델
-            if not m:
-                break
+        if m and m.provider in blocked:
+            m = _other_provider_model(c, "image", m.tier, blocked) or m
+        while m and step < 3:  # 원 프롬프트 → 단순화 프롬프트 → 대체 모델
             prompt = image_prompt(c, s, board, simple=step == 1)
             try:
                 if m.provider == "higgsfield":
@@ -558,10 +587,11 @@ def images(c: Ctx):
                                  run=_hf_run(c, hf.Higgsfield(**c.cred("higgsfield")), m, body, "image", "png", s))
                 else:
                     size = (m.default_params or {}).get("size", "1024x1536")
-                    body = {"prompt": prompt, "size": size}
+                    endpoint = _openai_image_endpoint(c, m, oa_cache) if m.provider == "openai" else m.endpoint
+                    body = {"prompt": prompt, "size": size, "model": endpoint}
 
-                    def run(_k, _r, _o, m=m, prompt=prompt, size=size, s=s):
-                        r = speech.OpenAIImage(c.cred(m.provider)["api_key"]).generate(m.endpoint, prompt, size)
+                    def run(_k, _r, _o, m=m, prompt=prompt, size=size, s=s, endpoint=endpoint):
+                        r = speech.OpenAIImage(c.cred(m.provider)["api_key"]).generate(endpoint, prompt, size)
                         data = r.data or download(r.urls[0])
                         a = c.save_asset("image", "png", data=data, scene=s, provider=m.provider, model_key=m.model_key)
                         return {"asset_id": a.id}
@@ -575,15 +605,27 @@ def images(c: Ctx):
                 break
             except ProviderError as e:
                 last = e
-                if e.kind in ("auth", "balance", "config"):
+                if e.kind == "config":
                     raise
+                if e.kind in ("auth", "balance"):
+                    # 이 공급자는 지금 쓸 수 없다 → 연결된 다른 공급자로 전환(없으면 실패 처리)
+                    blocked.add(m.provider)
+                    alt = _other_provider_model(c, "image", m.tier, blocked)
+                    if not alt:
+                        raise
+                    why = "잔액 부족" if e.kind == "balance" else "인증 오류"
+                    c.log(f"{m.provider} {why} → {alt.display_name}(으)로 전환해 이미지를 만듭니다.", "warn")
+                    c.save_data("images", {**c.data("images"), "blocked_providers": sorted(blocked)})
+                    m = alt
+                    continue
                 c.log(f"장면 {s.idx + 1} 이미지 생성 실패({e.kind}): {e.message}", "warn")
                 if step == 1:
                     tried.add(m.model_key)
                     m = c.pick("image", m.tier, exclude=tried)
+                step += 1
         if last:
             raise last
-    c.save_data("images", {"count": len(c.scenes())})
+    c.save_data("images", {"count": len(c.scenes()), "blocked_providers": sorted(blocked)})
 
 
 # 14. 영상 생성 ---------------------------------------------------------
@@ -593,8 +635,14 @@ def videos(c: Ctx):
         raise ProviderError("higgsfield", "config", "영상 생성에는 Higgsfield API 키가 필요합니다.")
     client = hf.Higgsfield(**c.cred("higgsfield")) if todo else None
     made = degraded = 0
+    no_video = "잔액 부족" if "higgsfield" in (c.data("images").get("blocked_providers") or []) else None
     for s in todo:
         c.heartbeat()
+        if no_video:  # 영상 공급자를 쓸 수 없으면 남은 장면은 이미지 + 자체 애니메이션으로 만든다
+            s.kind, s.video_model = "image", None
+            c.db.commit()
+            degraded += 1
+            continue
         img = c.asset(s.image_asset_id)
         tried, m, ok = set(), c.model(s.video_model), False
         while m and not ok:
@@ -618,16 +666,21 @@ def videos(c: Ctx):
                 c.db.commit()
                 ok, made = True, made + 1
             except ProviderError as e:
-                if e.kind in ("auth", "balance", "config"):
+                if e.kind == "config":
                     raise
+                if e.kind in ("auth", "balance"):
+                    no_video = "잔액 부족" if e.kind == "balance" else "인증 오류"
+                    break
                 c.log(f"장면 {s.idx + 1} 영상 생성 실패({e.kind}, {m.display_name}): {e.message}", "warn")
                 tried.add(m.model_key)
                 m = c.pick("i2v", m.tier, exclude=tried)
         if not ok:
-            s.kind, s.video_model = "image", None  # 대체 모델도 실패하면 이미지+자체 애니메이션으로 내린다
+            s.kind, s.video_model = "image", None  # 잔액 부족이거나 대체 모델도 실패하면 이미지+자체 애니메이션으로 내린다
             c.db.commit()
             degraded += 1
             c.log(f"장면 {s.idx + 1}: 영상 생성이 모두 실패해 이미지 애니메이션으로 대체했습니다.", "warn")
+    if no_video:
+        c.log(f"Higgsfield {no_video}(으)로 영상 장면 {degraded}개를 이미지 애니메이션으로 만들었습니다.", "warn")
     for s in c.scenes():
         s.status, s.redo_reason = "ready", None
     c.db.commit()

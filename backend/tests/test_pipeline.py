@@ -297,3 +297,17 @@ def test_render_stages_are_handed_to_render_queue(client, world):
         assert orchestrator.queue_for(p) == "render"
     assert orchestrator.run_project(pid, "render", lambda p, q: handoffs.append((p, q))) == "COMPLETED"
     assert len(handoffs) == 1
+
+
+def test_higgsfield_out_of_credits_switches_to_openai(client, world):
+    """Higgsfield 잔액이 없으면 OpenAI 이미지로 전환하고, 영상 장면은 이미지 애니메이션으로 만들어 끝까지 완성한다."""
+    connect_all(client)
+    client.put("/api/providers/openai", json={"credentials": {"api_key": "sk-openai-test"}})
+    world.balance_empty = True
+    pid = make(client)  # quality 모드: 원래는 첫 장면이 영상
+    assert run(pid) == "COMPLETED"
+    d = client.get(f"/api/projects/{pid}").json()
+    assert world.calls["hf_image"] == 0 and world.calls["hf_video"] == 0 and world.calls["openai_image"] == 4
+    assert all(b["model"] == "gpt-image-2" and b["size"] == "1024x1536" for b in world.openai_bodies)  # 계정의 실제 모델 ID로 교체
+    assert [s["kind"] for s in d["scenes"]] == ["image"] * 4 and all(s["image_model"] == "openai-gpt-image-1" for s in d["scenes"])
+    assert any("전환" in l["message"] for l in d["logs"]) and d["stage_data"]["videos"]["degraded_to_image"] == 1
