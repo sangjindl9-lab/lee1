@@ -354,18 +354,20 @@ export async function buildShort(
 
   const bgmIndex = sceneFiles.length;
   filters.push(
-    `[${bgmIndex}:a]volume=${voiceInputs.length ? 0.42 : 0.7},atrim=0:${total.toFixed(2)},asetpts=N/SR/TB[bgm]`,
+    `[${bgmIndex}:a]aformat=sample_rates=44100:channel_layouts=stereo,volume=${voiceInputs.length ? 0.42 : 0.7},atrim=0:${total.toFixed(2)},asetpts=N/SR/TB[bgm]`,
   );
   const mixLabels = ['[bgm]'];
   voiceInputs.forEach((voice, idx) => {
     const inputIdx = bgmIndex + 1 + idx;
     const ms = Math.round(voice.start * 1000);
-    filters.push(`[${inputIdx}:a]adelay=${ms}|${ms},volume=1.0[vc${idx}]`);
+    filters.push(
+      `[${inputIdx}:a]aformat=sample_rates=44100:channel_layouts=stereo,adelay=${ms}|${ms},volume=1.0[vc${idx}]`,
+    );
     mixLabels.push(`[vc${idx}]`);
   });
   if (voiceInputs.length > 0) {
     filters.push(
-      `${mixLabels.join('')}amix=inputs=${mixLabels.length}:normalize=0:duration=first,alimiter=limit=0.92,afade=t=out:st=${Math.max(0, total - 1.3).toFixed(2)}:d=1.3[aout]`,
+      `${mixLabels.join('')}amix=inputs=${mixLabels.length}:normalize=0:duration=first,aformat=sample_rates=44100:channel_layouts=stereo,alimiter=limit=0.92,afade=t=out:st=${Math.max(0, total - 1.3).toFixed(2)}:d=1.3[aout]`,
     );
   } else {
     filters.push(`[bgm]alimiter=limit=0.92,afade=t=out:st=${Math.max(0, total - 1.3).toFixed(2)}:d=1.3[aout]`);
