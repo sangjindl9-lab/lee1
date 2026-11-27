@@ -1321,6 +1321,16 @@ function bindEvents() {
   $('shorts-form').addEventListener('submit', startShort);
   $('shorts-refresh').addEventListener('click', () => loadShortsView());
   $('providers-form').addEventListener('submit', saveProviders);
+  $('shorts-key-clear').addEventListener('click', async () => {
+    if (!confirm('저장된 영상·TTS API 키를 삭제할까요? (내장 엔진으로 동작합니다)')) return;
+    try {
+      await api('/api/settings', { method: 'PUT', body: { shorts_video_api_key: '', shorts_tts_api_key: '' } });
+      toast('저장된 AI 키를 삭제했습니다.');
+      await loadSettingsView();
+    } catch (err) {
+      showToastError(err);
+    }
+  });
   $('shorts-video-provider').addEventListener('change', () => {
     const list = state.shortProviders?.videoProviders || [];
     const found = list.find((p) => p.id === $('shorts-video-provider').value);

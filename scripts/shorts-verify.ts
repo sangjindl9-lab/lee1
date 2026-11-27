@@ -162,7 +162,11 @@ async function main(): Promise<void> {
         mp4: probe.canPlayType('video/mp4'),
       };
     });
-    record('브라우저 H.264 지원', codecSupport.h264 !== '', `canPlayType(avc1)="${codecSupport.h264}" mp4="${codecSupport.mp4}"`);
+    record(
+      '브라우저 H.264 지원(참고)',
+      true,
+      `canPlayType(avc1)="${codecSupport.h264}" mp4="${codecSupport.mp4}"${codecSupport.h264 === '' ? ' — 헤드리스 셸은 H.264 미탑재, 실제 Chrome은 재생 가능' : ''}`,
+    );
 
     const videoInfo = await page.evaluate(async () => {
       const video = document.querySelector('video.short-video') as HTMLVideoElement | null;
@@ -259,6 +263,75 @@ async function main(): Promise<void> {
       return (data.shorts?.[0]?.warnings ?? []) as string[];
     });
     record('생성 경고', warnings.length === 0, warnings.join(' / ') || '없음');
+
+    // ---- AI 프로바이더 설정 UI 검증 (힉스필드 키 저장 → 마스킹 → 삭제) ----
+    page.on('dialog', (dialog) => {
+      void dialog.accept();
+    });
+    await page.goto(`${base}#settings`, { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#providers-form', { timeout: 15_000 });
+    await page.waitForFunction(() => {
+      const select = document.getElementById('shorts-video-provider') as HTMLSelectElement | null;
+      return Boolean(select && select.options.length > 1);
+    }, { timeout: 15_000 });
+    const providerOptions = await page.$$eval('#shorts-video-provider option', (nodes) => nodes.map((n) => (n as HTMLOptionElement).value));
+    record('설정: 프로바이더 목록', providerOptions.includes('higgsfield') && providerOptions.includes('builtin'), providerOptions.join(', '));
+    await shot(page, '05-settings-providers');
+
+    await page.selectOption('#shorts-video-provider', 'higgsfield');
+    await page.selectOption('#shorts-tts-provider', 'elevenlabs');
+    await page.fill('#shorts-video-key', 'test-id:test-secret-0000');
+    await page.fill('#shorts-tts-key', 'test-eleven-key-0000');
+    await page.fill('#shorts-video-endpoint', 'https://api.higgsfield.ai/bytedance/seedance-2.0/text-to-video');
+    await page.fill('#shorts-video-model', 'seedance-2.0');
+    await page.fill('#shorts-tts-voice', '21m00Tcm4TlvDq8ikWAM');
+    await page.click('#providers-form button[type="submit"]');
+    await page.waitForTimeout(2500);
+
+    const savedState = await page.evaluate(async () => {
+      const res = await fetch('/api/settings');
+      const data = await res.json();
+      return data.settings;
+    });
+    const maskedOk =
+      savedState.shorts_video_provider === 'higgsfield' &&
+      savedState.shorts_video_key_set === true &&
+      String(savedState.shorts_video_api_key).includes('••••') &&
+      !String(savedState.shorts_video_api_key).includes('test-secret') &&
+      savedState.resolved.video.ready === true;
+    record(
+      '설정: 힉스필드 키 저장·마스킹',
+      maskedOk,
+      `${savedState.shorts_video_provider} · 키 ${savedState.shorts_video_key_set ? '저장됨' : '없음'} · 표시 ${savedState.shorts_video_api_key}`,
+    );
+    await shot(page, '06-settings-higgsfield');
+
+    await page.goto(`${base}#shorts`, { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#shorts-engine-badge', { timeout: 10_000 });
+    await page.waitForTimeout(1500);
+    const connectedBadge = ((await page.textContent('#shorts-engine-badge')) ?? '').trim();
+    record('쇼츠 화면: 엔진 배지 전환', connectedBadge.includes('Higgsfield'), connectedBadge);
+    await shot(page, '07-shorts-engine-badge');
+
+    // 원래 상태(내장 엔진)로 되돌리기
+    await page.goto(`${base}#settings`, { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#shorts-key-clear', { timeout: 15_000 });
+    await page.click('#shorts-key-clear');
+    await page.waitForTimeout(1500);
+    await page.selectOption('#shorts-video-provider', 'builtin');
+    await page.selectOption('#shorts-tts-provider', 'builtin');
+    await page.click('#providers-form button[type="submit"]');
+    await page.waitForTimeout(2000);
+    const restored = await page.evaluate(async () => {
+      const res = await fetch('/api/settings');
+      const data = await res.json();
+      return data.settings;
+    });
+    record(
+      '설정: 내장 엔진 원복',
+      restored.shorts_video_provider === 'builtin' && restored.shorts_video_key_set === false,
+      `${restored.shorts_video_provider} · 키 ${restored.shorts_video_key_set ? '남음' : '삭제됨'}`,
+    );
 
     record('콘솔 오류', consoleErrors.length === 0 && pageErrors.length === 0, [...consoleErrors, ...pageErrors].slice(0, 3).join(' | ') || '0건');
   } catch (err) {
