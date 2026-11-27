@@ -62,7 +62,9 @@ def save_provider(provider: str, body: CredIn, user: User = Depends(current_user
     if body.scope == "global" and user.role != "admin":
         raise HTTPException(403, "공용 키는 관리자만 등록할 수 있습니다.")
     cred = {k: str(v).strip() for k, v in body.credentials.items() if k in cat["fields"] and str(v).strip()}
-    if set(cat["fields"]) - set(cred):
+    if provider == "higgsfield" and ":" in cred.get("key_id", "") and "key_secret" not in cred:
+        cred["key_id"], cred["key_secret"] = cred["key_id"].split(":", 1)  # "ID:SECRET" 를 한 칸에 붙여 넣은 경우
+    if set(cat["fields"]) - set(cred) - set(cat.get("optional", [])):
         raise HTTPException(400, f"필수 입력: {', '.join(cat['fields'])}")
     row = _row(db, user, provider, body.scope)
     if not row:

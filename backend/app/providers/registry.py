@@ -14,7 +14,7 @@ from .base import ProviderError
 # id, 이름, 용도, 입력 필드, 구현 여부
 CATALOG = [
     {"id": "higgsfield", "name": "Higgsfield", "kinds": ["image", "i2v", "t2v"], "implemented": True,
-     "fields": ["key_id", "key_secret"], "docs": "https://docs.higgsfield.ai",
+     "fields": ["key_id", "key_secret"], "optional": ["key_secret"], "docs": "https://docs.higgsfield.ai",
      "help": "open.higgsfield.ai 의 API Keys 에서 발급. 웹사이트 구독 크레딧과 API 잔액은 별개이며 API는 선불 잔액에서 차감됩니다."},
     {"id": "anthropic", "name": "Claude (Anthropic)", "kinds": ["llm"], "implemented": True, "fields": ["api_key"],
      "docs": "https://docs.claude.com"},
