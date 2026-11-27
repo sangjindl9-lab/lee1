@@ -112,6 +112,9 @@ def test_higgsfield_payload_follows_registry(client):
         body = hf.build_payload(wan, prompt="p", aspect="9:16", duration=41.2, image_url="https://x/i.png", end_image_url="https://x/e.png", seed=7)
         assert body == {"resolution": "1080p", "generate_audio": False, "prompt": "p", "aspect_ratio": "9:16", "duration": 30,
                         "image_url": "https://x/i.png", "end_image_url": "https://x/e.png", "seed": 7}
+        sd = db.query(ProviderModel).filter_by(model_key="hf-seedance25-i2v").one()
+        assert hf.build_payload(sd, prompt="p", aspect="9:16", duration=2.2, image_url="u", seed=7) == {
+            "resolution": "1080p", "generate_audio": False, "prompt": "p", "duration": 4, "image_url": "u"}
         kl = db.query(ProviderModel).filter_by(model_key="hf-kling3-std-i2v").one()
         assert hf.build_payload(kl, prompt="p", duration=1.0, image_url="u", end_image_url="e") == {
             "sound": "off", "prompt": "p", "duration": 3, "image_url": "u", "last_image_url": "e"}
