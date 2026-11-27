@@ -73,10 +73,10 @@ async function sessionFromToken(token) {
   if (!token || token.length < 20) return null;
   const row = await one(`
     SELECT s.id AS session_id, d.id AS device_id, d.kind, d.name AS device_name, d.revoked,
-           u.id AS user_id, u.email, u.name, u.email_verified, u.deleted_at
+           u.id AS user_id, u.email, u.name, u.email_verified, u.deleted_at, u.suspended_at
     FROM device_sessions s JOIN devices d ON d.id = s.device_id JOIN users u ON u.id = d.user_id
     WHERE s.token_hash = $1 AND s.revoked = FALSE AND s.expires_at > now()`, [sha(token)]);
-  if (!row || row.revoked || row.deleted_at) return null;
+  if (!row || row.revoked || row.deleted_at || row.suspended_at) return null;
   return row;
 }
 
@@ -135,6 +135,7 @@ app.post('/api/auth/login', limit(20, 600e3), wrap(async (req, res) => {
     }
     return res.status(401).json({ error: 'bad_credentials', message: '이메일 또는 비밀번호가 올바르지 않습니다' });
   }
+  if (u.suspended_at) return res.status(403).json({ error: 'suspended', message: '이용이 정지된 계정입니다. 고객센터(pm999@naver.com)로 문의해 주세요' });
   if (!u.email_verified) return res.status(403).json({ error: 'not_verified', message: '이메일 인증이 필요합니다' });
   const d = device || {};
   const kind = d.kind === 'pc' ? 'pc' : d.kind === 'android' ? 'android' : null;
@@ -488,6 +489,54 @@ app.get('/api/admin/stats', adminOnly, wrap(async (req, res) => {
 app.post('/api/admin/notices', adminOnly, wrap(async (req, res) => {
   const n = await one('INSERT INTO notices(title, body) VALUES ($1,$2) RETURNING *', [String(req.body?.title || ''), String(req.body?.body || '')]);
   res.json(n);
+}));
+// ---- 회원 관리 (비밀번호는 해시라 볼 수 없음 → 임시 비밀번호 발급) ----
+app.get('/api/admin/users', adminOnly, wrap(async (req, res) => {
+  const term = String(req.query.q || '').trim().toLowerCase().slice(0, 100);
+  const page = Math.max(0, parseInt(req.query.page, 10) || 0), size = 50;
+  const where = term ? `AND (lower(u.email) LIKE $1 OR lower(u.name) LIKE $1)` : '';
+  const args = term ? ['%' + term.replace(/[%_\\]/g, (c) => '\\' + c) + '%'] : [];
+  const rows = await q(`SELECT u.id, u.email, u.name, u.email_verified, u.created_at, u.suspended_at, u.locked_until,
+      (SELECT max(last_seen) FROM devices d WHERE d.user_id=u.id) AS last_seen,
+      (SELECT count(*)::int FROM devices d WHERE d.user_id=u.id AND d.kind='android' AND NOT d.revoked) AS phones,
+      (SELECT count(*)::int FROM devices d WHERE d.user_id=u.id AND d.kind='pc' AND NOT d.revoked) AS pcs,
+      (SELECT count(*)::int FROM cloud_connections c WHERE c.user_id=u.id) AS clouds
+    FROM users u WHERE u.deleted_at IS NULL ${where} ORDER BY u.created_at DESC LIMIT ${size + 1} OFFSET ${page * size}`, args);
+  res.json({ items: rows.slice(0, size), more: rows.length > size, page });
+}));
+async function revokeUserSessions(userId) {
+  await q(`UPDATE device_sessions SET revoked=TRUE WHERE device_id IN (SELECT id FROM devices WHERE user_id=$1)`, [userId]);
+  for (const d of await q('SELECT id FROM devices WHERE user_id=$1', [userId])) kick(d.id);
+}
+app.post('/api/admin/users/:id/temp-password', adminOnly, wrap(async (req, res) => {
+  const u = await one('SELECT id, email FROM users WHERE id=$1 AND deleted_at IS NULL', [req.params.id]);
+  if (!u) return res.status(404).json({ error: 'not_found' });
+  const abc = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+  const temp = Array.from({ length: 12 }, () => abc[crypto.randomInt(abc.length)]).join('');
+  await q('UPDATE users SET pw_hash=$1, failed_logins=0, locked_until=NULL WHERE id=$2', [await bcrypt.hash(temp, 11), u.id]);
+  await revokeUserSessions(u.id);
+  await log(u.id, null, 'admin_temp_password', req.admin.username, ipOf(req));
+  res.json({ email: u.email, tempPassword: temp });
+}));
+app.post('/api/admin/users/:id/suspend', adminOnly, wrap(async (req, res) => {
+  const on = !!req.body?.on;
+  const u = await one(`UPDATE users SET suspended_at=${on ? 'now()' : 'NULL'} WHERE id=$1 AND deleted_at IS NULL RETURNING id`, [req.params.id]);
+  if (!u) return res.status(404).json({ error: 'not_found' });
+  if (on) await revokeUserSessions(u.id);
+  await log(u.id, null, on ? 'admin_suspend' : 'admin_unsuspend', req.admin.username, ipOf(req));
+  res.json({ ok: true });
+}));
+app.post('/api/admin/users/:id/unlock', adminOnly, wrap(async (req, res) => {
+  await q('UPDATE users SET failed_logins=0, locked_until=NULL WHERE id=$1', [req.params.id]);
+  res.json({ ok: true });
+}));
+app.post('/api/admin/users/:id/delete', adminOnly, wrap(async (req, res) => {
+  const u = await one('SELECT id, email FROM users WHERE id=$1 AND deleted_at IS NULL', [req.params.id]);
+  if (!u) return res.status(404).json({ error: 'not_found' });
+  if (String(req.body?.confirmEmail || '').trim().toLowerCase() !== u.email) return res.status(400).json({ error: 'confirm', message: '확인용 이메일이 일치하지 않습니다' });
+  await log(null, null, 'admin_delete_user', req.admin.username, ipOf(req));
+  await deleteUser(u.id);
+  res.json({ ok: true });
 }));
 app.get('/api/notices', wrap(async (req, res) => res.json(await q('SELECT id, title, body, created_at FROM notices ORDER BY created_at DESC LIMIT 20'))));
 

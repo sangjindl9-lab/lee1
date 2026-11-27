@@ -9,6 +9,10 @@
 <div id="bar" class="hide" style="display:flex;gap:8px;justify-content:flex-end;margin-bottom:10px"><span id="who" style="align-self:center;color:var(--sub)"></span><button class="btn" id="pwBtn">비밀번호 변경</button><button class="btn" id="out">로그아웃</button></div>
 <div id="pwBox" class="card hide" style="margin-bottom:16px"><h3>비밀번호 변경</h3><input id="p0" type="password" autocomplete="current-password" placeholder="현재 비밀번호"><input id="p1" type="password" autocomplete="new-password" placeholder="새 비밀번호 (10자 이상)" style="margin-top:8px"><input id="p2" type="password" autocomplete="new-password" placeholder="새 비밀번호 확인" style="margin-top:8px"><div class="btns" style="margin-top:8px"><button class="btn pri" id="pwGo">변경</button></div><p id="pwMsg"></p></div>
 <div id="dash" class="hide"></div>
+<div id="userBox" class="card hide" style="margin-top:16px"><h3>회원</h3>
+<p style="color:var(--sub);font-size:13px">비밀번호는 되돌릴 수 없는 암호(해시)로만 저장돼 관리자도 볼 수 없습니다. 비밀번호를 잊은 회원에게는 임시 비밀번호를 발급해 알려 주세요(발급하면 그 회원의 모든 기기가 로그아웃됩니다).</p>
+<div style="display:flex;gap:8px"><input id="uq" placeholder="이메일·이름 검색" style="flex:1"><button class="btn" id="uqGo">검색</button></div>
+<div id="ulist" style="margin-top:10px;overflow-x:auto"></div><div class="btns" style="margin-top:8px"><button class="btn hide" id="uprev">이전</button><button class="btn hide" id="unext">다음</button></div></div>
 <div id="noticeBox" class="card hide" style="margin-top:16px"><h3>공지 등록</h3><input id="nt" placeholder="제목"><textarea id="nb" rows="3" placeholder="내용" style="margin-top:8px"></textarea><div class="btns" style="margin-top:8px"><button class="btn pri" id="np">등록</button></div></div>
 </main>
 <script src="/site.js"></script><script>
@@ -16,7 +20,7 @@ sessionStorage.removeItem("fm2adm");
 const H={"Content-Type":"application/json","X-FM2-Admin":"1"};
 const api=(p,b)=>fetch(p,b?{method:"POST",headers:H,body:JSON.stringify(b),credentials:"same-origin"}:{credentials:"same-origin"});
 const esc=x=>String(x??"").replace(/[<>&"]/g,"");
-function show(on){loginBox.classList.toggle("hide",on);[bar,dash,noticeBox].forEach(e=>e.classList.toggle("hide",!on));bar.style.display=on?"flex":"none";if(!on)pwBox.classList.add("hide");}
+function show(on){loginBox.classList.toggle("hide",on);[bar,dash,noticeBox,userBox].forEach(e=>e.classList.toggle("hide",!on));bar.style.display=on?"flex":"none";if(!on)pwBox.classList.add("hide");}
 async function load(){const r=await api("/api/admin/stats");if(r.status===401){show(false);return;}if(!r.ok){err.textContent="불러오지 못했습니다 ("+r.status+")";return;}
 const me=await (await api("/api/admin/me")).json();who.textContent=me.username+" 님";show(true);const s=await r.json();
 dash.innerHTML=`<div class=grid><div class=card><h3>${s.users}</h3><p>가입자</p></div>${s.devices.map(d=>`<div class=card><h3>${d.n}</h3><p>${d.kind==="pc"?"PC":"모바일"} 기기</p></div>`).join("")}<div class=card><h3>${s.onlineNow}</h3><p>현재 접속 기기</p></div><div class=card><h3>${s.approvedConnections}</h3><p>승인된 연결</p></div><div class=card><h3>${s.transfers30d.n}</h3><p>30일 전송 (${fmt.size(+s.transfers30d.bytes)})</p></div></div>
@@ -29,5 +33,18 @@ out.onclick=async()=>{await api("/api/admin/logout",{});show(false);};
 pwBtn.onclick=()=>pwBox.classList.toggle("hide");
 pwGo.onclick=async()=>{pwMsg.style.color="#ef4444";if(p1.value!==p2.value){pwMsg.textContent="새 비밀번호가 서로 다릅니다";return;}const r=await api("/api/admin/password",{current:p0.value,next:p1.value});const j=await r.json().catch(()=>({}));if(!r.ok){pwMsg.textContent=j.message||"변경 실패";return;}p0.value=p1.value=p2.value="";pwMsg.style.color="#16a34a";pwMsg.textContent="변경했습니다. 다른 곳의 관리자 로그인은 모두 끊겼습니다.";};
 np.onclick=async()=>{const r=await api("/api/admin/notices",{title:nt.value,body:nb.value});if(!r.ok){alert("등록 실패");return;}nt.value=nb.value="";alert("등록했습니다");};
+let UP=0;
+async function users(){const r=await api("/api/admin/users?page="+UP+"&q="+encodeURIComponent(uq.value.trim()));if(!r.ok){ulist.textContent="불러오지 못했습니다";return;}const j=await r.json();
+const d=x=>x?fmt.date(x):"-";
+ulist.innerHTML=j.items.length?`<table style="width:100%;border-collapse:collapse;font-size:14px"><tr style="text-align:left;color:var(--sub)"><th>이메일(아이디)</th><th>이름</th><th>가입일</th><th>최근 접속</th><th>기기</th><th>상태</th><th></th></tr>${j.items.map(u=>`<tr style="border-top:1px solid #8883"><td>${esc(u.email)}</td><td>${esc(u.name)}</td><td>${d(u.created_at)}</td><td>${d(u.last_seen)}</td><td>휴대폰 ${u.phones} · PC ${u.pcs} · 클라우드 ${u.clouds}</td><td>${u.suspended_at?"<b style='color:#ef4444'>정지</b>":(u.locked_until&&new Date(u.locked_until)>new Date()?"잠김":(u.email_verified?"정상":"인증 전"))}</td><td style="white-space:nowrap"><button class="btn" data-a="temp" data-id="${u.id}" data-e="${esc(u.email)}">임시 비밀번호</button> <button class="btn" data-a="${u.suspended_at?"unsuspend":"suspend"}" data-id="${u.id}">${u.suspended_at?"정지 해제":"정지"}</button> ${u.locked_until?`<button class="btn" data-a="unlock" data-id="${u.id}">잠금 해제</button>`:""} <button class="btn" data-a="del" data-id="${u.id}" data-e="${esc(u.email)}">삭제</button></td></tr>`).join("")}</table>`:"<p>회원이 없습니다</p>";
+uprev.classList.toggle("hide",UP===0);unext.classList.toggle("hide",!j.more);}
+ulist.onclick=async e=>{const b=e.target.closest("button[data-a]");if(!b)return;const id=b.dataset.id,a=b.dataset.a;let r;
+if(a==="temp"){if(!confirm(b.dataset.e+" 회원에게 임시 비밀번호를 발급할까요? 지금 쓰는 비밀번호는 더 이상 쓸 수 없고, 모든 기기가 로그아웃됩니다."))return;r=await api(`/api/admin/users/${id}/temp-password`,{});if(r.ok){const j=await r.json();prompt("임시 비밀번호입니다. 회원에게 전달하고 로그인 후 바꾸도록 안내하세요. (이 창을 닫으면 다시 볼 수 없습니다)",j.tempPassword);}}
+else if(a==="suspend"||a==="unsuspend"){if(a==="suspend"&&!confirm("이 회원의 이용을 정지할까요? 모든 기기가 즉시 로그아웃됩니다."))return;r=await api(`/api/admin/users/${id}/suspend`,{on:a==="suspend"});}
+else if(a==="unlock"){r=await api(`/api/admin/users/${id}/unlock`,{});}
+else if(a==="del"){const c=prompt("회원과 모든 기기·클라우드 연결이 삭제되며 되돌릴 수 없습니다. 확인을 위해 이메일을 그대로 입력하세요: "+b.dataset.e);if(!c)return;r=await api(`/api/admin/users/${id}/delete`,{confirmEmail:c});}
+if(r&&!r.ok){const j=await r.json().catch(()=>({}));alert(j.message||"실패했습니다");}users();};
+uqGo.onclick=()=>{UP=0;users();};uq.onkeydown=e=>{if(e.key==="Enter"){UP=0;users();}};uprev.onclick=()=>{UP--;users();};unext.onclick=()=>{UP++;users();};
+const _load=load;load=async()=>{await _load();if(!dash.classList.contains("hide"))users();};
 load();
 </script></body></html>

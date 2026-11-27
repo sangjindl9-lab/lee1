@@ -188,6 +188,7 @@ export async function migrate() {
     provider TEXT NOT NULL, verifier TEXT NOT NULL,
     expires_at TIMESTAMPTZ NOT NULL
   );
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS suspended_at TIMESTAMPTZ;
   ALTER TABLE cloud_connections ADD COLUMN IF NOT EXISTS account_id TEXT NOT NULL DEFAULT '';
   ALTER TABLE cloud_connections ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
   CREATE UNIQUE INDEX IF NOT EXISTS uq_cloud_account ON cloud_connections(user_id, provider, account_id);
