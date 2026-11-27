@@ -47,6 +47,7 @@ class Ctx:
 
     # -- 기록 ----------------------------------------------------------
     def log(self, message: str, level: str = "info", action: str = "pipeline", **data):
+        print(f"[project {self.p.id[:8]}] {level.upper()} {action}: {message}", flush=True)
         self.db.add(AuditLog(user_id=self.p.user_id, project_id=self.p.id, action=action, level=level,
                              message=message, data=data))
         self.db.commit()

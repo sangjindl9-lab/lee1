@@ -75,6 +75,8 @@ export default function Project() {
       {act.view}
       {status === "AWAITING_APPROVAL" && <Approval p={p} onDone={reload} />}
       {status === "FAILED" && <div className="mb-6"><Note tone="bad">{live?.error || p.error}</Note></div>}
+      {done && p.mode !== "economy" && p.scenes.some((s: any) => s.kind !== "video") &&
+        <div className="mb-6"><Note tone="warn">영상 {p.scenes.filter((s: any) => s.kind === "video").length}개 · 사진 움직임 {p.scenes.filter((s: any) => s.kind !== "video").length}개로 만들어졌습니다. 영상 공급자 잔액이 부족했거나 생성이 실패한 장면입니다(기록 탭 참고)</Note></div>}
 
       <div className="grid lg:grid-cols-[minmax(260px,360px)_1fr] gap-6 items-start">
         <div className="lg:sticky lg:top-6">

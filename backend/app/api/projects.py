@@ -84,6 +84,8 @@ class Options(BaseModel):
     allow_unpriced: bool = False
     subtitle_languages: list[str] = []
     no_music: bool = False
+    no_burned_subtitles: bool = False  # 화면에 대본 자막 넣지 않기
+    allow_photo_fallback: bool = False  # 영상 생성이 막히면 사진 움직임으로 대체 허용
     speed: float = 1.0
     subtitle_style: dict = {}
 
@@ -120,7 +122,8 @@ def _create(db: Session, user: User, body: ProjectIn, idem: str | None = None, b
         allow_unpriced=o.allow_unpriced or bool((user.settings or {}).get("allow_unpriced")),
         subtitle_style=o.subtitle_style or (user.settings or {}).get("subtitle_style") or {}, branding=brand,
         extra={"subtitle_languages": o.subtitle_languages, "no_music": o.no_music, "speed": o.speed,
-               "video_models": o.video_models[:6]}))
+               "video_models": o.video_models[:6],
+               "no_burned_subtitles": o.no_burned_subtitles, "allow_photo_fallback": o.allow_photo_fallback}))
     db.commit()
     return p
 

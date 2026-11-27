@@ -116,7 +116,10 @@ def test_budget_exceeded_stops_before_generation(client, world):
 
 def test_auto_mode_downgrades_video_scenes_to_fit_budget(client, world):
     connect_all(client)
-    pid = make(client, mode="auto", max_cost_usd=0.5)  # 영상 1장면(약 $0.3)이 예산의 85%를 넘지 않게 조정되는지
+    pid = make(client, mode="auto", max_cost_usd=0.5)
+    assert run(pid) == "AWAITING_APPROVAL"  # 기본: 사진으로 내리지 않고 승인(한도 상향)을 기다린다
+    assert world.calls["hf_video"] == 0
+    pid = make(client, mode="auto", max_cost_usd=0.5, options={"allow_photo_fallback": True})
     assert run(pid) == "COMPLETED"
     d = client.get(f"/api/projects/{pid}").json()
     assert d["actual_cost_usd"] <= 0.5
@@ -308,10 +311,13 @@ def test_higgsfield_out_of_credits_switches_to_openai(client, world):
     connect_all(client)
     client.put("/api/providers/openai", json={"credentials": {"api_key": "sk-openai-test"}})
     world.balance_empty = True
-    pid = make(client)  # quality 모드: 원래는 첫 장면이 영상
+    pid = make(client)
+    assert run(pid) == "FAILED"  # 기본: 사진으로 몰래 바꾸지 않고 멈춘다
+    assert "영상을 만들 수 있는 공급자가 없습니다" in client.get(f"/api/projects/{pid}").json()["error"]
+    pid = make(client, options={"allow_photo_fallback": True})  # 사진 대체를 허용한 경우
     assert run(pid) == "COMPLETED"
     d = client.get(f"/api/projects/{pid}").json()
-    assert world.calls["hf_image"] == 0 and world.calls["hf_video"] == 0 and world.calls["openai_image"] == 4
+    assert world.calls["hf_image"] == 0 and world.calls["hf_video"] == 0 and world.calls["openai_image"] == 8
     assert all(b["model"] == "gpt-image-2" and b["size"] == "1024x1536" for b in world.openai_bodies)  # 계정의 실제 모델 ID로 교체
     assert [s["kind"] for s in d["scenes"]] == ["image"] * 4 and all(s["image_model"] == "openai-gpt-image-1" for s in d["scenes"])
     assert any("전환" in l["message"] for l in d["logs"]) and d["stage_data"]["videos"]["degraded_to_image"] == 4

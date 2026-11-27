@@ -386,7 +386,10 @@ def plan_budget(c: Ctx):
             lead = len(pool) > 1 and (s.idx == 0 or s.importance >= 4)
             s.video_model = (pool[-1] if lead else i2v).model_key
     if mode != "economy" and not i2v:
-        c.log("연결된 영상 생성 모델이 없어 모든 장면을 이미지+자체 애니메이션으로 제작합니다.", "warn")
+        if not (c.cfg.extra or {}).get("allow_photo_fallback"):
+            raise ProviderError("video", "config", "연결된 영상 생성 모델이 없습니다. 'API 연결 관리'에서 Topview 또는 Higgsfield 를 연결하세요. "
+                                                   "(사진 움직임으로 만들려면 제작 모드를 '경제형'으로 고르세요)")
+        c.log("연결된 영상 생성 모델이 없어 모든 장면을 사진 움직임으로 제작합니다.", "warn")
 
     def estimate() -> tuple[float, list[str]]:
         total, unpriced = 0.0, set()
@@ -423,8 +426,10 @@ def plan_budget(c: Ctx):
                     s.video_model = cheap.model_key
             gen, unpriced = estimate()
             c.log(f"예산에 맞추려고 오프닝 외 장면을 {cheap.display_name} 로 만듭니다.", "info")
-        # 2) 그래도 넘으면 중요도가 낮은 장면부터 이미지로 내린다.
+        # 2) 그래도 넘으면(사진 대체를 허용한 경우에만) 중요도가 낮은 장면부터 사진으로 내린다. 아니면 승인 대기로 멈춘다.
         vids = sorted([s for s in scenes if s.kind == "video" and s.idx != 0], key=lambda s: (s.importance, s.motion_need))
+        if not (c.cfg.extra or {}).get("allow_photo_fallback"):
+            vids = []
         downgraded = 0
         while gen * margin > remaining * 0.85 and vids:
             s = vids.pop(0)
@@ -785,6 +790,7 @@ def videos(c: Ctx):
     todo = [s for s in c.scenes() if s.kind == "video" and (not s.video_asset_id or s.status == "redo")]
     blocked: set[str] = set(c.data("images").get("blocked_providers") or [])
     pool = [k for k in (c.cfg.extra or {}).get("video_models") or []]
+    allow_photo = bool((c.cfg.extra or {}).get("allow_photo_fallback"))
     clients: dict = {}
     made = degraded = 0
 
@@ -862,10 +868,17 @@ def videos(c: Ctx):
                 tried.add(m.model_key)
                 m = next_model(tier, tried)
         if not ok:
-            s.kind, s.video_model = "image", None  # 쓸 수 있는 영상 모델이 없으면 이미지+자체 애니메이션으로 내린다
+            if not allow_photo:
+                # 사용자는 실제 영상을 원한다: 사진으로 몰래 바꾸지 않고 멈춘다. 이미 만든 영상은 다시 시도할 때 재사용된다.
+                why = ", ".join(sorted(blocked)) or "모든 영상 모델 생성 실패"
+                raise ProviderError("video", "balance" if blocked else "invalid",
+                                    f"장면 {s.idx + 1}의 영상을 만들 수 있는 공급자가 없습니다(막힌 공급자: {why}). "
+                                    f"영상 공급자(Topview·Higgsfield) 잔액을 충전하거나 키를 확인한 뒤 '다시 시도'를 누르세요. "
+                                    f"이미 만든 영상 {made}개는 재사용됩니다.")
+            s.kind, s.video_model = "image", None
             c.db.commit()
             degraded += 1
-            c.log(f"장면 {s.idx + 1}: 사용할 수 있는 영상 모델이 없어 이미지 애니메이션으로 대체했습니다.", "warn")
+            c.log(f"장면 {s.idx + 1}: 사용할 수 있는 영상 모델이 없어 사진 움직임으로 대체했습니다(사진 대체 허용 설정).", "warn")
     for s in c.scenes():
         s.status, s.redo_reason = "ready", None
     c.db.commit()
@@ -962,8 +975,12 @@ def subs(c: Ctx):
     c.db.query(Subtitle).filter_by(project_id=c.p.id).delete()
     titles = [{"s": round(s.start + 0.05, 3), "e": round(s.end - 0.05, 3), "text": (s.edit or {}).get("title_text")}
               for s in scenes if (s.edit or {}).get("title_text")]
+    if (c.cfg.extra or {}).get("no_burned_subtitles"):
+        cues_burn = []  # 화면에 대본 자막을 넣지 않는다(SRT·VTT 파일은 그대로 제공)
+    else:
+        cues_burn = cues
     files = {"srt": subtitles.to_srt(cues), "vtt": subtitles.to_vtt(cues),
-             "ass": subtitles.to_ass(cues, w, h, style, titles)}
+             "ass": subtitles.to_ass(cues_burn, w, h, style, titles)}
     sync = ", ".join(sorted({s.sync_method or "" for s in scenes}))
     for fmt, text in files.items():
         key = f"{c.p.id}/subtitle/{c.p.language}.{fmt}"

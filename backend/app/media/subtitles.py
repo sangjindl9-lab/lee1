@@ -3,45 +3,67 @@ import re
 
 CJK = {"ko", "ja", "zh"}
 DEFAULT_STYLE = {
-    "font": "Noto Sans CJK KR", "size": 112, "primary": "#FFFFFF", "highlight": "#FFE500",
+    "font": "Noto Sans CJK KR", "size": 92, "primary": "#FFFFFF", "highlight": "#FFE500",
     "emphasis": "#3DE0FF", "outline": "#000000", "outline_width": 9, "shadow": 3,
     # 쇼츠 화면의 하단 제목·설명 영역과 우측 버튼 열을 피한다(1080x1920 기준 픽셀).
-    "margin_v": 560, "margin_l": 90, "margin_r": 190, "kinetic": True,
+    "margin_v": 560, "margin_l": 90, "margin_r": 190, "kinetic": False,
     # 상단 타이틀(핵심 문구 카드)
     "title_size": 110, "title_text": "#111111", "title_box": "#FFE500", "title_margin_v": 300,
 }
 _END = re.compile(r"[.!?。！？…]$")
 
 
+_BREAK = re.compile(r"[,.!?。！？…:;]$")
+
+
 def build_cues(scenes: list[dict], language: str = "ko") -> list[dict]:
-    """scenes: [{start, words:[{w,s,e}], position, emphasis:[...]}] → 화면 단위 큐."""
-    max_chars = 9 if language in CJK else 18  # 쇼츠 자막은 한 번에 2~3단어
+    """scenes: [{start, words:[{w,s,e}], position, emphasis:[...]}] → 화면 단위 큐.
+    말하는 구절(쉼표·문장 끝·숨 쉬는 곳) 단위로 한 줄씩 보여 준다. 글자 수로 기계적으로 자르면 어색하다."""
+    max_chars = 15 if language in CJK else 32
     cues = []
     for sc in scenes:
-        cur: list[dict] = []
-        for wd in sc.get("words") or []:
-            word = {"w": wd["w"], "s": round(sc["start"] + wd["s"], 3), "e": round(sc["start"] + wd["e"], 3)}
-            length = sum(len(x["w"]) for x in cur) + len(cur) + len(word["w"])
-            if cur and (length > max_chars or word["s"] - cur[-1]["e"] > 0.7):
-                cues.append(_cue(cur, sc))
-                cur = []
+        words = [{"w": wd["w"], "s": round(sc["start"] + wd["s"], 3), "e": round(sc["start"] + wd["e"], 3)}
+                 for wd in sc.get("words") or [] if wd.get("w")]
+        groups, cur = [], []
+        for i, word in enumerate(words):
+            if cur:
+                length = sum(len(x["w"]) for x in cur) + len(cur) + len(word["w"])
+                pause = word["s"] - cur[-1]["e"]
+                if length > max_chars or pause > 0.35:
+                    groups.append(cur)
+                    cur = []
             cur.append(word)
-            if _END.search(word["w"]):
-                cues.append(_cue(cur, sc))
+            if _BREAK.search(word["w"]):
+                groups.append(cur)
                 cur = []
         if cur:
-            cues.append(_cue(cur, sc))
-    # 표시 시간 보정: 최소 0.5초, 다음 큐와 겹치지 않게
+            groups.append(cur)
+        # 한 낱말만 남은 꼬리는 앞 구절에 붙인다(너무 길어지지 않을 때)
+        merged = []
+        for g in groups:
+            if merged and len(g) == 1 and not _BREAK.search(merged[-1][-1]["w"]) and \
+                    sum(len(x["w"]) for x in merged[-1] + g) + len(merged[-1]) <= max_chars + 4:
+                merged[-1] = merged[-1] + g
+            else:
+                merged.append(g)
+        cues += [_cue(g, sc) for g in merged]
+    # 표시 시간 보정: 최소 0.6초, 다음 큐와 겹치지 않게
     for i, c in enumerate(cues):
         nxt = cues[i + 1]["s"] if i + 1 < len(cues) else None
-        end = max(c["e"] + 0.12, c["s"] + 0.5)
+        end = max(c["e"] + 0.15, c["s"] + 0.6)
         c["e"] = round(min(end, nxt) if nxt is not None else end, 3)
         if c["e"] <= c["s"]:
             c["e"] = round(c["s"] + 0.2, 3)
     return cues
 
 
+def _display(text: str) -> str:
+    """화면 자막에서는 문장 끝 마침표·쉼표를 뺀다(물음표·느낌표는 둔다)."""
+    return re.sub(r"[.,。]+$", "", text.strip())
+
+
 def _cue(words: list[dict], sc: dict) -> dict:
+    words = [{**w, "w": _display(w["w"]) if i == len(words) - 1 else w["w"]} for i, w in enumerate(words)]
     return {"s": words[0]["s"], "e": words[-1]["e"], "text": " ".join(w["w"] for w in words), "words": list(words),
             "position": sc.get("position", "lower"), "emphasis": sc.get("emphasis") or []}
 
@@ -101,6 +123,10 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         name = "Center" if c.get("position") == "center" else "Lower"
         emph = {e.strip(".,!?") for e in c.get("emphasis") or []}
         words = c["words"]
+        if not st.get("kinetic"):
+            parts = [f"{{\\c{em}}}{_esc(x['w'])}{{\\r}}" if x["w"].strip(".,!?") in emph else _esc(x["w"]) for x in words]
+            lines.append(f"Dialogue: 0,{_ass_ts(c['s'])},{_ass_ts(c['e'])},{name},,0,0,0,,{{\\fad(60,60)}}{' '.join(parts)}")
+            continue
         for i, w in enumerate(words):
             start = c["s"] if i == 0 else w["s"]
             end = words[i + 1]["s"] if i + 1 < len(words) else c["e"]

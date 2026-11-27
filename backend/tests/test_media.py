@@ -55,9 +55,18 @@ def test_subtitle_formats():
     cues = subtitles.build_cues(scenes, "ko")
     assert len(cues) >= 3 and all(c["e"] > c["s"] for c in cues)
     assert all(cues[i]["e"] <= cues[i + 1]["s"] + 1e-6 for i in range(len(cues) - 1))
-    srt, vtt, ass = subtitles.to_srt(cues), subtitles.to_vtt(cues), subtitles.to_ass(cues)
+    srt, vtt, ass = subtitles.to_srt(cues), subtitles.to_vtt(cues), subtitles.to_ass(cues, style={"kinetic": True})
     assert "00:00:00,050 -->" in srt and vtt.startswith("WEBVTT") and "Style: Center" in ass
     assert "\\c&H0000E5FF&" in ass  # 강조색(#FFE500 → BGR)
+    assert not any(c["text"].endswith(".") for c in cues)  # 화면 자막에는 마침표를 찍지 않는다
+
+
+def test_cues_follow_spoken_phrases():
+    words = proportional_words("심해는 어둡습니다, 그런데 생물의 대부분은 스스로 빛을 냅니다.", 4.0)
+    cues = subtitles.build_cues([{"start": 0, "words": words, "position": "lower"}], "ko")
+    assert [c["text"] for c in cues] == ["심해는 어둡습니다", "그런데 생물의 대부분은", "스스로 빛을 냅니다"]
+    ass = subtitles.to_ass(cues)
+    assert ass.count("Dialogue:") == len(cues)  # 기본은 구절 하나를 통째로(단어마다 깜빡이지 않음)
     assert not subtitles.check(cues, 5.4)
 
 

@@ -14,7 +14,7 @@ export default function Composer({ advancedOpen = false, initialTopic = "" }: { 
   const [adv, setAdv] = useState(advancedOpen);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [f, setF] = useState<any>({ mode: "auto", language: "ko", duration: 0, max_cost_usd: "", resolution: "1080x1920", fps: 30, style: "", voice: "", image_model: "", video_model: "", video_models: [], tts_model: "", llm_model: "", character_id: "", allow_unpriced: false, no_music: false, sub_en: false });
+  const [f, setF] = useState<any>({ mode: "auto", language: "ko", duration: 0, max_cost_usd: "", resolution: "1080x1920", fps: 30, style: "", voice: "", image_model: "", video_model: "", video_models: [], tts_model: "", llm_model: "", character_id: "", allow_unpriced: false, no_music: false, no_burned_subtitles: false, allow_photo_fallback: false, sub_en: false });
   const models = useApi<any[]>(adv ? "/models" : null);
   const chars = useApi<any[]>(adv ? "/characters" : null);
   const voices = useApi<any>(adv ? "/voices" : null);
@@ -30,7 +30,7 @@ export default function Composer({ advancedOpen = false, initialTopic = "" }: { 
         body: {
           topic, mode: f.mode, language: f.language, duration: Number(f.duration), max_cost_usd: f.max_cost_usd ? Number(f.max_cost_usd) : null,
           options: { resolution: f.resolution, fps: Number(f.fps), style: f.style || null, voice: f.voice || null, image_model: f.image_model || null, video_model: null, video_models: f.video_models,
-            tts_model: f.tts_model || null, llm_model: f.llm_model || null, character_id: f.character_id || null, allow_unpriced: f.allow_unpriced, no_music: f.no_music,
+            tts_model: f.tts_model || null, llm_model: f.llm_model || null, character_id: f.character_id || null, allow_unpriced: f.allow_unpriced, no_music: f.no_music, no_burned_subtitles: f.no_burned_subtitles, allow_photo_fallback: f.allow_photo_fallback,
             subtitle_languages: f.sub_en && f.language !== "en" ? ["en"] : [] },
         },
       });
@@ -97,6 +97,8 @@ export default function Composer({ advancedOpen = false, initialTopic = "" }: { 
           <div className="flex flex-wrap gap-x-6 gap-y-3 mt-5 text-sub">
             <label className="inline-flex items-center gap-2"><input type="checkbox" checked={f.sub_en} onChange={set("sub_en")} />영어 자막 파일 추가</label>
             <label className="inline-flex items-center gap-2"><input type="checkbox" checked={f.no_music} onChange={set("no_music")} />배경음악 없이</label>
+            <label className="inline-flex items-center gap-2"><input type="checkbox" checked={f.no_burned_subtitles} onChange={set("no_burned_subtitles")} />화면에 대본 자막 넣지 않기</label>
+            <label className="inline-flex items-center gap-2"><input type="checkbox" checked={f.allow_photo_fallback} onChange={set("allow_photo_fallback")} />영상 생성이 막히면 사진 움직임으로 대체</label>
             <label className="inline-flex items-center gap-2"><input type="checkbox" checked={f.allow_unpriced} onChange={set("allow_unpriced")} />단가 미등록 모델 사용 허용</label>
           </div>
         </div>
