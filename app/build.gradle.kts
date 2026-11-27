@@ -16,8 +16,8 @@ android {
         applicationId = "kr.eumsoft.kidscoloring"
         minSdk = 26
         targetSdk = 36
-        versionCode = 6
-        versionName = "1.3.1"
+        versionCode = 7
+        versionName = "1.3.2"
     }
     signingConfigs {
         if (ksPath != null) create("release") {
@@ -29,8 +29,18 @@ android {
     }
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // R8: 코드 축소·난독화·최적화 (Play 의 DEX 최적화 기준), 쓰지 않는 리소스 제거
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             if (ksPath != null) signingConfig = signingConfigs.getByName("release")
+        }
+        // 에뮬레이터 테스트용: 릴리스와 똑같이 R8 을 거친 빌드를 디버그 키로 서명 (자동 테스트가 run-as 를 쓰므로 debuggable)
+        create("qa") {
+            initWith(getByName("release"))
+            isDebuggable = true
+            signingConfig = signingConfigs.getByName("debug")
+            matchingFallbacks += listOf("release")
         }
     }
     buildFeatures { compose = true; buildConfig = true }
