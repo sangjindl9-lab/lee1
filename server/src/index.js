@@ -398,12 +398,83 @@ app.get('/api/qr', wrap(async (req, res) => {
 }));
 
 // ---------------- 관리자 ----------------
-function adminOnly(req, res, next) {
-  const t = (req.headers.authorization || '').replace('Bearer ', '');
-  if (!ADMIN_TOKEN || ADMIN_TOKEN.length < 24 || !crypto.timingSafeEqual(Buffer.from(sha(t)), Buffer.from(sha(ADMIN_TOKEN))))
-    return res.status(401).json({ error: 'unauthorized' });
-  next();
+// 관리자 로그인: 아이디·비밀번호 → 12시간 세션 쿠키(HttpOnly·Secure·SameSite=Strict).
+// 기존 ADMIN_TOKEN(Bearer)은 스크립트용으로 계속 허용합니다.
+const ADMIN_COOKIE = 'fm2_admin';
+const ADMIN_SESSION_HOURS = 12;
+function cookieOf(req, name) {
+  for (const part of String(req.headers.cookie || '').split(';')) {
+    const i = part.indexOf('='); if (i < 0) continue;
+    if (part.slice(0, i).trim() === name) return decodeURIComponent(part.slice(i + 1).trim());
+  }
+  return '';
 }
+function setAdminCookie(res, value, maxAgeSec) {
+  res.setHeader('Set-Cookie', `${ADMIN_COOKIE}=${encodeURIComponent(value)}; Path=/api/admin; HttpOnly; Secure; SameSite=Strict; Max-Age=${maxAgeSec}`);
+}
+async function adminOnly(req, res, next) {
+  try {
+    const t = (req.headers.authorization || '').replace('Bearer ', '');
+    if (t && ADMIN_TOKEN && ADMIN_TOKEN.length >= 24 && crypto.timingSafeEqual(Buffer.from(sha(t)), Buffer.from(sha(ADMIN_TOKEN)))) { req.admin = { username: 'token' }; return next(); }
+    const c = cookieOf(req, ADMIN_COOKIE);
+    if (c && c.length >= 40) {
+      // 쿠키 인증 + 상태 변경 요청은 전용 헤더 필수(다른 사이트에서 보내는 요청 차단)
+      if (req.method !== 'GET' && req.headers['x-fm2-admin'] !== '1') return res.status(403).json({ error: 'forbidden' });
+      const row = await one(`SELECT a.id, a.username FROM admin_sessions s JOIN admins a ON a.id=s.admin_id
+        WHERE s.token_hash=$1 AND s.expires_at > now()`, [sha(c)]);
+      if (row) { req.admin = row; return next(); }
+    }
+    res.status(401).json({ error: 'unauthorized', message: '다시 로그인해 주세요' });
+  } catch (e) { next(e); }
+}
+// 첫 관리자: 관리자가 하나도 없을 때만 ADMIN_INIT_USER / ADMIN_INIT_PASSWORD_HASH(bcrypt) 로 만듭니다.
+async function ensureAdmin() {
+  if (!pool) return;
+  const [c] = await q('SELECT count(*)::int AS n FROM admins');
+  const u = process.env.ADMIN_INIT_USER, h = process.env.ADMIN_INIT_PASSWORD_HASH;
+  if (c.n === 0 && u && h && /^\$2[aby]\$\d\d\$/.test(h)) {
+    await q('INSERT INTO admins(username, pw_hash) VALUES ($1,$2) ON CONFLICT DO NOTHING', [u, h]);
+    console.log('admin created:', u);
+  }
+}
+app.post('/api/admin/login', limit(10, 15 * 60e3), wrap(async (req, res) => {
+  const username = String(req.body?.username || '').trim(), password = String(req.body?.password || '');
+  const a = await one('SELECT * FROM admins WHERE username=$1', [username]);
+  if (a && a.locked_until && new Date(a.locked_until) > new Date())
+    return res.status(423).json({ error: 'locked', message: '로그인 실패가 많아 잠겼습니다. 15분 뒤 다시 시도해 주세요' });
+  const ok = a && (await bcrypt.compare(password, a.pw_hash));
+  if (!ok) {
+    if (a) await q(`UPDATE admins SET failed=failed+1, locked_until=CASE WHEN failed+1>=5 THEN now()+interval '15 minutes' ELSE locked_until END WHERE id=$1`, [a.id]);
+    await log(null, null, 'admin_login_failed', username.slice(0, 60), ipOf(req));
+    return res.status(401).json({ error: 'invalid', message: '아이디 또는 비밀번호가 올바르지 않습니다' });
+  }
+  const token = crypto.randomBytes(32).toString('base64url');
+  await q(`INSERT INTO admin_sessions(token_hash, admin_id, ip, expires_at) VALUES ($1,$2,$3, now()+($4||' hours')::interval)`, [sha(token), a.id, ipOf(req), String(ADMIN_SESSION_HOURS)]);
+  await q('UPDATE admins SET failed=0, locked_until=NULL, last_login=now() WHERE id=$1', [a.id]);
+  await q('DELETE FROM admin_sessions WHERE expires_at < now()');
+  await log(null, null, 'admin_login', a.username, ipOf(req));
+  setAdminCookie(res, token, ADMIN_SESSION_HOURS * 3600);
+  res.json({ ok: true, username: a.username });
+}));
+app.post('/api/admin/logout', wrap(async (req, res) => {
+  const c = cookieOf(req, ADMIN_COOKIE);
+  if (c) await q('DELETE FROM admin_sessions WHERE token_hash=$1', [sha(c)]);
+  setAdminCookie(res, '', 0);
+  res.json({ ok: true });
+}));
+app.get('/api/admin/me', adminOnly, (req, res) => res.json({ username: req.admin.username }));
+app.post('/api/admin/password', adminOnly, limit(10, 15 * 60e3), wrap(async (req, res) => {
+  if (!req.admin.id) return res.status(400).json({ error: 'not_session', message: '아이디로 로그인한 뒤 바꿀 수 있습니다' });
+  const cur = String(req.body?.current || ''), next = String(req.body?.next || '');
+  if (next.length < 10) return res.status(400).json({ error: 'weak', message: '새 비밀번호는 10자 이상이어야 합니다' });
+  const a = await one('SELECT * FROM admins WHERE id=$1', [req.admin.id]);
+  if (!(await bcrypt.compare(cur, a.pw_hash))) return res.status(401).json({ error: 'invalid', message: '현재 비밀번호가 올바르지 않습니다' });
+  await q('UPDATE admins SET pw_hash=$1 WHERE id=$2', [await bcrypt.hash(next, 11), a.id]);
+  // 다른 곳에 열린 관리자 세션은 모두 끊고 지금 세션만 유지
+  await q('DELETE FROM admin_sessions WHERE admin_id=$1 AND token_hash<>$2', [a.id, sha(cookieOf(req, ADMIN_COOKIE))]);
+  await log(null, null, 'admin_password_changed', a.username, ipOf(req));
+  res.json({ ok: true });
+}));
 app.get('/api/admin/stats', adminOnly, wrap(async (req, res) => {
   const [u] = await q('SELECT count(*)::int AS n FROM users WHERE deleted_at IS NULL');
   const devs = await q(`SELECT kind, count(*)::int AS n FROM devices WHERE revoked=FALSE GROUP BY kind`);
@@ -574,7 +645,7 @@ setInterval(() => {
 (async () => {
   if (pool) {
     for (let i = 0; i < 10; i++) {
-      try { await migrate(); console.log('DB ready'); break; } catch (e) { console.error('migrate retry', e.message); await new Promise((r) => setTimeout(r, 3000)); }
+      try { await migrate(); await ensureAdmin(); console.log('DB ready'); break; } catch (e) { console.error('migrate retry', e.message); await new Promise((r) => setTimeout(r, 3000)); }
     }
   } else console.warn('DATABASE_URL 없음 — DB 기능 비활성');
   server.listen(PORT, () => console.log(`fm2-connect on :${PORT} (${PUBLIC_URL})`));

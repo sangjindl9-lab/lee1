@@ -154,6 +154,22 @@ export async function migrate() {
     UNIQUE (platform, version)
   );
 
+  CREATE TABLE IF NOT EXISTS admins (
+    id SERIAL PRIMARY KEY,
+    username TEXT NOT NULL UNIQUE,
+    pw_hash TEXT NOT NULL,
+    failed INT NOT NULL DEFAULT 0,
+    locked_until TIMESTAMPTZ,
+    last_login TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  );
+  CREATE TABLE IF NOT EXISTS admin_sessions (
+    token_hash TEXT PRIMARY KEY,
+    admin_id INT NOT NULL REFERENCES admins(id) ON DELETE CASCADE,
+    ip TEXT,
+    expires_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  );
   CREATE TABLE IF NOT EXISTS notices (
     id SERIAL PRIMARY KEY,
     title TEXT NOT NULL, body TEXT NOT NULL DEFAULT '',
