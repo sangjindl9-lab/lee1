@@ -135,7 +135,7 @@ def run_project(project_id: str, queue: str = "pipeline", enqueue=None) -> str:
             msg = e.message if isinstance(e, ProviderError) else str(e)
             if isinstance(e, ProviderError):
                 hint = {"balance": "API 잔액이 부족하고, 대신 쓸 다른 공급자가 연결돼 있지 않습니다. 충전하거나 'API 연결 관리'에서 OpenAI 키를 등록(연결 확인)한 뒤 '다시 시도'를 누르세요.",
-                        "auth": "API 키가 올바르지 않습니다. 'API 연결 관리'에서 확인하세요.",
+                        "auth": "API 키 또는 요금제 권한 문제입니다. 'API 연결 관리'와 공급자 요금제를 확인하세요.",
                         "config": "", "rate_limit": "요청 한도에 걸렸습니다. 잠시 후 다시 시도하세요."}.get(e.kind, "")
                 msg = f"[{e.provider}] {msg} {hint}".strip()
             p.status, p.error = "FAILED", msg[:2000]

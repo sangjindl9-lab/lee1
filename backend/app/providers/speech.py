@@ -49,7 +49,7 @@ class ElevenLabsTTS:
         if language and model.startswith(("eleven_turbo_v2_5", "eleven_flash_v2_5")):
             body["language_code"] = language  # 언어 고정을 지원하는 모델만
         r = call(self.name, "POST", f"https://api.elevenlabs.io/v1/text-to-speech/{voice}/with-timestamps",
-                 headers=self.h, params={"output_format": "mp3_44100_192"}, timeout=300, json=body)
+                 headers=self.h, params={"output_format": "mp3_44100_128"}, timeout=300, json=body)
         al = r.get("alignment") or {}
         chars = al.get("characters") or []
         starts = al.get("character_start_times_seconds") or []
