@@ -7,7 +7,6 @@ COPY package.json package-lock.json ./
 RUN npm ci
 COPY tsconfig.json ./
 COPY src ./src
-COPY tests ./tests
 COPY scripts ./scripts
 RUN npm run build
 
@@ -23,7 +22,7 @@ COPY public ./public
 RUN mkdir -p /data && chown -R node:node /app /data
 USER node
 EXPOSE 3100
-VOLUME ["/data"]
+# Railway 호스팅: 볼륨은 대시보드에서 /data 로 마운트합니다. (Dockerfile VOLUME 지시자는 제거)
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s \
   CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3100)+'/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 CMD ["node", "dist/src/server.js"]

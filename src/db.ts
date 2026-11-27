@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { DEFAULT_KEYWORDS, SEED_APPS, type AppConfig } from './config.ts';
+import { DEMO_SEED } from './seed/demo-seed.ts';
 import { kstDateString, storeUrl } from './util.ts';
 
 export interface AppRow {
@@ -211,14 +212,21 @@ export class Store {
 
   private bootstrap(): void {
     const now = new Date().toISOString();
-    const seeded = this.getSetting('seeded_v1');
+    const seeded = this.getSetting('seeded_v2');
     if (this.config.seedDemoData && !seeded) {
-      for (const seed of SEED_APPS) {
-        const app = this.upsertApp(seed.packageId, seed.name, seed.note);
-        const terms = DEFAULT_KEYWORDS[seed.packageId] ?? [];
-        for (const term of terms) this.addKeyword(app.id, term);
+      if (this.counts().apps === 0) {
+        // 빈 볼륨으로 처음 기동: 실측 시드(앱·키워드·순위·ASO 개편안·홍보 초안)를 그대로 채운다.
+        this.importDemoSeed();
+      } else if (!this.getSetting('seeded_v1')) {
+        // 이미 데이터가 있는 기존 DB에는 최소 시드만 보강한다.
+        for (const seed of SEED_APPS) {
+          const app = this.upsertApp(seed.packageId, seed.name, seed.note);
+          const terms = DEFAULT_KEYWORDS[seed.packageId] ?? [];
+          for (const term of terms) this.addKeyword(app.id, term);
+        }
       }
-      this.setSetting('seeded_v1', now);
+      this.setSetting('seeded_v1', this.getSetting('seeded_v1') ?? now);
+      this.setSetting('seeded_v2', now);
     }
     this.setDefault('rank_schedule_time', '09:00');
     this.setDefault('rank_schedule_enabled', 'true');
@@ -235,6 +243,35 @@ export class Store {
     this.setDefault('utm_medium', 'blog');
     this.setDefault('utm_campaign', 'always_on');
     this.setDefault('rank_depth', String(this.config.rankDepth));
+  }
+
+  /** 시드 스냅샷을 원래 id 그대로 삽입한다 (빈 DB 전용). */
+  private importDemoSeed(): void {
+    this.db.exec('BEGIN');
+    try {
+      this.insertRows('apps', DEMO_SEED.apps);
+      this.insertRows('keywords', DEMO_SEED.keywords);
+      this.insertRows('app_snapshots', DEMO_SEED.app_snapshots);
+      this.insertRows('rank_snapshots', DEMO_SEED.rank_snapshots);
+      this.insertRows('aso_plans', DEMO_SEED.aso_plans);
+      this.insertRows('content_drafts', DEMO_SEED.content_drafts);
+      this.insertRows('competitor_cache', DEMO_SEED.competitor_cache);
+      this.insertRows('job_runs', DEMO_SEED.job_runs);
+      this.db.exec('COMMIT');
+    } catch (err) {
+      this.db.exec('ROLLBACK');
+      throw err;
+    }
+  }
+
+  private insertRows(table: string, rows: readonly Record<string, unknown>[]): void {
+    for (const row of rows) {
+      const cols = Object.keys(row);
+      const stmt = this.db.prepare(
+        `INSERT INTO ${table} (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`,
+      );
+      stmt.run(...cols.map((col) => row[col] as never));
+    }
   }
 
   // ---------- settings ----------
