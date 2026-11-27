@@ -95,8 +95,8 @@ async function main(): Promise<void> {
     await page.goto(`${base}#shorts`, { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('#view-shorts:not(.hidden)', { timeout: 15_000 });
     await page.waitForFunction(() => {
-      const select = document.getElementById('shorts-app');
-      return select && select.options.length > 0;
+      const select = document.getElementById('shorts-app') as HTMLSelectElement | null;
+      return Boolean(select && select.options.length > 0);
     }, { timeout: 20_000 });
 
     const engine = (await page.textContent('#shorts-engine-badge'))?.trim() ?? '';
