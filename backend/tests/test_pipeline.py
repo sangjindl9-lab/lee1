@@ -369,3 +369,25 @@ def test_auto_mode_keeps_video_by_switching_to_cheaper_model(client, world):
     d = client.get(f"/api/projects/{pid}").json()
     assert all(s["kind"] == "video" for s in d["scenes"])
     assert d["actual_cost_usd"] <= 3
+
+
+def test_sound_design_titles_punch_and_static_clip_retry(client, world):
+    """배경음악·효과음 생성, 상단 타이틀, 펀치인, 정지에 가까운 클립 재생성까지 실제 렌더로 확인."""
+    connect_all(client)
+    world.static_once = True
+    pid = make(client, max_cost_usd=20)
+    assert run(pid) == "COMPLETED"
+    d = client.get(f"/api/projects/{pid}").json()
+    assert world.calls["music"] == 1 and world.calls["sfx"] == 3  # hit·whoosh·riser 각 1회
+    assert world.calls["hf_video"] == 5  # 첫 장면이 정지 화면 → 한 번 재생성
+    assert d["scenes"][0]["edit"]["motion"] > 4 and d["scenes"][0]["attempts"] == 1
+    assert d["package"]["music"]["title"] == "AI 생성 배경음악"
+    with SessionLocal() as db:
+        from app.models import RenderJob
+        tl = db.query(RenderJob).filter_by(project_id=pid).first().timeline
+        assert [x["kind"] for x in tl["audio"]["sfx"]] == ["hit", "whoosh", "riser"] and tl["scenes"][0]["punch"] is True
+        ass = open(get_storage().local_path(f"{pid}/subtitle/ko.ass"), encoding="utf-8").read()
+        assert "Style: Title" in ass and "단 3초" in ass and "1. 유인" in ass
+    # 같은 사용자의 다음 영상은 효과음을 다시 만들지 않는다
+    pid2 = make(client, max_cost_usd=20)
+    assert run(pid2) == "COMPLETED" and world.calls["sfx"] == 3

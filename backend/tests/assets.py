@@ -13,7 +13,8 @@ def image(path, color="0x224488", w=1080, h=1920):
 
 
 def video(path, dur=3, w=720, h=1280):
-    _ff(["-f", "lavfi", "-i", f"testsrc2=s={w}x{h}:r=24:d={dur}", "-pix_fmt", "yuv420p", path])
+    # 실제 생성 영상처럼 화면 전체가 움직이도록 시간에 따라 바뀌는 잡음을 섞는다(움직임 검사 통과용)
+    _ff(["-f", "lavfi", "-i", f"testsrc2=s={w}x{h}:r=24:d={dur}", "-vf", "noise=alls=30:allf=t", "-pix_fmt", "yuv420p", path])
     return path
 
 

@@ -181,7 +181,8 @@ def test_scene_split_from_full_narration():
     starts = [i * 0.1 for i in range(n)]
     ends = [i * 0.1 + 0.1 for i in range(n)]
     segs = speech.split_by_chars(spans, list(full), starts, ends, 2.0)
-    assert segs[0]["cut_s"] == 0 and segs[1]["cut_e"] == 2.0 and segs[0]["cut_e"] == segs[1]["cut_s"] == 0.65
+    # 말 앞 0.06초·뒤 0.14초만 남기고 문장 사이 쉼은 버린다(겹치면 쉼의 가운데에서 자른다)
+    assert segs[0]["cut_s"] == 0 and segs[0]["cut_e"] == 0.65 and segs[1]["cut_s"] == 0.65 and segs[1]["cut_e"] == 1.84
     assert speech.split_by_chars(spans, list(full)[:-3], starts, ends, 2.0) is None  # 정렬이 어긋나면 사용 안 함
     words = speech.proportional_words(full, 2.0)
     sw = speech.split_by_words(spans, full, words, 2.0)

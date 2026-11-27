@@ -20,6 +20,7 @@ from . import agents as A
 from .context import BudgetExceeded, Ctx, PipelineError
 
 DURATIONS = [15, 30, 45, 60, 90, 120, 180]
+MIN_MOTION = 4.0  # 이보다 작으면 정지 화면에 가깝다(실측: 좋은 클립 8~14, 정지에 가까운 클립 3 안팎)
 CPS = {"ko": 5.0, "ja": 6.0, "zh": 4.5}  # 초당 글자 수(공백 제외) 추정치 — 실제 길이는 음성 합성 후 측정
 
 
@@ -39,7 +40,8 @@ def analyze(c: Ctx):
         "topic": c.p.topic, "language": A.LANG.get(c.p.language, c.p.language), "today": today(),
         "requested_duration": c.p.target_duration or "AI 자동", "mode": c.p.mode}),
         ["content_type", "keywords", "web_queries", "youtube_queries", "suggested_duration"], tier="economy")
-    dur = c.p.target_duration or int(out.get("suggested_duration") or 45)
+    # 길이를 지정하지 않으면 쇼츠에서 완주율이 높은 30~45초로 맞춘다.
+    dur = c.p.target_duration or min(45, int(out.get("suggested_duration") or 40))
     out["duration"] = min(DURATIONS, key=lambda d: abs(d - dur))
     c.save_data("analyze", out)
 
@@ -315,10 +317,13 @@ def storyboard(c: Ctx):
             color_mood=str(s.get("color_mood") or "")[:255], subject_motion=s.get("subject_motion"),
             subtitle_position="center" if s.get("subtitle_position") == "center" else "lower",
             emphasis_words=(s.get("emphasis_words") or [])[:2], sfx=str(s.get("sfx") or "")[:255], transition=tr,
-            motion_need=max(0, min(3, int(s.get("motion_need") or 0))),
+            motion_need=max(1, min(3, int(s.get("motion_need") or 2))),
+            edit={"title_text": str(s.get("title_text") or "").strip()[:16], "punch_in": bool(s.get("punch_in")),
+                  "sfx": s.get("sfx") if s.get("sfx") in ("whoosh", "hit", "riser") else None},
             importance=max(1, min(5, int(s.get("importance") or 3))), quality_bar=str(s.get("quality_bar") or "")[:255]))
     ver = c.db.query(Storyboard).filter_by(project_id=c.p.id).count() + 1
-    c.db.add(Storyboard(project_id=c.p.id, version=ver, data={"music_mood": out.get("music_mood")},
+    c.db.add(Storyboard(project_id=c.p.id, version=ver, data={"music_mood": out.get("music_mood"),
+                                                              "music_prompt": str(out.get("music_prompt") or "")[:600]},
                         character_bible=out["character_bible"] or {}, visual_bible=out["visual_bible"] or {}))
     c.db.query(Character).filter_by(project_id=c.p.id).delete()
     for ch in (out["character_bible"] or {}).get("characters") or []:
@@ -505,7 +510,7 @@ def narration(c: Ctx):
             voice = "coral" if not endpoint.startswith("tts-1") else "nova"
         c.cfg.voice = voice
         c.db.commit()
-    speed = float((c.cfg.extra or {}).get("speed") or 1.0)
+    speed = float((c.cfg.extra or {}).get("speed") or 1.08)  # 쇼츠는 보통 말보다 약간 빠르게
     pron = (c.user.settings or {}).get("pronunciation") or {}
     stt_m = c.model(plan.get("stt_model")) or c.pick("stt")
     scenes = c.scenes()
@@ -580,7 +585,7 @@ def narration(c: Ctx):
             rel = [{"w": x["w"], "s": round(max(x["s"] - sg["cut_s"], 0), 3), "e": round(max(x["e"] - sg["cut_s"], 0), 3)} for x in w]
             s.words = speech.retime_script_words(s.narration, rel, seg_len)
             s.sync_method, s.audio_asset_id = method, a.id
-            s.duration = round(seg_len + (0.6 if s.idx == len(scenes) - 1 else 0.0), 3)
+            s.duration = round(seg_len + (0.8 if s.idx == len(scenes) - 1 else 0.06), 3)
             c.db.commit()
     t = 0.0
     for s in scenes:
@@ -803,7 +808,7 @@ def videos(c: Ctx):
         c.step(n, len(todo), "영상 생성" if n else None)
         img = c.asset(s.image_asset_id)
         tried: set[str] = set()
-        m, ok = c.model(s.video_model), False
+        m, ok, retried = c.model(s.video_model), False, False
         tier = m.tier if m else "standard"
         if not m or m.provider in blocked or not c.has(m.provider):
             if m:
@@ -815,7 +820,9 @@ def videos(c: Ctx):
                 url = _frame_url(c, m.provider, client, img)
                 prompt = ". ".join(x for x in [s.video_prompt or s.image_prompt, s.subject_motion,
                                                f"Camera: {s.camera_move or s.shot}" if (s.camera_move or s.shot) else None,
-                                               "smooth natural motion, consistent subject, no text"] if x)
+                                               "clearly visible continuous motion of the subject and camera from the first frame"
+                                               if retried else None,
+                                               "cinematic, photoreal, natural motion, consistent subject, no text, no static shot"] if x)
                 secs = video_seconds(m, s.duration)
                 if m.provider == "higgsfield":
                     body = hf.build_payload(m, prompt=prompt, aspect="9:16", duration=s.duration, image_url=url,
@@ -829,7 +836,21 @@ def videos(c: Ctx):
                 res = c.paid(provider=m.provider, model=m, kind="video", scene=s, payload=key_payload,
                              est_cost=unit_cost(m, secs), attempt=s.attempts, run=run)
                 s.video_asset_id, s.video_model = res["asset_id"], m.model_key
+                score = ffmpeg.motion_score(c.storage.local_path(c.asset(res["asset_id"]).storage_key))
+                s.edit = {**(s.edit or {}), "motion": score}
+                flag_modified(s, "edit")
                 c.db.commit()
+                if score < MIN_MOTION and not retried:
+                    # 거의 정지 화면이면 움직임을 더 강하게 지시해 한 번 더 만든다(예산이 허락할 때만)
+                    try:
+                        c.ensure_budget(unit_cost(m, secs) or 0)
+                        retried = True
+                        s.attempts += 1
+                        c.db.commit()
+                        c.log(f"장면 {s.idx + 1}: 움직임이 거의 없어(측정 {score}) 다시 생성합니다.", "warn")
+                        continue
+                    except BudgetExceeded:
+                        c.log(f"장면 {s.idx + 1}: 움직임이 적지만(측정 {score}) 예산 때문에 그대로 씁니다.", "warn")
                 ok, made = True, made + 1
             except ProviderError as e:
                 if e.kind in ("auth", "balance", "config"):
@@ -851,24 +872,84 @@ def videos(c: Ctx):
     c.save_data("videos", {"generated": made, "degraded_to_image": degraded, "blocked_providers": sorted(blocked)})
 
 
-# 16. 배경음악 (음향 감독, 규칙 기반) -----------------------------------
+# 16. 사운드 디자인: 배경음악 + 효과음 (음향 감독) -----------------------
+SFX_PROMPTS = {
+    "whoosh": ("fast cinematic whoosh swoosh transition, clean, short, no music", 0.8),
+    "hit": ("deep cinematic impact hit with short sub boom, punchy, no music", 1.2),
+    "riser": ("tension riser swelling upward, cinematic, ends abruptly, no music", 2.0),
+}
+
+
+def _synth_sfx(kind: str, out: str) -> str:
+    """API 없이 만드는 기본 효과음(FFmpeg 합성). 라이선스 걱정이 없다."""
+    f = {"whoosh": "anoisesrc=d=0.7:c=pink:a=0.9,highpass=f=400,lowpass=f=5000,afade=t=in:d=0.25,afade=t=out:st=0.3:d=0.4",
+         "hit": "sine=f=55:d=1.0,volume=2.2,afade=t=out:st=0.05:d=0.95",
+         "riser": "anoisesrc=d=1.8:c=white:a=0.5,highpass=f=800,afade=t=in:d=1.7,afade=t=out:st=1.7:d=0.1"}[kind]
+    ffmpeg.run([ffmpeg.FF, "-y", "-loglevel", "error", "-f", "lavfi", "-i", f, "-ar", "48000", "-ac", "2", out])
+    return out
+
+
 def music(c: Ctx):
-    mood = c.data("storyboard").get("music_mood")
-    q = c.db.query(AudioTrack).filter(AudioTrack.kind == "music", (AudioTrack.user_id == c.p.user_id) | (AudioTrack.user_id.is_(None)))
-    ok = []
-    for t in q:
-        lic = c.db.get(License, t.license_id) if t.license_id else None
-        if lic and lic.commercial_ok:  # 상업적 이용이 확인된 음원만 사용
-            ok.append((t, lic))
-    if (c.cfg.extra or {}).get("no_music") or not ok:
-        c.save_data("music", {"track": None, "note": "사용 가능한(상업적 이용 허락이 등록된) 음원이 없어 배경음악 없이 제작합니다."
-                              if not ok else "배경음악 사용 안 함"})
-        return
-    pick = next(((t, l) for t, l in ok if t.mood == mood), ok[0])
-    c.save_data("music", {"track": pick[0].id, "key": pick[0].storage_key, "title": pick[0].title, "mood": pick[0].mood,
-                          "mood_matched": pick[0].mood == mood,
-                          "license": {"name": pick[1].name, "type": pick[1].license_type, "source": pick[1].source_url,
-                                      "attribution": pick[1].attribution}})
+    board = latest_board(c)
+    mood = (board.data or {}).get("music_mood") or c.data("storyboard").get("music_mood")
+    total = sum(s.duration for s in c.scenes())
+    out: dict = {"track": None, "sfx": {}}
+    no_music = bool((c.cfg.extra or {}).get("no_music"))
+    el = c.has("elevenlabs")
+    audio = speech.ElevenLabsAudio(c.cred("elevenlabs")["api_key"]) if el else None
+
+    # 1) 배경음악: 라이브러리의 상업 이용 가능 곡 → 없으면 ElevenLabs 로 영상 길이에 맞춰 작곡
+    if not no_music:
+        q = c.db.query(AudioTrack).filter(AudioTrack.kind == "music", (AudioTrack.user_id == c.p.user_id) | (AudioTrack.user_id.is_(None)))
+        lib = [(t, c.db.get(License, t.license_id)) for t in q if t.license_id]
+        lib = [(t, l) for t, l in lib if l and l.commercial_ok]
+        pick = next(((t, l) for t, l in lib if t.mood == mood), None)
+        if pick:
+            out.update(track=pick[0].id, key=pick[0].storage_key, title=pick[0].title, mood=pick[0].mood,
+                       license={"name": pick[1].name, "type": pick[1].license_type, "source": pick[1].source_url,
+                                "attribution": pick[1].attribution})
+        elif audio:
+            prompt = ((board.data or {}).get("music_prompt") or f"{mood} cinematic background score for a short documentary") + \
+                ", instrumental only, no vocals, steady energy, modern YouTube Shorts background music, mix leaves room for voice-over"
+            try:
+                def run(_k, _r, _o):
+                    r = audio.music(prompt, total + 1.5)
+                    a = c.save_asset("audio", "mp3", data=r.data, provider="elevenlabs", model_key=r.raw.get("model"),
+                                     meta={"music": True, "prompt": prompt})
+                    return {"asset_id": a.id, "model": r.raw.get("model")}
+                res = c.paid(provider="elevenlabs", model=None, kind="music", scene=None,
+                             payload={"prompt": prompt, "len": round(total, 1)}, est_cost=None, run=run)
+                out.update(track="generated", key=c.asset(res["asset_id"]).storage_key, title="AI 생성 배경음악", mood=mood,
+                           license={"name": f"ElevenLabs Music ({res.get('model')})", "type": "AI 생성",
+                                    "attribution": "상업적 이용 범위는 ElevenLabs 요금제 약관을 따릅니다"})
+            except ProviderError as e:
+                c.log(f"배경음악 생성 실패 → 배경음악 없이 진행: {e.message}", "warn")
+        else:
+            out["note"] = "상업 이용 가능한 음원이 없고 ElevenLabs 가 연결되지 않아 배경음악 없이 제작합니다."
+
+    # 2) 효과음: 이 사용자용으로 한 번 만들어 두고 계속 재사용
+    for kind in sorted({(s.edit or {}).get("sfx") for s in c.scenes()} - {None}):
+        title = f"auto-sfx:{kind}"
+        have = c.db.query(AudioTrack).filter_by(user_id=c.p.user_id, kind="sfx", title=title).first()
+        if not have:
+            key, src = f"users/{c.p.user_id}/sfx/{kind}.mp3", "ffmpeg"
+            data = None
+            if audio:
+                try:
+                    data = audio.sfx(*SFX_PROMPTS[kind]).data
+                    src = "elevenlabs"
+                except ProviderError as e:
+                    c.log(f"효과음({kind}) 생성 실패 → 기본 효과음 사용: {e.message}", "warn")
+            if data:
+                c.storage.put_bytes(key, data)
+            else:
+                p_ = _synth_sfx(kind, os.path.join(c.work, f"sfx_{kind}.mp3"))
+                c.storage.put_file(key, p_)
+            have = AudioTrack(user_id=c.p.user_id, kind="sfx", title=title, storage_key=key, meta={"source": src})
+            c.db.add(have)
+            c.db.commit()
+        out["sfx"][kind] = have.storage_key
+    c.save_data("music", out)
 
 
 # 17~18. 자막 -----------------------------------------------------------
@@ -879,7 +960,10 @@ def subs(c: Ctx):
     w, h = (int(x) for x in c.cfg.resolution.split("x"))
     style = {"font": c.s.subtitle_font, **(c.cfg.subtitle_style or {})}
     c.db.query(Subtitle).filter_by(project_id=c.p.id).delete()
-    files = {"srt": subtitles.to_srt(cues), "vtt": subtitles.to_vtt(cues), "ass": subtitles.to_ass(cues, w, h, style)}
+    titles = [{"s": round(s.start + 0.05, 3), "e": round(s.end - 0.05, 3), "text": (s.edit or {}).get("title_text")}
+              for s in scenes if (s.edit or {}).get("title_text")]
+    files = {"srt": subtitles.to_srt(cues), "vtt": subtitles.to_vtt(cues),
+             "ass": subtitles.to_ass(cues, w, h, style, titles)}
     sync = ", ".join(sorted({s.sync_method or "" for s in scenes}))
     for fmt, text in files.items():
         key = f"{c.p.id}/subtitle/{c.p.language}.{fmt}"
@@ -922,12 +1006,21 @@ def timeline(c: Ctx):
         items.append({"idx": s.idx, "scene_id": s.id, "type": "video" if use_video else "image", "key": a.storage_key,
                       "audio_key": c.asset(s.audio_asset_id).storage_key if s.audio_asset_id else None,
                       "start": s.start, "dur": s.duration, "transition": s.transition,
+                      "punch": bool((s.edit or {}).get("punch_in")),
                       "move": ffmpeg.camera_to_move(s.camera_move or s.shot, s.idx)})
     mus = c.data("music")
+    fx_keys = mus.get("sfx") or {}
+    sfx = []
+    for s in c.scenes():
+        kind = (s.edit or {}).get("sfx")
+        if kind in fx_keys:
+            lead, gain = {"whoosh": (0.18, 0.45), "hit": (0.0, 0.6), "riser": (1.8, 0.35)}[kind]
+            sfx.append({"key": fx_keys[kind], "at": round(max(s.start - lead, 0), 3), "gain": gain, "kind": kind})
     brand = c.cfg.branding or {}
     tl = {"width": w, "height": h, "fps": c.cfg.fps, "transition_sec": 0.3, "scenes": items,
           "ass": f"{c.p.id}/subtitle/{c.p.language}.ass",
-          "audio": {"music": {"key": mus["key"], "gain": float((c.cfg.extra or {}).get("music_gain") or 0.22)}} if mus.get("key") else {},
+          "audio": {**({"music": {"key": mus["key"], "gain": float((c.cfg.extra or {}).get("music_gain") or 0.2)}} if mus.get("key") else {}),
+                    "sfx": sfx},
           "look": {"color": True, "denoise": bool((c.cfg.extra or {}).get("denoise"))},
           "branding": {"logo_key": brand.get("logo_key")} if brand.get("logo_key") else {}}
     c.db.add(RenderJob(project_id=c.p.id, timeline=tl, settings={"crf": 18, "vcodec": "h264", "acodec": "aac"}))
@@ -1087,7 +1180,7 @@ def package(c: Ctx):
         "covers": covers, "thumbnail": thumb,
         "thumbnail_note": "쇼츠는 업로드 API로 사용자 지정 썸네일을 넣을 수 없는 경우가 많아, 커버 프레임 후보를 함께 제공합니다. 적용 방식은 업로드 화면에서 확인하세요.",
         "subtitles": [s.storage_key for s in c.db.query(Subtitle).filter_by(project_id=c.p.id) if s.format in ("srt", "vtt")],
-        "music": mus if mus.get("track") else None,
+        "music": {k: v for k, v in mus.items() if k != "sfx"} if mus.get("track") else None,
         "quality": {"total": rv.get("total"), "passed": rv.get("passed"), "partial": rv.get("partial"), "disclaimer": rv.get("disclaimer")},
         "video": job.probe, "cost_usd": c.p.actual_cost_usd,
     }

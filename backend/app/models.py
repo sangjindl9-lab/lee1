@@ -211,6 +211,7 @@ class Scene(Row, Base):
     video_asset_id: Mapped[str | None] = mapped_column(String(32))
     audio_asset_id: Mapped[str | None] = mapped_column(String(32))
     words: Mapped[list] = mapped_column(JSON, default=list)
+    edit: Mapped[dict | None] = mapped_column(JSON, default=dict)  # title_text, punch_in, sfx, motion
     sync_method: Mapped[str | None] = mapped_column(String(32))
 
 

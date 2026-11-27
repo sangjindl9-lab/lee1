@@ -28,6 +28,9 @@ from . import assets  # noqa: E402
 ASSET = assets.bundle(f"{_tmp}/assets")
 PNG = open(ASSET["img1"], "rb").read()
 MP4 = open(ASSET["vid"], "rb").read()
+subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-loop", "1", "-i", ASSET["img1"], "-t", "5", "-vf", "scale=720:1280",
+                "-pix_fmt", "yuv420p", f"{_tmp}/static.mp4"], check=True)
+STATIC_MP4 = open(f"{_tmp}/static.mp4", "rb").read()
 _mp3 = {}
 
 
@@ -55,6 +58,7 @@ class World:
         self.hf_bodies = []
         self.openai_bodies = []
         self.tts_texts = []
+        self.static_once = False
         self.tv_tasks, self.tv_bodies, self.tv_no_balance = {}, [], False
         self.idem_keys = []
         self.balance_empty = False
@@ -100,7 +104,9 @@ class World:
                     "scenes": [{"narration": n, "tts_text": n, "image_prompt": f"deep sea scene {i}", "video_prompt": f"glowing creature drifting {i}",
                                 "negative_prompt": "text, watermark", "characters": [], "background": "abyss", "shot": "Wide Shot",
                                 "camera_move": "Dolly In", "lens": "35mm", "lighting": "glow", "color_mood": "blue", "subject_motion": "drifting",
-                                "subtitle_position": "lower", "emphasis_words": [], "sfx": "", "transition": "fade" if i == 0 else "cut",
+                                "subtitle_position": "lower", "emphasis_words": [], "sfx": ["hit", "whoosh", "none", "riser"][i],
+                                "title_text": ["단 3초", "", "1. 유인", ""][i], "punch_in": i % 2 == 0,
+                                "transition": "fade" if i == 0 else "cut",
                                 "motion_need": m, "importance": imp, "quality_bar": "발광 생물이 보일 것"} for i, (n, m, imp) in enumerate(SCENES)]}
         if name == "품질검수 AI":
             assert any(p.get("type") == "image" for p in body["messages"][0]["content"]), "검수에 프레임이 첨부돼야 한다"
@@ -142,6 +148,9 @@ class World:
             return httpx.Response(404, json={"detail": "Request not found"})
         if kind == "image":
             return httpx.Response(200, json={"status": "completed", "request_id": rid, "images": [{"url": f"https://cdn.test/{rid}.png"}]})
+        if self.static_once:
+            self.static_once = False
+            return httpx.Response(200, json={"status": "completed", "request_id": rid, "video": {"url": f"https://cdn.test/static/{rid}.mp4"}})
         return httpx.Response(200, json={"status": "completed", "request_id": rid, "video": {"url": f"https://cdn.test/{rid}.mp4"}})
 
     # ---- ElevenLabs ----
@@ -189,8 +198,22 @@ def world(monkeypatch):
         mock.get(url__regex=r"https://api\.higgsfield\.ai/requests/[^/]+/status").mock(side_effect=w.hf_status)
         mock.post(url__regex=r"https://api\.higgsfield\.ai/requests/[^/]+/cancel").mock(return_value=httpx.Response(202))
         mock.get(url__regex=r"https://cdn\.test/.+\.png").mock(return_value=httpx.Response(200, content=PNG))
-        mock.get(url__regex=r"https://cdn\.test/.+\.mp4").mock(return_value=httpx.Response(200, content=MP4))
+        mock.get(url__regex=r"https://cdn\.test/static/.+\.mp4").mock(return_value=httpx.Response(200, content=STATIC_MP4))
+        mock.get(url__regex=r"https://cdn\.test/[^/]+\.mp4").mock(return_value=httpx.Response(200, content=MP4))
         mock.post(url__regex=r"https://api\.elevenlabs\.io/v1/text-to-speech/.+/with-timestamps.*").mock(side_effect=w.tts)
+        MUSIC = open(ASSET["music"], "rb").read()
+
+        def el_music(request):
+            w.calls["music"] = w.calls.get("music", 0) + 1
+            body = json.loads(request.content)
+            assert body["force_instrumental"] is True and body["music_length_ms"] >= 3000
+            return httpx.Response(200, content=MUSIC, headers={"song-id": "s1"})
+
+        def el_sfx(request):
+            w.calls["sfx"] = w.calls.get("sfx", 0) + 1
+            return httpx.Response(200, content=_mp3[min(_mp3)] if _mp3 else MUSIC)
+        mock.post(url__regex=r"https://api\.elevenlabs\.io/v1/music.*").mock(side_effect=el_music)
+        mock.post(url__regex=r"https://api\.elevenlabs\.io/v1/sound-generation.*").mock(side_effect=el_sfx)
         mock.get("https://api.elevenlabs.io/v1/voices").mock(return_value=httpx.Response(200, json={"voices": [{"voice_id": "v1", "name": "Narrator"}]}))
         mock.get(url__regex=r"https://www\.googleapis\.com/youtube/v3/.*").mock(side_effect=w.yt)
         TV = "https://platform-backend.topview.ai/api/v1"

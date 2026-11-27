@@ -79,23 +79,57 @@ def image_clip(src: str, out: str, dur: float, w: int, h: int, fps: int, move: s
     elif move == "pan_down":
         y = f"(ih-ih/zoom)*on/{n}"
     vf = (f"scale={sw}:{sh}:force_original_aspect_ratio=increase,crop={sw}:{sh},"
-          f"zoompan=z='{z}':x='{x}':y='{y}':d=1:s={w}x{h}:fps={fps},format=yuv420p")
+          f"zoompan=z='{z}':x='{x}':y='{y}':d=1:s={w}x{h}:fps={fps},setsar=1,format=yuv420p")
     run([FF, "-y", "-loglevel", "error", "-loop", "1", "-framerate", str(fps), "-i", src, "-t", f"{dur:.3f}",
          "-vf", vf, "-r", str(fps), "-c:v", "libx264", "-preset", "veryfast", "-crf", "17", "-an", out])
 
 
-def video_clip(src: str, out: str, dur: float, w: int, h: int, fps: int) -> None:
+def video_clip(src: str, out: str, dur: float, w: int, h: int, fps: int, punch: bool = False) -> None:
+    """생성 영상을 장면 길이에 맞춘다. 천천히 밀고 들어가는 푸시인으로 화면을 살리고,
+    punch=True 면 장면 가운데에서 1.22배 확대 컷(편집의 '펀치 인')을 넣어 리듬을 만든다."""
     src_d = duration(src)
-    chain = [f"scale={w}:{h}:force_original_aspect_ratio=increase", f"crop={w}:{h}"]
+    pre = []
     if src_d < dur:
         ratio = dur / src_d
         if ratio <= 1.3:  # 조금 모자라면 살짝 늦춰 맞춘다
-            chain.append(f"setpts={ratio:.4f}*PTS")
+            pre.append(f"setpts={ratio:.4f}*PTS")
         else:  # 많이 모자라면 마지막 프레임을 유지
-            chain.append(f"tpad=stop_mode=clone:stop_duration={dur - src_d + 0.2:.3f}")
-    chain += [f"fps={fps}", "format=yuv420p"]
-    run([FF, "-y", "-loglevel", "error", "-i", src, "-t", f"{dur:.3f}", "-vf", ",".join(chain), "-r", str(fps),
-         "-c:v", "libx264", "-preset", "veryfast", "-crf", "17", "-an", out])
+            pre.append(f"tpad=stop_mode=clone:stop_duration={dur - src_d + 0.2:.3f}")
+    n = max(int(round(dur * fps)), 1)
+    sw, sh = int(w * 1.08) // 2 * 2, int(h * 1.08) // 2 * 2
+    base = pre + [f"fps={fps}", f"scale={sw}:{sh}:force_original_aspect_ratio=increase", f"crop={sw}:{sh}",
+                  f"zoompan=z='1+0.06*on/{n}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s={w}x{h}:fps={fps}"]
+    if punch and dur >= 2.2:
+        m = round(dur * 0.55, 3)
+        graph = (f"[0:v]{','.join(base)},setsar=1,split[a][b];[a]trim=0:{m},setpts=PTS-STARTPTS[a1];"
+                 f"[b]trim={m}:{dur:.3f},setpts=PTS-STARTPTS,scale=iw*1.22:-2,crop={w}:{h},setsar=1[b1];"
+                 f"[a1][b1]concat=n=2:v=1:a=0,format=yuv420p[v]")
+        run([FF, "-y", "-loglevel", "error", "-i", src, "-filter_complex", graph, "-map", "[v]", "-t", f"{dur:.3f}",
+             "-r", str(fps), "-c:v", "libx264", "-preset", "veryfast", "-crf", "17", "-an", out])
+        return
+    run([FF, "-y", "-loglevel", "error", "-i", src, "-t", f"{dur:.3f}", "-vf", ",".join(base + ["setsar=1", "format=yuv420p"]),
+         "-r", str(fps), "-c:v", "libx264", "-preset", "veryfast", "-crf", "17", "-an", out])
+
+
+def motion_score(path: str, max_seconds: float = 6.0) -> float:
+    """영상이 실제로 움직이는 정도(작게 줄인 프레임 간 평균 밝기 차). 정지 화면에 가까우면 3 이하."""
+    import cv2
+    import numpy as np
+    cap = cv2.VideoCapture(path)
+    fps = cap.get(cv2.CAP_PROP_FPS) or 24
+    prev, diffs, i = None, [], 0
+    while i < fps * max_seconds:
+        ok, f = cap.read()
+        if not ok:
+            break
+        if i % 3 == 0:
+            g = cv2.cvtColor(cv2.resize(f, (180, 320)), cv2.COLOR_BGR2GRAY).astype(np.float32)
+            if prev is not None:
+                diffs.append(float(np.abs(g - prev).mean()))
+            prev = g
+        i += 1
+    cap.release()
+    return round(sum(diffs) / len(diffs), 2) if diffs else 0.0
 
 
 def narration_track(items: list[dict], out: str) -> None:
@@ -129,7 +163,7 @@ def render(timeline: dict, work: str, resolve) -> str:
         out = os.path.join(work, f"clip_{i:03d}.mp4")
         src = resolve(s["key"])
         if s["type"] == "video":
-            video_clip(src, out, length, w, h, fps)
+            video_clip(src, out, length, w, h, fps, bool(s.get("punch")))
         else:
             image_clip(src, out, length, w, h, fps, s.get("move", "zoom_in"))
         clips.append(out)
@@ -174,21 +208,38 @@ def render(timeline: dict, work: str, resolve) -> str:
     if music:
         cmd += ["-stream_loop", "-1", "-i", resolve(music["key"])]
         m_idx, idx = idx, idx + 1
+    sfx = [x for x in (timeline.get("audio") or {}).get("sfx") or [] if x.get("key")]
+    sfx_idx = []
+    for x in sfx:
+        cmd += ["-i", resolve(x["key"])]
+        sfx_idx.append(idx)
+        idx += 1
     if logo:
         cmd += ["-i", resolve(logo)]
         lw = int(w * 0.16)
         graph.append(f"[{idx}:v]scale={lw}:-1,format=rgba,colorchannelmixer=aa=0.85[lg]")
         graph.append(f"[vsub][lg]overlay=x=40:y=60[vlogo]")
         vout = "[vlogo]"
+    # 효과음: 장면 시작 시각에 맞춰 얹는다(전환 직전에 살짝 앞당겨 귀에 붙게).
+    fx_labels = []
+    for k, (x, i) in enumerate(zip(sfx, sfx_idx)):
+        ms = max(int(x["at"] * 1000), 0)
+        graph.append(f"[{i}:a]aresample=48000,aformat=channel_layouts=stereo,volume={float(x.get('gain', 0.5))},"
+                     f"adelay={ms}|{ms},apad,atrim=0:{total:.3f}[fx{k}]")
+        fx_labels.append(f"[fx{k}]")
+    narr = f"[{n}:a]"
     if music:
         gain = float(music.get("gain", 0.22))
         graph.append(f"[{n}:a]asplit=2[na][nk]")
         graph.append(f"[{m_idx}:a]aresample=48000,aformat=channel_layouts=stereo,atrim=0:{total:.3f},volume={gain},"
                      f"afade=t=in:st=0:d=0.5,afade=t=out:st={max(total - 1.5, 0):.3f}:d=1.5[mu]")
         graph.append("[mu][nk]sidechaincompress=threshold=0.02:ratio=10:attack=15:release=350[md]")
-        graph.append("[na][md]amix=inputs=2:duration=first:normalize=0,loudnorm=I=-14:TP=-1.5:LRA=11[aout]")
-    else:
-        graph.append(f"[{n}:a]loudnorm=I=-14:TP=-1.5:LRA=11[aout]")
+        graph.append("[na][md]amix=inputs=2:duration=first:normalize=0[nm]")
+        narr = "[nm]"
+    if fx_labels:
+        graph.append(f"{narr}{''.join(fx_labels)}amix=inputs={1 + len(fx_labels)}:duration=first:normalize=0[mx]")
+        narr = "[mx]"
+    graph.append(f"{narr}loudnorm=I=-14:TP=-1.5:LRA=11[aout]")
     out = os.path.join(work, "final.mp4")
     cmd += ["-filter_complex", ";".join(graph), "-map", vout, "-map", "[aout]", "-t", f"{total:.3f}",
             "-r", str(fps), "-c:v", "libx264", "-profile:v", "high", "-pix_fmt", "yuv420p", "-crf", "18",

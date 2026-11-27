@@ -62,8 +62,38 @@ class ElevenLabsTTS:
 NARRATOR_STYLE = {
     "ko": "자연스러운 한국어 표준어 내레이션. 유튜브 지식 쇼츠 해설자처럼 또렷하고 생동감 있게 읽는다. "
           "띄어쓰기마다 끊지 말고 문장 단위로 자연스럽게 이어 읽으며, 문장 끝은 살짝 내려 마무리한다. "
-          "외래어와 숫자는 한국 방송에서 읽는 방식대로 발음한다.",
+          "외래어와 숫자는 한국 방송에서 읽는 방식대로 발음한다. 쇼츠답게 약간 빠르고 힘 있는 템포로, 문장 사이 쉼은 짧게.",
 }
+
+
+class ElevenLabsAudio:
+    """ElevenLabs 음악(POST /v1/music)·효과음(POST /v1/sound-generation)."""
+    name = "elevenlabs"
+    MUSIC_MODELS = ("music_v2_5", "music_v2", "music_v1")
+
+    def __init__(self, api_key: str):
+        self.h = {"xi-api-key": api_key, "Content-Type": "application/json"}
+
+    def music(self, prompt: str, seconds: float) -> GenResult:
+        last = None
+        for model in self.MUSIC_MODELS:  # 요금제·계정에 따라 쓸 수 없는 모델이 있으면 다음 모델로
+            try:
+                resp = call(self.name, "POST", "https://api.elevenlabs.io/v1/music", headers=self.h, raw=True, timeout=600,
+                            params={"output_format": "mp3_44100_128"}, retries=1,
+                            json={"prompt": prompt[:4000], "music_length_ms": int(max(3000, min(600000, seconds * 1000))),
+                                  "model_id": model, "force_instrumental": True})
+                return GenResult(data=resp.content, raw={"model": model, "song_id": resp.headers.get("song-id")})
+            except ProviderError as e:
+                if e.kind not in ("invalid", "auth", "not_found"):
+                    raise
+                last = e
+        raise last  # type: ignore[misc]
+
+    def sfx(self, text: str, seconds: float) -> GenResult:
+        resp = call(self.name, "POST", "https://api.elevenlabs.io/v1/sound-generation", headers=self.h, raw=True,
+                    timeout=180, params={"output_format": "mp3_44100_128"},
+                    json={"text": text, "duration_seconds": max(0.5, min(30, seconds)), "prompt_influence": 0.6})
+        return GenResult(data=resp.content)
 
 
 class OpenAITTS:
@@ -232,10 +262,16 @@ def split_by_words(spans, full: str, words: list[dict], total: float) -> list[di
     return _cut_points(out, total)
 
 
+LEAD, TAIL = 0.06, 0.14  # 말 앞뒤로 남길 여백(초). 문장 사이 긴 쉼은 버려 쇼츠 템포를 만든다.
+
+
 def _cut_points(segs: list[dict], total: float) -> list[dict]:
-    """장면 사이 무음 구간의 가운데에서 자른다. 첫 장면은 0초, 마지막 장면은 끝까지."""
+    """장면마다 '말 시작 - LEAD' ~ '말 끝 + TAIL' 만 잘라 쓴다. 이웃 장면과 겹치면 쉼의 가운데에서 자른다."""
     for i, sg in enumerate(segs):
-        sg["cut_s"] = 0.0 if i == 0 else round((segs[i - 1]["e"] + sg["s"]) / 2, 3)
-    for i, sg in enumerate(segs):
-        sg["cut_e"] = round(total, 3) if i == len(segs) - 1 else segs[i + 1]["cut_s"]
+        mid_prev = (segs[i - 1]["e"] + sg["s"]) / 2 if i else 0.0
+        mid_next = (sg["e"] + segs[i + 1]["s"]) / 2 if i + 1 < len(segs) else total
+        sg["cut_s"] = round(max(sg["s"] - LEAD, mid_prev, 0.0), 3)
+        sg["cut_e"] = round(min(sg["e"] + TAIL, mid_next, total), 3)
+        if sg["cut_e"] <= sg["cut_s"]:
+            sg["cut_e"] = round(min(total, sg["cut_s"] + 0.3), 3)
     return segs

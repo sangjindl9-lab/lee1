@@ -3,17 +3,19 @@ import re
 
 CJK = {"ko", "ja", "zh"}
 DEFAULT_STYLE = {
-    "font": "Noto Sans CJK KR", "size": 86, "primary": "#FFFFFF", "highlight": "#FFE500",
-    "emphasis": "#3DE0FF", "outline": "#000000", "outline_width": 7, "shadow": 2,
+    "font": "Noto Sans CJK KR", "size": 112, "primary": "#FFFFFF", "highlight": "#FFE500",
+    "emphasis": "#3DE0FF", "outline": "#000000", "outline_width": 9, "shadow": 3,
     # 쇼츠 화면의 하단 제목·설명 영역과 우측 버튼 열을 피한다(1080x1920 기준 픽셀).
-    "margin_v": 470, "margin_l": 90, "margin_r": 190, "kinetic": True,
+    "margin_v": 560, "margin_l": 90, "margin_r": 190, "kinetic": True,
+    # 상단 타이틀(핵심 문구 카드)
+    "title_size": 110, "title_text": "#111111", "title_box": "#FFE500", "title_margin_v": 300,
 }
 _END = re.compile(r"[.!?。！？…]$")
 
 
 def build_cues(scenes: list[dict], language: str = "ko") -> list[dict]:
     """scenes: [{start, words:[{w,s,e}], position, emphasis:[...]}] → 화면 단위 큐."""
-    max_chars = 12 if language in CJK else 22
+    max_chars = 9 if language in CJK else 18  # 쇼츠 자막은 한 번에 2~3단어
     cues = []
     for sc in scenes:
         cur: list[dict] = []
@@ -71,7 +73,8 @@ def _esc(s: str) -> str:
     return s.replace("{", "(").replace("}", ")").replace("\\", "/").replace("\n", " ")
 
 
-def to_ass(cues: list[dict], width: int = 1080, height: int = 1920, style: dict | None = None) -> str:
+def to_ass(cues: list[dict], width: int = 1080, height: int = 1920, style: dict | None = None,
+           titles: list[dict] | None = None) -> str:
     st = {**DEFAULT_STYLE, **(style or {})}
     k = height / 1920
     size, mv = int(st["size"] * k), int(st["margin_v"] * k)
@@ -88,6 +91,7 @@ ScaledBorderAndShadow: yes
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 Style: Lower,{st['font']},{size},{_ass_color(st['primary'])},&H000000FF&,{_ass_color(st['outline'])},&H7F000000&,-1,0,0,0,100,100,0,0,1,{st['outline_width']},{st['shadow']},2,{ml},{mr},{mv},1
 Style: Center,{st['font']},{size},{_ass_color(st['primary'])},&H000000FF&,{_ass_color(st['outline'])},&H7F000000&,-1,0,0,0,100,100,0,0,1,{st['outline_width']},{st['shadow']},5,{ml},{mr},0,1
+Style: Title,{st['font']},{int(st['title_size'] * k)},{_ass_color(st['title_text'])},&H000000FF&,{_ass_color(st['title_box'])},&H00000000&,-1,0,0,0,100,100,0,0,3,{int(22 * k)},0,8,{ml},{mr},{int(st['title_margin_v'] * k)},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -113,6 +117,12 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 else:
                     parts.append(t)
             lines.append(f"Dialogue: 0,{_ass_ts(start)},{_ass_ts(end)},{name},,0,0,0,,{' '.join(parts)}")
+    for t in titles or []:
+        if not t.get("text") or t["e"] <= t["s"]:
+            continue
+        # 튀어나오듯 커졌다가 자리 잡는 카드(편집 툴의 '팝' 타이틀)
+        anim = "{\\fad(60,140)\\fscx135\\fscy135\\t(0,160,\\fscx100\\fscy100)}"
+        lines.append(f"Dialogue: 1,{_ass_ts(t['s'])},{_ass_ts(t['e'])},Title,,0,0,0,,{anim}{_esc(t['text'])}")
     return head + "\n".join(lines) + "\n"
 
 

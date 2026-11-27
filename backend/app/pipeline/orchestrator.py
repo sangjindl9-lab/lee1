@@ -31,7 +31,7 @@ STAGES = [
     ("narration", "GENERATING", "pipeline", "내레이션 생성", S.narration),
     ("images", "GENERATING", "pipeline", "이미지 생성", S.images),
     ("videos", "GENERATING", "pipeline", "영상 생성", S.videos),
-    ("music", "GENERATING", "pipeline", "배경음악 선정", S.music),
+    ("music", "GENERATING", "pipeline", "배경음악·효과음", S.music),
     ("subs", "EDITING", "pipeline", "자막 생성", S.subs),
     ("timeline", "EDITING", "pipeline", "편집 타임라인 구성", S.timeline),
     ("render", "RENDERING", "render", "영상 렌더링", S.render),
