@@ -437,6 +437,12 @@ async function ensureAdmin() {
     await q('INSERT INTO admins(username, pw_hash) VALUES ($1,$2) ON CONFLICT DO NOTHING', [u, h]);
     console.log('admin created:', u);
   }
+  // 관리자 비밀번호 재설정: ADMIN_RESET_PASSWORD_HASH(bcrypt)가 있으면 그 관리자 비밀번호를 바꾸고 세션을 모두 끊음 (적용 후 변수는 비웁니다)
+  const r = process.env.ADMIN_RESET_PASSWORD_HASH;
+  if (u && r && /^\$2[aby]\$\d\d\$/.test(r)) {
+    const a = await one('UPDATE admins SET pw_hash=$1, failed=0, locked_until=NULL WHERE username=$2 AND pw_hash<>$1 RETURNING id', [r, u]);
+    if (a) { await q('DELETE FROM admin_sessions WHERE admin_id=$1', [a.id]); await log(null, null, 'admin_password_reset', u, null); console.log('admin password reset:', u); }
+  }
 }
 app.post('/api/admin/login', limit(10, 15 * 60e3), wrap(async (req, res) => {
   const username = String(req.body?.username || '').trim(), password = String(req.body?.password || '');
