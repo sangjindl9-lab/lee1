@@ -54,6 +54,7 @@ class World:
         self.hf_requests = {}
         self.hf_bodies = []
         self.openai_bodies = []
+        self.tts_texts = []
         self.tv_tasks, self.tv_bodies, self.tv_no_balance = {}, [], False
         self.idem_keys = []
         self.balance_empty = False
@@ -147,6 +148,7 @@ class World:
     def tts(self, request: httpx.Request):
         self.calls["tts"] += 1
         text = json.loads(request.content)["text"]
+        self.tts_texts.append(text)
         data, dur = mp3_for(text)
         step = (dur - 0.2) / max(len(text), 1)
         return httpx.Response(200, json={"audio_base64": base64.b64encode(data).decode(), "alignment": {

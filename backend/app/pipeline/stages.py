@@ -364,7 +364,8 @@ def plan_budget(c: Ctx):
     vmodels = {x.model_key: x for x in pool}
     if i2v:
         vmodels[i2v.model_key] = i2v
-    tts = c.pick("tts", tier, c.cfg.tts_model, need="word_timestamps")
+    # 음성은 비용보다 품질이 우선: 글자 타임스탬프를 주는 ElevenLabs 를 먼저 쓴다.
+    tts = c.pick("tts", "premium", c.cfg.tts_model, need="word_timestamps", prefer_priced=False)
     stt = c.pick("stt") if tts and not (tts.capabilities or {}).get("word_timestamps") else None
     if not img:
         raise ProviderError("image", "config", "연결된 이미지 생성 모델이 없습니다. Higgsfield 또는 OpenAI 키를 등록하세요.")
@@ -374,12 +375,8 @@ def plan_budget(c: Ctx):
     # 장면 종류 결정: 모든 장면에 비싼 모델을 쓰지 않는다.
     for s in scenes:
         s.image_model, s.video_model = img.model_key, None
-        if mode == "economy" or not i2v:
-            s.kind = "image"
-        elif mode == "cinematic":
-            s.kind = "video"
-        else:  # quality·auto: 오프닝과 움직임이 중요한 장면만 영상
-            s.kind = "video" if (s.idx == 0 or s.motion_need >= 2) else "image"
+        # 경제형만 이미지+움직임 효과. 나머지 모드는 모든 장면을 실제 움직이는 영상으로 만든다.
+        s.kind = "image" if (mode == "economy" or not i2v) else "video"
         if s.kind == "video":
             lead = len(pool) > 1 and (s.idx == 0 or s.importance >= 4)
             s.video_model = (pool[-1] if lead else i2v).model_key
@@ -403,27 +400,35 @@ def plan_budget(c: Ctx):
             s.est_cost_usd = round(sc_cost, 4)
             total += sc_cost
         chars = sum(len(s.tts_text or s.narration) for s in scenes)
-        t = unit_cost(tts, chars / 1000)
-        if t is None:
-            unpriced.add(tts.display_name)
-        total += t or 0.0
+        total += unit_cost(tts, chars / 1000) or 0.0  # 음성·음성인식은 금액이 작아 단가 미등록이어도 막지 않는다
         if stt:
-            st = unit_cost(stt, sum(est_seconds(s.narration, c.p.language) for s in scenes) / 60)
-            if st is None:
-                unpriced.add(stt.display_name)
-            total += st or 0.0
+            total += unit_cost(stt, sum(est_seconds(s.narration, c.p.language) for s in scenes) / 60) or 0.0
         return total, sorted(unpriced)
 
     gen, unpriced = estimate()
     remaining = c.p.max_cost_usd - c.p.actual_cost_usd
     margin = 1.25  # 재생성 여유분
-    if mode in ("auto", "quality"):
-        # 예산의 85%를 넘으면 중요도가 낮은 영상 장면부터 이미지로 내린다.
-        vids = sorted([s for s in scenes if s.kind == "video"], key=lambda s: (s.importance, s.motion_need))
+    if mode in ("auto", "quality") and gen * margin > remaining * 0.85:
+        # 1) 영상은 유지하고 더 싼 영상 모델로 바꾼다(첫 장면은 그대로).
+        cheap = c.pick("i2v", "economy")
+        if cheap and cheap.unit_cost_usd is not None:
+            vmodels[cheap.model_key] = cheap
+            for s in scenes:
+                if s.kind == "video" and s.idx != 0:
+                    s.video_model = cheap.model_key
+            gen, unpriced = estimate()
+            c.log(f"예산에 맞추려고 오프닝 외 장면을 {cheap.display_name} 로 만듭니다.", "info")
+        # 2) 그래도 넘으면 중요도가 낮은 장면부터 이미지로 내린다.
+        vids = sorted([s for s in scenes if s.kind == "video" and s.idx != 0], key=lambda s: (s.importance, s.motion_need))
+        downgraded = 0
         while gen * margin > remaining * 0.85 and vids:
             s = vids.pop(0)
             s.kind, s.video_model = "image", None
+            downgraded += 1
             gen, unpriced = estimate()
+        if downgraded:
+            c.log(f"예산(${c.p.max_cost_usd:.2f}) 때문에 {downgraded}개 장면을 이미지 움직임으로 만듭니다. "
+                  "모두 영상으로 만들려면 최대 비용을 올리세요.", "warn")
     llm_spent = sum(r.amount_usd for r in c.db.query(CostRecord)
                     .filter_by(project_id=c.p.id, kind="llm"))
     max_est = round(gen * margin + llm_spent * 0.6, 4)  # 남은 LLM 호출(검수·패키지)은 지금까지의 60%로 가정
@@ -450,72 +455,140 @@ def plan_budget(c: Ctx):
 
 
 # 15. 내레이션 ----------------------------------------------------------
+def _openai_tts_endpoint(c: Ctx, m) -> str:
+    """등록된 tts-1 등 구형 모델 대신, 계정에서 쓸 수 있는 최신 TTS 모델(말투 지시 가능)을 고른다."""
+    try:
+        from ..providers.llm import LLM
+        ids = LLM("openai", c.cred("openai")["api_key"], "").list_models()
+    except ProviderError:
+        return m.endpoint
+    cands = sorted(i for i in ids if "tts" in i and not i.startswith("tts-1") and "realtime" not in i)
+    if cands and m.endpoint not in cands:
+        best = next((i for i in reversed(cands) if "mini" not in i), cands[-1])
+        c.log(f"OpenAI 음성 모델을 {m.endpoint} → {best} 로 바꿔 씁니다(한국어 품질·말투 지시 지원).", "info")
+        return best
+    return m.endpoint
+
+
+def _cut_audio(src: str, a: float, b: float, out: str) -> str:
+    ffmpeg.run([ffmpeg.FF, "-y", "-loglevel", "error", "-i", src, "-ss", f"{a:.3f}", "-to", f"{b:.3f}",
+                "-c:a", "libmp3lame", "-q:a", "2", out])
+    return out
+
+
 def narration(c: Ctx):
+    """대본 전체를 한 번에(길면 몇 덩어리로) 합성해 문장 사이 억양이 자연스럽게 이어지게 하고,
+    글자·단어 타임스탬프로 장면별 구간을 잘라 쓴다. 장면마다 따로 합성하면 문장마다 톤이 끊긴다."""
     plan = c.data("plan_budget")
     m = c.model(plan.get("tts_model"))
     if not m:
         raise ProviderError("tts", "config", "음성 합성 모델을 찾을 수 없습니다.")
     key = c.cred(m.provider)["api_key"]
-    tts = speech.ElevenLabsTTS(key) if m.provider == "elevenlabs" else speech.OpenAITTS(key)
+    lang = c.p.language
+    if m.provider == "elevenlabs":
+        tts, endpoint = speech.ElevenLabsTTS(key), m.endpoint
+    else:
+        tts, endpoint = speech.OpenAITTS(key), _openai_tts_endpoint(c, m)
     voice = c.cfg.voice or (c.user.settings or {}).get("default_voice")
     if not voice:
         if m.provider == "elevenlabs":
             vs = tts.voices()
             if not vs:
                 raise ProviderError("elevenlabs", "config", "계정에 사용할 수 있는 음성이 없습니다.")
-            voice = vs[0]["id"]
+            pick = speech.pick_voice(vs, lang)
+            if not pick:
+                pick = vs[0]
+                c.log(f"계정에 {A.LANG.get(lang, lang)} 원어민 음성이 없어 '{pick.get('name')}' 음성을 씁니다. "
+                      "억양이 어색하면 ElevenLabs 보이스 라이브러리에서 한국어 음성을 추가한 뒤 '음성 라이브러리'에서 기본 음성으로 지정하세요.", "warn")
+            voice = pick["id"]
         else:
-            voice = "nova"
+            voice = "coral" if not endpoint.startswith("tts-1") else "nova"
         c.cfg.voice = voice
         c.db.commit()
     speed = float((c.cfg.extra or {}).get("speed") or 1.0)
     pron = (c.user.settings or {}).get("pronunciation") or {}
-    stt_m = c.model(plan.get("stt_model"))
+    stt_m = c.model(plan.get("stt_model")) or c.pick("stt")
     scenes = c.scenes()
-    for n, s in enumerate(scenes):
+    if all(s.audio_asset_id and s.words and s.duration for s in scenes):
+        return  # 모두 만들어져 있으면 재사용
+
+    # 덩어리 나누기: 공급자 입력 한도를 넘지 않게(OpenAI 4096자) 장면 단위로 묶는다.
+    limit = 3000 if m.provider == "openai" else 4500
+    chunks, cur, size = [], [], 0
+    for s in scenes:
+        t = speech.apply_pronunciation(s.tts_text or s.narration, pron)
+        if cur and size + len(t) > limit:
+            chunks.append(cur)
+            cur, size = [], 0
+        cur.append((s, t))
+        size += len(t) + 1
+    if cur:
+        chunks.append(cur)
+
+    methods = set()
+    for ci, chunk in enumerate(chunks):
         c.heartbeat()
-        c.step(n, len(scenes))
-        if s.audio_asset_id and s.words and s.status != "redo_audio":
-            continue
-        text = speech.apply_pronunciation(s.tts_text or s.narration, pron)
-        payload = {"text": text, "voice": voice, "model": m.endpoint, "speed": speed}
+        c.step(ci, len(chunks), "내레이션 합성")
+        full, spans = speech.scene_spans([t for _, t in chunk])
+        payload = {"text": full, "voice": voice, "model": endpoint, "speed": speed, "lang": lang}
 
-        def run(_key, _resume, _on, text=text, s=s):
-            r = tts.synth(text, voice, m.endpoint, speed)
-            a = c.save_asset("audio", "mp3", data=r.data, scene=s, provider=m.provider, model_key=m.model_key,
-                             meta={"voice": voice})
-            return {"asset_id": a.id, "words": r.words}
+        def run(_key, _resume, _on, full=full):
+            r = tts.synth(full, voice, endpoint, speed, lang)
+            a = c.save_asset("audio", "mp3", data=r.data, provider=m.provider, model_key=m.model_key,
+                             meta={"voice": voice, "full": True})
+            return {"asset_id": a.id, **({"chars": r.raw.get("chars"), "starts": r.raw.get("starts"),
+                                         "ends": r.raw.get("ends")} if r.raw.get("chars") else {})}
 
-        res = c.paid(provider=m.provider, model=m, kind="tts", scene=s, payload=payload,
-                     est_cost=unit_cost(m, len(text) / 1000), run=run, attempt=s.attempts)
-        asset = c.asset(res["asset_id"])
-        dur = ffmpeg.duration(c.storage.local_path(asset.storage_key))
-        asset.duration = dur
-        words, method = res.get("words") or [], "tts_timestamps"
-        if not words and stt_m and c.has(stt_m.provider):
-            def run_stt(_k, _r, _o, asset=asset):
-                data = open(c.storage.local_path(asset.storage_key), "rb").read()
-                return {"words": speech.OpenAISTT(c.cred(stt_m.provider)["api_key"]).words(data, stt_m.endpoint, c.p.language)}
+        res = c.paid(provider=m.provider, model=m, kind="tts", scene=chunk[0][0], payload=payload,
+                     est_cost=unit_cost(m, len(full) / 1000), run=run, attempt=max(s.attempts for s, _ in chunk))
+        full_asset = c.asset(res["asset_id"])
+        src = c.storage.local_path(full_asset.storage_key)
+        total = ffmpeg.duration(src)
+        segs, method = None, "tts_timestamps"
+        if res.get("chars"):
+            segs = speech.split_by_chars(spans, res["chars"], res["starts"], res["ends"], total)
+        script_words = None
+        if not segs and stt_m and c.has(stt_m.provider):
+            def run_stt(_k, _r, _o, src=src):
+                data = open(src, "rb").read()
+                return {"words": speech.OpenAISTT(c.cred(stt_m.provider)["api_key"]).words(data, stt_m.endpoint, lang)}
             try:
-                words = c.paid(provider=stt_m.provider, model=stt_m, kind="stt", scene=s, payload={"asset": asset.id},
-                               est_cost=unit_cost(stt_m, dur / 60), run=run_stt, attempt=s.attempts)["words"]
-                method = "stt"
+                stt_words = c.paid(provider=stt_m.provider, model=stt_m, kind="stt", scene=chunk[0][0],
+                                   payload={"asset": full_asset.id}, est_cost=unit_cost(stt_m, total / 60),
+                                   run=run_stt, attempt=0)["words"]
+                script_words = speech.retime_script_words(full, stt_words, total)
+                segs, method = speech.split_by_words(spans, full, script_words, total), "stt"
             except ProviderError as e:
-                c.log(f"음성 인식 실패 → 비례 배분으로 대체: {e.message}", "warn")
-        if words:
-            s.words = speech.retime_script_words(s.narration, words, dur)
-        else:
-            s.words, method = speech.proportional_words(s.narration, dur), "proportional(추정)"
-        s.sync_method, s.audio_asset_id = method, asset.id
-        s.duration = round(dur + (0.5 if s.idx == len(scenes) - 1 else 0.25), 3)
-        c.db.commit()
+                c.log(f"음성 인식 실패 → 글자 수 비례로 장면을 나눕니다: {e.message}", "warn")
+        if not segs:
+            script_words = speech.proportional_words(full, total)
+            segs, method = speech.split_by_words(spans, full, script_words, total), "proportional(추정)"
+        methods.add(method)
+        for (s, _), sg in zip(chunk, segs):
+            out = os.path.join(c.work, f"narr_{s.id}.mp3")
+            _cut_audio(src, sg["cut_s"], sg["cut_e"], out)
+            a = c.save_asset("audio", "mp3", path=out, scene=s, provider=m.provider, model_key=m.model_key,
+                             meta={"voice": voice, "from": full_asset.id, "cut": [sg["cut_s"], sg["cut_e"]]})
+            seg_len = ffmpeg.duration(c.storage.local_path(a.storage_key))
+            a.duration = seg_len
+            if res.get("chars") and method == "tts_timestamps":
+                sub = res["chars"][sg["a"]:sg["b"]]
+                w = speech.chars_to_words(sub, res["starts"][sg["a"]:sg["b"]], res["ends"][sg["a"]:sg["b"]])
+            else:
+                w = script_words[sg["w0"]:sg["w1"]]
+            # 자막 글자는 화면 문장(narration), 시각은 실제 음성 기준
+            rel = [{"w": x["w"], "s": round(max(x["s"] - sg["cut_s"], 0), 3), "e": round(max(x["e"] - sg["cut_s"], 0), 3)} for x in w]
+            s.words = speech.retime_script_words(s.narration, rel, seg_len)
+            s.sync_method, s.audio_asset_id = method, a.id
+            s.duration = round(seg_len + (0.6 if s.idx == len(scenes) - 1 else 0.0), 3)
+            c.db.commit()
     t = 0.0
     for s in scenes:
         s.start, s.end = round(t, 3), round(t + s.duration, 3)
         t += s.duration
     c.db.commit()
-    c.save_data("narration", {"total_duration": round(t, 2), "voice": voice,
-                              "sync": sorted({s.sync_method for s in scenes})})
+    c.save_data("narration", {"total_duration": round(t, 2), "voice": voice, "tts_endpoint": endpoint,
+                              "chunks": len(chunks), "sync": sorted(methods)})
     if t > 180:
         c.log(f"전체 길이 {t:.0f}초로 쇼츠 최대 길이(180초)를 넘습니다.", "warn")
 

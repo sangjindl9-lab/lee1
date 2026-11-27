@@ -72,7 +72,7 @@ class Project(Row, Base):
     stage_state: Mapped[dict] = mapped_column(JSON, default=dict)
     stage_data: Mapped[dict] = mapped_column(JSON, default=dict)
     error: Mapped[str | None] = mapped_column(Text)
-    max_cost_usd: Mapped[float] = mapped_column(Float, default=3.0)
+    max_cost_usd: Mapped[float] = mapped_column(Float, default=10.0)
     estimated_cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
     actual_cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
     package: Mapped[dict] = mapped_column(JSON, default=dict)
@@ -441,7 +441,7 @@ class AppSetting(Row, Base):
 
 GLOBAL_DEFAULTS = {
     "quality_pass_score": 90, "max_regen_rounds": 2, "youtube_quota_per_project": 900, "allow_signup": True,
-    "default_max_cost_usd": 3.0, "default_daily_cost_limit_usd": 20.0, "default_monthly_cost_limit_usd": 200.0,
+    "default_max_cost_usd": 10.0, "default_daily_cost_limit_usd": 20.0, "default_monthly_cost_limit_usd": 200.0,
     "default_daily_video_limit": 20, "blocked_keywords": [],
 }
 

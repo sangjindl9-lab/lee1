@@ -62,10 +62,10 @@ export const STATUS: Record<string, string> = {
 };
 export const ACTIVE = ["RESEARCHING", "SCRIPTING", "STORYBOARDING", "GENERATING", "EDITING", "REVIEWING", "RENDERING"];
 export const MODES: [string, string, string][] = [
-  ["auto", "풀오토", "길이·스타일·모델을 AI가 예산 안에서 결정"],
-  ["economy", "경제형", "이미지 + 자체 애니메이션으로 비용 절감"],
-  ["quality", "고품질형", "오프닝·핵심 장면만 영상 모델 사용"],
-  ["cinematic", "시네마틱형", "전 장면 영상 모델, 비용이 가장 큼"],
+  ["auto", "풀오토", "전 장면 실제 영상. 예산이 빠듯하면 더 싼 영상 모델로 자동 조정"],
+  ["quality", "고품질형", "전 장면 실제 영상, 예산 안에서 모델 자동 선택"],
+  ["cinematic", "시네마틱형", "전 장면 상위 영상 모델. 예산을 넘으면 승인 요청"],
+  ["economy", "경제형", "사진 + 줌·팬 움직임 효과로 가장 저렴하게"],
 ];
 
 export const usd = (v: number | null | undefined, d = 2) => (v == null ? "—" : `$${Number(v).toFixed(d)}`);

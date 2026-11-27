@@ -9,7 +9,7 @@ from app.models import CostRecord, Project, ProviderRequest, ResearchSource, Sce
 from app.pipeline import orchestrator
 from app.storage import get_storage
 
-from .conftest import connect_all, run
+from .conftest import SCENES as SCENES_TXT, connect_all, run
 
 
 def make(c, **kw):
@@ -32,10 +32,14 @@ def test_e2e_topic_to_mp4(client, world):
     facts = [s for s in d["sources"] if s["kind"] == "fact"]
     assert len(facts) == 1 and facts[0]["url"] == "https://example.org/biolum" and facts[0]["checked_at"]
 
-    # 모델 라우팅: 오프닝·움직임 큰 장면만 영상, 나머지는 이미지
+    # 경제형이 아니면 모든 장면을 실제 영상으로 만든다
     kinds = [s["kind"] for s in d["scenes"]]
-    assert kinds == ["video", "image", "image", "image"]
-    assert world.calls["hf_image"] == 4 and world.calls["hf_video"] == 1 and world.calls["tts"] == 4
+    assert kinds == ["video"] * 4
+    assert world.calls["hf_image"] == 4 and world.calls["hf_video"] == 4
+    # 내레이션은 대본 전체를 한 번에 합성하고, 글자 타임스탬프로 장면을 잘라 쓴다
+    assert world.calls["tts"] == 1 and world.tts_texts[0] == " ".join(t for t, _, _ in SCENES_TXT)
+    assert {s["sync_method"] for s in d["scenes"]} == {"tts_timestamps"}
+    assert all(abs(a["end"] - b["start"]) < 1e-3 for a, b in zip(d["scenes"], d["scenes"][1:]))
 
     # Higgsfield 요청 본문이 공식 스키마의 필드만 쓰는지(z-image 는 추가 필드 거부)
     for kind, body in world.hf_bodies:
@@ -218,7 +222,7 @@ def test_failed_scene_is_regenerated_only(client, world):
     assert run(pid) == "COMPLETED"
     d = client.get(f"/api/projects/{pid}").json()
     assert [q["passed"] for q in d["quality"]] == [False, True] and d["regen_rounds"] == 1
-    assert world.calls["hf_image"] == 5 and world.calls["tts"] == 4  # 문제 장면 1개만 다시 생성
+    assert world.calls["hf_image"] == 5 and world.calls["hf_video"] == 5 and world.calls["tts"] == 1  # 문제 장면 1개만 다시 생성
     assert any("Fix: hands hidden" in b["prompt"] for k, b in world.hf_bodies if k == "image")
 
 
@@ -310,7 +314,7 @@ def test_higgsfield_out_of_credits_switches_to_openai(client, world):
     assert world.calls["hf_image"] == 0 and world.calls["hf_video"] == 0 and world.calls["openai_image"] == 4
     assert all(b["model"] == "gpt-image-2" and b["size"] == "1024x1536" for b in world.openai_bodies)  # 계정의 실제 모델 ID로 교체
     assert [s["kind"] for s in d["scenes"]] == ["image"] * 4 and all(s["image_model"] == "openai-gpt-image-1" for s in d["scenes"])
-    assert any("전환" in l["message"] for l in d["logs"]) and d["stage_data"]["videos"]["degraded_to_image"] == 1
+    assert any("전환" in l["message"] for l in d["logs"]) and d["stage_data"]["videos"]["degraded_to_image"] == 4
 
 
 def test_multiple_video_models_via_topview(client, world):
@@ -355,3 +359,13 @@ def test_topview_key_from_environment(client, world, monkeypatch):
     from app.providers import registry
     with SessionLocal() as db:
         assert registry.credentials(db, None, "topview") == {"api_key": "tv-key"} and "topview" in registry.available_providers(db, None)
+
+
+def test_auto_mode_keeps_video_by_switching_to_cheaper_model(client, world):
+    """예산이 빠듯하면 이미지로 내리기 전에 더 싼 영상 모델로 바꾼다."""
+    connect_all(client)
+    pid = make(client, mode="auto", max_cost_usd=3, options={"video_model": "hf-kling3-std-i2v"})
+    assert run(pid) == "COMPLETED"
+    d = client.get(f"/api/projects/{pid}").json()
+    assert all(s["kind"] == "video" for s in d["scenes"])
+    assert d["actual_cost_usd"] <= 3

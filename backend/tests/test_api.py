@@ -172,3 +172,25 @@ def test_topview_bodies_follow_documented_schemas(client):
             "parameters": {"duration": 30, "resolution": "1080P", "ratio": "adaptive", "audio": False}}
         img = db.query(ProviderModel).filter_by(model_key="tv-seedream45").one()
         assert tv.build_body(img, prompt="x" * 3000) == {"prompt": "x" * 2000, "resolution": "2K", "aspect_ratio": "9:16"}
+
+
+def test_scene_split_from_full_narration():
+    full, spans = speech.scene_spans(["안녕하세요.", "  반갑습니다  여러분."])
+    assert full == "안녕하세요. 반갑습니다 여러분." and spans == [(0, 6), (7, 17)]
+    n = len(full)
+    starts = [i * 0.1 for i in range(n)]
+    ends = [i * 0.1 + 0.1 for i in range(n)]
+    segs = speech.split_by_chars(spans, list(full), starts, ends, 2.0)
+    assert segs[0]["cut_s"] == 0 and segs[1]["cut_e"] == 2.0 and segs[0]["cut_e"] == segs[1]["cut_s"] == 0.65
+    assert speech.split_by_chars(spans, list(full)[:-3], starts, ends, 2.0) is None  # 정렬이 어긋나면 사용 안 함
+    words = speech.proportional_words(full, 2.0)
+    sw = speech.split_by_words(spans, full, words, 2.0)
+    assert (sw[0]["w0"], sw[0]["w1"], sw[1]["w0"], sw[1]["w1"]) == (0, 1, 1, 3)
+
+
+def test_pick_native_voice():
+    vs = [{"id": "en", "name": "Rachel", "labels": {"accent": "american"}},
+          {"id": "ko1", "name": "지은", "labels": {"language": "ko", "use case": "narration"}},
+          {"id": "ml", "name": "Multi", "labels": {}, "verified_languages": [{"language": "ko", "accent": "standard"}]}]
+    assert speech.pick_voice(vs, "ko")["id"] == "ko1"
+    assert speech.pick_voice(vs[:1], "ko") is None

@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     google_client_id: str = ""
     google_client_secret: str = ""
 
-    default_max_cost_usd: float = 3.0
+    default_max_cost_usd: float = 10.0
     default_daily_cost_limit_usd: float = 20.0
     default_monthly_cost_limit_usd: float = 200.0
     default_daily_video_limit: int = 20
