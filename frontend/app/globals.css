@@ -1,0 +1,23 @@
+@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css");
+@import url("https://cdn.jsdelivr.net/npm/@fontsource/jetbrains-mono@5.1.0/latin-400.css");
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html { color-scheme: dark; }
+body { @apply bg-page text-ink font-sans text-[14px] leading-5 antialiased; }
+* { border-color: rgba(237, 237, 237, 0.08); }
+:focus-visible { outline: 2px solid #ededed; outline-offset: 2px; border-radius: 6px; }
+.num { @apply font-mono tabular-nums; }
+input, select, textarea { @apply bg-raised border rounded-lg px-3 h-9 text-ink placeholder:text-mute w-full transition-colors duration-150 ease-out; }
+textarea { @apply h-auto py-2 leading-5; }
+input:hover, select:hover, textarea:hover { border-color: rgba(237, 237, 237, 0.16); }
+input[type="checkbox"] { @apply w-4 h-4 p-0 accent-[#ededed]; }
+input[type="file"] { @apply h-auto py-2 text-sub; }
+table { @apply w-full text-left; }
+th { @apply text-mute font-normal text-[12px] h-8 px-3 border-b whitespace-nowrap; }
+td { @apply px-3 h-10 border-b text-sub align-middle; }
+tr:last-child td { border-bottom: 0; }
+@keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.rise { animation: rise 360ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+@media (prefers-reduced-motion: reduce) { .rise { animation: none; } }

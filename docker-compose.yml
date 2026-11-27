@@ -1,0 +1,43 @@
+# 로컬·단일 서버 실행:  cp .env.example .env  →  docker compose up -d --build
+x-backend: &backend
+  build: ./backend
+  env_file: .env
+  volumes: [media:/data]
+  depends_on:
+    postgres: { condition: service_healthy }
+    redis: { condition: service_started }
+  restart: unless-stopped
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment: { POSTGRES_USER: sf, POSTGRES_PASSWORD: sf, POSTGRES_DB: sf }
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U sf"], interval: 5s, retries: 10 }
+    restart: unless-stopped
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes: [redisdata:/data]
+    restart: unless-stopped
+  api:
+    <<: *backend
+    environment: { ROLE: api }
+    ports: ["8000:8000"]
+  worker:        # 조사·대본·생성(외부 API 대기 위주)
+    <<: *backend
+    environment: { ROLE: worker }
+  render:        # FFmpeg 렌더링·품질검수(CPU 위주). 웹 서버와 분리돼 있어 렌더링 중에도 화면이 멈추지 않는다
+    <<: *backend
+    environment: { ROLE: render }
+  beat:          # 중단 작업 복구, 예약 제작, 채널 성과 수집
+    <<: *backend
+    environment: { ROLE: beat }
+  web:
+    build:
+      context: ./frontend
+      args: { NEXT_PUBLIC_API_URL: "${NEXT_PUBLIC_API_URL:-http://localhost:8000}" }
+    ports: ["3000:3000"]
+    restart: unless-stopped
+
+volumes: { pgdata: {}, redisdata: {}, media: {} }
