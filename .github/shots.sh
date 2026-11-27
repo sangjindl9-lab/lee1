@@ -17,9 +17,20 @@ W=$(adb shell wm size | grep -o '[0-9]*x[0-9]*' | tail -1); X=${W%x*}; Y=${W#*x}
 tap() { adb shell input tap $((X*$1/100)) $((Y*$2/100)); }
 shot() { adb shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS >/dev/null; sleep 4; adb exec-out screencap -p > shots/$1.png; }
 start() { adb shell am force-stop kr.eumsoft.filemanager2; adb shell am start -n kr.eumsoft.filemanager2/.MainActivity; sleep 4; }
+taptext() {
+  adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1
+  local b
+  b=$(adb shell cat /sdcard/ui.xml | sed 's/>/>\n/g' | grep "text=\"$1\"" | head -1 | grep -o 'bounds="\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]"' | grep -o '[0-9]*' | tr '\n' ' ')
+  local x1 y1 x2 y2
+  read -r x1 y1 x2 y2 <<< "$b"
+  if [ -n "$y2" ]; then adb shell input tap $(( (x1+x2)/2 )) $(( (y1+y2)/2 )); else echo "taptext: '$1' not found"; return 1; fi
+}
 start; shot 01_home
 tap 50 30; shot 02_browse
-start; tap 15 58; sleep 3; shot 03_images
-start; tap 46 89; sleep 6; shot 04_analysis
+start; taptext "이미지" || tap 15 58; sleep 3; shot 03_images
+start; taptext "공간 정리하기" || tap 46 89; sleep 6; shot 04_analysis
 start; adb shell input swipe $((X/2)) $((Y*85/100)) $((X/2)) $((Y*25/100)) 500; shot 05_home_bottom
+start; taptext "PC 연결" && sleep 3 && shot 06_connect
+start; taptext "클라우드" && sleep 3 && shot 07_cloud
+start; taptext "NAS" && sleep 3 && shot 08_nas
 ls -la shots
