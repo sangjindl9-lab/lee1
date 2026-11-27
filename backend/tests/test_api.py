@@ -147,3 +147,14 @@ def test_word_timing_helpers():
     r = speech.retime_script_words("3km 깊이", [{"w": "삼", "s": 0.1, "e": 0.3}, {"w": "킬로미터", "s": 0.3, "e": 0.9}, {"w": "깊이", "s": 1.0, "e": 1.4}], 1.5)
     assert [x["w"] for x in r] == ["3km", "깊이"] and r[0]["s"] == 0.1 and r[-1]["e"] == 1.4 and r[0]["e"] <= r[1]["s"] + 1e-6
     assert speech.apply_pronunciation("NASA 발표", {"NASA": "나사"}) == "나사 발표"
+
+
+def test_higgsfield_key_pasted_as_one_line_in_either_field(client, world):
+    from app.security import decrypt_json
+    for cred in ({"key_id": "kid:ksecret"}, {"key_secret": " kid:ksecret "}, {"key_id": "kid", "key_secret": "ksecret"}):
+        assert client.put("/api/providers/higgsfield", json={"credentials": cred}).status_code == 200
+        with SessionLocal() as db:
+            assert decrypt_json(db.query(ProviderConfig).filter_by(provider="higgsfield").one().credentials_enc) == {"key_id": "kid", "key_secret": "ksecret"}
+        assert client.post("/api/providers/higgsfield/test").json()["ok"]
+    r = client.put("/api/providers/higgsfield", json={"credentials": {}})
+    assert r.status_code == 400 and "key_id" in r.json()["detail"] and "key_secret" not in r.json()["detail"]

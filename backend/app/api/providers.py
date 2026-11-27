@@ -62,10 +62,16 @@ def save_provider(provider: str, body: CredIn, user: User = Depends(current_user
     if body.scope == "global" and user.role != "admin":
         raise HTTPException(403, "공용 키는 관리자만 등록할 수 있습니다.")
     cred = {k: str(v).strip() for k, v in body.credentials.items() if k in cat["fields"] and str(v).strip()}
-    if provider == "higgsfield" and ":" in cred.get("key_id", "") and "key_secret" not in cred:
-        cred["key_id"], cred["key_secret"] = cred["key_id"].split(":", 1)  # "ID:SECRET" 를 한 칸에 붙여 넣은 경우
-    if set(cat["fields"]) - set(cred) - set(cat.get("optional", [])):
-        raise HTTPException(400, f"필수 입력: {', '.join(cat['fields'])}")
+    if provider == "higgsfield":
+        # "ID:SECRET" 한 줄을 어느 칸에 넣어도 나눠서 저장한다.
+        only = cred.get("key_id") or cred.get("key_secret") or ""
+        if len(cred) == 1 and ":" in only:
+            cred = dict(zip(("key_id", "key_secret"), (x.strip() for x in only.split(":", 1))))
+        elif "key_id" not in cred and "key_secret" in cred:
+            cred = {"key_id": cred["key_secret"]}
+    missing = [f for f in cat["fields"] if f not in cred and f not in cat.get("optional", [])]
+    if missing:
+        raise HTTPException(400, f"비어 있는 항목: {', '.join(missing)}")
     row = _row(db, user, provider, body.scope)
     if not row:
         row = ProviderConfig(user_id=None if body.scope == "global" else user.id, provider=provider)

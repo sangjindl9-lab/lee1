@@ -1,6 +1,6 @@
 "use client";
 import { Check, ExternalLink } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useUser } from "@/components/Shell";
 import { Button, Card, cx, Empty, Field, H2, Note, Page, useAction } from "@/components/ui";
 import { api, useApi, usd, when } from "@/lib/api";
@@ -14,9 +14,13 @@ function ProviderCard({ p, admin, onChange }: any) {
   const [cred, setCred] = useState<any>({});
   const [scope, setScope] = useState(p.admin_only ? "global" : "user");
   const [models, setModels] = useState<string[] | null>(null);
+  const form = useRef<HTMLDivElement>(null);
   const act = useAction();
   const save = async () => {
-    const ok = await act.run("s", () => api(`/providers/${p.id}`, { method: "PUT", body: { credentials: cred, scope } }).then(() => true));
+    // 브라우저 자동 완성이 넣은 값도 놓치지 않도록 입력칸에서 직접 읽는다.
+    const credentials: any = {};
+    form.current?.querySelectorAll("input[data-field]").forEach((el: any) => { if (el.value.trim()) credentials[el.dataset.field] = el.value.trim(); });
+    const ok = await act.run("s", () => api(`/providers/${p.id}`, { method: "PUT", body: { credentials, scope } }).then(() => true));
     if (!ok) return;
     const r = await act.run("t", () => api(`/providers/${p.id}/test?scope=${scope}`, { method: "POST" }), "연결을 확인했습니다");
     if (r?.models) setModels(r.models);
@@ -39,8 +43,8 @@ function ProviderCard({ p, admin, onChange }: any) {
             {p.connected && <Button kind="ghost" busy={act.busy === "t"} onClick={async () => { const r = await act.run("t", () => api(`/providers/${p.id}/test?scope=${p.mine ? "user" : "global"}`, { method: "POST" }), "연결을 확인했습니다"); if (r?.models) setModels(r.models); onChange(); }}>연결 테스트</Button>}
             {p.mine && <Button kind="ghost" onClick={() => act.run("d", () => api(`/providers/${p.id}`, { method: "DELETE" }).then(onChange))}>삭제</Button>}
             {p.docs && <a href={p.docs} target="_blank" className="inline-flex items-center gap-1 text-mute hover:text-ink text-[13px] ml-auto">문서<ExternalLink size={14} strokeWidth={1.5} /></a>}</div> : (
-            <div className="flex flex-col gap-3 rise">
-              {p.fields.map((k: string) => <Field key={k} label={FIELD[k] || k}><input type="password" autoComplete="off" className="num" value={cred[k] || ""} onChange={(e) => setCred({ ...cred, [k]: e.target.value })} /></Field>)}
+            <div ref={form} className="flex flex-col gap-3 rise">
+              {p.fields.map((k: string) => <Field key={k} label={FIELD[k] || k}><input type="text" data-field={k} name={`sf-${p.id}-${k}`} autoComplete="off" spellCheck={false} className="num" value={cred[k] || ""} onChange={(e) => setCred({ ...cred, [k]: e.target.value })} /></Field>)}
               {admin && !p.admin_only && <label className="inline-flex items-center gap-2 text-sub text-[13px]"><input type="checkbox" checked={scope === "global"} onChange={(e) => setScope(e.target.checked ? "global" : "user")} />모든 사용자가 쓰는 서비스 공용 키로 등록</label>}
               <div className="flex gap-2"><Button kind="primary" busy={!!act.busy} onClick={save}>저장하고 연결 확인</Button><Button kind="ghost" onClick={() => setOpen(false)}>닫기</Button></div>
             </div>)}
