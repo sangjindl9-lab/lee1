@@ -89,6 +89,33 @@ export interface DraftRow {
   created_at: string;
 }
 
+export interface ShortRow {
+  id: number;
+  app_id: number;
+  status: string;
+  stage: string;
+  progress: number;
+  engine: string;
+  video_provider: string;
+  tts_provider: string;
+  mood: string;
+  title: string;
+  description: string;
+  hashtags: string;
+  script_json: string;
+  file_path: string | null;
+  file_bytes: number | null;
+  duration_sec: number | null;
+  width: number | null;
+  height: number | null;
+  fps: number | null;
+  warnings_json: string;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+  finished_at: string | null;
+}
+
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS apps (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -190,6 +217,33 @@ CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS shorts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  app_id INTEGER NOT NULL REFERENCES apps(id) ON DELETE CASCADE,
+  status TEXT NOT NULL DEFAULT 'queued',
+  stage TEXT NOT NULL DEFAULT 'script',
+  progress INTEGER NOT NULL DEFAULT 0,
+  engine TEXT NOT NULL DEFAULT 'builtin',
+  video_provider TEXT NOT NULL DEFAULT 'builtin',
+  tts_provider TEXT NOT NULL DEFAULT 'builtin',
+  mood TEXT NOT NULL DEFAULT 'bright',
+  title TEXT NOT NULL DEFAULT '',
+  description TEXT NOT NULL DEFAULT '',
+  hashtags TEXT NOT NULL DEFAULT '',
+  script_json TEXT NOT NULL DEFAULT '{}',
+  file_path TEXT,
+  file_bytes INTEGER,
+  duration_sec REAL,
+  width INTEGER,
+  height INTEGER,
+  fps INTEGER,
+  warnings_json TEXT NOT NULL DEFAULT '[]',
+  error TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  finished_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_shorts_created ON shorts (created_at DESC);
 `;
 
 export class Store {
@@ -243,6 +297,16 @@ export class Store {
     this.setDefault('utm_medium', 'blog');
     this.setDefault('utm_campaign', 'always_on');
     this.setDefault('rank_depth', String(this.config.rankDepth));
+    // 쇼츠 스튜디오 — AI 프로바이더 (키가 비어 있으면 내장 엔진으로 동작)
+    this.setDefault('shorts_video_provider', 'builtin');
+    this.setDefault('shorts_video_api_key', '');
+    this.setDefault('shorts_video_endpoint', '');
+    this.setDefault('shorts_video_model', '');
+    this.setDefault('shorts_tts_provider', 'builtin');
+    this.setDefault('shorts_tts_api_key', '');
+    this.setDefault('shorts_tts_voice', '');
+    this.setDefault('shorts_mood', 'bright');
+    this.setDefault('shorts_narration', 'true');
   }
 
   /** 시드 스냅샷을 원래 id 그대로 삽입한다 (빈 DB 전용). */
@@ -692,6 +756,71 @@ export class Store {
 
   recentJobs(limit = 15): unknown[] {
     return this.db.prepare('SELECT * FROM job_runs ORDER BY started_at DESC LIMIT ?').all(limit) as unknown[];
+  }
+
+  // ---------- 쇼츠 ----------
+  createShort(row: {
+    appId: number;
+    mood: string;
+    engine: string;
+    videoProvider: string;
+    ttsProvider: string;
+  }): ShortRow {
+    const now = new Date().toISOString();
+    this.db
+      .prepare(
+        `INSERT INTO shorts (app_id, status, stage, progress, engine, video_provider, tts_provider, mood, created_at, updated_at)
+         VALUES (?, 'queued', 'queued', 0, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(row.appId, row.engine, row.videoProvider, row.ttsProvider, row.mood, now, now);
+    const created = this.db.prepare('SELECT * FROM shorts WHERE id = last_insert_rowid()').get() as unknown as ShortRow;
+    return created;
+  }
+
+  updateShort(
+    id: number,
+    patch: Partial<
+      Pick<
+        ShortRow,
+        | 'status'
+        | 'stage'
+        | 'progress'
+        | 'engine'
+        | 'video_provider'
+        | 'tts_provider'
+        | 'title'
+        | 'description'
+        | 'hashtags'
+        | 'script_json'
+        | 'file_path'
+        | 'file_bytes'
+        | 'duration_sec'
+        | 'width'
+        | 'height'
+        | 'fps'
+        | 'warnings_json'
+        | 'error'
+        | 'finished_at'
+      >
+    >,
+  ): void {
+    const keys = Object.keys(patch).filter((key) => patch[key as keyof typeof patch] !== undefined);
+    if (keys.length === 0) return;
+    const sets = keys.map((key) => `${key} = ?`).join(', ');
+    const values = keys.map((key) => patch[key as keyof typeof patch] as never);
+    this.db.prepare(`UPDATE shorts SET ${sets}, updated_at = ? WHERE id = ?`).run(...values, new Date().toISOString(), id);
+  }
+
+  getShort(id: number): ShortRow | null {
+    return (this.db.prepare('SELECT * FROM shorts WHERE id = ?').get(id) as unknown as ShortRow) ?? null;
+  }
+
+  listShorts(limit = 40): ShortRow[] {
+    return this.db.prepare('SELECT * FROM shorts ORDER BY created_at DESC, id DESC LIMIT ?').all(limit) as unknown as ShortRow[];
+  }
+
+  deleteShort(id: number): void {
+    this.db.prepare('DELETE FROM shorts WHERE id = ?').run(id);
   }
 
   counts(): { apps: number; keywords: number; drafts: number } {

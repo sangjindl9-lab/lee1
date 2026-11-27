@@ -19,6 +19,9 @@ import { CHANNELS, channelLabel, type Channel } from './content/templates.ts';
 import { sendTestWebhook, deliverDraft } from './webhook.ts';
 import { computeNextContentRun, computeNextRankRun, runContentJob, runRankJob, startScheduler } from './scheduler.ts';
 import { extractPackageId, isValidPackageId, kstDateString, kstDateTimeString } from './util.ts';
+import { createShortsRunner, shortToJson } from './shorts/index.ts';
+import { providerSettingsView, resolveProviders } from './shorts/providers.ts';
+import { MOODS, TTS_PROVIDERS, VIDEO_PROVIDERS, type Mood, type TtsProviderId, type VideoProviderId } from './shorts/types.ts';
 
 const VERSION = '1.0.0';
 const COOKIE_NAME = 'eum_promo_session';
@@ -79,6 +82,8 @@ export interface CreatedServer {
 export function createServer(overrides: Partial<AppConfig> = {}): CreatedServer {
   const config = loadConfig(overrides);
   const store = new Store(config);
+  const shorts = createShortsRunner(store, config, (message) => console.log(message));
+  shorts.recover();
   const app = express();
   app.disable('x-powered-by');
   app.use(express.json({ limit: '1mb' }));
@@ -447,6 +452,113 @@ export function createServer(overrides: Partial<AppConfig> = {}): CreatedServer 
     res.json({ deliveries: store.recentWebhookDeliveries(20) });
   });
 
+  // ---------- 쇼츠 스튜디오 ----------
+  app.get(
+    '/api/shorts/providers',
+    asyncRoute(async (_req, res) => {
+      const status = await shorts.status();
+      res.json({
+        ...status,
+        moods: MOODS,
+        videoProviders: VIDEO_PROVIDERS,
+        ttsProviders: TTS_PROVIDERS,
+      });
+    }),
+  );
+
+  app.get('/api/shorts', (req, res) => {
+    const limit = Math.min(100, Math.max(1, Number(req.query.limit ?? 30)));
+    const rows = store.listShorts(limit).map((row) => ({
+      ...shortToJson(row),
+      appName: store.getApp(row.app_id)?.label ?? store.getApp(row.app_id)?.package_id ?? '',
+    }));
+    res.json({ shorts: rows });
+  });
+
+  app.post(
+    '/api/shorts',
+    asyncRoute(async (req, res) => {
+      const appRow = store.getApp(Number(req.body?.appId));
+      if (!appRow) return res.status(404).json({ error: '앱을 찾을 수 없습니다.' });
+      const providers = resolveProviders(store, config);
+      const mood = String(req.body?.mood ?? store.getSetting('shorts_mood') ?? 'bright') as Mood;
+      if (!MOODS.some((m) => m.id === mood)) {
+        return res.status(400).json({ error: '지원하지 않는 분위기입니다.' });
+      }
+      const narration = req.body?.narration === undefined ? store.getSetting('shorts_narration') !== 'false' : Boolean(req.body.narration);
+      const videoProvider = String(req.body?.videoProvider ?? providers.video.id) as VideoProviderId;
+      const ttsProvider = String(req.body?.ttsProvider ?? providers.tts.id) as TtsProviderId;
+      if (!VIDEO_PROVIDERS.some((p) => p.id === videoProvider)) {
+        return res.status(400).json({ error: '지원하지 않는 영상 프로바이더입니다.' });
+      }
+      if (!TTS_PROVIDERS.some((p) => p.id === ttsProvider)) {
+        return res.status(400).json({ error: '지원하지 않는 TTS 프로바이더입니다.' });
+      }
+      const row = shorts.enqueue({ appId: appRow.id, mood, narration, videoProvider, ttsProvider });
+      return res.status(202).json({
+        short: { ...shortToJson(row), appName: appRow.label ?? appRow.package_id },
+        engine: providers.video.ready && videoProvider !== 'builtin' ? `${providers.video.label} 연결됨` : '내장 풀오토',
+      });
+    }),
+  );
+
+  app.get('/api/shorts/:id', (req, res) => {
+    const row = store.getShort(Number(req.params.id));
+    if (!row) return res.status(404).json({ error: '쇼츠를 찾을 수 없습니다.' });
+    const appRow = store.getApp(row.app_id);
+    return res.json({ short: { ...shortToJson(row), appName: appRow?.label ?? appRow?.package_id ?? '' } });
+  });
+
+  app.get('/api/shorts/:id/video', (req, res) => {
+    const row = store.getShort(Number(req.params.id));
+    if (!row || !row.file_path || !fs.existsSync(row.file_path)) {
+      return res.status(404).json({ error: '영상 파일을 찾을 수 없습니다.' });
+    }
+    const stat = fs.statSync(row.file_path);
+    const range = req.headers.range;
+    res.setHeader('Content-Type', 'video/mp4');
+    res.setHeader('Accept-Ranges', 'bytes');
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+    if (range) {
+      const match = /bytes=(\d*)-(\d*)/.exec(range);
+      const start = match && match[1] ? Number(match[1]) : 0;
+      const end = match && match[2] ? Math.min(Number(match[2]), stat.size - 1) : stat.size - 1;
+      if (start >= stat.size) {
+        res.status(416).setHeader('Content-Range', `bytes */${stat.size}`);
+        return res.end();
+      }
+      res.status(206);
+      res.setHeader('Content-Range', `bytes ${start}-${end}/${stat.size}`);
+      res.setHeader('Content-Length', end - start + 1);
+      return fs.createReadStream(row.file_path, { start, end }).pipe(res);
+    }
+    res.setHeader('Content-Length', stat.size);
+    return fs.createReadStream(row.file_path).pipe(res);
+  });
+
+  app.get('/api/shorts/:id/download', (req, res) => {
+    const row = store.getShort(Number(req.params.id));
+    if (!row || !row.file_path || !fs.existsSync(row.file_path)) {
+      return res.status(404).json({ error: '영상 파일을 찾을 수 없습니다.' });
+    }
+    const safe = (row.title || `eum-short-${row.id}`).replace(/[\\/:*?"<>|\s#]+/g, '_').slice(0, 60);
+    return res.download(row.file_path, `${safe}.mp4`);
+  });
+
+  app.delete('/api/shorts/:id', (req, res) => {
+    const row = store.getShort(Number(req.params.id));
+    if (!row) return res.status(404).json({ error: '쇼츠를 찾을 수 없습니다.' });
+    if (row.file_path && fs.existsSync(row.file_path)) {
+      try {
+        fs.unlinkSync(row.file_path);
+      } catch {
+        // 파일이 이미 없으면 무시
+      }
+    }
+    store.deleteShort(row.id);
+    res.json({ ok: true });
+  });
+
   // ---------- 설정 ----------
   app.get('/api/settings', (_req, res) => {
     const settings = store.allSettings();
@@ -455,6 +567,7 @@ export function createServer(overrides: Partial<AppConfig> = {}): CreatedServer 
         ...settings,
         openai_api_key: maskSecret(resolveOpenAiKey(store, config)),
         openai_key_set: Boolean(resolveOpenAiKey(store, config)),
+        ...providerSettingsView(store, config),
       },
       env: {
         port: config.port,
@@ -462,6 +575,7 @@ export function createServer(overrides: Partial<AppConfig> = {}): CreatedServer 
         adminPasswordSet: Boolean(config.adminPassword),
         openaiEnvKeySet: Boolean(config.openaiApiKey),
         rankDepth: resolveRankDepth(store, config),
+        shortsDir: config.shortsDir,
       },
     });
   });
@@ -486,6 +600,15 @@ export function createServer(overrides: Partial<AppConfig> = {}): CreatedServer 
         'utm_medium',
         'utm_campaign',
         'rank_depth',
+        'shorts_video_provider',
+        'shorts_video_api_key',
+        'shorts_video_endpoint',
+        'shorts_video_model',
+        'shorts_tts_provider',
+        'shorts_tts_api_key',
+        'shorts_tts_voice',
+        'shorts_mood',
+        'shorts_narration',
       ];
       for (const key of allowed) {
         if (!(key in body)) continue;
@@ -507,6 +630,20 @@ export function createServer(overrides: Partial<AppConfig> = {}): CreatedServer 
           return res.status(400).json({ error: '웹훅 URL은 http(s)로 시작해야 합니다.' });
         }
         if (key === 'openai_api_key' && text.includes('••••')) continue; // 마스킹된 값은 무시
+        if (key === 'shorts_video_api_key' && text.includes('••••')) continue;
+        if (key === 'shorts_tts_api_key' && text.includes('••••')) continue;
+        if (key === 'shorts_video_provider' && !VIDEO_PROVIDERS.some((p) => p.id === text)) {
+          return res.status(400).json({ error: '지원하지 않는 영상 프로바이더입니다.' });
+        }
+        if (key === 'shorts_tts_provider' && !TTS_PROVIDERS.some((p) => p.id === text)) {
+          return res.status(400).json({ error: '지원하지 않는 TTS 프로바이더입니다.' });
+        }
+        if (key === 'shorts_mood' && !MOODS.some((m) => m.id === text)) {
+          return res.status(400).json({ error: '지원하지 않는 분위기입니다.' });
+        }
+        if ((key === 'shorts_video_endpoint' || key === 'shorts_video_model') && text.length > 300) {
+          return res.status(400).json({ error: '값이 너무 깁니다.' });
+        }
         store.setSetting(key, text);
       }
       return res.json({ ok: true, settings: store.allSettings() });

@@ -278,3 +278,42 @@ pre.outline { background: var(--surface-2); border: 1px solid var(--border); bor
   .main { padding: 18px 16px 48px; }
   .topbar { flex-direction: column; }
 }
+
+/* ---------- 쇼츠 스튜디오 ---------- */
+.shorts-hero { background: linear-gradient(150deg, #ffffff 0%, #f3f6ff 60%, #eef2ff 100%); }
+.shorts-lead { margin: 0 0 14px; max-width: 760px; }
+.shorts-form { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(220px, 1.2fr) auto; gap: 12px; align-items: end; }
+.shorts-form .field { margin: 0; }
+.shorts-narration { align-self: center; white-space: nowrap; }
+.shorts-form button.block { grid-column: 1 / -1; }
+.engine-badge {
+  display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 999px;
+  background: var(--surface-2); border: 1px solid var(--border); font-size: 12.5px; color: var(--muted); font-weight: 600;
+}
+.engine-badge.on { background: var(--green-soft); border-color: #bfe8d8; color: var(--green); }
+.progress-track { width: 100%; height: 10px; border-radius: 999px; background: #e9edf5; overflow: hidden; margin: 6px 0 16px; }
+.progress-fill { height: 100%; width: 2%; border-radius: 999px; background: linear-gradient(90deg, #4a6cf7, #22d3ee); transition: width .4s ease; }
+.stage-list { list-style: none; display: flex; flex-wrap: wrap; gap: 10px 22px; padding: 0; margin: 0 0 10px; }
+.stage-list li { display: flex; align-items: center; gap: 8px; font-size: 13.5px; color: var(--muted); }
+.stage-list li .dot { width: 10px; height: 10px; border-radius: 50%; background: #d5dbe7; }
+.stage-list li.active { color: var(--text); font-weight: 600; }
+.stage-list li.active .dot { background: var(--primary); box-shadow: 0 0 0 4px rgba(59, 91, 219, .15); }
+.stage-list li.done { color: var(--green); }
+.stage-list li.done .dot { background: var(--green); }
+.stage-list li.failed { color: var(--red); }
+.stage-list li.failed .dot { background: var(--red); }
+.shorts-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 18px; }
+.short-card { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); overflow: hidden; display: flex; flex-direction: column; }
+.short-video, .short-placeholder { width: 100%; aspect-ratio: 9 / 16; background: #0d1220; display: block; object-fit: cover; }
+.short-placeholder { display: grid; place-items: center; color: #9fb0d8; font-size: 13px; text-align: center; padding: 16px; }
+.short-body { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 6px; }
+.short-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.short-title { margin: 0; font-size: 13.5px; line-height: 1.45; }
+.short-actions { flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.short-warnings { margin: 2px 0 0; padding-left: 18px; color: var(--amber); font-size: 12px; }
+.pill.done { background: var(--green-soft); color: var(--green); }
+.pill.running, .pill.queued { background: var(--primary-soft); color: var(--primary); }
+.pill.failed { background: var(--red-soft); color: var(--red); }
+@media (max-width: 900px) {
+  .shorts-form { grid-template-columns: 1fr; }
+}

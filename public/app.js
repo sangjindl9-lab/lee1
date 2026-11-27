@@ -12,6 +12,9 @@ const state = {
   studioChannel: 'naver_blog',
   studioKeywordIds: new Set(),
   scheduleChannels: new Set(),
+  shorts: [],
+  shortProviders: null,
+  shortPoll: null,
   view: 'dashboard',
 };
 
@@ -20,6 +23,7 @@ const VIEW_META = {
   apps: { title: '앱 · 키워드', subtitle: '앱을 등록하고 키워드별 한국 스토어 순위를 추적합니다' },
   aso: { title: '경쟁 분석 · ASO', subtitle: '상위 경쟁 앱과 비교해 빠진 키워드를 찾고 문구를 다듬습니다' },
   studio: { title: '콘텐츠 스튜디오', subtitle: '블로그·커뮤니티·쇼츠용 홍보 글을 자동으로 만듭니다' },
+  shorts: { title: '쇼츠 스튜디오', subtitle: '대본·이미지·음악·영상까지 버튼 한 번으로 1080×1920 MP4를 만듭니다' },
   library: { title: '보관함', subtitle: '생성한 홍보 초안을 다시 열고 내려받습니다' },
   settings: { title: '설정', subtitle: '자동 점검 주기, 웹훅, AI 키를 관리합니다' },
 };
@@ -160,6 +164,7 @@ function setView(view) {
   if (view === 'apps') loadAppsView();
   if (view === 'aso') loadAsoView();
   if (view === 'studio') loadStudioView();
+  if (view === 'shorts') loadShortsView();
   if (view === 'library') loadLibrary();
   if (view === 'settings') loadSettingsView();
 }
@@ -180,7 +185,7 @@ function fillAppSelects() {
   const options = state.apps
     .map((app) => `<option value="${app.id}">${esc(app.label || app.snapshot?.title || app.package_id)}</option>`)
     .join('');
-  const targets = ['aso-app', 'studio-app', 'library-app'];
+  const targets = ['aso-app', 'studio-app', 'library-app', 'shorts-app'];
   for (const id of targets) {
     const select = $(id);
     if (!select) continue;
@@ -755,6 +760,210 @@ async function openDraft(id) {
   }
 }
 
+/* ---------------- 쇼츠 스튜디오 ---------------- */
+const SHORTS_STAGES = ['script', 'visuals', 'audio', 'render'];
+const SHORTS_STAGE_LABEL = {
+  script: '대본 쓰기',
+  visuals: '이미지 · 스토어 자산',
+  audio: '음악 · 내레이션',
+  render: '영상 렌더링 · 자막',
+  done: '완성',
+  failed: '실패',
+};
+
+async function loadShortsView() {
+  try {
+    if (state.apps.length === 0) await loadApps();
+    const providers = await api('/api/shorts/providers');
+    state.shortProviders = providers;
+    const moods = providers.moods || [];
+    if (moods.length > 0) {
+      const keep = $('shorts-mood').value;
+      $('shorts-mood').innerHTML = moods
+        .map((mood) => `<option value="${mood.id}">${esc(mood.label)} — ${esc(mood.hint)}</option>`)
+        .join('');
+      const preferred = keep || providers.providers?.shorts_mood || 'bright';
+      if ([...$('shorts-mood').options].some((o) => o.value === preferred)) $('shorts-mood').value = preferred;
+    }
+    $('shorts-narration').checked = providers.providers?.shorts_narration !== 'false';
+    renderEngineBadge();
+    const media = providers.media || {};
+    $('shorts-hint').textContent = media.available
+      ? `영상 엔진 ${media.version ? 'ffmpeg ' + media.version : '준비됨'} · 한글 폰트 ${media.font || 'Noto Sans CJK KR'}`
+      : `⚠️ 영상 엔진을 찾지 못했습니다: ${media.detail || ''}`;
+    await loadShortsList();
+  } catch (err) {
+    showToastError(err);
+  }
+}
+
+function renderEngineBadge() {
+  const badge = $('shorts-engine-badge');
+  if (!badge) return;
+  const resolved = state.shortProviders?.providers?.resolved;
+  if (!resolved) {
+    badge.textContent = '엔진 확인 중…';
+    return;
+  }
+  const external = resolved.video.id !== 'builtin' && resolved.video.ready;
+  badge.textContent = external ? `${resolved.video.label} 연결됨` : '내장 풀오토 · 키 불필요';
+  badge.classList.toggle('on', external);
+  badge.title = `${resolved.video.detail}\n${resolved.tts.detail}`;
+}
+
+async function loadShortsList() {
+  const data = await api('/api/shorts');
+  state.shorts = data.shorts || [];
+  renderShortsList();
+}
+
+function shortStatusLabel(status) {
+  return { queued: '대기', running: '생성 중', done: '완료', failed: '실패' }[status] || status;
+}
+
+function renderShortsList() {
+  const box = $('shorts-list');
+  if (!box) return;
+  if (!state.shorts.length) {
+    box.innerHTML = '<div class="empty">아직 만든 쇼츠가 없습니다. 위에서 앱을 고르고 <strong>쇼츠 풀오토 만들기</strong>를 누르면 1분 안에 완성됩니다.</div>';
+    return;
+  }
+  box.innerHTML = state.shorts.map((short) => renderShortCard(short)).join('');
+}
+
+function renderShortCard(short) {
+  const done = short.status === 'done';
+  const preview = done
+    ? `<video class="short-video" controls preload="metadata" playsinline src="${short.videoUrl}"></video>`
+    : `<div class="short-placeholder"><span>${esc(SHORTS_STAGE_LABEL[short.stage] || short.stage || '준비')} ${short.progress || 0}%</span></div>`;
+  const warnings = (short.warnings || []).length
+    ? `<ul class="short-warnings">${short.warnings.slice(0, 3).map((w) => `<li>${esc(w)}</li>`).join('')}</ul>`
+    : '';
+  const error = short.error ? `<p class="error-text small">${esc(short.error)}</p>` : '';
+  const meta = [
+    short.duration ? `${Number(short.duration).toFixed(1)}초` : null,
+    short.width && short.height ? `${short.width}×${short.height}` : null,
+    short.bytes ? `${(short.bytes / 1024 / 1024).toFixed(1)}MB` : null,
+    short.engine,
+    short.ttsProvider && short.ttsProvider !== 'builtin' ? short.ttsProvider : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  return `
+    <article class="short-card" data-short="${short.id}">
+      ${preview}
+      <div class="short-body">
+        <div class="short-head">
+          <strong>${esc(short.appName || short.title || '')}</strong>
+          <span class="pill ${short.status}">${shortStatusLabel(short.status)}</span>
+        </div>
+        <p class="short-title">${esc(short.title || '제목 준비 중…')}</p>
+        <p class="muted small">${esc(meta)} · ${esc(kst(short.createdAt))}</p>
+        ${warnings}
+        ${error}
+        <div class="row short-actions">
+          <a class="btn ghost small ${done ? '' : 'disabled'}" href="${done ? short.downloadUrl : '#'}" download>MP4 다운로드</a>
+          <button class="btn ghost small" data-action="copy-short-script" data-short="${short.id}">대본 복사</button>
+          <button class="btn ghost small" data-action="copy-short-title" data-short="${short.id}">제목·태그 복사</button>
+          <button class="btn danger small" data-action="delete-short" data-short="${short.id}">삭제</button>
+        </div>
+      </div>
+    </article>`;
+}
+
+function showShortProgress(short) {
+  const panel = $('shorts-progress');
+  if (!panel) return;
+  panel.classList.remove('hidden');
+  updateShortProgress(short);
+}
+
+function updateShortProgress(short) {
+  $('shorts-progress-label').textContent = `${short.progress || 0}% · ${SHORTS_STAGE_LABEL[short.stage] || short.stage || ''}`;
+  $('shorts-progress-bar').style.width = `${Math.max(2, short.progress || 0)}%`;
+  const current = SHORTS_STAGES.indexOf(short.stage);
+  document.querySelectorAll('#shorts-stages li').forEach((li) => {
+    const index = SHORTS_STAGES.indexOf(li.dataset.stage);
+    li.classList.toggle('active', short.status === 'running' && index === current);
+    li.classList.toggle('done', short.status === 'done' || (current > -1 && index < current));
+    li.classList.toggle('failed', short.status === 'failed' && index === current);
+  });
+  $('shorts-progress-note').textContent =
+    short.status === 'failed'
+      ? `오류: ${short.error || '알 수 없는 오류'}`
+      : short.status === 'done'
+        ? '완성했습니다. 아래 목록에서 미리보기·다운로드하세요.'
+        : '창을 닫아도 서버에서 계속 생성됩니다.';
+}
+
+async function startShort(event) {
+  event.preventDefault();
+  const appId = Number($('shorts-app').value);
+  if (!appId) return toast('앱을 먼저 선택하세요.', true);
+  const button = $('shorts-submit');
+  button.disabled = true;
+  button.textContent = '생성 준비 중…';
+  try {
+    const result = await api('/api/shorts', {
+      method: 'POST',
+      body: {
+        appId,
+        mood: $('shorts-mood').value,
+        narration: $('shorts-narration').checked,
+      },
+    });
+    showShortProgress(result.short);
+    toast(`${result.engine} 엔진으로 쇼츠를 만들기 시작했습니다.`);
+    pollShort(result.short.id);
+  } catch (err) {
+    button.disabled = false;
+    showToastError(err);
+  } finally {
+    button.textContent = '🎬 쇼츠 풀오토 만들기';
+  }
+}
+
+async function pollShort(id) {
+  clearTimeout(state.shortPoll);
+  try {
+    const data = await api(`/api/shorts/${id}`);
+    const short = data.short;
+    showShortProgress(short);
+    await loadShortsList();
+    if (short.status === 'done' || short.status === 'failed') {
+      $('shorts-submit').disabled = false;
+      toast(short.status === 'done' ? '쇼츠가 완성되었습니다 🎬' : `생성 실패: ${short.error || ''}`, short.status === 'failed');
+      return;
+    }
+    state.shortPoll = setTimeout(() => pollShort(id), 2500);
+  } catch (err) {
+    $('shorts-submit').disabled = false;
+    showToastError(err);
+  }
+}
+
+function shortScriptText(short) {
+  const script = short.script;
+  if (!script || !Array.isArray(script.scenes)) return short.title || '';
+  const lines = [`# ${script.title || short.title}`, ''];
+  for (const scene of script.scenes) {
+    lines.push(`[씬 ${scene.index} · ${String(scene.role || '').toUpperCase()}]`);
+    lines.push(`화면: ${String(scene.headline || '').replace(/\n/g, ' / ')}`);
+    if (scene.sub) lines.push(`보조: ${scene.sub}`);
+    if (Array.isArray(scene.bullets) && scene.bullets.length) lines.push(`포인트: ${scene.bullets.join(' · ')}`);
+    lines.push(`내레이션: ${scene.narration || ''}`);
+    lines.push('');
+  }
+  lines.push('설명:', script.description || short.description || '');
+  lines.push('');
+  lines.push(script.hashtags ? script.hashtags.join(' ') : short.hashtags || '');
+  return lines.join('\n');
+}
+
+function shortById(id) {
+  return state.shorts.find((item) => item.id === Number(id));
+}
+
 /* ---------------- 설정 ---------------- */
 async function loadSettingsView() {
   try {
@@ -783,6 +992,8 @@ async function loadSettingsView() {
     $('openai-model').value = s.openai_model || 'gpt-4o-mini';
     $('utm-source').value = s.utm_source || '';
     $('utm-campaign').value = s.utm_campaign || '';
+    await loadProviderSettings(s);
+
     $('env-info').textContent = `포트 ${state.env.port} · 데이터 경로 ${state.env.dataDir} · 관리자 비밀번호 ${state.env.adminPasswordSet ? '설정됨' : '없음(누구나 접속 가능)'} · OpenAI 환경변수 ${state.env.openaiEnvKeySet ? '설정됨' : '없음'}`;
 
     const scheduler = await api('/api/scheduler');
@@ -798,6 +1009,61 @@ async function loadSettingsView() {
               (d) => `<tr><td class="muted">${kst(d.created_at)}</td><td>${esc(d.event)}</td><td>${d.ok ? '<span class="delta-up">성공</span>' : `<span class="delta-down">실패</span>`}</td><td class="muted small">${esc(d.status_code || '')} ${esc((d.error || d.response_snippet || '').slice(0, 60))}</td></tr>`,
             )
             .join('')}</tbody></table>`;
+  } catch (err) {
+    showToastError(err);
+  }
+}
+
+async function loadProviderSettings(s) {
+  try {
+    const response = await api('/api/shorts/providers');
+    state.shortProviders = response;
+    const videoProviders = response.videoProviders || [];
+    const ttsProviders = response.ttsProviders || [];
+    $('shorts-video-provider').innerHTML = videoProviders
+      .map((p) => `<option value="${p.id}">${esc(p.label)}</option>`)
+      .join('');
+    $('shorts-tts-provider').innerHTML = ttsProviders
+      .map((p) => `<option value="${p.id}">${esc(p.label)}</option>`)
+      .join('');
+    $('shorts-video-provider').value = s.shorts_video_provider || 'builtin';
+    $('shorts-tts-provider').value = s.shorts_tts_provider || 'builtin';
+    $('shorts-video-key').value = s.shorts_video_api_key || '';
+    $('shorts-video-key').placeholder =
+      s.shorts_video_key_set && s.shorts_video_key_source === 'env' ? '환경변수 키 사용 중' : '비워두면 내장 엔진으로 동작';
+    $('shorts-video-endpoint').value = s.shorts_video_endpoint || '';
+    $('shorts-video-model').value = s.shorts_video_model || '';
+    $('shorts-tts-key').value = s.shorts_tts_api_key || '';
+    $('shorts-tts-key').placeholder =
+      s.shorts_tts_key_set && s.shorts_tts_key_source === 'env' ? '환경변수 키 사용 중' : 'OpenAI / ElevenLabs 키';
+    $('shorts-tts-voice').value = s.shorts_tts_voice || '';
+    const resolved = s.resolved || {};
+    $('shorts-video-detail').textContent = resolved.video?.detail || '';
+    $('shorts-tts-detail').textContent = resolved.tts?.detail || '';
+    $('providers-status').textContent = resolved.video?.ready ? '키 설정됨' : '내장 엔진 사용';
+    renderEngineBadge();
+  } catch (err) {
+    $('providers-status').textContent = err.message;
+  }
+}
+
+async function saveProviders(event) {
+  event.preventDefault();
+  try {
+    const body = {
+      shorts_video_provider: $('shorts-video-provider').value,
+      shorts_video_endpoint: $('shorts-video-endpoint').value.trim(),
+      shorts_video_model: $('shorts-video-model').value.trim(),
+      shorts_tts_provider: $('shorts-tts-provider').value,
+      shorts_tts_voice: $('shorts-tts-voice').value.trim(),
+    };
+    const videoKey = $('shorts-video-key').value.trim();
+    if (videoKey && !videoKey.includes('••••')) body.shorts_video_api_key = videoKey;
+    const ttsKey = $('shorts-tts-key').value.trim();
+    if (ttsKey && !ttsKey.includes('••••')) body.shorts_tts_api_key = ttsKey;
+    await api('/api/settings', { method: 'PUT', body });
+    toast('AI 프로바이더 설정을 저장했습니다.');
+    await loadSettingsView();
   } catch (err) {
     showToastError(err);
   }
@@ -963,6 +1229,17 @@ function bindEvents() {
         toast('사용 완료로 표시했습니다.');
         closeModal();
         await loadLibrary();
+      } else if (action === 'copy-short-script') {
+        const short = shortById(actionNode.dataset.short);
+        if (short) await copyText(shortScriptText(short), '쇼츠 대본을');
+      } else if (action === 'copy-short-title') {
+        const short = shortById(actionNode.dataset.short);
+        if (short) await copyText(`${short.title || ''}\n\n${short.description || ''}\n\n${short.hashtags || ''}`.trim(), '제목·태그를');
+      } else if (action === 'delete-short') {
+        if (!confirm('이 쇼츠를 삭제할까요? MP4 파일도 함께 삭제됩니다.')) return;
+        await api(`/api/shorts/${actionNode.dataset.short}`, { method: 'DELETE' });
+        toast('쇼츠를 삭제했습니다.');
+        await loadShortsList();
       } else if (action === 'delete-draft') {
         if (!confirm('이 초안을 삭제할까요?')) return;
         await api(`/api/drafts/${actionNode.dataset.draft}`, { method: 'DELETE' });
@@ -1041,6 +1318,19 @@ function bindEvents() {
   $('studio-app').addEventListener('change', (event) => loadStudioKeywords(Number(event.target.value)));
   $('library-app').addEventListener('change', loadLibrary);
   $('library-refresh').addEventListener('click', loadLibrary);
+  $('shorts-form').addEventListener('submit', startShort);
+  $('shorts-refresh').addEventListener('click', () => loadShortsView());
+  $('providers-form').addEventListener('submit', saveProviders);
+  $('shorts-video-provider').addEventListener('change', () => {
+    const list = state.shortProviders?.videoProviders || [];
+    const found = list.find((p) => p.id === $('shorts-video-provider').value);
+    $('shorts-video-detail').textContent = found ? `${found.hint}${found.needsKey ? ' · API 키 필요' : ''}` : '';
+  });
+  $('shorts-tts-provider').addEventListener('change', () => {
+    const list = state.shortProviders?.ttsProviders || [];
+    const found = list.find((p) => p.id === $('shorts-tts-provider').value);
+    $('shorts-tts-detail').textContent = found ? `${found.hint}${found.needsKey ? ' · API 키 필요' : ''}` : '';
+  });
   $('schedule-form').addEventListener('submit', saveSchedule);
   $('integration-form').addEventListener('submit', saveIntegrations);
 

@@ -8,3 +8,7 @@ data/
 coverage/
 playwright-report/
 docs/screenshots/*.tmp
+.runtimes/
+.shorts-smoke-data/
+.shorts-verify-data/
+play-assets/

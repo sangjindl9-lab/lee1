@@ -16,6 +16,11 @@ export interface AppConfig {
   seedDemoData: boolean;
   enableScheduler: boolean;
   kstOffsetMinutes: number;
+  /** 쇼츠(YouTube Shorts) 생성 */
+  shortsDir: string;
+  ffmpegPath: string | null;
+  ffprobePath: string | null;
+  shortsFont: string | null;
 }
 
 function envInt(name: string, fallback: number): number {
@@ -49,6 +54,10 @@ export function loadConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     seedDemoData: overrides.seedDemoData ?? process.env.SEED_DEMO !== '0',
     enableScheduler: overrides.enableScheduler ?? process.env.SCHEDULER !== '0',
     kstOffsetMinutes: 9 * 60,
+    shortsDir: overrides.shortsDir ?? process.env.SHORTS_DIR ?? path.join(dataDir, 'shorts'),
+    ffmpegPath: overrides.ffmpegPath ?? (process.env.FFMPEG_PATH || null),
+    ffprobePath: overrides.ffprobePath ?? (process.env.FFPROBE_PATH || null),
+    shortsFont: overrides.shortsFont ?? (process.env.SHORTS_FONT || null),
   };
   return config;
 }

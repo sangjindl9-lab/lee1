@@ -33,6 +33,7 @@
           <a href="#apps" class="nav-item" data-view="apps">앱 · 키워드</a>
           <a href="#aso" class="nav-item" data-view="aso">경쟁 분석 · ASO</a>
           <a href="#studio" class="nav-item" data-view="studio">콘텐츠 스튜디오</a>
+          <a href="#shorts" class="nav-item" data-view="shorts">🎬 쇼츠 스튜디오</a>
           <a href="#library" class="nav-item" data-view="library">보관함</a>
           <a href="#settings" class="nav-item" data-view="settings">설정</a>
         </nav>
@@ -172,6 +173,62 @@
           </div>
         </section>
 
+        <section id="view-shorts" class="view hidden">
+          <div class="panel shorts-hero">
+            <div class="panel-head">
+              <h2>YouTube 쇼츠 풀오토</h2>
+              <div class="head-actions">
+                <span id="shorts-engine-badge" class="engine-badge">엔진 확인 중…</span>
+              </div>
+            </div>
+            <p class="muted small shorts-lead">
+              버튼 한 번이면 대본 → 이미지 → 음악·내레이션 → 1080×1920 MP4 영상까지 자동으로 만듭니다.
+              외부 AI(힉스필드·Runway·ElevenLabs 등)를 연결하면 훅 장면과 음성 퀄리티가 올라갑니다.
+            </p>
+            <form id="shorts-form" class="shorts-form">
+              <label class="field">
+                <span>앱</span>
+                <select id="shorts-app"></select>
+              </label>
+              <label class="field">
+                <span>분위기 · BGM</span>
+                <select id="shorts-mood"></select>
+              </label>
+              <label class="switch-row shorts-narration">
+                <input type="checkbox" id="shorts-narration" checked />
+                <span>한국어 내레이션 넣기</span>
+              </label>
+              <button class="btn primary block" type="submit" id="shorts-submit">🎬 쇼츠 풀오토 만들기</button>
+            </form>
+            <p id="shorts-hint" class="muted small"></p>
+          </div>
+
+          <div id="shorts-progress" class="panel hidden">
+            <div class="panel-head">
+              <h2>생성 중</h2>
+              <span id="shorts-progress-label" class="muted small"></span>
+            </div>
+            <div class="progress-track"><div id="shorts-progress-bar" class="progress-fill"></div></div>
+            <ol class="stage-list" id="shorts-stages">
+              <li data-stage="script"><span class="dot"></span>대본 쓰기</li>
+              <li data-stage="visuals"><span class="dot"></span>이미지 · 스토어 자산</li>
+              <li data-stage="audio"><span class="dot"></span>음악 · 내레이션</li>
+              <li data-stage="render"><span class="dot"></span>영상 렌더링 · 자막</li>
+            </ol>
+            <p id="shorts-progress-note" class="muted small"></p>
+          </div>
+
+          <div class="panel">
+            <div class="panel-head">
+              <h2>완성된 쇼츠</h2>
+              <div class="head-actions">
+                <button id="shorts-refresh" class="btn ghost small">새로고침</button>
+              </div>
+            </div>
+            <div id="shorts-list" class="shorts-list">불러오는 중…</div>
+          </div>
+        </section>
+
         <section id="view-library" class="view hidden">
           <div class="panel">
             <div class="panel-head">
@@ -239,6 +296,51 @@
                 <button class="btn primary" type="submit">저장</button>
               </form>
             </div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-head">
+              <h2>AI 영상 · 음성 프로바이더</h2>
+              <span class="muted small">쇼츠 스튜디오 엔진</span>
+            </div>
+            <form id="providers-form" class="stack">
+              <label class="field">
+                <span>영상 생성 엔진</span>
+                <select id="shorts-video-provider"></select>
+              </label>
+              <p id="shorts-video-detail" class="muted small"></p>
+              <label class="field">
+                <span>영상 API 키 <span class="muted tiny">(힉스필드는 Key ID:Secret 형식)</span></span>
+                <input id="shorts-video-key" placeholder="비워두면 내장 엔진으로 동작" autocomplete="off" />
+              </label>
+              <label class="field">
+                <span>영상 엔드포인트 (선택)</span>
+                <input id="shorts-video-endpoint" placeholder="https://api.higgsfield.ai/bytedance/seedance-2.0/text-to-video" />
+              </label>
+              <label class="field">
+                <span>모델 ID (선택)</span>
+                <input id="shorts-video-model" placeholder="seedance-2.0" />
+              </label>
+              <hr />
+              <label class="field">
+                <span>음성(TTS) 엔진</span>
+                <select id="shorts-tts-provider"></select>
+              </label>
+              <p id="shorts-tts-detail" class="muted small"></p>
+              <label class="field">
+                <span>TTS API 키</span>
+                <input id="shorts-tts-key" placeholder="OpenAI / ElevenLabs 키" autocomplete="off" />
+              </label>
+              <label class="field">
+                <span>음성 ID (선택)</span>
+                <input id="shorts-tts-voice" placeholder="alloy / elevenlabs voice id" />
+              </label>
+              <div class="row">
+                <button class="btn primary" type="submit">저장</button>
+                <span id="providers-status" class="muted small"></span>
+              </div>
+              <p class="muted tiny">저장된 키는 마스킹되어 표시됩니다. 키가 없거나 호출이 실패하면 내장 풀오토 엔진으로 자동 폴백합니다.</p>
+            </form>
           </div>
 
           <div class="grid-2">

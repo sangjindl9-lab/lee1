@@ -15,6 +15,11 @@ ENV NODE_ENV=production \
     PORT=3100 \
     DATA_DIR=/data
 WORKDIR /app
+# 쇼츠 렌더링: ffmpeg(libass·libx264 포함)와 한글 폰트(Noto Sans CJK KR)
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ffmpeg fonts-noto-cjk ca-certificates \
+ && rm -rf /var/lib/apt/lists/* \
+ && (fc-list | grep -i "Noto Sans CJK KR" | head -2 || true)
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=build /app/dist ./dist

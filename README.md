@@ -34,6 +34,20 @@ Google Play 앱의 **실시간 순위 추적 · 경쟁 앱 ASO 분석 · 홍보 
 
 ---
 
+### 4) 🎬 YouTube 쇼츠 풀오토 (Shorts Studio)
+
+버튼 한 번으로 **대본 → 이미지 → 음악·내레이션 → 1080×1920 MP4** 를 만듭니다. 외부 유료 API 키가 없어도 100% 동작합니다.
+
+- **대본**: 앱 메타/키워드/실제 스토어 문구 기반 5씬(훅 → 문제 → 해결 → 근거 → CTA) + 유튜브 제목·설명·해시태그 (`OPENAI_API_KEY`가 있으면 문장 고도화)
+- **이미지**: Play 스토어 아이콘·스크린샷 자동 다운로드 → 원형 마스크, 실패 시 폴백 아이콘 카드. 씬별 540×960 그라데이션 배경(3가지 분위기)을 순수 Node PNG로 생성 후 1080×1920으로 확대
+- **음악**: 저작권 걱정 없는 프로시저럴 BGM 합성기(밝은 테크 / 집중 업무 / 임팩트 숏폼, 44.1kHz 스테레오 WAV)
+- **내레이션**: 내장 무료 TTS(구글 번역 TTS) 시도 → 실패 시 자막+BGM으로 안전 폴백. OpenAI TTS·ElevenLabs 연결 가능
+- **영상**: FFmpeg zoompan(Ken Burns) + xfade 크로스페이드 + ASS 한글 타이포그래피 자막 + BGM·내레이션 믹싱 → `H.264/AAC, 30fps, +faststart`
+- **외부 AI 영상(선택)**: Higgsfield / Runway / Kling·커스텀 API 키를 설정하면 훅 장면을 생성형 영상으로 대체(`GET /api/shorts/providers` 로 상태 확인). 실패하면 자동으로 내장 엔진 폴백 + 경고 기록
+- 완성본은 `/data/shorts/videos/` 에 보관, 화면에서 `<video>` 미리보기 · MP4 다운로드 · 대본/제목·태그 복사 · 삭제
+
+필요 패키지: `ffmpeg`(+libass/libx264), 한글 폰트 `fonts-noto-cjk`. Dockerfile에는 기본 설치되어 있습니다.
+
 ## 2. 빠른 실행
 
 ### 로컬 실행
@@ -69,6 +83,16 @@ npm start
 | `OPENAI_MODEL` | `gpt-4o-mini` | 사용할 모델 |
 | `SEED_DEMO` | `1` | 첫 실행 시 이음 앱 시드 등록 |
 | `SCHEDULER` | `1` | 내장 스케줄러 사용 |
+
+### 쇼츠 관련 환경 변수 (선택)
+
+| 변수 | 설명 |
+| --- | --- |
+| `FFMPEG_PATH` / `FFPROBE_PATH` | ffmpeg 경로 (Docker 이미지에는 설치되어 있어 비워둡니다) |
+| `SHORTS_DIR` | 완성 영상 보관 경로 (기본 `$DATA_DIR/shorts`) |
+| `SHORTS_FONT` | 한글 폰트 패밀리 (기본 `Noto Sans CJK KR`) |
+| `HIGGSFIELD_API_KEY` | 힉스필드 API 키 (`Key ID:Secret`) — 설정 화면에서도 저장 가능 |
+| `ELEVENLABS_API_KEY` | ElevenLabs TTS 키 |
 
 ### Docker
 ```bash
@@ -140,6 +164,20 @@ docker run -d --name eum-promo -p 3100:3100 \
 Slack Incoming Webhook 주소면 `text`/`blocks` 를 함께 보내 채널에 바로 미리보기가 뜹니다.
 
 ---
+
+### 쇼츠 API
+
+| 메서드 | 경로 | 설명 |
+| --- | --- | --- |
+| GET | `/api/shorts/providers` | 엔진·프로바이더 상태, 분위기 목록, ffmpeg 준비 상태 |
+| GET | `/api/shorts` | 생성 목록(상태·진행률·제목·대본) |
+| POST | `/api/shorts` | `{appId, mood, narration}` → 202 비동기 생성 시작 |
+| GET | `/api/shorts/:id` | 단건 상태(폴링용) |
+| GET | `/api/shorts/:id/video` | MP4 스트리밍(Range 지원) |
+| GET | `/api/shorts/:id/download` | MP4 다운로드 |
+| DELETE | `/api/shorts/:id` | 영상 파일 + 기록 삭제 |
+
+`PUT /api/settings` 에서 `shorts_video_provider`, `shorts_video_api_key`, `shorts_video_endpoint`, `shorts_video_model`, `shorts_tts_provider`, `shorts_tts_api_key`, `shorts_tts_voice` 를 저장합니다(키는 마스킹 저장).
 
 ## 5. 검증 결과
 
