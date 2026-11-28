@@ -36,3 +36,12 @@ elif cmd == "app":
     else:
         print(f"::warning::App Store Connect에 {sys.argv[2]} 앱이 아직 없습니다 — 웹에서 '새로운 앱'을 만들어야 TestFlight에 올라갑니다")
         sys.exit(3)
+elif cmd == "status":
+    app = call("GET", "/v1/apps?" + urllib.parse.urlencode({"filter[bundleId]": sys.argv[2]}))["data"][0]
+    vs = call("GET", f"/v1/apps/{app['id']}/appStoreVersions?limit=5")["data"]
+    for v in vs:
+        a = v["attributes"]
+        print("버전", a["versionString"], "상태", a.get("appStoreState"), a.get("appVersionState"))
+    subs = call("GET", f"/v1/reviewSubmissions?filter[app]={app['id']}&limit=5")["data"]
+    for s in subs:
+        print("심사 제출", s["id"], s["attributes"].get("state"), s["attributes"].get("submittedDate"))

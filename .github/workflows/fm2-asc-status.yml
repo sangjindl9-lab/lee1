@@ -1,0 +1,13 @@
+name: FileManager2 App Store 상태 확인
+on:
+  workflow_dispatch: {}
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    env:
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install -q pyjwt cryptography && python3 .github/scripts/asc.py status kr.eumsoft.filemanager2
