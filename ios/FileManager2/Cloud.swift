@@ -15,7 +15,6 @@ enum CloudApi {
     static func providers() async throws -> [CloudProvider] {
         ((try await Api.call("GET", "/api/cloud/providers", auth: false)) as? [[String: Any]] ?? [])
             .map { CloudProvider(id: $0.str("id"), label: $0.str("label"), ready: $0["ready"] as? Bool ?? false) }
-            .filter { $0.id != "onedrive" }
     }
     static func connections() async throws -> [CloudConn] {
         ((try await Api.call("GET", "/api/cloud")) as? [[String: Any]] ?? [])
